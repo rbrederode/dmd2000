@@ -1,6 +1,7 @@
 import threading
 from queue import Queue, Empty
 import time
+import weakref
 
 import logging
 logger = logging.getLogger(__name__)
@@ -9,20 +10,25 @@ class Processor(threading.Thread):
 
     _mutex = threading.RLock()      # Mutex for single-threaded mode 
     _single_threaded = False        # Global threading mode flag, default is free-threaded
-    _running = True                 # Global running flag
+    _instances = weakref.WeakSet()  # Track live processors for compatibility helpers
 
     def __init__(self, name=None, event_q=None):
 
-        super().__init__(args=(name,), daemon=True) # Ensure thread exits when main program exits
+        super().__init__(name=name, daemon=True) # Ensure thread exits when main program exits
 
         self._event_q = event_q if event_q else Queue()
-
+        self._running = True
         self._event = None
         self._event_timestamp = None
+        Processor._instances.add(self)
 
     @staticmethod
     def stop_all():
-        Processor._running = False
+        for processor in list(Processor._instances):
+            processor.stop()
+
+    def stop(self):
+        self._running = False
 
     @staticmethod
     def single_thread():
@@ -60,7 +66,7 @@ class Processor(threading.Thread):
         """
         logger.debug(f"Processor {self.name} started running")
 
-        while Processor._running:
+        while self._running:
 
             acquired_mutex = False
 
@@ -70,11 +76,9 @@ class Processor(threading.Thread):
                 acquired_mutex = True
 
             # Check if we should stop running the processor / thread
-            if not Processor._running:
+            if not self._running:
                 if acquired_mutex:
                     Processor._mutex.release()
-                    self.free_thread()  # Ensure other threads can unblock to stop running
-
                 logger.debug(f"Processor {self.name} received stop signal, exiting")
                 break
 
@@ -98,7 +102,7 @@ class Processor(threading.Thread):
                 self._event = None
                 self._event_timestamp = None
 
-        self.join()  # Wait for the thread to finish
+        logger.debug(f"Processor {self.name} stopped")
 
     def process_event(self, event) -> bool:
         """ Processes an event from the queue.

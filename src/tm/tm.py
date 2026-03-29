@@ -710,6 +710,7 @@ class TelescopeManager(App):
                             center_freq=completed_scan.center_freq,
                             channels=completed_scan.channels,
                             instance_id=scan.scan_id, 
+                            scan_type=scan.scan_type,
                             filetype="meta") + ".json"
 
                         scan.save_to_disk(output_dir=self.telmodel.get_scan_store_dir(), filename=filename)
