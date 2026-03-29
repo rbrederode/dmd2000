@@ -79,6 +79,8 @@ class Processor(threading.Thread):
             if not self._running:
                 if acquired_mutex:
                     Processor._mutex.release()
+                    self.free_thread() # Ensure other threads can unblock to stop running
+                    
                 logger.debug(f"Processor {self.name} received stop signal, exiting")
                 break
 
