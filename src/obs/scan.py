@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 from models.pipeline import StepConfig, StepType
 from models.qa import ScanQA, QA
-from models.scan import ScanModel, ScanState
+from models.scan import ScanModel, ScanState, ScanType
 from sdp.pipeline.steps.dc_spike import DCSpike
 from util import gen_file_prefix
 from util.xbase import XSoftwareFailure 
@@ -156,6 +156,13 @@ class Scan:
         """
         return self.scan_model.dig_id
 
+    def get_scan_type(self) -> ScanType:
+        """
+        Get the scan type (e.g., SKY, LOAD) for this scan.
+            :returns: The scan type as a ScanType enum value
+        """
+        return self.scan_model.scan_type
+
     def get_qa(self) -> ScanQA:
         """
         Get the QA attributes for the signal in this scan.
@@ -260,10 +267,11 @@ class Scan:
         row_start = int((sec - 1) * self.scan_model.sample_rate / self.scan_model.channels)   # Calculate the starting row index (zero based) using sec
         row_end = int(sec * self.scan_model.sample_rate / self.scan_model.channels)           # Calculate the ending row index (zero based) using sec
 
-        pwr = np.zeros((iq.shape[0], self.scan_model.channels), dtype=np.float64)  # Temporary array to hold power spectrum for the loaded samples
-        # For each row i.e. 'shape[0]' in the reshaped sample set, calculate and record the power spectrum
-        for j in range(iq.shape[0]):
-            pwr[j,:] = np.abs(np.fft.fftshift(np.fft.fft(iq[j,:])))**2  # The power spectrum is the absolute value of the signal squared
+        # Calculate the power spectrum for all rows in one vectorized FFT pass
+        # This is more efficient than iterating through rows and calculating the FFT for each row separately
+        # for j in range(iq.shape[0]):
+        #    pwr[j,:] = np.abs(np.fft.fftshift(np.fft.fft(iq[j,:])))**2  
+        pwr = np.abs(np.fft.fftshift(np.fft.fft(iq, axis=1), axes=1)) ** 2  # The power spectrum is the absolute value of the signal squared
 
         spr = np.sum(pwr, axis=0)  # Sum power across all rows for this second
 
@@ -387,7 +395,7 @@ class Scan:
         prefix = gen_file_prefix(
             dt=self.scan_model.read_start, entity_id=self.scan_model.dig_id, gain=self.scan_model.gain, 
             duration=self.scan_model.duration, sample_rate=self.scan_model.sample_rate, center_freq=self.scan_model.center_freq, 
-            channels=self.scan_model.channels, instance_id=self.scan_model.scan_id
+            channels=self.scan_model.channels, instance_id=self.scan_model.scan_id, scan_type=self.scan_model.scan_type
         )
 
         self.scan_model.files_prefix = prefix
@@ -403,7 +411,7 @@ class Scan:
             with open(f"{output_dir}/{filename}", 'w') as f:
                 json.dump(self.get_scan_meta(), f, indent=4)  
 
-            filename = prefix + "-load" + ".csv" if self.scan_model.load else prefix + "-spr" + ".csv"
+            filename = prefix + "-spr" + ".csv"
             with open(f"{output_dir}/{filename}", 'w') as f:
                 np.savetxt(f, self.spr, delimiter=",", fmt="%.6f")
         
@@ -431,7 +439,7 @@ class Scan:
         if input_dir is None or input_dir == '':
             input_dir = os.path.expanduser("./")
 
-        logger.info(f"Scan - Looking for scan files in dir {input_dir} matching file prefix {file_prefix}")
+        logger.info(f"Scan - Searching for scans in {input_dir} with prefix {file_prefix}")
         read_files = [f for f in os.listdir(input_dir) if file_prefix in f and f.endswith('meta.json')]
 
         if read_files is None or len(read_files) == 0:
@@ -441,7 +449,7 @@ class Scan:
         read_files = sorted(read_files, key=lambda f: os.path.getctime(os.path.join(input_dir, f)), reverse=True)
         read_file = read_files[0]
 
-        logger.info(f"Scan - Reading scan data from {input_dir}/{read_file}")
+        logger.info(f"Scan - Reading meta data from {input_dir}/{read_file}")
 
         try:
             with open(f"{input_dir}/{read_file}", 'r') as f:
@@ -449,11 +457,11 @@ class Scan:
                 scan_model = ScanModel().from_dict(meta)
 
         except Exception as e:
-            logger.error(f"Scan - Failed to read metadata from {input_dir}/{read_file}: {e}")
+            logger.error(f"Scan - Failed reading metadata from {input_dir}/{read_file}: {e}")
             return None
 
         if scan_model.status.value != ScanState.COMPLETE:
-            logger.warning(f"Scan - Loading an incomplete scan from disk with status: {scan_model.status.name}.\n{scan_model.to_dict()}")
+            logger.warning(f"Scan - Loading incomplete scan with status: {scan_model.status.name} from disk.\n{scan_model.to_dict()}")
 
         # Create the Scan instance (this initialises data arrays via __init__)
         scan = cls(scan_model)
@@ -461,12 +469,19 @@ class Scan:
         try:
             prefix = gen_file_prefix(dt=scan.scan_model.read_start, entity_id=scan.scan_model.dig_id, gain=scan.scan_model.gain, 
                 duration=scan.scan_model.duration, sample_rate=scan.scan_model.sample_rate, center_freq=scan.scan_model.center_freq, 
-                channels=scan.scan_model.channels, instance_id=scan.scan_model.scan_id)
+                channels=scan.scan_model.channels, instance_id=scan.scan_model.scan_id, scan_type=scan.scan_model.scan_type)
+
+            from sdp.sdp import SDP
+            # Instantiate a processing pipeline and push the summed power spectrum through the spr and cal pipelines
+            scan.pipeline = SDP.pipeline_factory.create_pipeline(scan) if SDP.pipeline_factory is not None else None
 
             if include_iq:
                 # Load raw IQ samples 
                 filename = prefix + "-raw" + ".iq"
                 with open(f"{input_dir}/{filename}", 'rb') as f:
+
+                    logger.info(f"Scan - Loading scan data from {input_dir}/{filename}")
+
                     scan.raw = np.fromfile(f, dtype=np.complex64)
                     scan.raw = scan.raw.reshape(-1, scan.scan_model.channels)
 
@@ -483,11 +498,21 @@ class Scan:
                     # Calculate the sum of the power spectrum for each frequency bin in a given second
                     scan.spr[sec,:] = np.sum(scan.pwr[row_start:row_end,:], axis=0)  # Sum the power spectrum in a given sec for each frequency bin (in columns)
 
+
+
+                    # Push the summed power spectrum through the spr pipeline and cal pipeline if a pipeline is associated with this scan
+                    scan.spr = self.pipeline.process(signal=scan.spr, context={"pipeline": "spr"}) if self.pipeline else scan.spr               
+                    scan.cal = self.pipeline.process(signal=scan.spr.copy(), context={"pipeline": "cal"}) if self.pipeline else scan.spr.copy() 
+
+
                 scan.loaded_secs = [True] * scan.scan_model.duration
             else:
                 # Load summed power spectrum only
-                filename = prefix + "-load" + ".csv" if scan.scan_model.load else prefix + "-spr" + ".csv"
+                filename = prefix + "-spr" + ".csv"
                 with open(f"{input_dir}/{filename}", 'r') as f:
+
+                    logger.info(f"Scan - Loading scan data from {input_dir}/{filename}")
+
                     scan.spr = np.loadtxt(f, delimiter=",")
                     scan.spr = scan.spr.reshape(-1, scan.scan_model.channels)
 
@@ -499,9 +524,37 @@ class Scan:
             logger.error(f"Scan - Failed to load data from {input_dir}: {e}")
             return None
 
-        logger.info(f"Scan - Loaded scan from {input_dir} with id: {scan.scan_model.scan_id}")
-        logger.debug(f"Scan metadata: {scan.scan_model.to_dict()}")
+        logger.info(f"Scan - Completed loading scan {input_dir}:\n\n{scan}\n")
         return scan
+
+    def find_equiv_scan(self, input_dir: str, scan_type: ScanType = ScanType.UNKNOWN) -> "Scan":
+        """
+        Get the calibration scan associated with this scan (if any).
+        Searches for calibration scans in the input directory.
+            :returns: The associated calibration scan if it exists, None otherwise
+        """
+
+        file_prefix = gen_file_prefix(dt=None, entity_id=self.scan_model.dig_id, gain=self.scan_model.gain, duration=self.scan_model.duration,
+                sample_rate=self.scan_model.sample_rate, center_freq=self.scan_model.center_freq, channels=self.scan_model.channels,
+                scan_type=scan_type if scan_type != ScanType.UNKNOWN else '')
+
+        logger.info(f"*** Scan scan id {self.scan_model.scan_id} **** DO NOT MATCH START")
+
+        cal_files = [f for f in os.listdir(input_dir) if file_prefix in f and not scan_id in f and f.endswith('spr.csv')]
+        logger.info(f"Scan - Found {len(cal_files)} calibration scans in {input_dir} with prefix {file_prefix} for digitiser {self.scan_model.dig_id}")
+        cal_files = sorted(cal_files, key=lambda f: os.path.getctime(os.path.join(input_dir, f)), reverse=True) if len(cal_files) > 0 else []
+        cal_file = cal_files[0].removesuffix('load.csv') if len(cal_files) > 0 else None
+
+        if load_file is not None:
+            load_scan = Scan.from_disk(file_prefix=load_file, input_dir=input_dir, include_iq=False)
+                
+            if load_scan is not None and load_scan.is_load_scan():
+                load_found = True
+                logger.info(f"Scan {self.scan_model.scan_id} - Found load scan with id {load_scan.scan_model.scan_id} for digitiser {self.scan_model.dig_id}")
+                return load_scan
+        
+        logger.info(f"Scan {self.scan_model.scan_id} - No load scan found for digitiser {self.scan_model.dig_id} in dir {input_dir} matching prefix {file_prefix}")
+        return None
 
     def del_iq(self):
         """ Flush the iq data to the bin """
@@ -530,7 +583,7 @@ if __name__ == "__main__":
             ]
     )
 
-    INPUT_DIR = '~/.alston/samples'  # Directory to store samples
+    INPUT_DIR = '~/samples'  # Directory to store samples
     INPUT_DIR = os.path.expanduser(INPUT_DIR)
 
     scan_model = ScanModel(
@@ -539,6 +592,7 @@ if __name__ == "__main__":
         tgt_idx=0,
         freq_scan=1,
         scan_iter=5,
+        scan_type=ScanType.SKY,
         created=datetime.now(timezone.utc),
         read_start=datetime.now(timezone.utc),
         read_end=datetime.now(timezone.utc),
@@ -555,10 +609,28 @@ if __name__ == "__main__":
         last_update=datetime.now(timezone.utc)
     )
 
-    scan = Scan(scan_model=scan_model)
-    print(scan)
-    scan.from_disk(file_prefix="2025-06-24T130440", input_dir=INPUT_DIR, include_iq=True)
-    print(scan)
+    print("="*40)
+    print("Creating scan from scan model:")
+    print("="*40)
+
+    sky_scan1 = Scan(scan_model=scan_model)
+    print (sky_scan1)
+    
+    prefix = "dig002-g23.0-du60-bw2.05-cf1420.73-ch2048"
+
+    print("="*150)
+    print(f"Creating scan using from_disk with file prefix {prefix} in dir {INPUT_DIR} (make sure this file exists):")
+    print("="*150)
+    scan2 = Scan.from_disk(file_prefix=prefix, input_dir=INPUT_DIR, include_iq=False)
+    print(scan2)
+
+    print("="*150)
+    print(f"Load matching cal scan from_disk with file prefix {prefix} in dir {INPUT_DIR}:")
+    print("="*150)
+
+    cal_scan2 = sky_scan2.find_equiv_cal_scan(input_dir=INPUT_DIR)
+    print(cal_scan2)
+    exit(1)
 
     from sdp.signal_display import SignalDisplay
 

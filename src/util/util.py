@@ -1,6 +1,7 @@
 from __future__ import annotations
 from datetime import datetime, timedelta
 import numpy as np
+import re
 from typing import TYPE_CHECKING
 
 import logging
@@ -94,58 +95,64 @@ def dict_unflatten(flat_dict) -> dict:
     """
     Convert a flattened dict with dot notation and [index] lists
     back into a nested dictionary/list structure.
-    String values that look like numbers, booleans, or None are coerced
-    to their native Python types.
+    String values that look like numbers, booleans, None, [] or {}
+    are coerced to their native Python types.
     """
 
     def _coerce(value):
         """Attempt to coerce a string value to its native Python type."""
         if not isinstance(value, str):
             return value
+
+        s = value.strip()
+
+        # Empty list / dict
+        if s == "[]":
+            return []
+        if s == "{}":
+            return {}
+
         # Boolean
-        if value.lower() == 'true':
+        if s.lower() == "true":
             return True
-        if value.lower() == 'false':
+        if s.lower() == "false":
             return False
+
         # None
-        if value.lower() in ('none', 'null', ''):
+        if s.lower() in ("none", "null", ""):
             return None
+
         # Integer
         try:
-            int_val = int(value)
-            # Only convert if round-tripping preserves the string exactly
-            # (avoids converting "01" or "00123" to int)
-            if str(int_val) == value:
+            int_val = int(s)
+            if str(int_val) == s:
                 return int_val
         except ValueError:
             pass
+
         # Float
         try:
-            float_val = float(value)
-            return float_val
+            return float(s)
         except ValueError:
             pass
+
         return value
 
     result = {}
 
     for flat_key, value in flat_dict.items():
-        # Split key into tokens: words or [index]
         tokens = re.findall(r'[^.\[\]]+|\[\d+\]', flat_key)
-
         current = result
 
         for i, token in enumerate(tokens):
             is_last = i == len(tokens) - 1
 
-            # Handle list index
             if token.startswith('['):
                 index = int(token[1:-1])
 
                 if not isinstance(current, list):
                     raise TypeError(f"Unexpected list index in key: {flat_key}")
 
-                # Extend list if needed
                 while len(current) <= index:
                     current.append({})
 
@@ -157,13 +164,11 @@ def dict_unflatten(flat_dict) -> dict:
                     current = current[index]
 
             else:
-                # Normal dict key
                 next_token = tokens[i + 1] if not is_last else None
 
                 if is_last:
                     current[token] = _coerce(value)
                 else:
-                    # Decide if next should be list or dict
                     if next_token and next_token.startswith('['):
                         if token not in current:
                             current[token] = []
@@ -174,7 +179,7 @@ def dict_unflatten(flat_dict) -> dict:
                     current = current[token]
 
     return result
-
+    
 def gen_file_prefix(
     dt:datetime,
     entity_id:str,
@@ -184,29 +189,37 @@ def gen_file_prefix(
     center_freq:float,
     channels:int,
     instance_id:str = None,
+    scan_type: ScanType = None,
     filetype: str = None) -> str:
 
     """ Generate a filename prefix based on metadata parameters.
-        :param dt: The datetime object representing the entity start time
+        :param dt: The datetime object representing the entity start time e.g. scan start
         :param entity_id: The entity identifier e.g. dig_id 
         :param gain: The gain setting e.g. 39.6 dB
         :param duration: The duration in seconds
         :param sample_rate: The sample rate e.g. 2.4e6 Hz
         :param center_freq: The center frequency e.g. 1.42e9 Hz
         :param channels: The number of channels e.g. 1024
-        :param instance_id: The instance ID number e.g. for multiple files per entity
-        :param filetype: The type of file being generated (e.g., "raw", "spr", "load", "meta")
+        :param instance_id: The instance ID number for multiple files per entity e.g. Obs ID
+        :param scan_type: The type of scan (e.g., "sky", "load", "tsys", "gain")
+        :param filetype: The type of file being generated (e.g., "raw", "spr", "cal", "meta", "mpr")
         :returns: A string representing the file prefix
     """
-    return (str(instance_id).replace(':', '') if instance_id is not None else '') + \
-        (dt.strftime("%Y-%m-%dT%H%M%S") if instance_id is None and dt is not None else '') + \
-        ("-" + str(entity_id) if entity_id is not None else '') + \
-        ("-g" + str(float(gain)) if gain is not None else '') + \
-        ("-du" + str(duration) if duration is not None else '') + \
-        ("-bw" + str(round(sample_rate/1e6,2)) if sample_rate is not None else '') + \
-        ("-cf" + str(round(center_freq/1e6,2)) if center_freq is not None else '') + \
-        ("-ch" + str(channels) if channels is not None else '') + \
+    prefix = (
+        (str(instance_id) if instance_id is not None else '') +
+        (dt.strftime("%Y-%m-%dT%H%M%S") if instance_id is None and dt is not None else '') +
+        ("-" + str(entity_id) if entity_id is not None else '') +
+        ("-g" + str(float(gain)) if gain is not None else '') +
+        ("-du" + str(duration) if duration is not None else '') +
+        ("-bw" + str(round(sample_rate/1e6,2)) if sample_rate is not None else '') +
+        ("-cf" + str(round(center_freq/1e6,2)) if center_freq is not None else '') +
+        ("-ch" + str(channels) if channels is not None else '') +
+        ("-" + scan_type.name if scan_type is not None else '') +
         ("-" + filetype if filetype is not None else '')
+    )
+    # Remove characters not allowed in filenames (e.g., \\/:*?"<>|)
+    prefix = re.sub(r'[:\\/*?"<>|]', '', prefix).lower()
+    return prefix
 
 def find_json_object_end(data:bytes) -> int:
     """ Finds the end index of the first complete JSON object in the byte stream.
