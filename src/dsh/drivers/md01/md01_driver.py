@@ -234,7 +234,7 @@ class MD01Driver(DishDriver):
             time_since_last_cmd = time.time() - self.last_command_time
             if time_since_last_cmd < self.md01_config.rate_limit:
                 sleep_time = self.md01_config.rate_limit - time_since_last_cmd
-                logger.warning(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} rate limiting: {sleep_time:.3f}s before sending cmd {md01_cmd.get_cmd()}")
+                logger.info(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} rate limiting: {sleep_time:.3f}s before sending cmd {md01_cmd.get_cmd()}")
                 time.sleep(sleep_time)
 
     def _send_md01_command(self, md01_cmd: MD01Msg) -> MD01Msg:
