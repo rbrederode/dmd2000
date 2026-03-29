@@ -22,6 +22,22 @@ HOST_PORT = 60000
 
 MAX_BLOCK_SIZE = 65535   # Define a maximum block size for sending data (65,535 bytes to fit in 64KB packet)
 
+def _iter_framed_blocks(data: bytes, max_block_size: int):
+    """Yield (header, block) tuples using remaining_blocks = blocks after this block."""
+
+    total_len = len(data)
+    offset = 0
+
+    while offset < total_len:
+        block = data[offset:offset + max_block_size]
+        block_size = len(block)
+        bytes_remaining = total_len - (offset + block_size)
+        remaining_blocks = (bytes_remaining + max_block_size - 1) // max_block_size
+        header = struct.pack('>HH', block_size, remaining_blocks)
+
+        yield header, block
+        offset += block_size
+
 class ConnectionState:
     """Class to hold the state of a connection including the receive buffer and message being constructed.
         The TCPServer associates an instance of this class with each client connection. """
@@ -272,24 +288,16 @@ class TCPServer:
             try:
                 data = msg.to_data()  # Convert the message to bytes 
                 
-                total_len = len(data)
-                offset = 0
-
                 # If the message exceeds the maximum block size, set the socket to blocking mode temporarily
                 # This prevents "Resource temporarily unavailable" errors on large messages
+                total_len = len(data)
                 if total_len > self.max_block_size:
                     client_socket.setblocking(True)
 
-                # Send the message in blocks if it exceeds the maximum block size
-                while offset < total_len:
-                    block = data[offset:offset + self.max_block_size]
-                    block_size = len(block)
-                    # Calculate remaining blocks (including this one)
-                    remaining_blocks = ((total_len - offset) // self.max_block_size)
-                    # Pack both as 2-byte unsigned shorts
-                    header = struct.pack('>HH', block_size, remaining_blocks)
+                # Send the message in blocks with a header that tells the
+                # receiver how many blocks still follow this one.
+                for header, block in _iter_framed_blocks(data, self.max_block_size):
                     client_socket.sendall(header + block)
-                    offset += self.max_block_size
 
                 if total_len > self.max_block_size:
                     client_socket.setblocking(False)

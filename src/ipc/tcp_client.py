@@ -28,6 +28,22 @@ DEST_PORT = 50000
 
 MAX_BLOCK_SIZE = 65535   # Define a maximum block size for sending data (65,535 bytes to fit in 64KB packet)
 
+def _iter_framed_blocks(data: bytes, max_block_size: int):
+    """Yield (header, block) tuples using remaining_blocks = blocks after this block."""
+
+    total_len = len(data)
+    offset = 0
+
+    while offset < total_len:
+        block = data[offset:offset + max_block_size]
+        block_size = len(block)
+        bytes_remaining = total_len - (offset + block_size)
+        remaining_blocks = (bytes_remaining + max_block_size - 1) // max_block_size
+        header = struct.pack('>HH', block_size, remaining_blocks)
+
+        yield header, block
+        offset += block_size
+
 class TCPClient:
     """TCP Client class to create connections and send data to/from a server using IPv4.
         It runs in non-blocking mode and processes events in its own daemon thread.
@@ -203,7 +219,7 @@ class TCPClient:
                                 self._process_msg(key.data)
                             except Exception as e:
                                 logging.error(f"TCP Client {self.description} unhandled exception while processing events for {self.host} port {self.port} Data (hex): {key.data.msg_data.hex() if key.data.msg_data else ''} Exception: {e}")
-                                self.process_disconnect()
+                                self._process_disconnect()
                                 break
 
     def connect(self) -> int:
@@ -298,17 +314,10 @@ class TCPClient:
                         if total_len > self.max_block_size:
                             key.fileobj.setblocking(True)
 
-                        # Send the message in blocks if it exceeds the maximum block size
-                        while offset < total_len:
-                            block = data[offset:offset + self.max_block_size]
-                            block_size = len(block)
-                            # Calculate remaining blocks (including this one)
-                            remaining_blocks = ((total_len - offset) // self.max_block_size)
-                            # Pack both as 2-byte unsigned shorts
-                            header = struct.pack('>HH', block_size, remaining_blocks)
-
+                        # Send the message in blocks with a header that tells the
+                        # receiver how many blocks still follow this one.
+                        for header, block in _iter_framed_blocks(data, self.max_block_size):
                             key.fileobj.sendall(header + block)
-                            offset += block_size
 
                         logger.debug(f"TCP Client {self.description} sent message to peer in {total_len // self.max_block_size + 1} blocks.\n{message.Message.__str__(msg)}")
                     except (OSError,  TimeoutError ) as e:
