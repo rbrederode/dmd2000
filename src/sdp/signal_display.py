@@ -67,8 +67,11 @@ class SignalDisplay:
         self.load_line = None
         self.cal_line = None
         self.snr_text = None
+        self.qa_text = None
         self.signal_start_line = None
         self.signal_end_line = None
+        self.qa_signal_start_line = None
+        self.qa_signal_end_line = None
         self.mean_tpwr_line = None
         self.i_bar = None
         self.q_bar = None
@@ -156,8 +159,11 @@ class SignalDisplay:
 
         self.cal_line, = self.sig[1].plot([], [], color="orange", label="Signal (CAL)")
         self.signal_start_line = self.sig[1].axvline(x=0, color="green", linestyle="--", label="Signal Start")
-        self.signal_end_line = self.sig[1].axvline(x=0, color="purple", linestyle="--", label="Signal End")
+        self.signal_end_line = self.sig[1].axvline(x=0, color="green", linestyle="--", label="Signal End")
+        self.qa_signal_start_line = self.sig[1].axvline(x=0, color="purple", linestyle="--", label="Signal Start")
+        self.qa_signal_end_line = self.sig[1].axvline(x=0, color="purple", linestyle="--", label="Signal End")
         self.snr_text = self.sig[1].text(0.98, 0.98, "", transform=self.sig[1].transAxes, ha="right", va="top")
+        self.qa_text = self.sig[1].text(0.02, 0.98, "", transform=self.sig[1].transAxes, ha="left", va="top")
         self.sig[1].legend(loc="lower right")
 
         self.pwr_im = self.sig[2].imshow(
@@ -168,8 +174,8 @@ class SignalDisplay:
 
         self.i_bar = self.sig[3].bar(0, 0, color="blue", label="_nolegend_")[0]
         self.q_bar = self.sig[3].bar(1, 0, color="orange", label="_nolegend_")[0]
-        self.sat_33_line = self.sig[3].axhline(y=33, color="green", linestyle="--", label="33%")
-        self.sat_66_line = self.sig[3].axhline(y=66, color="red", linestyle="--", label="66%")
+        self.sat_33_line = self.sig[3].axhline(y=33, color="green", linestyle="--", label="_nolegend_")
+        self.sat_66_line = self.sig[3].axhline(y=66, color="red", linestyle="--", label="_nolegend_")
         self.sig[3].legend(loc="lower right")
 
         self.total_power_line, = self.sig[4].plot([], [], color="red", label="Total Power (TPW)")
@@ -250,12 +256,42 @@ class SignalDisplay:
         self.sig[1].relim()
         self.sig[1].autoscale_view(scalex=False, scaley=True)
 
-    def _update_snr_overlay(self, l_sec: int):
-        """Update the SNR text box and signal-region marker lines for the latest second.
+    def _update_qa_overlay(self, l_sec: int):
+        """Update the QA text box and signal-region marker lines for the latest second.
 
         Parameters:
             l_sec: The latest loaded second number for the current scan, starting at 1.
         """
+
+        if self.scan.scan_qa is not None:
+            cal_qa = self.scan.scan_qa.getQA("cal", l_sec - 1)
+            if cal_qa is not None:
+                if cal_qa.signal_start is not None and cal_qa.signal_end is not None:
+                    sig_start_bin = int(cal_qa.signal_start)
+                    sig_end_bin = int(cal_qa.signal_end)
+                    freq_start = self.extent[0] + (self.extent[1] - self.extent[0]) * sig_start_bin / self.scan.scan_model.channels
+                    freq_end = self.extent[0] + (self.extent[1] - self.extent[0]) * sig_end_bin / self.scan.scan_model.channels
+                    self.qa_signal_start_line.set_xdata([freq_start, freq_start])
+                    self.qa_signal_end_line.set_xdata([freq_end, freq_end])
+                    self.qa_signal_start_line.set_visible(True)
+                    self.qa_signal_end_line.set_visible(True)
+                else:
+                    self.qa_signal_start_line.set_visible(False)
+                    self.qa_signal_end_line.set_visible(False)
+
+                self.qa_text.set_text(
+                    (f"RFI Frac: {cal_qa.rfi_fraction:.2%}\n" if cal_qa.rfi_fraction is not None else "N/A\n")
+                    + f"Noise: {cal_qa.noise_db:.2f} dB\n"
+                    + f"Signal (sum): {cal_qa.signal_pwr_db:.2f} dB\n"
+                    + f"Signal (peak): {cal_qa.signal_db:.2f} dB\n"
+                    + f"SNR: {cal_qa.snr_db:.2f} dB\n"
+                    + f"FWHM: {cal_qa.fwhm:.2f} bins\n"
+                    + f"DR: {cal_qa.dynamic_range_db:.2f} dB")
+        else:
+            self.qa_text.set_text("QA not available")
+            self.qa_signal_start_line.set_visible(False)
+            self.qa_signal_end_line.set_visible(False)
+
         if self.scan.snr is not None:
             self.snr_text.set_text(
                 f"SNR: {self.scan.snr[l_sec-1][0]:.2f} dB\n"
@@ -363,25 +399,24 @@ class SignalDisplay:
         if l_sec <= 0:
             return
 
-        # If the current displayed scan second is the same as loaded scan seconds, then no update is needed, return
-        if self.sec == l_sec:
-            return
+        # If the current displayed scan second needs to be updated
+        if self.sec != l_sec:
+    
+            logger.info(f"Signal display updating for scan {self.scan.scan_model.scan_id}, from second {self.sec} to {l_sec} of {self.scan.scan_model.duration}")
 
-        logger.info(f"Signal display updating for scan {self.scan.scan_model.scan_id}, from second {self.sec} to {l_sec} of {self.scan.scan_model.duration}")
+            if self.sec is None:
+                self.sec = 0
 
-        # If current second being displayed is None, initialize the plots
-        if self.sec is None:
-            self.sec = 0
-
-        # Update the plot lines, overlays, images, bars, and timelines for the new loaded second, then draw the figure
-        self._update_waterfall()
-        self._update_spectrum_axes(l_sec)
-        self._update_snr_overlay(l_sec)
-        self._update_saturation_axis()
-        self._update_total_power_axis(l_sec)
+            # Update the plot lines, overlays, images, bars, and timelines for the new loaded second, then draw the figure
+            self._update_waterfall()
+            self._update_spectrum_axes(l_sec)
+            self._update_qa_overlay(l_sec)
+            self._update_saturation_axis()
+            self._update_total_power_axis(l_sec)
+        
+            self.sec = l_sec
+        
         self._draw(is_visible_fig)
-
-        self.sec = l_sec
 
     def save_scan_figure(self, output_dir: str) -> bool:
         """Save the current figure to disk once for the current scan.

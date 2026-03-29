@@ -328,7 +328,7 @@ class TelescopeManager(App):
         self.telmodel.dsh_mgr.tm_connected = CommunicationStatus.NOT_ESTABLISHED
         self.telmodel.tel_mgr.dm_connected = CommunicationStatus.NOT_ESTABLISHED
 
-        return self.abort_all_observations()
+        return self.abort_observations()
 
     def process_dm_msg(self, event, api_msg: dict, api_call: dict, payload: bytearray) -> Action:
         """ Processes api messages received on the Dish Manager service access point (SAP)
@@ -348,7 +348,7 @@ class TelescopeManager(App):
             raise XUnknownEntity(f"Telescope Manager received Dish Manager API message for unknown dish {dsh_id}.\n{api_call}")
         
         # If the api call indicates that an error occured
-        if api_call.get('status','') == tm_dm.STATUS_ERROR:
+        if api_call.get('status','') != tm_dm.STATUS_SUCCESS:
             
             logger.error(f"Telescope Manager received error response from Dish Manager for dish {dsh_id}.\n{api_call}")
             dsh_model.mode = DishMode.UNKNOWN # Set dish mode to UNKNOWN to force safe recovery
@@ -365,7 +365,7 @@ class TelescopeManager(App):
                 action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
 
         # If the api call does not indicate that an error occured
-        elif api_call.get('status','') != tm_dm.STATUS_ERROR:
+        elif api_call.get('status','') == tm_dm.STATUS_SUCCESS:
 
             # If the api call is a dish mode set property rsp message, update the Dish Model
             if api_call.get('property','') == tm_dm.PROPERTY_MODE:
@@ -384,6 +384,18 @@ class TelescopeManager(App):
             elif api_call.get('property','') == tm_dm.PROPERTY_STATUS:
                 logger.debug(f"Telescope Manager received Dish Manager STATUS update: {api_call['value']}")
                 self.telmodel.dsh_mgr = DishManagerModel.from_dict(api_call['value']) if api_call['value'] is not None else None
+
+                msg = api_call.get('message')
+                if msg is not None and "weather alarm" in msg.lower():
+
+                    # Abort observations if a dish weather alarm is active to allow for safe recovery 
+                    active_dsh_alarms = [dsh for dsh in self.telmodel.dsh_mgr.dish_store.dish_list if dsh.weather_alarm == True]
+
+                    for dsh in active_dsh_alarms:
+                        obs = self.telmodel.oda.obs_store.get_obs_by_dsh_id(dsh.dsh_id)
+                        if obs is not None:
+                            logger.warning(f"Telescope Manager detected active weather alarm on dish {dsh.dsh_id} for observation {obs.obs_id}. Aborting affected observation for safe recovery.")
+                            action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
 
             # If the status update message contains additional observation data, trigger the observation workflow
             obs_data = api_call.get('obs_data', None)
@@ -505,7 +517,7 @@ class TelescopeManager(App):
             digitiser.last_update = datetime.now(timezone.utc)
 
             # Abort all ongoing observations that are using this digitiser
-            return self.abort_all_observations(dig_id=digitiser.dig_id)
+            return self.abort_observations(dig_id=digitiser.dig_id)
 
     def process_dig_entity_msg(self, event, api_msg: dict, api_call: dict, payload: bytearray, entity: BaseModel) -> Action:
         """ Processes api messages received on the Digitiser service access point (SAP)
@@ -616,7 +628,7 @@ class TelescopeManager(App):
         self.telmodel.sdp.tm_connected = CommunicationStatus.NOT_ESTABLISHED
         self.telmodel.tel_mgr.sdp_connected = CommunicationStatus.NOT_ESTABLISHED
 
-        return self.abort_all_observations()
+        return self.abort_observations()
 
     def process_sdp_msg(self, event, api_msg: dict, api_call: dict, payload: bytearray) -> Action:
         """ Processes api messages received on the Science Data Processor service access point (SAP)
@@ -1190,8 +1202,8 @@ class TelescopeManager(App):
         sdp_rsp.set_api_call(sdp_rsp_api_call)  
         return sdp_rsp
 
-    def abort_all_observations(self, dig_id: str = None, dsh_id: str=None, action=None) -> Action:
-        """ Aborts all ongoing observations matching the given digitiser ID or dish manager ID.
+    def abort_observations(self, dig_id: str = None, dsh_id: str=None, action=None) -> Action:
+        """ Aborts ongoing observations matching the given digitiser ID or dish manager ID.
             If both IDs are None, aborts all ongoing observations.
             Returns an Action object containing the observation abort transition
         """

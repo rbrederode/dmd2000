@@ -40,7 +40,7 @@ class DishDisplay:
 
     ATTR_LABELS = [                     # Attribute layout: (x, y, label) — x determines left (0) vs right (5) column
         (0, 0.5, "Target"),
-        (0, 1.5, "Target Type"),
+        (0, 1.5, "Weather"),
         (5, 1.5, "Health"),
         (0, 2.5, "Lat/Long"),
         (5, 2.5, "Failures"),
@@ -259,6 +259,9 @@ class DishDisplay:
             {"OK": "tab:green", "DEGRADED": "gold", "FAILED": "tab:red", "UNKNOWN": "tab:gray"}.get(model.health.name, "tab:gray")
         )
 
+        self.attr_texts["Weather"].set_text("ALARM" if model.weather_alarm else "OK")
+        self.attr_rects["Weather"].set_color("tab:red" if model.weather_alarm else "tab:green")
+            
         self.attr_texts["Mode"].set_text(model.mode.name)
         self.attr_rects["Mode"].set_color(self.MODE_COLOURS.get(model.mode, "tab:gray"))
 
@@ -282,15 +285,12 @@ class DishDisplay:
         )
 
         if model.target is not None:
-            self.attr_texts["Target"].set_text(model.target.id or "—")
-            self.attr_rects["Target"].set_color("tab:blue")
-            self.attr_texts["Target Type"].set_text(model.target.pointing.name if model.target.pointing is not None else "—")
-            self.attr_rects["Target Type"].set_color("tab:blue" if model.target.pointing is not None else "tab:gray")
+            target_desc = f"{model.target.id or '—'} {model.target.pointing.name if model.target.pointing is not None else '—'}"
+            self.attr_texts["Target"].set_text(target_desc)
+            self.attr_rects["Target"].set_color("tab:blue" if model.target.id is not None else "tab:gray")
         else:
             self.attr_texts["Target"].set_text("—")
             self.attr_rects["Target"].set_color("tab:gray")
-            self.attr_texts["Target Type"].set_text("—")
-            self.attr_rects["Target Type"].set_color("tab:gray")
 
         if model.pointing_altaz is not None and isinstance(model.pointing_altaz, dict):
             self.attr_texts["Pointing Az"].set_text(f"{model.pointing_altaz.get('az', 0):.4f}°")
@@ -545,7 +545,7 @@ class DishDisplay:
             self.attr_texts[label] = txt
 
         # Target Type labels can be long (e.g. FIVE_POINT_SCAN) — use a smaller font
-        self.attr_texts["Target Type"].set_fontsize(6)
+        self.attr_texts["Target"].set_fontsize(6)
 
     def init_mode_axis(self, axes):
         """Initialise the dish-mode timeline axis and legend.

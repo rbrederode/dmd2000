@@ -60,6 +60,7 @@ class DM(App):
         self.ws_endpoint = TCPServer(description=self.ws_system, queue=self.get_queue(), host=self.get_args().ws_host, port=self.get_args().ws_port)
         # Register Weather Station interface with the App
         self.register_interface(self.ws_system, self.ws_api, self.ws_endpoint, InterfaceType.APP_APP)
+        self.alarm_triggered = False # Flag to track whether a weather alarm is currently triggered based on Weather Station data and thresholds. 
 
         # Interfaces to each respective dish need to be managed by the respective dish drivers
         self.dish_drivers = {}        # Dictionary to hold a dish driver for each dish
@@ -347,15 +348,18 @@ class DM(App):
         if not self.dm_model.weather_store.is_ws_monitoring_enabled():
             return action
 
+        prev_alarm_status = self.alarm_triggered
+        self.alarm_triggered = True
+
         # For each dish driver, set the dish to STOW mode for safety if not already in STOW
         for dish_id, dish_driver in self.dish_drivers.items():
 
-            # If the dish does not have an operational capability, skip setting to STOW
-            if dish_driver.get_capability() not in [Capability.OPERATE_FULL, Capability.OPERATE_DEGRADED]:
-                continue
-
             # If the dish is already in STOW mode (or other mode that prevents transitioning to STOW), skip setting to STOW
             if dish_driver.get_mode() in [DishMode.STOW, DishMode.MAINTENANCE, DishMode.SHUTDOWN, DishMode.STARTUP]:
+                continue
+            
+            # If the dish does not have an operational capability, skip setting to STOW
+            if dish_driver.get_capability() not in [Capability.OPERATE_FULL, Capability.OPERATE_DEGRADED]:
                 continue
 
             dish_lock = self._get_dish_lock(dish_id)
@@ -363,10 +367,13 @@ class DM(App):
                 try:
                     dish_driver.set_weather_alarm(True)
                     dish_driver.set_dish_mode(DishMode.STOW)
-
                 except XBase as e:
                     logger.error(f"DM failed to set STOW mode for Dish {dish_id} on weather alarm: {e}")
 
+        # If the weather alarm status has just transitioned to True, then inform the Telescope Manager
+        if not prev_alarm_status and self.alarm_triggered:
+            self._send_status_adv_to_tm(action=action, message="Dish Manager weather alarm threshold breached")
+        
         return action
 
     def _revert_weather_alarm(self, action: Action) -> Action:
@@ -387,10 +394,10 @@ class DM(App):
                 try:
                     dish_driver.set_weather_alarm(False)
                     dish_driver.set_dish_mode(DishMode.STANDBY_FP)
-
                 except XBase as e:
                     logger.error(f"DM failed to revert weather alarm state for Dish {dish_id}: {e}")
 
+        self.alarm_triggered = False
         return action
 
     def process_timer_event(self, event) -> Action:
@@ -434,7 +441,7 @@ class DM(App):
                     
                     # Review dish health state to determine if action is needed
                     if dish_driver.get_health_state() == HealthState.FAILED:
-                        self._send_status_adv_to_tm(action, target_id, target)
+                        self._send_status_adv_to_tm(action, target_id, target, f"Dish {dish_id} health state is FAILED")
                         
                         # Tone down the driver poll rate to once per minute to reduce log spam until the issue is resolved
                         action.set_timer_action(

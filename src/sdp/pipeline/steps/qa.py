@@ -101,7 +101,7 @@ class QA(ProcessingStep):
         signal_pwr_db = 10 * np.log10(max(signal_power, 1e-12))
 
         # --- Dynamic range (peak signal - noise floor in dB)
-        dynamic_range = 10 * np.log10(peak / noise_lin) if noise_lin > 0 else np.inf
+        dynamic_range_db = 10 * np.log10(peak / noise_lin) if noise_lin > 0 else np.inf
 
         # --- FWHM (full width at half maximum) calculation ---
         # Find the half maximum value
@@ -123,7 +123,7 @@ class QA(ProcessingStep):
         qa.noise_db = noise_db
         qa.signal_start = signal_start
         qa.signal_end = signal_end
-        qa.dynamic_range = dynamic_range
+        qa.dynamic_range_db = dynamic_range_db
         qa.fwhm = fwhm
         qa.signal_pwr_db = signal_pwr_db
 

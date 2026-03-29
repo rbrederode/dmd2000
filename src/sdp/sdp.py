@@ -221,7 +221,7 @@ class SDP(App):
                 tgt_idx = digitiser.scanning.get('tgt_idx') if isinstance(digitiser.scanning, dict) else None
                 freq_scan = digitiser.scanning.get('freq_scan') if isinstance(digitiser.scanning, dict) else None
 
-                odt_initiated = obs_id[:3] == "ODT" if isinstance(obs_id, str) and len(obs_id) >= 3 else False
+                odt_initiated = obs_id[:3].upper() == "ODT" if isinstance(obs_id, str) and len(obs_id) >= 3 else False
 
                 # Discard digitiser samples if the SDP scan configuration does not match the sample metadata
                 # Respond with success to avoid triggering retries from the digitiser, but log a warning and discard the samples
@@ -505,7 +505,7 @@ class SDP(App):
                 f" and observation {'None' if obs_id is None else obs_id}\n{value}")
             return False
 
-        user_initiated = obs_id[:3] == "USR" if isinstance(obs_id, str) and len(obs_id) >= 3 else False
+        user_initiated = obs_id[:3].upper() == "USR" if isinstance(obs_id, str) and len(obs_id) >= 3 else False
 
         # If this is a user-initiated scan config and digitiser already scanning, then decline if the current scanning is an observation-initiated (ODT) scan
         if user_initiated and dig.scanning:

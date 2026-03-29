@@ -13,18 +13,18 @@ class QA(BaseModel):
     """A class representing Quality Attributes for a signal (spectrum)."""
 
     schema = Schema({
-        "_type":        And(str, lambda v: v == "QA"),
-        "idx":          And(Or(None, int, np.integer), lambda v: v is None or v >= 0),
-        "snr_db":       Or(None, float),
-        "signal_db":    Or(None, float),
-        "noise_db":     Or(None, float),
-        "signal_start": And(Or(None, int, np.integer), lambda v: v is None or v >= 0),
-        "signal_end":   And(Or(None, int, np.integer), lambda v: v is None or v >= 0),
-        "rfi_fraction": And(Or(None, float), lambda v: v is None or 0.0 <= v <= 1.0),
-        "fwhm":         And(Or(None, float), lambda v: v is None or v >= 0.0),
-        "dynamic_range":And(Or(None, float), lambda v: v is None or v >= 0.0),
-        "signal_pwr_db":Or(None, float),
-        "last_update":  And(datetime, lambda v: isinstance(v, datetime)),
+        "_type":            And(str, lambda v: v == "QA"),
+        "idx":              And(Or(None, int, np.integer), lambda v: v is None or v >= 0),  # Index of the QA attributes (e.g., second index for spr/cal pipelines)
+        "snr_db":           Or(None, float),                                                # SNR (dB): 10 * log10(signal / noise)
+        "signal_db":        Or(None, float),                                                # Signal (peak above baseline): max of signal region minus baseline, converted to dB        
+        "noise_db":         Or(None, float),                                                # Noise (robust RMS via MAD): 1.4826 * median absolute deviation of noise region, converted to dB
+        "signal_start":     And(Or(None, int, np.integer), lambda v: v is None or v >= 0),  # Start channel of signal region
+        "signal_end":       And(Or(None, int, np.integer), lambda v: v is None or v >= 0),  # End channel of signal region (inclusive)
+        "rfi_fraction":     And(Or(None, float), lambda v: v is None or 0.0 <= v <= 1.0),   # RFI fraction: fraction of channels in signal region flagged as RFI
+        "fwhm":             And(Or(None, float), lambda v: v is None or v >= 0.0),          # FWHM (full width at half maximum): width of signal region above half max
+        "dynamic_range_db": And(Or(None, float), lambda v: v is None or v >= 0.0),          # Dynamic range (dB): 10 * log10(peak signal / noise)
+        "signal_pwr_db":    Or(None, float),                                                # Signal power (dB): 10 * log10(signal power)
+        "last_update":      And(datetime, lambda v: isinstance(v, datetime)),
     })
 
     def __init__(self, **kwargs):
@@ -40,7 +40,7 @@ class QA(BaseModel):
             "signal_end": None,
             "rfi_fraction": None,
             "fwhm": None,
-            "dynamic_range": None,
+            "dynamic_range_db": None,
             "signal_pwr_db": None,
             "last_update": datetime.now(timezone.utc),
         }
@@ -54,7 +54,7 @@ class QA(BaseModel):
 
     def __str__(self):
         return f"QA(\n  idx={self.idx},\n  snr_db={self.snr_db}, \n  signal_db={self.signal_db},\n  noise_db={self.noise_db},\n  signal_start={self.signal_start},\n  " + \
-            f"signal_end={self.signal_end},\n  rfi_fraction={self.rfi_fraction},\n  fwhm={self.fwhm},\n  dynamic_range={self.dynamic_range},\n  signal_pwr_db={self.signal_pwr_db}, " + \
+            f"signal_end={self.signal_end},\n  rfi_fraction={self.rfi_fraction},\n  fwhm={self.fwhm},\n  dynamic_range_db={self.dynamic_range_db},\n  signal_pwr_db={self.signal_pwr_db}, " + \
             f"last_update={self.last_update.isoformat()})"
 
 class ScanQA(BaseModel):
@@ -103,7 +103,7 @@ class ScanQA(BaseModel):
         """
         Get the QA attributes for a specific pipeline in this scan.
             :param pipeline_name: Name of the pipeline to get QA for (e.g., "calibration", "mean_power_spectrum")
-            :param idx: Index of the QA attributes to retrieve
+            :param idx: Index of the QA attributes to retrieve (zero-based index)
             :returns: A QA instance containing the QA attributes for the specified pipeline, or None if not found
         """
         if pipeline_name == "spr":
