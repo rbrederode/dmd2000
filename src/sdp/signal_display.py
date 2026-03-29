@@ -1,103 +1,108 @@
 from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from sdp.scan import Scan
-    
-import numpy as np
-import matplotlib.pyplot as plt
+
+import logging
+from pathlib import Path
+
 import matplotlib as mpl
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.gridspec import GridSpec
+
+from util import gen_file_prefix
+
 # Disable automatic window raising (backend-specific)
-mpl.rcParams['figure.raise_window'] = False
+mpl.rcParams["figure.raise_window"] = False
 
 try:
     from AppKit import NSApplication
+
     HAS_APPKIT = True
 except ImportError:
     HAS_APPKIT = False
     print("AppKit not available. Install pyobjc: pip install pyobjc")
 
-from matplotlib.gridspec import GridSpec
-from queue import Queue
-from util import gen_file_prefix
-from pathlib import Path
-
-import logging
 logger = logging.getLogger(__name__)
 
-FIG_SIZE = (14, 7)  # Default figure size for plots
+FIG_SIZE = (14, 7) # Default figure size for plots
+
 
 class SignalDisplay:
+    """Performance-oriented signal display with the same visible behaviour as signal_display.py."""
 
     def __init__(self, dig_id: str):
         """ Initialize the signal display for a given digitiser ID
             :param dig_id: The digitiser ID to display signals for
         """
+        self.is_active = True           # Is this signal display instance active
+        self.dig_id = dig_id            # Current digitiser signal being displayed
 
-        #mpl.use('TkAgg')        # Use TkAgg backend for interactive display
+        self.scan = None                # Current digitiser scan being displayed
+        self.load = None                # Current digitiser scan baseline being applied
+        self.sec = None                 # Current scan second being displayed
 
-        self.is_active = True  # Is this signal display instance active
-        self.dig_id = dig_id    # Current digitiser signal being displayed
-        
-        self.scan = None        # Current digitiser scan being displayed
-        self.load = None         # Current digitiser scan baseline being applied
-        self.sec = None         # Current scan second being displayed
+        self.fig = None                 # Figure for the digitiser signal display
+        self.sig = [None] * 5           # Axes for the signal subplots    
+        self.extent = None              # Extent for the imshow plot
+        self.freq_axis = None           # Frequency axis values for the spectrum plots
+        self.saved_scan_ids = set()     # Set to track which scan IDs have had their figures saved to avoid redundant saves
 
-        self.fig = None         # Figure for the digitiser signal display
-        self.sig = [None] * 5   # Axes for the signal subplots
-        self.pwr_im = None      # Image for the power spectrum
-        self.extent = None      # Extent for the imshow plot
+        self.gs0 = GridSpec(1, 3, width_ratios=[1, 1, 1], left=0.07, right=0.93, top=0.90, bottom=0.3, wspace=0.2)
+        self.gs1 = GridSpec(1, 2, width_ratios=[0.32, 0.68], height_ratios=[1], left=0.07, right=0.93, top=0.20, bottom=0.07, wspace=0.2)
 
-        self.gs0 = GridSpec(1, 3, width_ratios=[1, 1, 1], left=0.07, right=0.93, top=0.90, bottom=0.3, wspace=0.2) # signal displays
-        self.gs1 = GridSpec(1, 2, width_ratios=[0.32, 0.68], height_ratios=[1], left=0.07, right=0.93, top=0.20, bottom=0.07, wspace=0.2) # total power timeline display
+        self._reset_artist_refs() 
 
     def __str__(self):
         return f"SignalDisplay(dig_id={self.dig_id}, is_active={self.is_active})"
 
-    def _create_figure(self):
-        """ Create the figure and axes of the signal displays """
+    def _reset_artist_refs(self):
+        """Reset cached matplotlib artist references for a new scan lifecycle."""
+        self.pwr_im = None
+        self.total_power_line = None
+        self.spr_line = None
+        self.load_line = None
+        self.cal_line = None
+        self.snr_text = None
+        self.signal_start_line = None
+        self.signal_end_line = None
+        self.mean_tpwr_line = None
+        self.i_bar = None
+        self.q_bar = None
+        self.sat_33_line = None
+        self.sat_66_line = None
 
+    def _create_figure(self):
+        """Create the matplotlib figure and all subplot axes for this digitiser display."""
         self.fig = plt.figure(num=f"Digitiser {self.dig_id}", figsize=FIG_SIZE)
 
-        self.sig = [None] * 5  # Initialize axes for the subplots
-        self.sig[0] = self.fig.add_subplot(self.gs0[0]) # Power spectrum summed per second
-        self.sig[1] = self.fig.add_subplot(self.gs0[1]) # Sky signal per second
-        self.sig[2] = self.fig.add_subplot(self.gs0[2]) # Waterfall plot
-
-        self.sig[3] = self.fig.add_subplot(self.gs1[0]) # SDR Saturation Levels
-        self.sig[4] = self.fig.add_subplot(self.gs1[1]) # Total power timeline
+        self.sig = [None] * 5                               # Initialize axes for the subplots
+        self.sig[0] = self.fig.add_subplot(self.gs0[0])     # Power spectrum summed per second
+        self.sig[1] = self.fig.add_subplot(self.gs0[1])     # Sky signal per second
+        self.sig[2] = self.fig.add_subplot(self.gs0[2])     # Waterfall plot
+        self.sig[3] = self.fig.add_subplot(self.gs1[0])     # SDR saturation level
+        self.sig[4] = self.fig.add_subplot(self.gs1[1])     # Total power timeline
 
         self.fig.subplots_adjust(top=0.78)
 
     def _close_figure(self):
-        """ Close the figure of the signal displays """
+        """Close the figure window if it exists."""
         if self.fig is not None:
             plt.close(num=f"Digitiser {self.dig_id}")
-            #self.fig = None
-            #self.sig = [None] * 5
-            #self.pwr_im = None
-            #self.extent = None
 
-    def _clear_figure(self):
-        """ Clear the figure of the signal displays for reuse 
-            The waterfall subplot must be recreated entirely due to imshow behavior (the colorbar remains otherwise).
-        """
-        if self.fig is not None:
-            # Clear existing axes for reuse
+    def _prepare_figure_for_scan(self):
+        """Prepare the figure for a new scan by creating or clearing axes and resetting artists."""
+        if self.fig is None:
+            self._create_figure()
+        else:
             for ax in self.sig:
                 if ax is not None:
                     ax.cla()
 
-            # Remove the waterfall subplot and its colorbar entirely, then recreate
-            if self.sig[2] is not None:
-                self.sig[2].remove()
-                self.sig[2] = None
-
-            # Recreate the waterfall subplot
-            self.sig[2] = self.fig.add_subplot(self.gs0[2])
-
-        # Reset the power image reference
-        self.pwr_im = None
+        self._reset_artist_refs()
 
     def is_visible_figure(self) -> bool:
         """ Return whether this signal display figure is visible or hidden. 
@@ -107,89 +112,239 @@ class SignalDisplay:
         if not HAS_APPKIT or self.fig is None:
             logger.warning(
                 f"Signal display checking whether figure for {self.dig_id} is visible but "
-                + ("AppKit not available" if not HAS_APPKIT else "figure is None"))
+                + ("AppKit not available" if not HAS_APPKIT else "figure is None")
+            )
             return None
 
         key_window = NSApplication.sharedApplication().keyWindow()
         if key_window is None:
-             return None
+            return None
 
-        key_window_title = key_window.title()                   # Get the title of the key window
-        fig_title = self.fig.canvas.manager.get_window_title()  # Get the title of the signal display figure
-        return (fig_title == key_window_title)
+        key_window_title = key_window.title()
+        fig_title = self.fig.canvas.manager.get_window_title()
+        return fig_title == key_window_title
 
     def get_is_active(self) -> bool:
-        """ Return whether this signal display instance is active """
+        """Return whether this signal display is active and eligible to update."""
         return self.is_active
 
     def set_is_active(self, active: bool):
-        """ Set whether this signal display instance is active """
-        self.is_active = active
+        """Set whether the display is active.
 
-        # Clear scan and load if deactivated 
+        Parameters:
+            active: True to allow updates, False to disable updates and clear scan state.
+        """
+        self.is_active = active
         if not active:
             self.scan = None
             self.load = None
             self.sec = None
-    
-    def set_scan(self, scan : Scan, load: Scan):
-        """ # Initialize the figure and axes of the signal displays for a given scan
-            :param scan: The Scan object containing the data to display
-        """
 
+    def _configure_axes(self):
+        """Initialise titles, labels, limits, and grid settings for all subplot axes."""
+        self.init_pwr_spectrum_axes(self.sig[0], "Power/Sec (SPR,BSL)", self.extent, units="{np.abs(shift fft(signal))**2}")
+        self.init_pwr_spectrum_axes(self.sig[1], "Power/Sec (CAL)", self.extent)
+        self.init_waterfall_axes(self.sig[2])
+        self.init_saturation_axes(self.sig[3])
+        self.init_total_power_axes(self.sig[4], self.scan.scan_model.duration)
+
+    def _create_scan_artists(self):
+        """Create persistent artists for the current scan so later updates can mutate them in place."""
+        self.spr_line, = self.sig[0].plot([], [], color="red", label="Signal (SPR)")
+        self.load_line, = self.sig[0].plot([], [], color="black", label="Load (BSL)")
+        self.sig[0].legend(loc="lower right")
+
+        self.cal_line, = self.sig[1].plot([], [], color="orange", label="Signal (CAL)")
+        self.signal_start_line = self.sig[1].axvline(x=0, color="green", linestyle="--", label="Signal Start")
+        self.signal_end_line = self.sig[1].axvline(x=0, color="purple", linestyle="--", label="Signal End")
+        self.snr_text = self.sig[1].text(0.98, 0.98, "", transform=self.sig[1].transAxes, ha="right", va="top")
+        self.sig[1].legend(loc="lower right")
+
+        self.pwr_im = self.sig[2].imshow(
+            np.zeros((self.scan.scan_model.duration, self.scan.scan_model.channels)),
+            aspect="auto",
+            extent=self.extent,
+        )
+
+        self.i_bar = self.sig[3].bar(0, 0, color="blue", label="_nolegend_")[0]
+        self.q_bar = self.sig[3].bar(1, 0, color="orange", label="_nolegend_")[0]
+        self.sat_33_line = self.sig[3].axhline(y=33, color="green", linestyle="--", label="33%")
+        self.sat_66_line = self.sig[3].axhline(y=66, color="red", linestyle="--", label="66%")
+        self.sig[3].legend(loc="lower right")
+
+        self.total_power_line, = self.sig[4].plot([], [], color="red", label="Total Power (TPW)")
+        self.mean_tpwr_line = self.sig[4].axhline(y=0, color="red", linestyle="--", label="_nolegend_")
+        self.mean_tpwr_line.set_visible(False)
+        self.mean_tpwr_line.set_ydata([np.nan, np.nan])
+        self.sig[4].legend(loc="lower right")
+
+    def set_scan(self, scan: Scan, load: Scan):
+        """Bind a sky scan and matching load scan to this display and initialise all plot artists.
+
+        Parameters:
+            scan: The sky Scan instance to display.
+            load: The equivalent load/baseline Scan to overlay on the plots.
+        """
         if not self.is_active:
-            self._close_figure() # Close the figure if it exists
+            self._close_figure()    # Close the figure if it exists
             return
 
         if scan is None or load is None:
             logger.warning(f"Signal display for {self.dig_id} cannot set_scan when {'scan' if scan is None else 'baseline'} is None")
             return
 
-        if not scan.scan_model.dig_id == self.dig_id or not load.scan_model.dig_id == self.dig_id:
+        if scan.scan_model.dig_id != self.dig_id or load.scan_model.dig_id != self.dig_id:
             logger.warning(f"Signal display for {self.dig_id} cannot set_scan for scan or baseline from different dig_id {scan.scan_model.dig_id}")
-            return         
+            return
 
         self.scan = scan
         self.load = load
         self.sec = None
 
-        # If the figure doesn't exist 
-        if self.fig is None:
-            self._create_figure() # Create the figure and axes
-        else:
-            self._clear_figure()  # Clear the existing figure for reuse
+        # Update the figure for the new scan, creating it if it doesn't exist or clearing axes if it does, and reset all artist references
+        self._prepare_figure_for_scan()
 
         # Update the figure suptitle for the new scan
         self.fig.suptitle(
-            f"Scan Id: {scan.scan_model.scan_id} Center Freq: {scan.scan_model.center_freq/1e6:.2f} MHz, "
-            f"Gain: {scan.scan_model.gain} dB, Sample Rate: {scan.scan_model.sample_rate/1e6:.2f} MHz, "
-            f"Channels: {scan.scan_model.channels} Load: {scan.scan_model.load}",
-            fontsize=12, y=0.96)
+            f"Scan Id: {scan.scan_model.scan_id}, Type: {scan.scan_model.scan_type.name}, Center Freq: {scan.scan_model.center_freq/1e6:.2f} MHz, "
+            f"Gain: {scan.scan_model.gain} dB, Sample Rate: {scan.scan_model.sample_rate/1e6:.2f} MHz, Channels: {scan.scan_model.channels}",
+            fontsize=12,
+            y=0.96,
+        )
 
         self.extent = [
             (scan.scan_model.center_freq + scan.scan_model.sample_rate / -2) / 1e6,
             (scan.scan_model.center_freq + scan.scan_model.sample_rate / 2) / 1e6,
             scan.scan_model.duration,
-            0]
+            0,
+        ]
+        self.freq_axis = np.linspace(self.extent[0], self.extent[1], self.scan.scan_model.channels)
 
-        # Set axes properties
-        self.init_pwr_spectrum_axes(self.sig[0], "Power/Sec (SPR,BSL)", self.extent, units="{np.abs(shift fft(signal))**2}")
-        self.init_pwr_spectrum_axes(self.sig[1], "Power/Sec (CAL)", self.extent)
-        self.init_saturation_axes(self.sig[3])
-        self.init_total_power_axes(self.sig[4], self.scan.scan_model.duration)
+        self._configure_axes()          # Set axes properties and labels for the new scan
+        self._create_scan_artists()     # Create persistent artists for the new scan so later updates can mutate them in place
 
     def get_scan(self) -> Scan:
-        """ Get the current scan being displayed """
+        """Return the Scan currently associated with this display."""
         return self.scan
-   
+
+    def _update_spectrum_axes(self, l_sec: int):
+        """Update the SPR, BSL, and CAL line plots for the latest loaded second.
+
+        Parameters:
+            l_sec: The latest loaded second number for the current scan, starting at 1.
+        """
+        label = "Load (BSL)"
+
+        self.spr_line.set_data(self.freq_axis, self.scan.spr[l_sec - 1, :])
+        self.load_line.set_data(self.freq_axis, self.load.mpr)
+        self.load_line.set_label(label)
+        self.cal_line.set_data(self.freq_axis, self.scan.cal[l_sec - 1, :])
+
+        legend0 = self.sig[0].get_legend()
+        if legend0 is not None:
+            legend0.remove()
+        self.sig[0].legend(loc="lower right")
+
+        self.sig[0].relim()
+        self.sig[0].autoscale_view(scalex=False, scaley=True)
+        self.sig[1].relim()
+        self.sig[1].autoscale_view(scalex=False, scaley=True)
+
+    def _update_snr_overlay(self, l_sec: int):
+        """Update the SNR text box and signal-region marker lines for the latest second.
+
+        Parameters:
+            l_sec: The latest loaded second number for the current scan, starting at 1.
+        """
+        if self.scan.snr is not None:
+            self.snr_text.set_text(
+                f"SNR: {self.scan.snr[l_sec-1][0]:.2f} dB\n"
+                f"Signal: {self.scan.snr[l_sec-1][1]:.2f} dB\n"
+                f"Noise: {self.scan.snr[l_sec-1][2]:.2f} dB"
+            )
+        else:
+            self.snr_text.set_text("Signal (CAL)")
+
+        if self.scan.snr is not None and len(self.scan.snr[l_sec - 1]) >= 5:
+            start_bin = int(self.scan.snr[l_sec - 1][3])
+            end_bin = int(self.scan.snr[l_sec - 1][4])
+            freq_start = self.extent[0] + (self.extent[1] - self.extent[0]) * start_bin / self.scan.scan_model.channels
+            freq_end = self.extent[0] + (self.extent[1] - self.extent[0]) * end_bin / self.scan.scan_model.channels
+            self.signal_start_line.set_xdata([freq_start, freq_start])
+            self.signal_end_line.set_xdata([freq_end, freq_end])
+            self.signal_start_line.set_visible(True)
+            self.signal_end_line.set_visible(True)
+        else:
+            self.signal_start_line.set_visible(False)
+            self.signal_end_line.set_visible(False)
+
+    def _update_waterfall(self):
+        """Update the waterfall image contents from the current calibrated scan data."""
+        if self.pwr_im is not None:
+            self.pwr_im.set_data(self.scan.cal)
+            self.pwr_im.autoscale()
+
+    def _update_saturation_axis(self):
+        """Update the SDR saturation bars and legend text for the latest I/Q values."""
+        self.i_bar.set_height(self.scan.mean_real)
+        self.q_bar.set_height(self.scan.mean_imag)
+        self.i_bar.set_label(f"I {self.scan.mean_real:.2e}")
+        self.q_bar.set_label(f"Q {self.scan.mean_imag:.2e}")
+
+        legend3 = self.sig[3].get_legend()
+        if legend3 is not None:
+            legend3.remove()
+        self.sig[3].legend(loc="lower right")
+
+    def _update_total_power_axis(self, l_sec: int):
+        """Update the total-power timeline and show the mean line once the scan is complete.
+
+        Parameters:
+            l_sec: The latest loaded second number for the current scan, starting at 1.
+        """
+        total_power = np.sum(self.scan.cal[:l_sec, :], axis=1)
+        self.total_power_line.set_data(np.arange(1, l_sec + 1), total_power)
+
+        if l_sec == self.scan.scan_model.duration:
+            avg_tpwr = np.mean(np.sum(self.scan.cal, axis=1))
+            self.mean_tpwr_line.set_visible(True)
+            self.mean_tpwr_line.set_ydata([avg_tpwr, avg_tpwr])
+            self.mean_tpwr_line.set_label(f"Mean {avg_tpwr:.3e}")
+
+            legend4 = self.sig[4].get_legend()
+            if legend4 is not None:
+                legend4.remove()
+            self.sig[4].legend(loc="lower right")
+        else:
+            self.mean_tpwr_line.set_visible(False)
+            self.mean_tpwr_line.set_label("_nolegend_")
+            self.mean_tpwr_line.set_ydata([np.nan, np.nan])
+
+        self.sig[4].relim(visible_only=True)
+        self.sig[4].autoscale_view(scalex=True, scaley=True)
+
+    def _draw(self, is_visible_fig):
+        """Render the figure using an appropriate draw path for the current visibility state.
+
+        Parameters:
+            is_visible_fig: True if this figure is the active window, False if not, or None if unknown.
+        """
+        if is_visible_fig is None:
+            plt.draw()
+            plt.pause(0.0001)
+        elif is_visible_fig is True:
+            self.fig.canvas.draw()
+            self.fig.canvas.flush_events()
+        else:
+            self.fig.canvas.draw_idle()
+            self.fig.canvas.flush_events()
+
     def display(self):
-        """
-        Update the signal displays for the current scan.
-        """
+        """Refresh all plots for the current scan if new seconds have arrived since the last update."""
 
         # If the signal display is not active
         if not self.is_active:
-            self._close_figure() # Close the figure if it exists
+            self._close_figure()    # Close the figure if it exists
             return
 
         # If no scan or no figure, then log warning and return
@@ -199,7 +354,7 @@ class SignalDisplay:
 
         # Check if the signal display figure is still visible
         is_visible_fig = self.is_visible_figure()
-        if is_visible_fig == False:
+        if is_visible_fig is False:
             return
 
         # Get the number of loaded seconds in the scan (starts at 1...scan.duration)
@@ -208,197 +363,119 @@ class SignalDisplay:
         if l_sec <= 0:
             return
 
+        # If the current displayed scan second is the same as loaded scan seconds, then no update is needed, return
+        if self.sec == l_sec:
+            return
+
         logger.info(f"Signal display updating for scan {self.scan.scan_model.scan_id}, from second {self.sec} to {l_sec} of {self.scan.scan_model.duration}")
 
         # If current second being displayed is None, initialize the plots
         if self.sec is None:
-
-            self.sig[2].cla()
-            self.pwr_im = self.sig[2].imshow(self.scan.cal, aspect='auto', extent=self.extent)
-            self.sig[4].plot([1], [np.sum(self.scan.cal[0, :])], color='red', label='Total Power')  # Plot total power across all channels for the first second
             self.sec = 0
 
-        else:
-            # Clear existing plot data from the axes without removing titles and labels
-            self.clear_axes_data(self.sig[0])
-            self.clear_axes_data(self.sig[1])
-            self.clear_axes_data(self.sig[3])
-            self.clear_axes_data(self.sig[4])
-
-            # Update the existing power spectrum image with new data
-            if self.pwr_im is not None:
-                self.pwr_im.set_data(self.scan.cal)
-            else:
-                self.pwr_im = self.sig[2].imshow(self.scan.cal, aspect='auto', extent=self.extent)
-
-        # Plot total power across all channels for each second up to the current second
-        self.sig[4].plot(
-            np.arange(1, l_sec + 1), 
-            [np.sum(self.scan.cal[s, :]) for s in range(l_sec)], 
-            color='red', 
-            label='Total Power (TPW)'
-        )  
-            
-        int_gain_cal = [1.0] * 10  # Placeholder for internal gain calibration values
-        label = 'Load (BSL)' if np.mean(int_gain_cal) == 1.0 else 'Gain (BSL)'
-
-        # Plot the summed power spectrum and sky signal for the current second
-        self.sig[0].plot(
-            np.linspace(self.extent[0], self.extent[1], self.scan.scan_model.channels), 
-            self.scan.spr.flatten()[(l_sec-1)*self.scan.scan_model.channels:(l_sec)*self.scan.scan_model.channels], 
-            color='red', 
-            label='Signal (SPR)'
-        )
-
-        self.sig[0].plot(
-            np.linspace(self.extent[0], self.extent[1], self.scan.scan_model.channels), 
-            self.load.mpr, 
-            color='black', 
-            label=label
-        )
-        self.sig[0].legend(loc='lower right')
-
-        self.sig[1].plot(
-            np.linspace(self.extent[0], self.extent[1], self.scan.scan_model.channels),
-            self.scan.cal.flatten()[(l_sec-1)*self.scan.scan_model.channels:(l_sec)*self.scan.scan_model.channels],
-            color='orange',
-            label=(
-                f'SNR: {self.scan.snr[l_sec-1][0]:.2f} dB\n'
-                f'Signal: {self.scan.snr[l_sec-1][1]:.2f} dB\n'
-                f'Noise: {self.scan.snr[l_sec-1][2]:.2f} dB'
-            ) if self.scan.snr is not None else 'Signal (CAL)'
-        )
-
-        # Draw vertical lines for the signal region if start/end bins are available
-        if self.scan.snr is not None and len(self.scan.snr[l_sec-1]) >= 5:
-            start_bin = int(self.scan.snr[l_sec-1][3])
-            end_bin = int(self.scan.snr[l_sec-1][4])
-            freq_start = self.extent[0] + (self.extent[1] - self.extent[0]) * start_bin / self.scan.scan_model.channels
-            freq_end = self.extent[0] + (self.extent[1] - self.extent[0]) * end_bin / self.scan.scan_model.channels
-            self.sig[1].axvline(x=freq_start, color='green', linestyle='--', label='Signal Start')
-            self.sig[1].axvline(x=freq_end, color='purple', linestyle='--', label='Signal End')
-        self.sig[1].legend(loc='lower right')
-
-        self.sig[3].bar(0, self.scan.mean_real, color='blue', label=f'I {self.scan.mean_real:.2e}' if self.sec == 0 else '_nolegend_')
-        self.sig[3].bar(1, self.scan.mean_imag, color='orange', label=f'Q {self.scan.mean_imag:.2e}' if self.sec == 0 else '_nolegend_')
-        # Draw a line at the 33% and 66% marks
-        self.sig[3].axhline(y=33, color='green', linestyle='--', label='33%')
-        self.sig[3].axhline(y=66, color='red', linestyle='--', label='66%')
-        self.sig[3].legend(loc='lower right')
-
-        if l_sec == self.scan.scan_model.duration:
-            tpw = np.zeros(self.scan.scan_model.duration, dtype=np.float64)  # Initialise (scans * duration * iterations) array for total power sky timeline
-            # Sum the power spectrum for each second in the current scan
-            tpw[:] = np.sum(self.scan.cal, axis=1) # Total Power per second
-            # Avg of the total power per second
-            avg_tpwr = np.mean(tpw[:])
-            self.sig[4].axhline(y=avg_tpwr, color='red', linestyle='--', label=f'Mean {avg_tpwr:.3e}')
-        self.sig[4].legend(loc='lower right')
-
-        # If we cannot determine which figure is active, draw all figures
-        if is_visible_fig is None:
-            plt.draw()                      # A figure will become active when plt.draw() is called
-            plt.pause(0.0001)
-        elif is_visible_fig == True:
-            self.fig.canvas.draw()          # Draw only this figure
-            self.fig.canvas.flush_events()  # Process events for this figure only
-        else:
-            self.fig.canvas.draw_idle()     # Schedules a redraw without forcing a window focus change
-            self.fig.canvas.flush_events()  # Process events for this figure only
+        # Update the plot lines, overlays, images, bars, and timelines for the new loaded second, then draw the figure
+        self._update_waterfall()
+        self._update_spectrum_axes(l_sec)
+        self._update_snr_overlay(l_sec)
+        self._update_saturation_axis()
+        self._update_total_power_axis(l_sec)
+        self._draw(is_visible_fig)
 
         self.sec = l_sec
 
     def save_scan_figure(self, output_dir: str) -> bool:
-        """ Save the current scan figure to disk
-            :param output_dir: The directory to save the figure in
+        """Save the current figure to disk once for the current scan.
+
+        Parameters:
+            output_dir: Directory in which to save the signal figure PNG.
+
+        Returns:
+            True if a new file was saved, otherwise False.
         """
         if self.scan is None or self.fig is None:
+            return False
+
+        scan_id = self.scan.scan_model.scan_id
+        if scan_id in self.saved_scan_ids:
             return False
 
         if output_dir is None or output_dir == "":
             output_dir = "."
 
-        prefix = gen_file_prefix(dt=self.scan.scan_model.read_start, entity_id=self.scan.scan_model.dig_id, gain=self.scan.scan_model.gain, 
-            duration=self.scan.scan_model.duration, sample_rate=self.scan.scan_model.sample_rate, center_freq=self.scan.scan_model.center_freq, 
-            channels=self.scan.scan_model.channels, instance_id=self.scan.scan_model.scan_id, filetype="sigfig")
+        prefix = gen_file_prefix(
+            dt=self.scan.scan_model.read_start,
+            entity_id=self.scan.scan_model.dig_id,
+            gain=self.scan.scan_model.gain,
+            duration=self.scan.scan_model.duration,
+            sample_rate=self.scan.scan_model.sample_rate,
+            center_freq=self.scan.scan_model.center_freq,
+            channels=self.scan.scan_model.channels,
+            instance_id=self.scan.scan_model.scan_id,
+            scan_type=self.scan.scan_model.scan_type,
+            filetype="sigfig",
+        )
 
-        filename = f"{output_dir}/" + prefix + ".png"
-
-        # Expand user (~) and ensure the directory exists before saving
+        filename = f"{output_dir}/{prefix}.png"
+        # Expand user (~) and ensure the directory exists before saving the figure
         filepath = Path(filename).expanduser()
         filepath.parent.mkdir(parents=True, exist_ok=True)
 
         self.fig.savefig(str(filepath))
+        self.saved_scan_ids.add(scan_id)
         logger.info(f"Signal display scan {self.scan.scan_model.scan_id} figure saved to {filepath}")
         return True
 
-    def init_pwr_spectrum_axes(self, axes, title, extent, units='[a.u.]'):
-        """ Initialise pwr spectrum plot axes """
+    def init_pwr_spectrum_axes(self, axes, title, extent, units="[a.u.]"):
+        """ Initialise pwr spectrum plot axes with titles, labels, limits, and grid.
 
-        # Set up the summed power spectrum plot
-        axes.set_title(title) # Summed Power Spectrum / Sky Signal
+        Parameters:
+            axes: Matplotlib axis to configure.
+            title: Axis title text.
+            extent: Frequency extent list used to set x limits.
+            units: Y-axis units label suffix.
+        """
+        axes.set_title(title)
         axes.set_xlabel("Frequency [MHz]")
-        axes.set_ylabel("Power Spectrum"+ f" {units}")
+        axes.set_ylabel("Power Spectrum" + f" {units}")
         axes.set_xlim(extent[0], extent[1])
         axes.grid(True)
 
     def init_waterfall_axes(self, axes):
-        """ Initialise waterfall plot axes """
+        """Initialise the waterfall subplot axis.
 
-        # Set up the waterfall plot
+        Parameters:
+            axes: Matplotlib axis to configure.
+        """
         axes.set_title("Waterfall Plot of Spectrum")
         axes.set_xlabel("Frequency [MHz]")
         axes.set_ylabel("Time [sec]")
-        axes.set_aspect('auto')
-        axes.set_facecolor('black')
+        axes.set_aspect("auto")
+        axes.set_facecolor("black")
         axes.grid(False)
 
     def init_saturation_axes(self, axes):
-        """ Initialise SDR saturation levels plot axes """
+        """Initialise the SDR saturation subplot axis.
 
-        # Set up the SDR saturation levels plot
+        Parameters:
+            axes: Matplotlib axis to configure.
+        """
         axes.set_title("SDR Saturation Level")
         axes.set_xlabel("Mean(I), Mean(Q)")
         axes.set_ylabel("Saturation [%]")
         axes.set_ylim(0, 100)
-        axes.set_facecolor('white')
+        axes.set_facecolor("white")
         axes.grid(True)
 
     def init_total_power_axes(self, axes, duration):
-        """ Initialise total power timeline plot axes """
+        """Initialise the total-power timeline axis.
 
-        # Set up the total power timeline plot
+        Parameters:
+            axes: Matplotlib axis to configure.
+            duration: Scan duration in seconds, used to set x limits.
+        """
         axes.set_title("Total Power Timeline")
         axes.set_xlabel("Time [sec]")
         axes.set_ylabel("Total Power [a.u.]")
-        axes.set_facecolor('white')
+        axes.set_facecolor("white")
         axes.set_xlim(1, duration)
         axes.grid(True)
-
-    def clear_axes_data(self, ax):
-        """Clear plot data from axes without removing titles and labels."""
-        # Remove all lines
-        for line in ax.get_lines():
-            line.remove()
-        
-        # Remove all collections (e.g., scatter plots, bar plots)
-        for coll in ax.collections:
-            coll.remove()
-        
-        # Remove all patches (e.g., bars, rectangles)
-        for patch in list(ax.patches):
-            patch.remove()
-        
-        # Remove all images (e.g., imshow)
-        for img in ax.images:
-            img.remove()
-        
-        # Remove all texts (except title and axis labels)
-        for txt in ax.texts:
-            txt.remove()
-
-        # Remove legend if present
-        legend = ax.get_legend()
-        if legend is not None:
-            legend.remove()
-

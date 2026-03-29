@@ -616,8 +616,11 @@ def main():
     dm = DM()
     dm.start()
 
+    display_period_sec = 1.0
+
     try:
         while True:
+            time_start = time.monotonic()
 
             for dish_id, dish_driver in dm.dish_drivers.items():
 
@@ -631,9 +634,17 @@ def main():
 
                 dm.dish_displays[dish_id].display()
 
-            # Main thread does nothing currently apart from sleeping
-            # All processing is in the DM app processor thread
-            time.sleep(1) # Update every second
+            # Adjust display period up or down based on processing time
+            time_elapsed = time.monotonic() - time_start
+
+            if time_elapsed > display_period_sec:
+                display_period_sec += 1.0 
+                logger.warning(f"DM dish display loop took {time_elapsed:.3f} seconds to execute, extending display period to {display_period_sec} seconds")
+            elif time_elapsed < display_period_sec - 2.0:
+                display_period_sec = max(1.0, display_period_sec - 2.0)
+                logger.info(f"DM dish display loop took {time_elapsed:.3f} seconds to execute, shortening display period to {display_period_sec} seconds")
+
+            time.sleep(max(0.0, display_period_sec - time_elapsed)) # Update on an approximately 1 second cadence
                 
     except KeyboardInterrupt:
         pass
