@@ -273,7 +273,7 @@ class BaseModel:
         from models.pipeline import StepConfig, StepType, PipelineConfig
         from models.proc import ProcessorModel
         from models.qa import QA, ScanQA
-        from models.scan import ScanModel, ScanState
+        from models.scan import ScanModel, ScanState, ScanType
         from models.sdp import ScienceDataProcessorModel
         from models.target import TargetModel, PointingType, OffsetScan, FivePointScan, TargetConfig, TargetScanSet
         from models.tm import TelescopeManagerModel, ResourceAllocations, Allocation, AllocationState
@@ -332,6 +332,7 @@ class BaseModel:
                     "PointingType": PointingType,
                     "PointingState": PointingState,
                     "ScanState": ScanState, 
+                    "ScanType": ScanType,
                     "StepType": StepType,
                     "UIDriverType": UIDriverType,
                 }.get(enum_class_name)

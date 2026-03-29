@@ -103,7 +103,6 @@ class ProcessingPipelineFactory:
             StepType.TSYS_CAL.value: TsysCal,
             StepType.RFI_FLAG.value: RFIFlag,
             StepType.QA.value:       QA,
-
             # Add more step types as needed
         }
 

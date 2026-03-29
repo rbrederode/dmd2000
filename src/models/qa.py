@@ -15,15 +15,15 @@ class QA(BaseModel):
     schema = Schema({
         "_type":        And(str, lambda v: v == "QA"),
         "idx":          And(Or(None, int, np.integer), lambda v: v is None or v >= 0),
-        "snr_db":       And(Or(None, float), lambda v: v is None or -100.0 <= v <= 100.0),
-        "signal_db":    And(Or(None, float), lambda v: v is None or -100.0 <= v <= 100.0),
-        "noise_db":     And(Or(None, float), lambda v: v is None or -100.0 <= v <= 100.0),
+        "snr_db":       Or(None, float),
+        "signal_db":    Or(None, float),
+        "noise_db":     Or(None, float),
         "signal_start": And(Or(None, int, np.integer), lambda v: v is None or v >= 0),
         "signal_end":   And(Or(None, int, np.integer), lambda v: v is None or v >= 0),
         "rfi_fraction": And(Or(None, float), lambda v: v is None or 0.0 <= v <= 1.0),
         "fwhm":         And(Or(None, float), lambda v: v is None or v >= 0.0),
         "dynamic_range":And(Or(None, float), lambda v: v is None or v >= 0.0),
-        "signal_pwr_db":And(Or(None, float), lambda v: v is None or -100.0 <= v <= 100.0),
+        "signal_pwr_db":Or(None, float),
         "last_update":  And(datetime, lambda v: isinstance(v, datetime)),
     })
 
