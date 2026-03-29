@@ -1,4 +1,5 @@
 from rtlsdr import RtlSdr, RtlSdrTcpClient
+from rtlsdr.rtlsdr import LibUSBError
 from scipy.stats import shapiro, normaltest, norm
 
 import numpy as np
@@ -10,7 +11,7 @@ import time
 import functools
 
 from models.comms import CommunicationStatus
-from util.xbase import XSoftwareFailure
+from util.xbase import XSoftwareFailure, XHardwareFailure
 
 import logging
 logger = logging.getLogger(__name__)
@@ -450,18 +451,45 @@ class SDR:
                 logger.warning("SDR device not connected.")
                 return None, None
 
-            self.sample_rate = int(self.rtlsdr.sample_rate)
+            try:
+                self.sample_rate = int(self.rtlsdr.sample_rate)
         
-            x = np.zeros(self.sample_rate, dtype=np.complex128)
+                x = np.zeros(self.sample_rate, dtype=np.complex128)
 
-            # Record start/end times associated with sample set (in epoch seconds)
-            read_start = time.time()
-            x = self.rtlsdr.read_samples(self.sample_rate)
-            read_end = time.time()
+                # Record start/end times associated with sample set (in epoch seconds)
+                read_start = time.time()
+                x = self.rtlsdr.read_samples(self.sample_rate)
+                read_end = time.time()
 
-            # Increment read counter and copy to local variable for access outside the mutex
-            self.read_counter += 1
-            count = self.read_counter
+                # Increment read counter and copy to local variable for access outside the mutex
+                self.read_counter += 1
+                count = self.read_counter
+
+            except LibUSBError as e:
+                logger.error(f"SDR USB/Device error reading samples from SDR: {e}")
+
+                try:
+                    if self.rtlsdr is not None:
+                        self.rtlsdr.close()
+                except Exception as close_err:
+                    logger.warning(f"SDR close after LibUSBError also failed: {close_err}")
+
+                self.rtlsdr = None
+                self.connected = CommunicationStatus.NOT_ESTABLISHED
+                raise XHardwareFailure(f"SDR device disconnected or unavailable while reading samples: {e}")
+
+            except Exception as e:
+                logger.exception(f"SDR unexpected exception while reading samples: {e}")
+
+                try:
+                    if self.rtlsdr is not None:
+                        self.rtlsdr.close()
+                except Exception as close_err:
+                    logger.warning(f"SDR close after unexpected read error also failed: {close_err}")
+
+                self.rtlsdr = None
+                self.connected = CommunicationStatus.NOT_ESTABLISHED
+                raise XHardwareFailure(f"SDR unexpected exception while reading samples: {e}")
 
         # Convert from complex128 to complex64 to save resources (network, memory, CPU)
         x = np.array(x, dtype=np.complex64) 
