@@ -201,6 +201,9 @@ class App:
 
     def stop_processors(self):
         """Stops all processor threads."""
+        if not hasattr(self, "processors") or self.processors is None:
+            return
+
         for processor in self.processors:
             processor.stop()
 
@@ -219,6 +222,9 @@ class App:
 
     def stop_status_thread(self):
         """Stops the status update thread."""
+        if not hasattr(self, "status_thread") or self.status_thread is None:
+            return
+
         if self.status_thread and self.status_thread.is_alive():
             self.status_thread.join(timeout=2)  # Wait for the status thread to finish, with a timeout to avoid hanging indefinitely
         self.status_thread = None

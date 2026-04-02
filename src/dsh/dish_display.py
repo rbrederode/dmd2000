@@ -34,7 +34,6 @@ logger = logging.getLogger(__name__)
 
 FIG_SIZE = (14, 7)  # Default figure size for plots
 
-
 class DishDisplay:
     """Performance-oriented dish display with the same plots and public interface as dish_display.py."""
 

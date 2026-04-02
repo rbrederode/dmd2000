@@ -143,17 +143,18 @@ class SDP(App):
         """ Determines the digitiser entity ID based on the remote address of a ConnectEvent, DisconnectEvent, or DataEvent.
             Returns a tuple of the entity ID and entity if found, else None, None.
         """
-        logger.debug(f"Science Data Processor finding digitiser entity ID for remote address: {event.remote_addr[0] if event.remote_addr else 'None'}")
+        remote_addr = event.remote_addr[0] if event.remote_addr else 'None'
+        logger.debug(f"Science Data Processor finding digitiser entity ID for remote address: {remote_addr}")
 
         for digitiser in self.sdp_model.dig_store.dig_list:
 
             if isinstance(digitiser.app.arguments, dict) and "local_host" in digitiser.app.arguments:
 
-                if digitiser.app.arguments["local_host"] == event.remote_addr[0]:
-                    logger.debug(f"Science Data Processor found digitiser entity ID: {digitiser.dig_id} for remote address: {event.remote_addr}")
+                if digitiser.app.arguments["local_host"] == remote_addr:
+                    logger.debug(f"Science Data Processor found digitiser entity ID: {digitiser.dig_id} for remote address: {remote_addr}")
                     return digitiser.dig_id, digitiser
             else:
-                logger.warning(f"SDP found {digitiser.dig_id} not configured with valid local_host argument matching against remote address: {event.remote_addr[0]}")
+                logger.warning(f"SDP found {digitiser.dig_id} not configured with valid local_host argument matching against remote address: {remote_addr}")
 
         return None, None
 

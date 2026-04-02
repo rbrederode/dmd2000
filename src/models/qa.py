@@ -15,6 +15,7 @@ class QA(BaseModel):
     schema = Schema({
         "_type":            And(str, lambda v: v == "QA"),
         "idx":              And(Or(None, int, np.integer), lambda v: v is None or v >= 0),  # Index of the QA attributes (e.g., second index for spr/cal pipelines)
+        "baseline":         Or(None, float),                                                # Baseline level from the noise region median
         "snr_db":           Or(None, float),                                                # SNR (dB): 10 * log10(signal / noise)
         "signal_db":        Or(None, float),                                                # Signal (peak above baseline): max of signal region minus baseline, converted to dB        
         "noise_db":         Or(None, float),                                                # Noise (robust RMS via MAD): 1.4826 * median absolute deviation of noise region, converted to dB
@@ -33,6 +34,7 @@ class QA(BaseModel):
         defaults = {
             "_type": "QA",
             "idx": None,
+            "baseline": None,
             "snr_db": None,
             "signal_db": None,
             "noise_db": None,
@@ -53,7 +55,7 @@ class QA(BaseModel):
         super().__init__(**kwargs)
 
     def __str__(self):
-        return f"QA(\n  idx={self.idx},\n  snr_db={self.snr_db}, \n  signal_db={self.signal_db},\n  noise_db={self.noise_db},\n  signal_start={self.signal_start},\n  " + \
+        return f"QA(\n  idx={self.idx},\n  baseline={self.baseline},\n  snr_db={self.snr_db}, \n  signal_db={self.signal_db},\n  noise_db={self.noise_db},\n  signal_start={self.signal_start},\n  " + \
             f"signal_end={self.signal_end},\n  rfi_fraction={self.rfi_fraction},\n  fwhm={self.fwhm},\n  dynamic_range_db={self.dynamic_range_db},\n  signal_pwr_db={self.signal_pwr_db}, " + \
             f"last_update={self.last_update.isoformat()})"
 

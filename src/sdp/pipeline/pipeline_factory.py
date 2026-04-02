@@ -55,7 +55,7 @@ class ProcessingPipeline:
                 if elapsed >= 0.1:  # Log a warning if processing takes longer than 100ms
                     logger.warning(f"Processing step {step.__class__.__name__} in pipeline '{step_pipeline}' took {elapsed*1000:.2f} milliseconds!")
                 else:
-                    logger.info(f"Processing step {step.__class__.__name__} in pipeline '{step_pipeline}' took {elapsed*1000:.2f} milliseconds.")
+                    logger.debug(f"Processing step {step.__class__.__name__} in pipeline '{step_pipeline}' took {elapsed*1000:.2f} milliseconds.")
 
         return signal
 

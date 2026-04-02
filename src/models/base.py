@@ -200,9 +200,12 @@ class BaseModel:
         from astroplan import Observer
         import astropy.units as u
 
-        # enum -> name and enum class
+        # enum.IntEnum -> name and enum class
         if isinstance(v, enum.IntEnum):
             return {"_type": "enum.IntEnum", "instance": type(v).__name__, "value": v.name}
+        # enum.Enum -> name and enum class
+        if isinstance(v, enum.Enum):
+            return {"_type": "enum.Enum", "instance": type(v).__name__, "value": v.name}
         # If an object exposes a to_dict() method, use it (duck-typing).
         if hasattr(v, "to_dict") and callable(getattr(v, "to_dict")):
             try:
@@ -273,7 +276,7 @@ class BaseModel:
         from models.pipeline import StepConfig, StepType, PipelineConfig
         from models.proc import ProcessorModel
         from models.qa import QA, ScanQA
-        from models.scan import ScanModel, ScanState, ScanType
+        from models.scan import ScanDataSource, ScanModel, ScanState, ScanType
         from models.sdp import ScienceDataProcessorModel
         from models.target import TargetModel, PointingType, OffsetScan, FivePointScan, TargetConfig, TargetScanSet
         from models.tm import TelescopeManagerModel, ResourceAllocations, Allocation, AllocationState
@@ -335,6 +338,17 @@ class BaseModel:
                     "ScanType": ScanType,
                     "StepType": StepType,
                     "UIDriverType": UIDriverType,
+                }.get(enum_class_name)
+                if enum_class is not None:
+                    return enum_class[enum_value_name]
+                else:
+                    raise ValueError(f"Unknown enum class name: {enum_class_name}")
+            elif model_type == "enum.Enum":
+                enum_class_name = v["instance"]
+                enum_value_name = v["value"]
+
+                enum_class = {
+                    "ScanDataSource": ScanDataSource,
                 }.get(enum_class_name)
                 if enum_class is not None:
                     return enum_class[enum_value_name]
@@ -458,5 +472,7 @@ class BaseModel:
             return {k: BaseModel._deserialise(val) for k, val in v.items()}
         elif isinstance(v, enum.IntEnum):
             return type(v)(v.value)
+        elif isinstance(v, enum.Enum):
+            return type(v)[v.name]
 
         return v

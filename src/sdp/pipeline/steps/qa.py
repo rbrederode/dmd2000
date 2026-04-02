@@ -47,9 +47,19 @@ class QA(ProcessingStep):
 
         pipeline = context.get("pipeline", "unknown")  # Get the pipeline name from the context 
         window_frac = context.get("window_frac", 0.2)  # Fraction of channels to consider around the peak for signal region
+        smooth_window = max(1, int(context.get("smooth_window", 10)))  # Odd window size for linewidth detection smoothing
 
         channels = len(signal)
-        peak_bin = np.argmax(signal)
+        if smooth_window % 2 == 0:
+            smooth_window += 1
+
+        if smooth_window > 1:
+            kernel = np.ones(smooth_window, dtype=np.float64) / smooth_window
+            smoothed_signal = np.convolve(signal, kernel, mode="same")
+        else:
+            smoothed_signal = signal
+
+        peak_bin = int(np.argmax(smoothed_signal))
 
         # Estimate baseline using all but a window around the peak
         window_width = max(3, int(window_frac * channels))
@@ -66,18 +76,21 @@ class QA(ProcessingStep):
         # --- Baseline (robust)
         baseline = np.median(noise_region)
 
-        # --- FWHM-based signal region detection ---
+        # --- FWHM-based signal region detection around the peak bin ---
         peak = np.max(signal)
-        half_max = baseline + 0.5 * (peak - baseline)
-        above_half = np.where(signal >= half_max)[0]
-        if above_half.size > 0:
-            signal_start = int(above_half[0])
-            signal_end = int(above_half[-1]) + 1  # exclusive
-            fwhm = float(signal_end - signal_start)
-        else:
-            signal_start = peak_bin
-            signal_end = peak_bin + 1
-            fwhm = 0.0
+        smoothed_peak = smoothed_signal[peak_bin]
+        half_max = baseline + 0.5 * (smoothed_peak - baseline)
+
+        left_idx = int(peak_bin)
+        while left_idx > 0 and smoothed_signal[left_idx - 1] >= half_max:
+            left_idx -= 1
+
+        right_idx = int(peak_bin)
+        while right_idx < channels - 1 and smoothed_signal[right_idx + 1] >= half_max:
+            right_idx += 1
+
+        signal_start = left_idx
+        signal_end = right_idx + 1  # exclusive
 
         signal_region = signal[signal_start:signal_end]
 
@@ -103,21 +116,14 @@ class QA(ProcessingStep):
         # --- Dynamic range (peak signal - noise floor in dB)
         dynamic_range_db = 10 * np.log10(peak / noise_lin) if noise_lin > 0 else np.inf
 
-        # --- FWHM (full width at half maximum) calculation ---
-        # Find the half maximum value
-        half_max = baseline + 0.5 * (peak - baseline)
-        # Find indices in the signal region above half max
-        above_half = np.where(signal_region >= half_max)[0]
-        if above_half.size > 0:
-            # FWHM in bins: difference between first and last above-half-max bin, plus one (since bins are inclusive)
-            fwhm = (float)(above_half[-1] - above_half[0] + 1)
-        else:
-            fwhm = 0.0
+        # --- FWHM (full width at half maximum) in bins ---
+        fwhm = float(right_idx - left_idx + 1) if signal_region.size > 0 else 0.0
 
         # --- Update scan QA attributes
-        sec = self.scan.get_loaded_seconds()
+        sec = context.get("sec", self.scan.get_loaded_seconds())
         qa = self.scan_qa.getQA(pipeline, sec)
 
+        qa.baseline = float(baseline)
         qa.snr_db = snr_db
         qa.signal_db = signal_db
         qa.noise_db = noise_db

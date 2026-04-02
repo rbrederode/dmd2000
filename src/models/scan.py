@@ -20,6 +20,11 @@ class ScanType(enum.IntEnum):
     TSYS = 3        # System Temperature calibration scan
     GAIN = 4        # Gain calibration scan
 
+class ScanDataSource(enum.IntEnum):
+    NONE = 0
+    RAW = 1
+    SPR = 2
+
 class ScanState(enum.IntEnum):
     EMPTY = 0       # Scan has been created but no data loaded
     WIP = 1         # Scan is has some but not all data loaded

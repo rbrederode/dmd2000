@@ -482,17 +482,18 @@ class TelescopeManager(App):
         """ Determines the digitiser entity ID based on the remote address of a ConnectEvent, DisconnectEvent, or DataEvent.
             Returns a tuple of the entity ID and entity if found, else None, None.
         """
-        logger.debug(f"Telescope Manager finding digitiser entity ID for remote address: {event.remote_addr[0]}")
+        remote_addr = event.remote_addr[0] if event.remote_addr else 'None'
+        logger.debug(f"Telescope Manager finding digitiser entity ID for remote address: {remote_addr}")
 
         for digitiser in self.telmodel.dig_store.dig_list:
 
             if isinstance(digitiser.app.arguments, dict) and "local_host" in digitiser.app.arguments:
 
-                if digitiser.app.arguments["local_host"] == event.remote_addr[0]:
-                    logger.debug(f"Telescope Manager found digitiser entity ID: {digitiser.dig_id} for remote address: {event.remote_addr}")
+                if digitiser.app.arguments["local_host"] == remote_addr:
+                    logger.debug(f"Telescope Manager found digitiser entity ID: {digitiser.dig_id} for remote address: {remote_addr}")
                     return digitiser.dig_id, digitiser
             else:
-                logger.warning(f"Telescope Manager digitiser {digitiser.dig_id} is not configured with a valid local_host argument to match against remote address: {event.remote_addr[0]}")
+                logger.warning(f"Telescope Manager digitiser {digitiser.dig_id} is not configured with a valid local_host argument to match against remote address: {remote_addr}")
 
         return None, None
 

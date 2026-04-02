@@ -68,6 +68,7 @@ class SignalDisplay:
         self.cal_line = None
         self.snr_text = None
         self.qa_text = None
+        self.baseline_line = None
         self.signal_start_line = None
         self.signal_end_line = None
         self.qa_signal_start_line = None
@@ -158,6 +159,9 @@ class SignalDisplay:
         self.sig[0].legend(loc="lower right")
 
         self.cal_line, = self.sig[1].plot([], [], color="orange", label="Signal (CAL)")
+        self.baseline_line, = self.sig[1].plot([], [], color="tab:blue", linestyle="--", linewidth=1.5, label="Noise Baseline")
+        self.baseline_line.set_visible(False)
+        self.baseline_line.set_data([], [])
         self.signal_start_line = self.sig[1].axvline(x=0, color="green", linestyle="--", label="Signal Start")
         self.signal_end_line = self.sig[1].axvline(x=0, color="green", linestyle="--", label="Signal End")
         self.qa_signal_start_line = self.sig[1].axvline(x=0, color="purple", linestyle="--", label="Signal Start")
@@ -176,7 +180,6 @@ class SignalDisplay:
         self.q_bar = self.sig[3].bar(1, 0, color="orange", label="_nolegend_")[0]
         self.sat_33_line = self.sig[3].axhline(y=33, color="green", linestyle="--", label="_nolegend_")
         self.sat_66_line = self.sig[3].axhline(y=66, color="red", linestyle="--", label="_nolegend_")
-        self.sig[3].legend(loc="lower right")
 
         self.total_power_line, = self.sig[4].plot([], [], color="red", label="Total Power (TPW)")
         self.mean_tpwr_line = self.sig[4].axhline(y=0, color="red", linestyle="--", label="_nolegend_")
@@ -279,16 +282,28 @@ class SignalDisplay:
                     self.qa_signal_start_line.set_visible(False)
                     self.qa_signal_end_line.set_visible(False)
 
-                self.qa_text.set_text(
-                    (f"RFI Frac: {cal_qa.rfi_fraction:.2%}\n" if cal_qa.rfi_fraction is not None else "N/A\n")
-                    + f"Noise: {cal_qa.noise_db:.2f} dB\n"
-                    + f"Signal (sum): {cal_qa.signal_pwr_db:.2f} dB\n"
-                    + f"Signal (peak): {cal_qa.signal_db:.2f} dB\n"
-                    + f"SNR: {cal_qa.snr_db:.2f} dB\n"
-                    + f"FWHM: {cal_qa.fwhm:.2f} bins\n"
-                    + f"DR: {cal_qa.dynamic_range_db:.2f} dB")
+                if cal_qa.baseline is not None:
+                    self.baseline_line.set_data(self.freq_axis, np.full_like(self.freq_axis, cal_qa.baseline, dtype=np.float64))
+                    self.baseline_line.set_visible(True)
+                else:
+                    self.baseline_line.set_visible(False)
+                    self.baseline_line.set_data([], [])
+
+                qa_lines = [
+                    f"RFI Frac: {cal_qa.rfi_fraction:.2%}" if cal_qa.rfi_fraction is not None else "RFI Frac: N/A",
+                    f"Baseline: {cal_qa.baseline:.2f}" if cal_qa.baseline is not None else "Baseline: N/A",
+                    f"Noise: {cal_qa.noise_db:.2f} dB" if cal_qa.noise_db is not None else "Noise: N/A dB",
+                    f"Signal (sum): {cal_qa.signal_pwr_db:.2f} dB" if cal_qa.signal_pwr_db is not None else "Signal (sum): N/A dB",
+                    f"Signal (peak): {cal_qa.signal_db:.2f} dB" if cal_qa.signal_db is not None else "Signal (peak): N/A dB",
+                    f"SNR: {cal_qa.snr_db:.2f} dB" if cal_qa.snr_db is not None else "SNR: N/A dB",
+                    f"FWHM: {cal_qa.fwhm:.2f} bins" if cal_qa.fwhm is not None else "FWHM: N/A bins",
+                    f"DR: {cal_qa.dynamic_range_db:.2f} dB" if cal_qa.dynamic_range_db is not None else "DR: N/A dB",
+                ]
+                self.qa_text.set_text("\n".join(qa_lines))
         else:
             self.qa_text.set_text("QA not available")
+            self.baseline_line.set_visible(False)
+            self.baseline_line.set_data([], [])
             self.qa_signal_start_line.set_visible(False)
             self.qa_signal_end_line.set_visible(False)
 
@@ -402,7 +417,7 @@ class SignalDisplay:
         # If the current displayed scan second needs to be updated
         if self.sec != l_sec:
     
-            logger.info(f"Signal display updating for scan {self.scan.scan_model.scan_id}, from second {self.sec} to {l_sec} of {self.scan.scan_model.duration}")
+            logger.debug(f"Signal display updating for scan {self.scan.scan_model.scan_id}, from second {self.sec} to {l_sec} of {self.scan.scan_model.duration}")
 
             if self.sec is None:
                 self.sec = 0
