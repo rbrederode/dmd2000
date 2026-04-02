@@ -142,14 +142,14 @@ class MD01Driver(DishDriver):
         # Nothing to do here
         pass
 
-    def _set_stow_mode(self):
+    def _set_stow_mode(self, alt: float, az: float):
         """
             Perform actions on the MD01 controller when setting the dish to stow mode.
             Do not set the dish model attributes here, that is done in the base class.
             :raises XBase: If there is an error setting the telescope to stow mode.
         """               
         # Slew to stow position        
-        self._set_md01_altaz(self.md01_config.stow_alt, self.md01_config.stow_az)
+        self._set_md01_altaz(alt, az)
 
     def _stop(self):
         """ Stop any movement of the dish on the MD01 controller.

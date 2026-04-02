@@ -6,6 +6,7 @@
     "threshold_timeout": 30,
     "threshold_wind_avg": 20.0,
     "threshold_wind_gust": 30.0,
+    "threshold_wind_count": 3,
     "threshold_precipitation": 10.0,
     "last_update": {
         "_type": "datetime",

@@ -79,6 +79,7 @@ class WeatherStationList(BaseModel):
         "threshold_timeout": And(int, lambda v: v >= 0),                   # Maximum age of weather data in seconds to keep in the list
         "threshold_wind_avg": And(float, lambda v: v >= 0),                # Threshold for high wind avg in m/s to trigger an alarm
         "threshold_wind_gust": And(float, lambda v: v >= 0),               # Threshold for high wind gust in m/s to trigger an alarm
+        "threshold_wind_count": And(int, lambda v: v >= 0),                # Number of wind gust samples above threshold to trigger an alarm
         "threshold_precipitation": And(float, lambda v: v >= 0),           # Threshold for heavy precipitation in mm to trigger an alarm
         "created_dt": And(datetime, lambda v: isinstance(v, datetime)),    # Timestamp when the weather station list was created
         "last_update": And(datetime, lambda v: isinstance(v, datetime)),
@@ -98,6 +99,7 @@ class WeatherStationList(BaseModel):
             "threshold_wind_gust": 30.0,                # Threshold for high wind gust in m/s to trigger an alarm
             "threshold_wind_avg": 20.0,                 # Threshold for high wind avg in m/s to trigger an alarm
             "threshold_precipitation": 10.0,            # Threshold for heavy precipitation in mm to trigger an alarm
+            "threshold_wind_count": 3,                  # Number of wind samples above threshold to trigger an alarm
             "created_dt": datetime.now(timezone.utc),
             "last_update": datetime.now(timezone.utc),
         }
@@ -111,7 +113,7 @@ class WeatherStationList(BaseModel):
 
     def __str__(self):
         weather_str = ",\n\n  ".join(str(wd) for wd in self.weather_list)
-        return f"WeatherStationList (list_id={self.list_id}, len={len(self.weather_list)}, threshold_timeout={self.threshold_timeout}, threshold_wind_gust={self.threshold_wind_gust}, threshold_wind_avg={self.threshold_wind_avg}, threshold_precipitation={self.threshold_precipitation}, last_update={self.last_update.isoformat()}): [\n  {weather_str}\n]"
+        return f"WeatherStationList (list_id={self.list_id}, len={len(self.weather_list)}, threshold_timeout={self.threshold_timeout}, threshold_wind_gust={self.threshold_wind_gust}, threshold_wind_avg={self.threshold_wind_avg}, threshold_precipitation={self.threshold_precipitation}, threshold_wind_count={self.threshold_wind_count}, last_update={self.last_update.isoformat()}): [\n  {weather_str}\n]"
 
     def is_ws_monitoring_enabled(self) -> bool:
         """
@@ -143,6 +145,7 @@ class WeatherStationList(BaseModel):
 
         avg_wind = sum(wind_speeds) / len(wind_speeds) if wind_speeds else 0.0
         max_wind = max(wind_speeds) if wind_speeds else 0.0
+        gust_count = sum(1 for wd in self.weather_list if wd.wind_speed is not None and wd.wind_speed > self.threshold_wind_gust and wd.obs_time >= cutoff)
         avg_precip = sum(precipitations) / len(precipitations) if precipitations else 0.0
 
         logger.debug(f"WeatherStationList with {len(self.weather_list)} samples: avg_wind_speed={avg_wind:.2f} m/s, avg_precipitation={avg_precip:.2f} mm, thresholds: threshold_wind_gust={self.threshold_wind_gust:.2f} m/s, threshold_wind_avg={self.threshold_wind_avg:.2f} m/s, threshold_precipitation={self.threshold_precipitation:.2f} mm")
@@ -160,10 +163,12 @@ class WeatherStationList(BaseModel):
         if avg_wind > self.threshold_wind_avg:
             logger.warning(f"WeatherStationList alarm triggered by average wind speed: {avg_wind:.2f} m/s exceeds threshold of {self.threshold_wind_avg:.2f} m/s")
             return True
-
-        if max_wind > self.threshold_wind_gust:
-            logger.warning(f"WeatherStationList alarm triggered by wind gust: {max_wind:.2f} m/s exceeds threshold of {self.threshold_wind_gust:.2f} m/s")
+      
+        if gust_count > self.threshold_wind_count:
+            logger.warning(f"WeatherStationList alarm triggered by wind gust count: {gust_count} exceeding threshold of {self.threshold_wind_count} samples above gust threshold of {self.threshold_wind_gust:.2f} m/s")
             return True
+        elif gust_count > 0:
+            logger.warning(f"WeatherStationList registered {gust_count} wind gust samples exceeding gust threshold of {self.threshold_wind_gust:.2f} m/s, but below count threshold of {self.threshold_wind_count} samples to trigger alarm.")
         
         if avg_precip > self.threshold_precipitation:
             logger.warning(f"WeatherStationList alarm triggered by average precipitation: {avg_precip:.2f} mm exceeds threshold of {self.threshold_precipitation:.2f} mm")
