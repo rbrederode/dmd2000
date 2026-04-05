@@ -61,10 +61,11 @@ class DriverType(enum.IntEnum):
     MD01 = 1            # RF Hamdesigns MD-01
     MD02 = 2            # RF Hamdesigns MD-02
     MD03 = 3            # RF Hamdesigns MD-03
-    LOSMANDY_G11 = 4    # Losmandy G-11
-    ASCOM = 5           # ASCOM Standard Driver
-    INDI = 6            # INDI Standard Driver  
-    UNKNOWN = 7
+    DRIFT = 4           # Custom driver for drift scan dishes that do not have slewing/tracking capability
+    LOSMANDY_G11 = 5    # Losmandy G-11
+    ASCOM = 6           # ASCOM Standard Driver
+    INDI = 7            # INDI Standard Driver  
+    UNKNOWN = 8
 
 class PECModel(BaseModel):
     """A class representing the periodic error correction (PEC) model for a dish target."""
