@@ -351,10 +351,13 @@ class TelescopeManager(App):
         if api_call.get('status','') != tm_dm.STATUS_SUCCESS:
             
             logger.error(f"Telescope Manager received error response from Dish Manager for dish {dsh_id}.\n{api_call}")
-            dsh_model.mode = DishMode.UNKNOWN # Set dish mode to UNKNOWN to force safe recovery
-            dsh_model.last_err_msg = api_call['message'] if 'message' in api_call else dsh_model.last_err_msg
-            dsh_model.last_err_dt = datetime.fromisoformat(dt) if dt is not None else datetime.now(timezone.utc)
 
+            # Not that the dsh_model can be None for some error messages (e.g. a status update message)
+            if dsh_model is not None:
+                dsh_model.mode = DishMode.UNKNOWN # Set dish mode to UNKNOWN to force safe recovery
+                dsh_model.last_err_msg = api_call['message'] if 'message' in api_call else dsh_model.last_err_msg
+                dsh_model.last_err_dt = datetime.fromisoformat(dt) if dt is not None else datetime.now(timezone.utc)
+            
             # If the message contains additional observation data, trigger the observation workflow
             obs_data = api_call.get('obs_data', None)
             obs_id = obs_data.get('obs_id', None) if obs_data is not None and isinstance(obs_data, dict) else None
