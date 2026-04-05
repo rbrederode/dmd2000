@@ -365,11 +365,11 @@ class App:
             filename=log_file,
             when="midnight",
             interval=1,
-            backupCount=24,       # keep 2 years of monthly logs
+            backupCount=731,      # keep about 2 years of daily logs
             encoding="utf-8",
             utc=True)
 
-        handler.suffix = "%Y-%m"  # results in e.g. dm.log.2026-02
+        handler.suffix = "%Y-%m-%d"  # results in e.g. dm.log.2026-04-05
         formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
         handler.setFormatter(formatter)
 

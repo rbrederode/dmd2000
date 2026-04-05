@@ -7,21 +7,13 @@ from typing import List, Tuple
 
 Event = Tuple[datetime, str]  # (timestamp, state)
 
-def _month_iter(start: datetime, end: datetime):
-    """ Generate months between start and end datetimes.
-    Args:
-        start (datetime): Start datetime.
-        end (datetime): End datetime.
-    Yields:
-        datetime: First day of each month in the range.
-    """
-    current = start.replace(day=1)
-    while current <= end:
+def _day_iter(start: datetime, end: datetime):
+    """Generate days between start and end datetimes."""
+    current = start.date()
+    end_date = end.date()
+    while current <= end_date:
         yield current
-        if current.month == 12:
-            current = current.replace(year=current.year + 1, month=1)
-        else:
-            current = current.replace(month=current.month + 1)
+        current += timedelta(days=1)
 
 def _collect_log_files(log_dir: str, app_name: str, start: datetime, end: datetime) -> List[str]:
     """ Collect log files for the given app within the date range. 
@@ -35,14 +27,18 @@ def _collect_log_files(log_dir: str, app_name: str, start: datetime, end: dateti
     """
     base_log = os.path.join(log_dir, f"{app_name}.log")
     files = []
+    seen = set()
 
-    for month in _month_iter(start, end):
-        rotated = f"{base_log}.{month.strftime('%Y-%m')}"
-        if os.path.exists(rotated):
-            files.append(rotated)
+    def add_if_exists(path: str):
+        if os.path.exists(path) and path not in seen:
+            files.append(path)
+            seen.add(path)
 
-    if os.path.exists(base_log):
-        files.append(base_log)
+    # Daily rotated logs used by the current availability logger.
+    for day in _day_iter(start, end):
+        add_if_exists(f"{base_log}.{day.strftime('%Y-%m-%d')}")
+
+    add_if_exists(base_log)
 
     return files
 
@@ -200,7 +196,8 @@ def get_app_reliability(log_dir: str, app_name: str, start_period: datetime, end
     return {
         "mtbf_sec": mtbf,
         "mttr_sec": mttr,
-        "reliability": reliability
+        "reliability": reliability,
+        "reliability_availability": reliability,
     }
 
 def generate_report(log_dir: str, app_name: str, start_period: datetime, end_period: datetime, bucket_minutes: int = 60, heartbeat_timeout_sec: int = 60,
