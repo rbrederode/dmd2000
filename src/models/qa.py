@@ -101,14 +101,14 @@ class ScanQA(BaseModel):
     def __str__(self):
         return f"ScanQA(\n  scan_id={self.scan_id},\n\n  spr_qa=[{', '.join(str(qa) for qa in self.spr_qa)}],\n\n  cal_qa=[{', '.join(str(qa) for qa in self.cal_qa)}],\n\n  mpr_qa={str(self.mpr_qa)},\n  last_update={self.last_update.isoformat()})"
 
-    def getQA(self, pipeline_name: str, idx: int) -> QA:
+    def getQA(self, pipeline: str, idx: int) -> QA:
         """
         Get the QA attributes for a specific pipeline in this scan.
-            :param pipeline_name: Name of the pipeline to get QA for (e.g., "calibration", "mean_power_spectrum")
+            :param pipeline: Name of the pipeline to get QA for (e.g., "calibration", "mean_power_spectrum")
             :param idx: Index of the QA attributes to retrieve (zero-based index)
             :returns: A QA instance containing the QA attributes for the specified pipeline, or None if not found
         """
-        if pipeline_name == "spr":
+        if pipeline == "spr":
             if self.spr_qa is not None and 0 <= idx < len(self.spr_qa):
                 if self.spr_qa[idx] is None or getattr(self.spr_qa[idx], 'idx', None) != idx:
                     self.spr_qa[idx] = QA(idx=idx)
@@ -116,7 +116,7 @@ class ScanQA(BaseModel):
             else:
                 logger.warning(f"ScanQA: spr_qa array not initialized or idx {idx} out of range.")
                 return None
-        elif pipeline_name == "cal":
+        elif pipeline == "cal":
             if self.cal_qa is not None and 0 <= idx < len(self.cal_qa):
                 if self.cal_qa[idx] is None or getattr(self.cal_qa[idx], 'idx', None) != idx:
                     self.cal_qa[idx] = QA(idx=idx)
@@ -124,15 +124,17 @@ class ScanQA(BaseModel):
             else:
                 logger.warning(f"ScanQA: cal_qa array not initialized or idx {idx} out of range.")
                 return None
-        elif pipeline_name == "mpr":
+        elif pipeline == "mpr":
             if self.mpr_qa is not None:
+                if getattr(self.mpr_qa, 'idx', None) != idx:
+                    self.mpr_qa.idx = idx
                 return self.mpr_qa
             else:
                 new_qa = QA(idx=idx)
                 self.mpr_qa = new_qa
                 return new_qa
         else:
-            raise XSoftwareFailure(f"ScanQA: Unknown pipeline name '{pipeline_name}' for getting QA attributes.")
+            raise XSoftwareFailure(f"ScanQA: Unknown pipeline name '{pipeline}' for getting QA attributes.")
 
 if __name__ == "__main__":
 

@@ -1,6 +1,7 @@
 import numpy as np
 import logging
 from typing import Any, List, Dict
+from numpy.lib.stride_tricks import sliding_window_view
 
 from models.pipeline import StepConfig, StepType
 from sdp.pipeline.pipeline_factory import ProcessingStep
@@ -24,7 +25,8 @@ class RFIFlag(ProcessingStep):
     
     def process(self, context: Any, signal: Any) -> Any:
         """
-        Apply sliding-window MAD RFI flagging to the signal array, modifying it in-place.
+        Apply a vectorized sliding-window MAD RFI flagging pass to the signal array,
+        modifying it in-place.
         """
         if not isinstance(signal, np.ndarray):
             raise ValueError("RFIFlag: signal must be a numpy array.")
@@ -39,23 +41,27 @@ class RFIFlag(ProcessingStep):
         if window_size % 2 == 0:
             raise ValueError("window_size must be odd.")
 
-        half_window = window_size // 2
-        num_flagged = 0
+        if window_size < 1:
+            raise ValueError("window_size must be >= 1.")
 
-        for i in range(len(signal)):
-            start = max(0, i - half_window)
-            end = min(len(signal), i + half_window + 1)
-            window = signal[start:end]
-            median = np.median(window)
-            mad = np.median(np.abs(window - median))
-            threshold = n * mad
-            if np.abs(signal[i] - median) > threshold:
-                signal[i] = median
-                num_flagged += 1
+        pad = window_size // 2
+        padded_signal = np.pad(signal, pad_width=pad, mode="edge")
+        windows = sliding_window_view(padded_signal, window_shape=window_size)
+
+        local_median = np.median(windows, axis=1)
+        local_mad = np.median(np.abs(windows - local_median[:, np.newaxis]), axis=1)
+        threshold = n * np.maximum(local_mad, 1e-12)
+
+        flagged_mask = np.abs(signal - local_median) > threshold
+        num_flagged = int(np.count_nonzero(flagged_mask))
+
+        if num_flagged > 0:
+            signal[flagged_mask] = local_median[flagged_mask]
 
         # --- Update scan QA attributes
-        sec = self.scan.get_loaded_seconds()
-        qa = self.scan_qa.getQA(pipeline, sec)
+        sec = context.get("sec", max(self.scan.get_loaded_seconds(), 1))
+        idx = sec - 1
+        qa = self.scan_qa.getQA(pipeline, idx)
 
         qa.rfi_fraction = num_flagged / len(signal) if len(signal) > 0 else 0.0
 
@@ -132,4 +138,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

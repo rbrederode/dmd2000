@@ -82,7 +82,6 @@ class Scan:
             self.spr = None  # Summed power spectrum for each second in the duration of the scan
             self.cal = None  # Calibrated power spectrum for each second in the duration of the scan
             self.mpr = None  # Mean power spectrum over duration of the scan
-            self.snr = None  # Signal to Noise Ratio (SNR) for each second in the duration of the scan
 
             self.mean_real = 0.0  # Mean of real value of the raw samples (I)
             self.mean_imag = 0.0  # Mean of imaginary value of the raw samples (Q)
@@ -148,7 +147,6 @@ class Scan:
             self.spr = np.zeros((self.scan_model.duration, self.scan_model.channels), dtype=np.float64)     # float64 for summed pwr for each second in duration
             self.cal = np.zeros((self.scan_model.duration, self.scan_model.channels), dtype=np.float64)     # float64 for calibrated spectrum for each second in duration
             self.mpr = np.ones((self.scan_model.channels,), dtype=np.float64)               # float64 for mean power spectrum over duration for each channel (fft bin)
-            self.snr = np.zeros((self.scan_model.duration, 5), dtype=np.float64)            # Signal to Noise Ratio, Signal dB, Noise dB, signal start bin, signal end bin for each second in duration
 
     def get_dig_id(self) -> str:
         """
@@ -276,8 +274,8 @@ class Scan:
 
         spr = np.sum(pwr, axis=0)  # Sum power across all rows for this second
 
-        spr = self.pipeline.process(signal=spr, context={"pipeline": "spr"}) if self.pipeline else spr                # Push the summed power spectrum through the spr pipeline
-        cal = self.pipeline.process(signal=spr.copy(), context={"pipeline": "cal"}) if self.pipeline else spr.copy()  # Push the summed power spectrum through the cal pipeline
+        spr = self.pipeline.process(signal=spr, context={"pipeline": "spr", "sec": sec}) if self.pipeline else spr                # Push the summed power spectrum through the spr pipeline
+        cal = self.pipeline.process(signal=spr.copy(), context={"pipeline": "cal", "sec": sec}) if self.pipeline else spr.copy()  # Push the summed power spectrum through the cal pipeline
 
         # Store the raw, power and summed spectrum data in the appropriate rows of the scan data arrays
         with self._rlock:
@@ -285,17 +283,21 @@ class Scan:
             self.pwr[row_start:row_start + iq.shape[0],:] = pwr
             self.spr[sec - 1,:] = spr  # sec is 1-based index, so adjust for 0-based array index
             self.cal[sec - 1,:] = cal  # sec is 1-based index, so adjust for 0-based array index
-            self.loaded_secs[sec - 1] = True  # Mark this second as loaded
+
+            # Build the mean spectrum from the loaded calibrated rows, including the
+            # current second that was just written above.
+            loaded_mask = np.array(self.loaded_secs, dtype=bool)
+            loaded_mask[sec - 1] = True
+            mpr = np.mean(self.cal[loaded_mask, :], axis=0) if np.any(loaded_mask) else np.zeros((self.scan_model.channels,), dtype=np.float64)
+            self.mpr = self.pipeline.process(signal=mpr, context={"pipeline": "mpr", "sec": sec}) if self.pipeline else mpr
+
+            self.loaded_secs[sec - 1] = True  # Mark this second as loaded only after mpr is populated
             self.data_source = ScanDataSource.RAW
 
             indices = np.linspace(row_start, row_end - 1, int(self.raw.shape[0]*0.01), dtype=int)
 
             self.mean_real = np.mean(np.abs(self.raw[row_start:row_end, ].real))*100  # Find the mean real value in the raw samples (I)
             self.mean_imag = np.mean(np.abs(self.raw[row_start:row_end, ].imag))*100  # Find the mean imaginary value in the raw samples (Q)
-
-            self.snr[sec - 1] = self.calc_snr(self.cal[sec - 1, :])  # (snr_db, signal_db, noise_db)
-            snr_db, signal_db, noise_db, signal_start, signal_end = self.snr[sec - 1]
-            logger.debug(f"Scan {self.scan_model.scan_id} - SNR for second {sec}: {snr_db:.2f} dB | Signal: {signal_db:.2f} dB | Noise: {noise_db:.2f} dB")
 
         # Count how many rows have self.loaded_secs marked as True
         actual_rows = np.count_nonzero(self.loaded_secs)
@@ -315,8 +317,6 @@ class Scan:
             self.set_status(ScanState.WIP)
         elif actual_rows >= expected_rows:
             self.set_status(ScanState.COMPLETE)
-            # Populate mean power spectrum (mpr) with the mean of the summed power spectrum (spr) across the duration for each channel
-            self.mpr = np.mean(self.spr, axis=0)
 
         return True
 
@@ -335,8 +335,7 @@ class Scan:
             return False
 
         with self._rlock:
-            self.cal.fill(0.0)
-            self.snr.fill(0.0)
+            self.cal.fill(0.0)  # Clear the calibrated spectrum array before re-processing
 
             if self.data_source == ScanDataSource.RAW:
                 self.pwr = np.abs(np.fft.fftshift(np.fft.fft(self.raw, axis=1), axes=1)) ** 2
@@ -347,8 +346,8 @@ class Scan:
                     row_end = (sec + 1) * rows_per_sec if sec < self.scan_model.duration - 1 else self.pwr.shape[0]
 
                     signal = np.sum(self.pwr[row_start:row_end, :], axis=0)
-                    self.spr[sec, :] = self.pipeline.process(signal=signal, context={"pipeline": "spr"}) if self.pipeline else signal
-                    self.cal[sec, :] = self.pipeline.process(signal=self.spr[sec, :].copy(), context={"pipeline": "cal"}) if self.pipeline else self.spr[sec, :].copy()
+                    self.spr[sec, :] = self.pipeline.process(signal=signal, context={"pipeline": "spr", "sec": sec + 1}) if self.pipeline else signal
+                    self.cal[sec, :] = self.pipeline.process(signal=self.spr[sec, :].copy(), context={"pipeline": "cal", "sec": sec + 1}) if self.pipeline else self.spr[sec, :].copy()
 
                 valid_raw = self.raw[np.any(self.raw != 0, axis=1)]
                 if valid_raw.shape[0] > 0:
@@ -357,18 +356,17 @@ class Scan:
             elif self.data_source == ScanDataSource.SPR:
                 for sec in loaded_sec_indices:
                     signal = self.spr[sec, :]
-                    self.cal[sec, :] = self.pipeline.process(signal=signal.copy(), context={"pipeline": "cal"}) if self.pipeline else signal.copy()
+                    self.cal[sec, :] = self.pipeline.process(signal=signal.copy(), context={"pipeline": "cal", "sec": sec + 1}) if self.pipeline else signal.copy()
             else:
                 logger.warning(f"Scan {self.scan_model.scan_id} - No raw IQ or summed power data available to process.")
                 return False
 
-            for sec in loaded_sec_indices:
-                self.snr[sec] = self.calc_snr(self.cal[sec, :])
-
             valid_cal_rows = self.cal[loaded_sec_indices, :]
             self.mpr = np.mean(valid_cal_rows, axis=0) if valid_cal_rows.shape[0] > 0 else np.zeros((self.scan_model.channels,), dtype=np.float64)
-
             loaded_count = len(loaded_sec_indices)
+            if self.pipeline and loaded_count > 0:
+                self.mpr = self.pipeline.process(signal=self.mpr.copy(), context={"pipeline": "mpr", "sec": loaded_count})
+
             if loaded_count == 0:
                 self.set_status(ScanState.EMPTY)
             elif loaded_count < self.scan_model.duration:
@@ -378,63 +376,6 @@ class Scan:
 
         logger.info(f"Scan {self.scan_model.scan_id} - Completed processing loaded scan data through pipeline.")
         return True
-
-    def calc_snr(self, spectrum: np.ndarray, window_frac: float = 0.20) -> tuple:
-        """
-        Calculate the signal, noise, and signal-to-noise ratio (SNR) for a given power spectrum using robust statistics.
-        - The signal region is a window around the peak (default: 10% of channels, min 3 bins).
-        - The noise region is all bins outside the signal window.
-        - The baseline is the median of the noise region.
-        - The signal is the peak value in the signal region above the baseline.
-        - The noise is the robust RMS estimated via the MAD (median absolute deviation) of the noise region.
-        - The SNR is computed as (signal - baseline) / noise (linear), and also reported in dB.
-        :param spectrum: 1D numpy array of power values (e.g., a row from self.spr)
-        :param window_frac: Fraction of channels to use for the signal window (default 20%)
-        :return: tuple with values 'snr_db', 'signal_db', 'noise_db', 'signal_start', 'signal_end'
-
-        For reference:
-            SNR 3 dB - Barely detectable signal
-            SNR 7 dB - Weak signal
-            SNR 10 dB - Strong signal
-            SNR 20 dB - Very strong signal
-        """
-        channels = len(spectrum)
-        peak_bin = np.argmax(spectrum)
-
-        window_width = max(3, int(window_frac * channels))
-        half_width = window_width // 2
-
-        signal_start = max(0, peak_bin - half_width)
-        signal_end = min(channels, peak_bin + half_width + 1)
-
-        signal_region = spectrum[signal_start:signal_end]
-        if signal_start == 0:
-            noise_region = spectrum[signal_end:]
-        elif signal_end == channels:
-            noise_region = spectrum[:signal_start]
-        else:
-            noise_region = np.concatenate((spectrum[:signal_start], spectrum[signal_end:]))
-
-        # --- Baseline (robust)
-        baseline = np.median(noise_region)
-
-        # --- Signal (peak above baseline)
-        peak = np.max(signal_region)
-        signal_lin = max(peak - baseline, 1e-12)  # avoid log(0)
-
-        # --- Noise (robust RMS via MAD)
-        noise_std = 1.4826 * np.median(np.abs(noise_region - baseline))
-        noise_lin = max(noise_std, 1e-12)
-
-        # --- SNR (linear)
-        snr = signal_lin / noise_lin
-
-        # --- Convert to dB
-        signal_db = 10 * np.log10(signal_lin)
-        noise_db = 10 * np.log10(noise_lin)
-        snr_db = 10 * np.log10(snr)
-
-        return snr_db, signal_db, noise_db, signal_start, signal_end
 
     def save_to_disk(self, output_dir, include_iq: bool = False) -> bool:
         """
@@ -590,8 +531,13 @@ class Scan:
 
         equiv_files = [
             f for f in os.listdir(input_dir)
-            if f.startswith(file_prefix)
-            and self.scan_model.scan_id not in f
+            if file_prefix in f
+            and not (
+                self.scan_model.scan_id is not None
+                and self.scan_model.scan_id.lower() in f.lower()
+                and self.scan_model.scan_type is not None
+                and f"-{self.scan_model.scan_type.name.lower()}-" in f.lower()
+            )
             and f.endswith('spr.csv')
         ]
         logger.info(
@@ -662,7 +608,8 @@ if __name__ == "__main__":
         step2 = StepConfig(step=StepType.LOAD, params={"pipeline": "cal"})
         step3 = StepConfig(step=StepType.RFI_FLAG, params={"pipeline": "cal", "threshold": 5, "window_size": 21})
         step4 = StepConfig(step=StepType.QA, params={"pipeline": "cal", "window_frac": 0.2})
-        config = PipelineConfig(steps_map={"default": [step1, step2, step3, step4]})
+        step5 = StepConfig(step=StepType.QA, params={"pipeline": "mpr", "window_frac": 0.2})
+        config = PipelineConfig(steps_map={"default": [step1, step2, step3, step4, step5]})
         return ProcessingPipelineFactory(config)
 
     # Test 1: Basic scan creation from a ScanModel

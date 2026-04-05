@@ -66,7 +66,7 @@ class SignalDisplay:
         self.spr_line = None
         self.load_line = None
         self.cal_line = None
-        self.snr_text = None
+        self.mpr_line = None
         self.qa_text = None
         self.baseline_line = None
         self.signal_start_line = None
@@ -159,14 +159,12 @@ class SignalDisplay:
         self.sig[0].legend(loc="lower right")
 
         self.cal_line, = self.sig[1].plot([], [], color="orange", label="Signal (CAL)")
-        self.baseline_line, = self.sig[1].plot([], [], color="tab:blue", linestyle="--", linewidth=1.5, label="Noise Baseline")
+        self.mpr_line, = self.sig[1].plot([], [], color="magenta", linewidth=1.5, label="Mean Power (MPR)")
+        self.baseline_line, = self.sig[1].plot([], [], color="tab:blue", linestyle="--", linewidth=1.5, label="Noise Baseline (MPR)")
         self.baseline_line.set_visible(False)
         self.baseline_line.set_data([], [])
-        self.signal_start_line = self.sig[1].axvline(x=0, color="green", linestyle="--", label="Signal Start")
-        self.signal_end_line = self.sig[1].axvline(x=0, color="green", linestyle="--", label="Signal End")
-        self.qa_signal_start_line = self.sig[1].axvline(x=0, color="purple", linestyle="--", label="Signal Start")
-        self.qa_signal_end_line = self.sig[1].axvline(x=0, color="purple", linestyle="--", label="Signal End")
-        self.snr_text = self.sig[1].text(0.98, 0.98, "", transform=self.sig[1].transAxes, ha="right", va="top")
+        self.qa_signal_start_line = self.sig[1].axvline(x=0, color="purple", linestyle="--", label="Signal Start (MPR)")
+        self.qa_signal_end_line = self.sig[1].axvline(x=0, color="purple", linestyle="--", label="Signal End (MPR)")
         self.qa_text = self.sig[1].text(0.02, 0.98, "", transform=self.sig[1].transAxes, ha="left", va="top")
         self.sig[1].legend(loc="lower right")
 
@@ -248,14 +246,29 @@ class SignalDisplay:
         self.load_line.set_data(self.freq_axis, self.load.mpr)
         self.load_line.set_label(label)
         self.cal_line.set_data(self.freq_axis, self.scan.cal[l_sec - 1, :])
+        self.mpr_line.set_data(self.freq_axis, self.scan.mpr)
 
         legend0 = self.sig[0].get_legend()
         if legend0 is not None:
             legend0.remove()
         self.sig[0].legend(loc="lower right")
 
+        legend1 = self.sig[1].get_legend()
+        if legend1 is not None:
+            legend1.remove()
+        self.sig[1].legend(loc="lower right")
+
         self.sig[0].relim()
         self.sig[0].autoscale_view(scalex=False, scaley=True)
+        self.sig[1].relim()
+        self.sig[1].autoscale_view(scalex=False, scaley=True)
+
+    def _refresh_mean_power_spectrum(self):
+        """Refresh the scan mean-power spectrum overlay on the calibrated-spectrum axis."""
+        if self.mpr_line is None:
+            return
+
+        self.mpr_line.set_data(self.freq_axis, self.scan.mpr)
         self.sig[1].relim()
         self.sig[1].autoscale_view(scalex=False, scaley=True)
 
@@ -268,10 +281,11 @@ class SignalDisplay:
 
         if self.scan.scan_qa is not None:
             cal_qa = self.scan.scan_qa.getQA("cal", l_sec - 1)
-            if cal_qa is not None:
-                if cal_qa.signal_start is not None and cal_qa.signal_end is not None:
-                    sig_start_bin = int(cal_qa.signal_start)
-                    sig_end_bin = int(cal_qa.signal_end)
+            mpr_qa = self.scan.scan_qa.getQA("mpr", l_sec - 1)
+            if mpr_qa is not None:
+                if mpr_qa.signal_start is not None and mpr_qa.signal_end is not None:
+                    sig_start_bin = int(mpr_qa.signal_start)
+                    sig_end_bin = int(mpr_qa.signal_end)
                     freq_start = self.extent[0] + (self.extent[1] - self.extent[0]) * sig_start_bin / self.scan.scan_model.channels
                     freq_end = self.extent[0] + (self.extent[1] - self.extent[0]) * sig_end_bin / self.scan.scan_model.channels
                     self.qa_signal_start_line.set_xdata([freq_start, freq_start])
@@ -282,22 +296,22 @@ class SignalDisplay:
                     self.qa_signal_start_line.set_visible(False)
                     self.qa_signal_end_line.set_visible(False)
 
-                if cal_qa.baseline is not None:
-                    self.baseline_line.set_data(self.freq_axis, np.full_like(self.freq_axis, cal_qa.baseline, dtype=np.float64))
+                if mpr_qa.baseline is not None:
+                    self.baseline_line.set_data(self.freq_axis, np.full_like(self.freq_axis, mpr_qa.baseline, dtype=np.float64))
                     self.baseline_line.set_visible(True)
                 else:
                     self.baseline_line.set_visible(False)
                     self.baseline_line.set_data([], [])
 
                 qa_lines = [
-                    f"RFI Frac: {cal_qa.rfi_fraction:.2%}" if cal_qa.rfi_fraction is not None else "RFI Frac: N/A",
-                    f"Baseline: {cal_qa.baseline:.2f}" if cal_qa.baseline is not None else "Baseline: N/A",
-                    f"Noise: {cal_qa.noise_db:.2f} dB" if cal_qa.noise_db is not None else "Noise: N/A dB",
-                    f"Signal (sum): {cal_qa.signal_pwr_db:.2f} dB" if cal_qa.signal_pwr_db is not None else "Signal (sum): N/A dB",
-                    f"Signal (peak): {cal_qa.signal_db:.2f} dB" if cal_qa.signal_db is not None else "Signal (peak): N/A dB",
-                    f"SNR: {cal_qa.snr_db:.2f} dB" if cal_qa.snr_db is not None else "SNR: N/A dB",
-                    f"FWHM: {cal_qa.fwhm:.2f} bins" if cal_qa.fwhm is not None else "FWHM: N/A bins",
-                    f"DR: {cal_qa.dynamic_range_db:.2f} dB" if cal_qa.dynamic_range_db is not None else "DR: N/A dB",
+                    f"RFI Frac: {cal_qa.rfi_fraction:.2%}" if cal_qa is not None and cal_qa.rfi_fraction is not None else "RFI Frac: N/A",
+                    f"Baseline: {mpr_qa.baseline:.2f}" if mpr_qa.baseline is not None else "Baseline: N/A",
+                    f"Noise: {mpr_qa.noise_db:.2f} dB" if mpr_qa.noise_db is not None else "Noise: N/A dB",
+                    f"Signal (sum): {mpr_qa.signal_pwr_db:.2f} dB" if mpr_qa.signal_pwr_db is not None else "Signal (sum): N/A dB",
+                    f"Signal (peak): {mpr_qa.signal_db:.2f} dB" if mpr_qa.signal_db is not None else "Signal (peak): N/A dB",
+                    f"SNR: {mpr_qa.snr_db:.2f} dB" if mpr_qa.snr_db is not None else "SNR: N/A dB",
+                    f"FWHM: {mpr_qa.fwhm:.2f} bins" if mpr_qa.fwhm is not None else "FWHM: N/A bins",
+                    f"DR: {mpr_qa.dynamic_range_db:.2f} dB" if mpr_qa.dynamic_range_db is not None else "DR: N/A dB",
                 ]
                 self.qa_text.set_text("\n".join(qa_lines))
         else:
@@ -306,28 +320,6 @@ class SignalDisplay:
             self.baseline_line.set_data([], [])
             self.qa_signal_start_line.set_visible(False)
             self.qa_signal_end_line.set_visible(False)
-
-        if self.scan.snr is not None:
-            self.snr_text.set_text(
-                f"SNR: {self.scan.snr[l_sec-1][0]:.2f} dB\n"
-                f"Signal: {self.scan.snr[l_sec-1][1]:.2f} dB\n"
-                f"Noise: {self.scan.snr[l_sec-1][2]:.2f} dB"
-            )
-        else:
-            self.snr_text.set_text("Signal (CAL)")
-
-        if self.scan.snr is not None and len(self.scan.snr[l_sec - 1]) >= 5:
-            start_bin = int(self.scan.snr[l_sec - 1][3])
-            end_bin = int(self.scan.snr[l_sec - 1][4])
-            freq_start = self.extent[0] + (self.extent[1] - self.extent[0]) * start_bin / self.scan.scan_model.channels
-            freq_end = self.extent[0] + (self.extent[1] - self.extent[0]) * end_bin / self.scan.scan_model.channels
-            self.signal_start_line.set_xdata([freq_start, freq_start])
-            self.signal_end_line.set_xdata([freq_end, freq_end])
-            self.signal_start_line.set_visible(True)
-            self.signal_end_line.set_visible(True)
-        else:
-            self.signal_start_line.set_visible(False)
-            self.signal_end_line.set_visible(False)
 
     def _update_waterfall(self):
         """Update the waterfall image contents from the current calibrated scan data."""
@@ -413,6 +405,8 @@ class SignalDisplay:
         # If no seconds are loaded in the scan or the current displayed scan second is the same as loaded scan seconds, return
         if l_sec <= 0:
             return
+
+        self._refresh_mean_power_spectrum()
 
         # If the current displayed scan second needs to be updated
         if self.sec != l_sec:

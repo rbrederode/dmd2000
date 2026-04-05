@@ -114,14 +114,18 @@ class QA(ProcessingStep):
         signal_pwr_db = 10 * np.log10(max(signal_power, 1e-12))
 
         # --- Dynamic range (peak signal - noise floor in dB)
-        dynamic_range_db = 10 * np.log10(peak / noise_lin) if noise_lin > 0 else np.inf
+        # Clamp to a finite, non-negative value so startup/empty spectra do not
+        # produce -inf and fail QA schema validation.
+        dynamic_range_ratio = max(peak, 1e-12) / noise_lin if noise_lin > 0 else np.inf
+        dynamic_range_db = max(0.0, 10 * np.log10(dynamic_range_ratio)) if np.isfinite(dynamic_range_ratio) else np.inf
 
         # --- FWHM (full width at half maximum) in bins ---
         fwhm = float(right_idx - left_idx + 1) if signal_region.size > 0 else 0.0
 
         # --- Update scan QA attributes
-        sec = context.get("sec", self.scan.get_loaded_seconds())
-        qa = self.scan_qa.getQA(pipeline, sec)
+        sec = context.get("sec", max(self.scan.get_loaded_seconds(), 1))
+        idx = sec - 1
+        qa = self.scan_qa.getQA(pipeline=pipeline, idx=idx)
 
         qa.baseline = float(baseline)
         qa.snr_db = snr_db
