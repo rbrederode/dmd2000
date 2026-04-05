@@ -41,7 +41,7 @@
             },
             "driver_config": {
                 "_type": "MD01Config",
-                "host": "192.168.0.35",
+                "host": "192.168.0.36",
                 "port": 65000,
                 "stow_alt": 80.0,
                 "stow_az": 10.0,
