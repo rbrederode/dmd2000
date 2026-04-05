@@ -441,7 +441,14 @@ class DM(App):
                     
                     # Review dish health state to determine if action is needed
                     if dish_driver.get_health_state() == HealthState.FAILED:
-                        self._send_status_adv_to_tm(action, target_id, target, f"Dish {dish_id} health state is FAILED")
+
+                        self._send_status_adv_to_tm(
+                            action=action,
+                            target_id=target_id,
+                            target=target,
+                            status=tm_dm.STATUS_ERROR,
+                            message=f"Dish {dish_id} health state is FAILED",
+                        )
                         
                         # Tone down the driver poll rate to once per minute to reduce log spam until the issue is resolved
                         action.set_timer_action(
