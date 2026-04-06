@@ -35,7 +35,6 @@ class WeatherStation(App):
         self.dm_api = ws_dm.WS_DM()
         # Dish Manager TCP Client
         self.dm_endpoint = TCPClient(description=self.dm_system, queue=self.get_queue(), host=self.get_args().dm_host, port=self.get_args().dm_port)
-        self.dm_endpoint.connect()
         # Register Dish Manager interface with the App
         self.register_interface(self.dm_system, self.dm_api, self.dm_endpoint, InterfaceType.APP_APP)
         # Set initial Telescope Manager connection status
@@ -46,7 +45,6 @@ class WeatherStation(App):
         self.tm_api = tm_ws.TM_WS()
         # Telescope Manager TCP Server
         self.tm_endpoint = TCPServer(description=self.tm_system, queue=self.get_queue(), host=self.get_args().tm_host, port=self.get_args().tm_port)
-        self.tm_endpoint.start()
         # Register Telescope Manager interface with the App
         self.register_interface(self.tm_system, self.tm_api, self.tm_endpoint, InterfaceType.APP_APP)
         # Set initial Telescope Manager connection status
@@ -78,6 +76,10 @@ class WeatherStation(App):
         action.set_timer_action(Action.Timer(
             name=f"weather_polling_timer", 
             timer_action=1000)) 
+
+        # Start server endpoints and connect client endpoints to interfaces
+        self.dm_endpoint.connect()
+        self.tm_endpoint.start()
 
         return action
 

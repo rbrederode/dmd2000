@@ -20,7 +20,7 @@ from models.health import HealthState
 from sdr.sdr import SDR
 from util import log, util
 from util.timer import Timer, TimerManager
-from util.xbase import XBase, XStreamUnableToExtract, XSoftwareFailure, XAPIValidationFailed
+from util.xbase import XBase, XStreamUnableToExtract, XSoftwareFailure, XHardwareFailure, XAPIValidationFailed
 
 logger = logging.getLogger(__name__)
 
@@ -84,9 +84,8 @@ class Digitiser(App):
         self.dig_model.sdr_eeprom = self.sdr.get_eeprom_info()
         self.dig_model.sdr_connected = self.sdr.get_comms_status()
         
-        # If SDR is not connected, start timer to periodically retry connection
-        if self.dig_model.sdr_connected == CommunicationStatus.NOT_ESTABLISHED:
-            action.set_timer_action(Action.Timer(name=f"sdr_retry", timer_action=5000))
+        # Start timer to periodically retry SDR connection to ensure it connects
+        action.set_timer_action(Action.Timer(name=f"sdr_retry", timer_action=5000))
 
         return action
 
@@ -309,14 +308,15 @@ class Digitiser(App):
         # Else if the timer is for handling comms to the SDR
         elif event.name.startswith("sdr_retry"):
 
-            self.sdr = SDR()  # Retry connecting to the SDR
-            self.dig_model.sdr_connected = self.sdr.get_comms_status()
+            # Restart the timer to keep retrying periodically
+            action.set_timer_action(Action.Timer(name=f"sdr_retry", timer_action=5000))
 
             if self.dig_model.sdr_connected == CommunicationStatus.NOT_ESTABLISHED:
-                # If still not connected, set timer to retry connection
-                action.set_timer_action(Action.Timer(name=f"sdr_retry", timer_action=5000))
-            else:
-                logger.info("Digitiser successfully connected to SDR device.")
+                self.sdr = SDR()  # Retry connecting to the SDR
+                self.dig_model.sdr_connected = self.sdr.get_comms_status()
+
+                if self.dig_model.sdr_connected == CommunicationStatus.ESTABLISHED:
+                    logger.info("Digitiser successfully connected to SDR device.")
 
         return action
 
@@ -465,7 +465,7 @@ class Digitiser(App):
 
         try:  # Call the method
             result = call(**args) if args is not None else call() if callable(call) else call
-        except XSoftwareFailure as e:
+        except (XSoftwareFailure, XHardwareFailure) as e:
             logger.error(f"Digitiser method {method} failed with exception: {e}")
             return tm_dig.STATUS_ERROR, f"Digitiser method {method} failed with exception: {e}", None, None
 

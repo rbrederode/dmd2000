@@ -7,9 +7,22 @@
                 "step": {
                     "_type": "enum.IntEnum",
                     "instance": "StepType",
+                    "value": "DC_SPIKE"
+                },
+                "params": {"pipeline": "spr"},
+                "last_update": {
+                    "_type": "datetime",
+                    "value": "2026-03-14T10:27:33.526265+00:00"
+                }
+            },
+            {
+                "_type": "StepConfig",
+                "step": {
+                    "_type": "enum.IntEnum",
+                    "instance": "StepType",
                     "value": "LOAD"
                 },
-                "params": {},
+                "params": {"pipeline": "cal"},
                 "last_update": {
                     "_type": "datetime",
                     "value": "2026-03-14T10:27:33.526265+00:00"
@@ -22,7 +35,33 @@
                     "instance": "StepType",
                     "value": "RFI_FLAG"
                 },
-                "params": {"threshold": 5},
+                "params": {"pipeline": "cal", "threshold": 5, "window_size": 21},
+                "last_update": {
+                    "_type": "datetime",
+                    "value": "2026-03-14T10:27:33.526265+00:00"
+                }
+            },
+            {
+                "_type": "StepConfig",
+                "step": {
+                    "_type": "enum.IntEnum",
+                    "instance": "StepType",
+                    "value": "QA"
+                },
+                "params": {"pipeline": "cal", "window_frac": 0.2},
+                "last_update": {
+                    "_type": "datetime",
+                    "value": "2026-03-14T10:27:33.526265+00:00"
+                }
+            },
+            {
+                "_type": "StepConfig",
+                "step": {
+                    "_type": "enum.IntEnum",
+                    "instance": "StepType",
+                    "value": "QA"
+                },
+                "params": {"pipeline": "mpr", "window_frac": 0.2},
                 "last_update": {
                     "_type": "datetime",
                     "value": "2026-03-14T10:27:33.526265+00:00"

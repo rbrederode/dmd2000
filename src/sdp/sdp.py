@@ -21,7 +21,7 @@ from models.comms import CommunicationStatus, InterfaceType
 from models.dig import DigitiserModel, DigitiserList
 from models.health import HealthState
 from models.pipeline import StepConfig, StepType, PipelineConfig
-from models.scan import ScanModel, ScanState
+from models.scan import ScanModel, ScanState, ScanType
 from models.sdp import ScienceDataProcessorModel
 from obs.scan import Scan
 from sdp.pipeline.pipeline_factory import ProcessingPipelineFactory
@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 class SDP(App):
 
     sdp_model = ScienceDataProcessorModel(sdp_id="sdp001")
+    pipeline_factory = None  
 
     def __init__(self, app_name: str = "sdp"):
 
@@ -47,7 +48,6 @@ class SDP(App):
         self.tm_api = tm_sdp.TM_SDP()
         # Telescope Manager TCP Server
         self.tm_endpoint = TCPServer(description=self.tm_system, queue=self.get_queue(), host=self.get_args().tm_host, port=self.get_args().tm_port)
-        self.tm_endpoint.start()
         # Register Telescope Manager interface with the App
         self.register_interface(self.tm_system, self.tm_api, self.tm_endpoint, InterfaceType.APP_APP)
         # Set initial Telescope Manager connection status
@@ -58,7 +58,6 @@ class SDP(App):
         self.dig_api = sdp_dig.SDP_DIG()
         # Digitiser TCP Server
         self.dig_endpoint = TCPServer(description=self.dig_system, queue=self.get_queue(), host=self.get_args().dig_host, port=self.get_args().dig_port)
-        self.dig_endpoint.start()
         # Register Digitiser interface with the App
         self.register_interface(self.dig_system, self.dig_api, self.dig_endpoint, InterfaceType.ENTITY_DRIVER)
         # Entity drivers maintain comms status per entity, so no need to initialise comms status here
@@ -69,8 +68,6 @@ class SDP(App):
 
         self._rlock = threading.RLock()  # Lock for thread-safe access to shared resources
         self._dig_locks = {}             # Dictionary of threading locks, one per digitiser ID
-
-        self.pipeline_factory = None     # Pipeline factory to create signal processing pipelines for scans based on digitiser ID
 
     def add_args(self, arg_parser): 
         """ Specifies the science data processors command line arguments.
@@ -128,7 +125,11 @@ class SDP(App):
             self.sdp_model.pipeline_config = PipelineConfig()
             logger.info(f"Science Data Processor using default processing pipeline factory configuration as file not found in directory {input_dir} file {filename}:\n{self.sdp_model.pipeline_config}")
 
-        self.pipeline_factory = ProcessingPipelineFactory(pipeline_config=self.sdp_model.pipeline_config)
+        SDP.pipeline_factory = ProcessingPipelineFactory(pipeline_config=self.sdp_model.pipeline_config)
+
+        # Start server endpoints and connect client endpoints to interfaces
+        self.tm_endpoint.start()
+        self.dig_endpoint.start()
 
         return action
 
@@ -142,17 +143,18 @@ class SDP(App):
         """ Determines the digitiser entity ID based on the remote address of a ConnectEvent, DisconnectEvent, or DataEvent.
             Returns a tuple of the entity ID and entity if found, else None, None.
         """
-        logger.debug(f"Science Data Processor finding digitiser entity ID for remote address: {event.remote_addr[0] if event.remote_addr else 'None'}")
+        remote_addr = event.remote_addr[0] if event.remote_addr else 'None'
+        logger.debug(f"Science Data Processor finding digitiser entity ID for remote address: {remote_addr}")
 
         for digitiser in self.sdp_model.dig_store.dig_list:
 
             if isinstance(digitiser.app.arguments, dict) and "local_host" in digitiser.app.arguments:
 
-                if digitiser.app.arguments["local_host"] == event.remote_addr[0]:
-                    logger.debug(f"Science Data Processor found digitiser entity ID: {digitiser.dig_id} for remote address: {event.remote_addr}")
+                if digitiser.app.arguments["local_host"] == remote_addr:
+                    logger.debug(f"Science Data Processor found digitiser entity ID: {digitiser.dig_id} for remote address: {remote_addr}")
                     return digitiser.dig_id, digitiser
             else:
-                logger.warning(f"SDP found {digitiser.dig_id} not configured with valid local_host argument matching against remote address: {event.remote_addr[0]}")
+                logger.warning(f"SDP found {digitiser.dig_id} not configured with valid local_host argument matching against remote address: {remote_addr}")
 
         return None, None
 
@@ -220,7 +222,7 @@ class SDP(App):
                 tgt_idx = digitiser.scanning.get('tgt_idx') if isinstance(digitiser.scanning, dict) else None
                 freq_scan = digitiser.scanning.get('freq_scan') if isinstance(digitiser.scanning, dict) else None
 
-                odt_initiated = obs_id[:3] == "ODT" if isinstance(obs_id, str) and len(obs_id) >= 3 else False
+                odt_initiated = obs_id[:3].upper() == "ODT" if isinstance(obs_id, str) and len(obs_id) >= 3 else False
 
                 # Discard digitiser samples if the SDP scan configuration does not match the sample metadata
                 # Respond with success to avoid triggering retries from the digitiser, but log a warning and discard the samples
@@ -283,6 +285,7 @@ class SDP(App):
                         obs_id=obs_id,
                         tgt_idx=tgt_idx,
                         freq_scan=freq_scan,
+                        scan_type=ScanType.LOAD if load else ScanType.SKY,
                         start_idx=read_counter,
                         duration=digitiser.scan_duration,
                         channels=digitiser.channels,
@@ -295,7 +298,7 @@ class SDP(App):
                     scan = Scan(scan_model=scan_model)
 
                     # Create a signal processing pipeline using the pipeline factory and associate it with the scan
-                    pipeline = self.pipeline_factory.create_pipeline(scan, self.scan_q, self.cal_q) if self.pipeline_factory else None
+                    pipeline = SDP.pipeline_factory.create_pipeline(scan, self.scan_q, self.cal_q) if SDP.pipeline_factory else None
                     scan.set_pipeline(pipeline)
 
                     self.scan_q.put(scan)
@@ -503,7 +506,7 @@ class SDP(App):
                 f" and observation {'None' if obs_id is None else obs_id}\n{value}")
             return False
 
-        user_initiated = obs_id[:3] == "USR" if isinstance(obs_id, str) and len(obs_id) >= 3 else False
+        user_initiated = obs_id[:3].upper() == "USR" if isinstance(obs_id, str) and len(obs_id) >= 3 else False
 
         # If this is a user-initiated scan config and digitiser already scanning, then decline if the current scanning is an observation-initiated (ODT) scan
         if user_initiated and dig.scanning:
@@ -525,21 +528,21 @@ class SDP(App):
         load_found = False
 
         # Check if we already have an equivalent completed load scan in the load queue for this digitiser
-        load_scans = [s for s in list(self.cal_q.queue) if s.get_dig_id() == dig_id]
-        purge = True if len(load_scans) > 5 else False  # Purge load scans from the load queue if there are more than 5 in the queue
+        cal_scans = [s for s in list(self.cal_q.queue) if s.get_dig_id() == dig_id and s.get_scan_type() == ScanType.LOAD]
+        purge = True if len(cal_scans) > 5 else False  # Purge load scans from the load queue if there are more than 5 in the queue
 
-        for load in load_scans:
+        for cal in cal_scans:
 
-            if load.scan_model.center_freq == dig.center_freq and load.scan_model.sample_rate == dig.sample_rate and load.scan_model.gain == dig.gain and \
-               load.scan_model.channels == dig.channels and load.scan_model.duration == dig.scan_duration and load.scan_model.status == ScanState.COMPLETE:
+            if cal.scan_model.center_freq == dig.center_freq and cal.scan_model.sample_rate == dig.sample_rate and cal.scan_model.gain == dig.gain and \
+               cal.scan_model.channels == dig.channels and cal.scan_model.duration == dig.scan_duration and cal.scan_model.status == ScanState.COMPLETE:
                 load_found = True
-                logger.info(f"Science Data Processor found equivalent load scan in load queue for digitiser {dig_id} and observation {obs_id}:\n{load}")
+                logger.info(f"Science Data Processor found equivalent load scan in load queue for digitiser {dig_id} and observation {obs_id}:\n{cal}")
                 break  # we already have an equivalent load scan in the load queue, so we can keep it and skip preparing a new one
             else:
                 if purge:
-                    self.cal_q.queue.remove(load)  # remove non-equivalent load scans from the load queue to prevent build up of stale load scans
+                    self.cal_q.queue.remove(cal)  # remove non-equivalent load scans from the load queue to prevent build up of stale load scans
                     self.cal_q.task_done()
-                    logger.info(f"Science Data Processor purged non-equivalent load scan from load queue for digitiser {dig_id} and observation {obs_id}:\n{load}")
+                    logger.info(f"Science Data Processor purged non-equivalent load scan from load queue for digitiser {dig_id} and observation {obs_id}:\n{cal}")
 
         if not load_found:
             # Check whether a previous load scan is available in the sample store that matches the digitiser's scan parameters
@@ -552,12 +555,13 @@ class SDP(App):
                 duration=dig.scan_duration,
                 sample_rate=dig.sample_rate,
                 center_freq=dig.center_freq,
-                channels=dig.channels)
+                channels=dig.channels, 
+                scan_type=ScanType.LOAD)
 
-            load_files = [f for f in os.listdir(scan_store_dir) if file_prefix in f and f.endswith('load.csv')]
+            load_files = [f for f in os.listdir(scan_store_dir) if file_prefix in f and f.endswith('spr.csv')]
             logger.info(f"Science Data Processor found {len(load_files)} load scan files in sample store matching prefix {file_prefix} for digitiser {dig_id} and observation {obs_id}")
             load_files = sorted(load_files, key=lambda f: os.path.getctime(os.path.join(scan_store_dir, f)), reverse=True) if len(load_files) > 0 else []
-            load_file = load_files[0].removesuffix('load.csv') if len(load_files) > 0 else None
+            load_file = load_files[0].removesuffix('spr.csv') if len(load_files) > 0 else None
 
             if load_file is not None:
                 load_scan = Scan.from_disk(file_prefix=load_file, input_dir=scan_store_dir, include_iq=False)
@@ -579,6 +583,7 @@ class SDP(App):
                 obs_id=obs_id,             
                 tgt_idx=tgt_idx,           
                 freq_scan=freq_scan,
+                scan_type=ScanType.LOAD,
                 start_idx=0,                 # default load scans start at index 0
                 duration=dig.scan_duration,
                 sample_rate=dig.sample_rate,
@@ -843,8 +848,11 @@ def main():
     sdp = SDP()
     sdp.start()
 
+    display_period_sec = 1.0  # Initial display period in seconds
+
     try:
         while True:
+            time_start = time.monotonic()
           
             # For each processing scan in the scan queue, allocate it to a signal display
             # We are expecting one processing scan per digitiser to be in the scan queue
@@ -886,10 +894,27 @@ def main():
 
             for sig_display in sdp.signal_displays.values():
                 # If the signal display has a scan and is active, display the scan
-                if sig_display.get_scan() and sig_display.get_is_active():
-                    sig_display.display()
+                if sig_display.get_scan():
+                    
+                    if sig_display.get_is_active():
+                        sig_display.display()
+                    
+                    if sig_display.get_scan().get_status() == ScanState.COMPLETE:
+                        sig_display.save_scan_figure(output_dir=sdp.get_args().scan_store_dir)
 
-            time.sleep(1)  # Update displays every second                
+            time_elapsed = time.monotonic() - time_start
+
+            # Adjust display period up or down based on processing time
+            time_elapsed = time.monotonic() - time_start
+
+            if time_elapsed > display_period_sec:
+                display_period_sec += 1.0 
+                logger.warning(f"Science Data Processor - Signal display loop took {time_elapsed:.3f} seconds to execute, extending display period to {display_period_sec} seconds")
+            elif time_elapsed < display_period_sec - 2.0:
+                display_period_sec = max(1.0, display_period_sec - 2.0)
+                logger.info(f"Science Data Processor - Signal display loop took {time_elapsed:.3f} seconds to execute, shortening display period to {display_period_sec} seconds")
+
+            time.sleep(max(0.0, display_period_sec - time_elapsed))  # Update displays on an approximately 1 second cadence
                 
     except KeyboardInterrupt:
         pass

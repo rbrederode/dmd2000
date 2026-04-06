@@ -7,7 +7,8 @@ import os
 from datetime import datetime, timezone
 
 from models.pipeline import StepConfig, StepType
-from models.scan import ScanModel, ScanState
+from models.qa import ScanQA, QA
+from models.scan import ScanDataSource, ScanModel, ScanState, ScanType
 from sdp.pipeline.steps.dc_spike import DCSpike
 from util import gen_file_prefix
 from util.xbase import XSoftwareFailure 
@@ -70,6 +71,7 @@ class Scan:
 
             self.scan_model = scan_model
             self.pipeline = None            # Processing pipeline to calibrate scan data
+            self.data_source = ScanDataSource.NONE   # Highest-fidelity scan data currently loaded into this scan
 
             self.loaded_secs = self.scan_model.duration * [False]    # List of seconds for which samples have been loaded
             self.prev_read_end = None                                # Timestamp of the previous read end
@@ -80,18 +82,17 @@ class Scan:
             self.spr = None  # Summed power spectrum for each second in the duration of the scan
             self.cal = None  # Calibrated power spectrum for each second in the duration of the scan
             self.mpr = None  # Mean power spectrum over duration of the scan
-            self.snr = None  # Signal to Noise Ratio (SNR) for each second in the duration of the scan
 
             self.mean_real = 0.0  # Mean of real value of the raw samples (I)
             self.mean_imag = 0.0  # Mean of imaginary value of the raw samples (Q)
+             
+            # QA attributes for the signal in this scan
+            self.scan_qa = ScanQA(scan_id=self.scan_model.scan_id, scan_duration=self.scan_model.duration)
 
             self.load_scan = None  # Reference to a load scan for calibration
 
             # Initialize data arrays for the scan
             self.init_data_arrays()
-
-            # Initialise a DC Spike removal step for this scan (used in load_samples when loading each second of samples)
-            self.dcspike = DCSpike(StepConfig(step=StepType.DC_SPIKE, params={'scan': self}))
 
     def __str__(self):
 
@@ -146,7 +147,6 @@ class Scan:
             self.spr = np.zeros((self.scan_model.duration, self.scan_model.channels), dtype=np.float64)     # float64 for summed pwr for each second in duration
             self.cal = np.zeros((self.scan_model.duration, self.scan_model.channels), dtype=np.float64)     # float64 for calibrated spectrum for each second in duration
             self.mpr = np.ones((self.scan_model.channels,), dtype=np.float64)               # float64 for mean power spectrum over duration for each channel (fft bin)
-            self.snr = np.zeros(self.scan_model.duration)                                   # SNR for each second in duration
 
     def get_dig_id(self) -> str:
         """
@@ -154,6 +154,20 @@ class Scan:
             :returns: The digitiser ID as a string
         """
         return self.scan_model.dig_id
+
+    def get_scan_type(self) -> ScanType:
+        """
+        Get the scan type (e.g., SKY, LOAD) for this scan.
+            :returns: The scan type as a ScanType enum value
+        """
+        return self.scan_model.scan_type
+
+    def get_qa(self) -> ScanQA:
+        """
+        Get the QA attributes for the signal in this scan.
+            :returns: A ScanQA instance containing the QA attributes for this scan
+        """
+        return self.scan_qa
 
     def get_obs_id(self) -> str:
         """
@@ -252,14 +266,16 @@ class Scan:
         row_start = int((sec - 1) * self.scan_model.sample_rate / self.scan_model.channels)   # Calculate the starting row index (zero based) using sec
         row_end = int(sec * self.scan_model.sample_rate / self.scan_model.channels)           # Calculate the ending row index (zero based) using sec
 
-        pwr = np.zeros((iq.shape[0], self.scan_model.channels), dtype=np.float64)  # Temporary array to hold power spectrum for the loaded samples
-        # For each row i.e. 'shape[0]' in the reshaped sample set, calculate and record the power spectrum
-        for j in range(iq.shape[0]):
-            pwr[j,:] = np.abs(np.fft.fftshift(np.fft.fft(iq[j,:])))**2  # The power spectrum is the absolute value of the signal squared
+        # Calculate the power spectrum for all rows in one vectorized FFT pass
+        # This is more efficient than iterating through rows and calculating the FFT for each row separately
+        # for j in range(iq.shape[0]):
+        #    pwr[j,:] = np.abs(np.fft.fftshift(np.fft.fft(iq[j,:])))**2  
+        pwr = np.abs(np.fft.fftshift(np.fft.fft(iq, axis=1), axes=1)) ** 2  # The power spectrum is the absolute value of the signal squared
 
         spr = np.sum(pwr, axis=0)  # Sum power across all rows for this second
-        #self.dcspike.process(context={}, signal=spr)  # Remove DC spike if present using the DCSpike step
-        cal = self.pipeline.process(signal=spr.copy(), context={}) if self.pipeline else spr.copy()  # Push the summed power spectrum through the calibration pipeline
+
+        spr = self.pipeline.process(signal=spr, context={"pipeline": "spr", "sec": sec}) if self.pipeline else spr                # Push the summed power spectrum through the spr pipeline
+        cal = self.pipeline.process(signal=spr.copy(), context={"pipeline": "cal", "sec": sec}) if self.pipeline else spr.copy()  # Push the summed power spectrum through the cal pipeline
 
         # Store the raw, power and summed spectrum data in the appropriate rows of the scan data arrays
         with self._rlock:
@@ -267,15 +283,21 @@ class Scan:
             self.pwr[row_start:row_start + iq.shape[0],:] = pwr
             self.spr[sec - 1,:] = spr  # sec is 1-based index, so adjust for 0-based array index
             self.cal[sec - 1,:] = cal  # sec is 1-based index, so adjust for 0-based array index
-            self.loaded_secs[sec - 1] = True  # Mark this second as loaded
+
+            # Build the mean spectrum from the loaded calibrated rows, including the
+            # current second that was just written above.
+            loaded_mask = np.array(self.loaded_secs, dtype=bool)
+            loaded_mask[sec - 1] = True
+            mpr = np.mean(self.cal[loaded_mask, :], axis=0) if np.any(loaded_mask) else np.zeros((self.scan_model.channels,), dtype=np.float64)
+            self.mpr = self.pipeline.process(signal=mpr, context={"pipeline": "mpr", "sec": sec}) if self.pipeline else mpr
+
+            self.loaded_secs[sec - 1] = True  # Mark this second as loaded only after mpr is populated
+            self.data_source = ScanDataSource.RAW
 
             indices = np.linspace(row_start, row_end - 1, int(self.raw.shape[0]*0.01), dtype=int)
 
             self.mean_real = np.mean(np.abs(self.raw[row_start:row_end, ].real))*100  # Find the mean real value in the raw samples (I)
             self.mean_imag = np.mean(np.abs(self.raw[row_start:row_end, ].imag))*100  # Find the mean imaginary value in the raw samples (Q)
-
-            self.snr[sec - 1] = self.calc_snr(self.cal[sec - 1, :])                   # Calculate the SNR for this second and store it in the snr array
-            logger.info(f"Scan {self.scan_model.scan_id} - SNR for second {sec}: {self.snr[sec - 1]:.2f} dB")
 
         # Count how many rows have self.loaded_secs marked as True
         actual_rows = np.count_nonzero(self.loaded_secs)
@@ -295,41 +317,65 @@ class Scan:
             self.set_status(ScanState.WIP)
         elif actual_rows >= expected_rows:
             self.set_status(ScanState.COMPLETE)
-            # Populate mean power spectrum (mpr) with the mean of the summed power spectrum (spr) across the duration for each channel
-            self.mpr = np.mean(self.spr, axis=0)
 
         return True
 
-    def calc_snr(self, spectrum: np.ndarray, window_frac: float = 0.10) -> float:
+    def process_pipeline(self) -> bool:
         """
-        Calculate the signal-to-noise ratio (SNR) for a given power spectrum.
-        The SNR is computed as (mean signal - mean noise) / std noise, where:
-        - The signal region is a window around the peak (default: 10% of channels, min 3 bins)
-        - The noise region is all bins outside the signal window
-        :param spectrum: 1D numpy array of power values (e.g., a row from self.spr)
-        :param window_frac: Fraction of channels to use for the signal window (default 10%)
-        :return: SNR value (float)
+        Process all loaded scan data through the associated pipeline.
+        - If raw IQ data is available, recompute power, summed power, and calibrated spectra.
+        - If only summed power spectra are available, process those through the calibration pipeline.
+            :returns: True if processing completed, False otherwise
         """
-        channels = self.scan_model.channels
-        peak_bin = np.argmax(spectrum)
-        window_width = max(3, int(window_frac * channels))
-        half_width = window_width // 2
-        signal_start = max(0, peak_bin - half_width)
-        signal_end = min(channels, peak_bin + half_width + 1)
 
-        signal_region = spectrum[signal_start:signal_end]
-        if signal_start == 0:
-            noise_region = spectrum[signal_end:]
-        elif signal_end == channels:
-            noise_region = spectrum[:signal_start]
-        else:
-            noise_region = np.concatenate((spectrum[:signal_start], spectrum[signal_end:]))
+        loaded_sec_indices = [sec for sec, loaded in enumerate(self.loaded_secs) if loaded]
 
-        signal_mean = np.mean(signal_region)
-        noise_mean = np.mean(noise_region) if noise_region.size > 0 else 0.0
-        noise_std = np.std(noise_region) if noise_region.size > 0 else 1.0
-        snr = (signal_mean - noise_mean) / noise_std if noise_std > 0 else np.inf
-        return snr
+        if len(loaded_sec_indices) == 0:
+            logger.warning(f"Scan {self.scan_model.scan_id} - No loaded data available to process through pipeline.")
+            return False
+
+        with self._rlock:
+            self.cal.fill(0.0)  # Clear the calibrated spectrum array before re-processing
+
+            if self.data_source == ScanDataSource.RAW:
+                self.pwr = np.abs(np.fft.fftshift(np.fft.fft(self.raw, axis=1), axes=1)) ** 2
+                rows_per_sec = self.pwr.shape[0] // self.scan_model.duration if self.scan_model.duration > 0 else 0
+
+                for sec in loaded_sec_indices:
+                    row_start = sec * rows_per_sec
+                    row_end = (sec + 1) * rows_per_sec if sec < self.scan_model.duration - 1 else self.pwr.shape[0]
+
+                    signal = np.sum(self.pwr[row_start:row_end, :], axis=0)
+                    self.spr[sec, :] = self.pipeline.process(signal=signal, context={"pipeline": "spr", "sec": sec + 1}) if self.pipeline else signal
+                    self.cal[sec, :] = self.pipeline.process(signal=self.spr[sec, :].copy(), context={"pipeline": "cal", "sec": sec + 1}) if self.pipeline else self.spr[sec, :].copy()
+
+                valid_raw = self.raw[np.any(self.raw != 0, axis=1)]
+                if valid_raw.shape[0] > 0:
+                    self.mean_real = np.mean(np.abs(valid_raw.real)) * 100
+                    self.mean_imag = np.mean(np.abs(valid_raw.imag)) * 100
+            elif self.data_source == ScanDataSource.SPR:
+                for sec in loaded_sec_indices:
+                    signal = self.spr[sec, :]
+                    self.cal[sec, :] = self.pipeline.process(signal=signal.copy(), context={"pipeline": "cal", "sec": sec + 1}) if self.pipeline else signal.copy()
+            else:
+                logger.warning(f"Scan {self.scan_model.scan_id} - No raw IQ or summed power data available to process.")
+                return False
+
+            valid_cal_rows = self.cal[loaded_sec_indices, :]
+            self.mpr = np.mean(valid_cal_rows, axis=0) if valid_cal_rows.shape[0] > 0 else np.zeros((self.scan_model.channels,), dtype=np.float64)
+            loaded_count = len(loaded_sec_indices)
+            if self.pipeline and loaded_count > 0:
+                self.mpr = self.pipeline.process(signal=self.mpr.copy(), context={"pipeline": "mpr", "sec": loaded_count})
+
+            if loaded_count == 0:
+                self.set_status(ScanState.EMPTY)
+            elif loaded_count < self.scan_model.duration:
+                self.set_status(ScanState.WIP)
+            else:
+                self.set_status(ScanState.COMPLETE)
+
+        logger.info(f"Scan {self.scan_model.scan_id} - Completed processing loaded scan data through pipeline.")
+        return True
 
     def save_to_disk(self, output_dir, include_iq: bool = False) -> bool:
         """
@@ -351,7 +397,7 @@ class Scan:
         prefix = gen_file_prefix(
             dt=self.scan_model.read_start, entity_id=self.scan_model.dig_id, gain=self.scan_model.gain, 
             duration=self.scan_model.duration, sample_rate=self.scan_model.sample_rate, center_freq=self.scan_model.center_freq, 
-            channels=self.scan_model.channels, instance_id=self.scan_model.scan_id
+            channels=self.scan_model.channels, instance_id=self.scan_model.scan_id, scan_type=self.scan_model.scan_type
         )
 
         self.scan_model.files_prefix = prefix
@@ -367,7 +413,7 @@ class Scan:
             with open(f"{output_dir}/{filename}", 'w') as f:
                 json.dump(self.get_scan_meta(), f, indent=4)  
 
-            filename = prefix + "-load" + ".csv" if self.scan_model.load else prefix + "-spr" + ".csv"
+            filename = prefix + "-spr" + ".csv"
             with open(f"{output_dir}/{filename}", 'w') as f:
                 np.savetxt(f, self.spr, delimiter=",", fmt="%.6f")
         
@@ -379,12 +425,13 @@ class Scan:
         return True
 
     @classmethod
-    def from_disk(cls, file_prefix: str, input_dir: str, include_iq: bool = False) -> 'Scan':
+    def from_disk(cls, file_prefix: str, input_dir: str, include_iq: bool = False, pipeline: "ProcessingPipeline" = None) -> 'Scan':
         """
         Static constructor that creates a Scan instance by loading scan data from files on disk.
             :param file_prefix: The file prefix to match against filenames in the input directory
             :param input_dir: Directory where the scan data files are located
             :param include_iq: Whether to load the IQ data or not (default is False)
+            :param pipeline: Optional pre-built processing pipeline to attach after loading
             :returns: A Scan instance if loaded successfully, None otherwise
         """
 
@@ -395,17 +442,17 @@ class Scan:
         if input_dir is None or input_dir == '':
             input_dir = os.path.expanduser("./")
 
-        logger.info(f"Scan - Looking for scan files in dir {input_dir} matching file prefix {file_prefix}")
+        logger.info(f"Scan - Searching for scans in {input_dir} with prefix {file_prefix}")
         read_files = [f for f in os.listdir(input_dir) if file_prefix in f and f.endswith('meta.json')]
 
         if read_files is None or len(read_files) == 0:
-            logger.warning(f"Scan - No meta data ({file_prefix}*meta.json) scan files found in dir {input_dir} matching prefix.")
+            logger.warning(f"Scan - No meta data ({file_prefix} meta.json) scan files found in dir {input_dir} matching prefix.")
             return None
 
         read_files = sorted(read_files, key=lambda f: os.path.getctime(os.path.join(input_dir, f)), reverse=True)
         read_file = read_files[0]
 
-        logger.info(f"Scan - Reading scan data from {input_dir}/{read_file}")
+        logger.info(f"Scan - Reading meta data from {input_dir}/{read_file}")
 
         try:
             with open(f"{input_dir}/{read_file}", 'r') as f:
@@ -413,60 +460,108 @@ class Scan:
                 scan_model = ScanModel().from_dict(meta)
 
         except Exception as e:
-            logger.error(f"Scan - Failed to read metadata from {input_dir}/{read_file}: {e}")
+            logger.error(f"Scan - Failed reading metadata from {input_dir}/{read_file}: {e}")
             return None
 
         if scan_model.status.value != ScanState.COMPLETE:
-            logger.warning(f"Scan - Loading an incomplete scan from disk with status: {scan_model.status.name}.\n{scan_model.to_dict()}")
+            logger.warning(f"Scan - Loading incomplete scan with status: {scan_model.status.name} from disk.\n{scan_model.to_dict()}")
 
         # Create the Scan instance (this initialises data arrays via __init__)
         scan = cls(scan_model)
+        scan.set_pipeline(pipeline)
 
         try:
             prefix = gen_file_prefix(dt=scan.scan_model.read_start, entity_id=scan.scan_model.dig_id, gain=scan.scan_model.gain, 
                 duration=scan.scan_model.duration, sample_rate=scan.scan_model.sample_rate, center_freq=scan.scan_model.center_freq, 
-                channels=scan.scan_model.channels, instance_id=scan.scan_model.scan_id)
+                channels=scan.scan_model.channels, instance_id=scan.scan_model.scan_id, scan_type=scan.scan_model.scan_type)
 
             if include_iq:
                 # Load raw IQ samples 
                 filename = prefix + "-raw" + ".iq"
                 with open(f"{input_dir}/{filename}", 'rb') as f:
+
+                    logger.info(f"Scan - Loading scan data from {input_dir}/{filename}")
+
                     scan.raw = np.fromfile(f, dtype=np.complex64)
                     scan.raw = scan.raw.reshape(-1, scan.scan_model.channels)
 
-                # Recalculate power spectrum (scan.pwr)
-                num_rows = scan.raw.shape[0]
-                for row in range(num_rows):
-                    scan.pwr[row,:] = np.abs(np.fft.fftshift(np.fft.fft(scan.raw[row,:])))**2 # The power spectrum is the absolute value of the signal squared
-
-                # Recalculate the summed power spectrum (scan.spr)
-                for sec in range(scan.scan_model.duration):
-                    row_start = sec * (num_rows // scan.scan_model.duration)
-                    row_end = (sec + 1) * (num_rows // scan.scan_model.duration) if sec < scan.scan_model.duration - 1 else num_rows  # Ensure we cover all rows
-
-                    # Calculate the sum of the power spectrum for each frequency bin in a given second
-                    scan.spr[sec,:] = np.sum(scan.pwr[row_start:row_end,:], axis=0)  # Sum the power spectrum in a given sec for each frequency bin (in columns)
-                    #scan.dcspike.process(context={}, signal=scan.spr[sec,:])         # Remove DC spike if present using the DCSpike step
-                    
+                scan.data_source = ScanDataSource.RAW
                 scan.loaded_secs = [True] * scan.scan_model.duration
             else:
                 # Load summed power spectrum only
-                filename = prefix + "-load" + ".csv" if scan.scan_model.load else prefix + "-spr" + ".csv"
+                filename = prefix + "-spr" + ".csv"
                 with open(f"{input_dir}/{filename}", 'r') as f:
+
+                    logger.info(f"Scan - Loading scan data from {input_dir}/{filename}")
+
                     scan.spr = np.loadtxt(f, delimiter=",")
                     scan.spr = scan.spr.reshape(-1, scan.scan_model.channels)
 
-                scan.loaded_secs = [True] * scan.spr.shape[0]
+                loaded_spectra = scan.spr.shape[0]
+                if loaded_spectra < scan.scan_model.duration:
+                    logger.warning(
+                        f"Scan - Loaded {loaded_spectra} summed spectra from {input_dir}/{filename}, "
+                        f"but scan duration expects {scan.scan_model.duration}. Treating as a partial scan."
+                    )
 
-            scan.mpr = np.mean(scan.spr, axis=0)  # Populate mean power spectrum (mpr) with the mean of the summed power spectrum (spr) across the duration for each channel
+                scan.data_source = ScanDataSource.SPR
+                scan.loaded_secs = [True] * loaded_spectra + [False] * max(0, scan.scan_model.duration - loaded_spectra)
+
+            scan.process_pipeline()
 
         except Exception as e:
             logger.error(f"Scan - Failed to load data from {input_dir}: {e}")
             return None
 
-        logger.info(f"Scan - Loaded scan from {input_dir} with id: {scan.scan_model.scan_id}")
-        logger.debug(f"Scan metadata: {scan.scan_model.to_dict()}")
+        logger.info(f"Scan - Completed loading scan {input_dir}:\n\n{scan}\n")
         return scan
+
+    def find_equiv_scan(self, input_dir: str, scan_type: ScanType = ScanType.UNKNOWN) -> "Scan":
+        """
+        Find the most recent scan on disk that is equivalent to this scan.
+        If scan_type is provided, only scans of that type are considered.
+            :returns: The matching equivalent scan if it exists, None otherwise
+        """
+
+        file_prefix = gen_file_prefix(dt=None, entity_id=self.scan_model.dig_id, gain=self.scan_model.gain, duration=self.scan_model.duration,
+                sample_rate=self.scan_model.sample_rate, center_freq=self.scan_model.center_freq, channels=self.scan_model.channels,
+                scan_type=scan_type if scan_type != ScanType.UNKNOWN else None)
+
+        logger.info(f"Scan {self.scan_model.scan_id} - Searching for equivalent scans in {input_dir} with prefix {file_prefix}")
+
+        equiv_files = [
+            f for f in os.listdir(input_dir)
+            if file_prefix in f
+            and not (
+                self.scan_model.scan_id is not None
+                and self.scan_model.scan_id.lower() in f.lower()
+                and self.scan_model.scan_type is not None
+                and f"-{self.scan_model.scan_type.name.lower()}-" in f.lower()
+            )
+            and f.endswith('spr.csv')
+        ]
+        logger.info(
+            f"Scan - Found {len(equiv_files)} equivalent scan files in {input_dir} with prefix {file_prefix} "
+            f"for digitiser {self.scan_model.dig_id}"
+        )
+        equiv_files = sorted(equiv_files, key=lambda f: os.path.getctime(os.path.join(input_dir, f)), reverse=True) if len(equiv_files) > 0 else []
+        equiv_file = equiv_files[0].removesuffix('-spr.csv') if len(equiv_files) > 0 else None
+
+        if equiv_file is not None:
+            equiv_scan = Scan.from_disk(file_prefix=equiv_file, input_dir=input_dir, include_iq=False)
+
+            if equiv_scan is not None:
+                logger.info(
+                    f"Scan {self.scan_model.scan_id} - Found equivalent scan with id {equiv_scan.scan_model.scan_id} "
+                    f"for digitiser {self.scan_model.dig_id}"
+                )
+                return equiv_scan
+        
+        logger.info(
+            f"Scan {self.scan_model.scan_id} - No equivalent scan found for digitiser {self.scan_model.dig_id} "
+            f"in dir {input_dir} matching prefix {file_prefix}"
+        )
+        return None
 
     def del_iq(self):
         """ Flush the iq data to the bin """
@@ -487,7 +582,7 @@ if __name__ == "__main__":
 
     # Setup logging configuration
     logging.basicConfig(
-        level=logging.DEBUG,  # Set the logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+        level=logging.INFO,  # Set the logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
         format="%(asctime)s - %(levelname)s - %(message)s",  # Log format
         handlers=[
             logging.StreamHandler(),                     # Log to console
@@ -495,19 +590,40 @@ if __name__ == "__main__":
             ]
     )
 
-    INPUT_DIR = '~/.alston/samples'  # Directory to store samples
+    INPUT_DIR = './tests/test data'  # Directory to store samples
     INPUT_DIR = os.path.expanduser(INPUT_DIR)
+    SPR_PREFIX = "dig002-g23.0-du60-bw2.05-cf1420.73-ch2048"
+    IQ_PREFIX = "dig002-g12.0-du60-bw2.4-cf1419.69-ch1024"
 
+    def print_banner(title: str):
+        print("\n" + "=" * 150)
+        print(title)
+        print("=" * 150)
+
+    def build_test_pipeline_factory():
+        from models.pipeline import PipelineConfig, StepConfig, StepType
+        from sdp.pipeline.pipeline_factory import ProcessingPipelineFactory
+
+        step1 = StepConfig(step=StepType.DC_SPIKE, params={"pipeline": "spr"})
+        step2 = StepConfig(step=StepType.LOAD, params={"pipeline": "cal"})
+        step3 = StepConfig(step=StepType.RFI_FLAG, params={"pipeline": "cal", "threshold": 5, "window_size": 21})
+        step4 = StepConfig(step=StepType.QA, params={"pipeline": "cal", "window_frac": 0.2})
+        step5 = StepConfig(step=StepType.QA, params={"pipeline": "mpr", "window_frac": 0.2})
+        config = PipelineConfig(steps_map={"default": [step1, step2, step3, step4, step5]})
+        return ProcessingPipelineFactory(config)
+
+    # Test 1: Basic scan creation from a ScanModel
+    print_banner("Test 1 - Creating scan from scan model")
     scan_model = ScanModel(
         dig_id="dig001",
         obs_id="obs001",
         tgt_idx=0,
         freq_scan=1,
         scan_iter=5,
+        scan_type=ScanType.SKY,
         created=datetime.now(timezone.utc),
         read_start=datetime.now(timezone.utc),
         read_end=datetime.now(timezone.utc),
-        prev_read_end=datetime.now(timezone.utc),
         start_idx=100,
         duration=60,
         sample_rate=24e5,
@@ -519,19 +635,52 @@ if __name__ == "__main__":
         load_failures=0,
         last_update=datetime.now(timezone.utc)
     )
+    sky_scan1 = Scan(scan_model=scan_model)
+    print(sky_scan1)
 
-    scan = Scan(scan_model=scan_model)
-    print(scan)
-    scan.from_disk(file_prefix="2025-06-24T130440", input_dir=INPUT_DIR, include_iq=True)
-    print(scan)
+    # Test 2: Load an SPR-only scan from disk
+    print_banner(f"Test 2 - Loading SPR-only scan from disk with prefix {SPR_PREFIX}")
+    sky_scan2 = Scan.from_disk(file_prefix=SPR_PREFIX, input_dir=INPUT_DIR, include_iq=False)
+    print(sky_scan2)
 
-    from sdp.signal_display import SignalDisplay
+    # Test 3: Load a sky scan from IQ data on disk without processing pipeline attached yet
+    print_banner(f"Test 3 - Loading IQ scan from disk with prefix {IQ_PREFIX}")
+    sky_scan3 = Scan.from_disk(file_prefix=IQ_PREFIX, input_dir=INPUT_DIR, include_iq=True)
+    print(sky_scan3)
 
-    display = SignalDisplay(dig_id="dig001")
-    display.set_scan(scan=scan, load=scan)
-    display.display()
+    # Test 4: Load the matching LOAD scan, process the IQ scan through the pipeline, and display it
+    print_banner("Test 4 - Loading equivalent LOAD scan, processing IQ scan through pipeline, and displaying it")
+    load_scan3 = None
+    processed_scan3 = None
 
-    # press a key to continue
-    input("Press Enter to continue...")
+    if sky_scan3 is not None:
+        load_scan3 = sky_scan3.find_equiv_scan(input_dir=INPUT_DIR, scan_type=ScanType.LOAD)
+        print(load_scan3)
 
-    scan.save_to_disk(output_dir=INPUT_DIR, include_iq=False)
+        if load_scan3 is not None:
+            from queue import Queue
+            from sdp.signal_display import SignalDisplay
+
+            factory = build_test_pipeline_factory()
+            scan_q = Queue()
+            cal_q = Queue()
+
+            cal_q.put(load_scan3)
+            scan_q.put(sky_scan3)
+
+            pipeline = factory.create_pipeline(scan=sky_scan3, scan_q=scan_q, cal_q=cal_q)
+            sky_scan3.set_pipeline(pipeline)
+            sky_scan3.process_pipeline()
+            processed_scan3 = sky_scan3
+
+            display = SignalDisplay(dig_id=processed_scan3.get_dig_id())
+            display.set_scan(scan=processed_scan3, load=load_scan3)
+            display.display()
+
+            input("Press Enter to continue...")
+        else:
+            logger.warning(
+                f"Unable to process IQ scan {sky_scan3.scan_model.scan_id} because no equivalent load scan was found in {INPUT_DIR}."
+            )
+    else:
+        logger.warning(f"Unable to run pipeline/display test because IQ scan prefix {IQ_PREFIX} could not be loaded from {INPUT_DIR}.")

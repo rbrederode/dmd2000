@@ -412,6 +412,10 @@ class AppProcessor(Processor):
                 logger.error(self.driver.set_last_err(f"AppProcessor {self.name} failed to perform timer action {timer} because it is not an Action.Timer instance"))
                 continue
 
+            if Timer.manager is None:
+                logger.error(self.driver.set_last_err(f"AppProcessor {self.name} failed to perform timer action {timer} because Timer.manager is not initialized"))
+                continue
+
             timers = Timer.manager.get_timers_by_name(timer.name)
 
             for t in timers:

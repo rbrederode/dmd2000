@@ -77,6 +77,13 @@ class ObsList(BaseModel):
                 return obs
         return None
 
+    def get_obs_by_dsh_id(self, dsh_id: str):
+        """Retrieve an observation by its Dish identifier."""
+        for obs in self.obs_list:
+            if obs.dsh_id == dsh_id:
+                return obs
+        return None
+
 class ODAModel(BaseModel):
     """A class representing the observation data archive."""
 

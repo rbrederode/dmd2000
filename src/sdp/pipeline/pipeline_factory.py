@@ -1,6 +1,7 @@
 import logging
 from typing import Any, List, Dict
 from queue import Queue
+import time
 
 from models.pipeline import PipelineConfig, StepConfig, StepType
 
@@ -37,8 +38,25 @@ class ProcessingPipeline:
         self.steps.append(step)
 
     def process(self, context: Any, signal: Any) -> Any:
+
+        # Iterate through the processing steps and apply each one to the signal, passing the context as needed
+        # Time each step and log a warning if it takes longer than a certain threshold (e.g. 100ms)
         for step in self.steps:
-            signal = step.process(context=context, signal=signal)
+            
+            step_pipeline = step.config.params.get("pipeline", "unknown")  # Get the pipeline name from the step config for logging
+            context_pipeline = context.get("pipeline", "unknown") if isinstance(context, dict) else "unknown"
+            
+            if step_pipeline == context_pipeline:
+
+                start_time = time.time()
+                signal = step.process(context=context, signal=signal)
+                elapsed = time.time() - start_time
+
+                if elapsed >= 0.1:  # Log a warning if processing takes longer than 100ms
+                    logger.warning(f"Processing step {step.__class__.__name__} in pipeline '{step_pipeline}' took {elapsed*1000:.2f} milliseconds!")
+                else:
+                    logger.debug(f"Processing step {step.__class__.__name__} in pipeline '{step_pipeline}' took {elapsed*1000:.2f} milliseconds.")
+
         return signal
 
 class ProcessingPipelineFactory:
@@ -56,9 +74,9 @@ class ProcessingPipelineFactory:
         step_configs = self.pipeline_config.get_steps(scan.scan_model.dig_id)
 
         for config in step_configs:
-            config.params['scan'] = scan        # The scan that the pipeline will process
+            config.params['scan']   = scan      # The scan that the pipeline will process
             config.params['scan_q'] = scan_q    # Pipeline steps are provided access to the scan queue if needed
-            config.params['cal_q'] = cal_q      # Pipeline steps are provided access to the calibration queue if needed
+            config.params['cal_q']  = cal_q     # Pipeline steps are provided access to the calibration queue if needed
 
         return [self.instantiate_step(config) for config in step_configs]
 
@@ -74,6 +92,8 @@ class ProcessingPipelineFactory:
         from sdp.pipeline.steps.gain     import GainCal
         from sdp.pipeline.steps.tsys     import TsysCal
         from sdp.pipeline.steps.rfi      import RFIFlag
+        from sdp.pipeline.steps.qa       import QA
+        # Add more step imports as needed
 
         step_map = {
             StepType.NOP.value:      Nop,
@@ -82,6 +102,7 @@ class ProcessingPipelineFactory:
             StepType.GAIN_CAL.value: GainCal,
             StepType.TSYS_CAL.value: TsysCal,
             StepType.RFI_FLAG.value: RFIFlag,
+            StepType.QA.value:       QA,
             # Add more step types as needed
         }
 

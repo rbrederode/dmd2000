@@ -597,9 +597,13 @@ function onEditHandler(e) {
     }
 
     // Generate a unique observation id
-    const obs_id = "ODT-" + start_datetime + "-" + dsh_id;
-    obsJsonObj["obs_id"] = obs_id
-    
+    // Sanitize datetime: remove characters not safe for filenames
+    const safe_datetime = start_datetime.replace(/[^a-zA-Z0-9-_TZ]/g, "");
+
+    // Generate a unique observation id
+    const obs_id = "ODT-" + safe_datetime + "-" + dsh_id;
+    obsJsonObj["obs_id"] = obs_id;
+
     const lastTargetRow = targetSheet.getLastRow();
     Logger.log("Last Target Row"+lastTargetRow)
     const target_configs = [];
@@ -715,7 +719,7 @@ function onEditHandler(e) {
   if (targetObj.target.pointing.value === "FIVE_POINT_SCAN") {
     targetObj.target.scan = { 
       "_type": "FivePointScan",
-      "offset": 10,     // 10° Centre, North, South, East, West
+      "offset": 10.001,     // 10° Centre, North, South, East, West
     };
   }
 

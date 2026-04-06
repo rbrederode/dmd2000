@@ -58,6 +58,7 @@ class App:
 
         self.app_model.num_processors = max(1, self.get_args().num_processors)
         self.processors = []                    # List to hold processor threads
+        self.status_thread = None
 
         self.start_timer_manager()              # Ensure timer manager is started before any timers are created
 
@@ -179,9 +180,10 @@ class App:
     def stop(self):
         """Stops the application."""
 
-        self.app_modelapp_running = False # Stops status thread
+        self.app_model.app_running = False # Stops status thread
         self.stop_timer_manager()
         self.stop_processors()
+        self.stop_status_thread()
 
         if not self.queue.empty():
             self.queue.queue.clear()
@@ -199,16 +201,34 @@ class App:
 
     def stop_processors(self):
         """Stops all processor threads."""
-        Processor.stop_all()
-        self.processors = []
+        if not hasattr(self, "processors") or self.processors is None:
+            return
 
+        for processor in self.processors:
+            processor.stop()
+
+        for processor in self.processors:
+            if processor.is_alive():
+                processor.join(timeout=2)  # Wait for the processor thread to finish, with a timeout to avoid hanging indefinitely
+
+        self.processors = []
         self.app_model.health = HealthState.UNKNOWN
 
     def start_status_thread(self):
         """Starts a thread to periodically enqueue status update events."""
-        thread = threading.Thread(target=self.run, name=f"{self.app_model.app_name}-StatusThread", daemon=True)
-        thread.start()
+        self.status_thread = threading.Thread(target=self.run, name=f"{self.app_model.app_name}-StatusThread", daemon=True)
+        self.status_thread.start()
         logger.info(f"App {self.app_model.app_name} started status thread")
+
+    def stop_status_thread(self):
+        """Stops the status update thread."""
+        if not hasattr(self, "status_thread") or self.status_thread is None:
+            return
+
+        if self.status_thread and self.status_thread.is_alive():
+            self.status_thread.join(timeout=2)  # Wait for the status thread to finish, with a timeout to avoid hanging indefinitely
+        self.status_thread = None
+        logger.info(f"App {self.app_model.app_name} stopped status thread")
 
     def start_timer_manager(self):
         """Starts the timer manager if not already running."""
@@ -345,11 +365,11 @@ class App:
             filename=log_file,
             when="midnight",
             interval=1,
-            backupCount=24,       # keep 2 years of monthly logs
+            backupCount=731,      # keep about 2 years of daily logs
             encoding="utf-8",
             utc=True)
 
-        handler.suffix = "%Y-%m"  # results in e.g. dm.log.2026-02
+        handler.suffix = "%Y-%m-%d"  # results in e.g. dm.log.2026-04-05
         formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
         handler.setFormatter(formatter)
 

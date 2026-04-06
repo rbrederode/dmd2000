@@ -13,6 +13,18 @@ from util.xbase import XInvalidTransition, XAPIValidationFailed, XSoftwareFailur
 
 logger = logging.getLogger(__name__)
 
+class ScanType(enum.IntEnum):
+    UNKNOWN = 0    # Unknown scan type (default)
+    SKY = 1         # Scan of the sky (i.e. target observation)
+    LOAD = 2        # Scan of the load (terminated signal chain)
+    TSYS = 3        # System Temperature calibration scan
+    GAIN = 4        # Gain calibration scan
+
+class ScanDataSource(enum.IntEnum):
+    NONE = 0
+    RAW = 1
+    SPR = 2
+
 class ScanState(enum.IntEnum):
     EMPTY = 0       # Scan has been created but no data loaded
     WIP = 1         # Scan is has some but not all data loaded
@@ -28,6 +40,7 @@ class ScanModel(BaseModel):
         "tgt_idx": Or(None, And(int, lambda v: isinstance(v, int))),                # Target index for this scan (e.g. 0 for first target, 1 for second target in the observation)
         "freq_scan": Or(None, And(int, lambda v: isinstance(v, int))),              # Frequency scan index for this scan (e.g. 0 for first freq scan, 1 for second freq scan in the target)
         "scan_iter": Or(None, And(int, lambda v: isinstance(v, int))),              # Scan iteration index for this scan (e.g. 0 for first scan, 1 for second scan on the same target and freq scan)
+        "scan_type": And(ScanType, lambda v: isinstance(v, ScanType)),              # Type of scan (SKY, LOAD, TSYS, GAIN)
         "dig_id": Or(None, And(str, lambda v: isinstance(v, str))),                 # Digitiser ID for this scan (e.g. "dig001")
         "created": And(datetime, lambda v: isinstance(v, datetime)),                # Timestamp when the scan model was created
         "read_start": Or(None, And(datetime, lambda v: isinstance(v, datetime))),   # Timestamp when of the first sample that was read by the digitiser for this scan
@@ -59,6 +72,7 @@ class ScanModel(BaseModel):
         "tgt_idx": -1,
         "freq_scan": -1,
         "scan_iter": -1,
+        "scan_type": ScanType.UNKNOWN,
         "dig_id": None,
         "created": datetime.now(timezone.utc),
         "read_start": None,
@@ -144,9 +158,9 @@ class ScanModel(BaseModel):
         return True
 
     def __str__(self):
-        return f"ScanModel(scan_id={self.scan_id}, dig_id={self.dig_id}, status={self.status.name}, " + \
-               f"start_idx={self.start_idx}, duration={self.duration}, sample_rate={self.sample_rate}, " + \
-               f"channels={self.channels}, center_freq={self.center_freq}, gain={self.gain}, load={self.load}, " + \
+        return f"ScanModel(scan_id={self.scan_id}, dig_id={self.dig_id}, type={self.scan_type.name}, status={self.status.name}, " + \
+               f"center_freq={self.center_freq}, duration={self.duration}, sample_rate={self.sample_rate}, " + \
+               f"channels={self.channels},  gain={self.gain}, start_idx={self.start_idx}, " + \
                f"created={self.created}, read_start={self.read_start}, read_end={self.read_end}, last_update={self.last_update})"   
 
 if __name__ == "__main__":

@@ -11,6 +11,8 @@ class StepType(enum.IntEnum):
     GAIN_CAL = 3            # Perform gain calibration
     TSYS_CAL = 4            # Perform system temperature calibration
     RFI_FLAG = 5            # Flag radio frequency interference
+    QA = 6                  # Calculate signal quality attributes (SNR, signal power, noise power, etc.)
+    # Add more step types as needed
 
 class StepConfig(BaseModel):
     """A class representing the configuration for a single processing step in the signal processing pipeline."""
@@ -30,7 +32,7 @@ class StepConfig(BaseModel):
         defaults = {
             "_type": "StepConfig",
             "step": StepType.NOP,
-            "params": {},
+            "params": {"pipeline": "cal"},              # Default to "cal" pipeline as opposed to "SPR" pipeline
             "last_update": datetime.now(timezone.utc)
         }
 
@@ -105,12 +107,13 @@ class PipelineConfig(BaseModel):
 
 if __name__ == "__main__":
     import pprint
-    step1 = StepConfig(step=StepType.DC_SPIKE, params={})
-    step2 = StepConfig(step=StepType.LOAD, params={})
-    step3 = StepConfig(step=StepType.RFI_FLAG, params={"threshold": 5.0})
+    step1 = StepConfig(step=StepType.DC_SPIKE, params={"pipeline": "spr"})
+    step2 = StepConfig(step=StepType.LOAD, params={"pipeline": "cal"})
+    step3 = StepConfig(step=StepType.RFI_FLAG, params={"pipeline": "cal", "threshold": 5, "window_size": 21})
+    step4 = StepConfig(step=StepType.QA, params={"pipeline": "cal", "window_frac": 0.2})
     config = PipelineConfig(steps_map={
-        "default": [step1, step2],
-        "dig001": [step1, step3],
+        "default": [step1, step2, step3, step4],
+        "dig001": [step1, step4],
     })
     print("="*40)
     print(config)

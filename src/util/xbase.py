@@ -6,11 +6,12 @@ EXC_ID_STREAM_UNABLE_TO_ENCODE              = 0x0001
 EXC_ID_API_VALIDATION_FAILED                = 0x0002
 EXC_ID_API_UNSUPPORTED_VERSION              = 0x0003
 EXC_ID_SOFTWARE_FAILURE                     = 0x0004
-EXC_ID_SCHEDULER_FAILURE                    = 0x0005
-EXC_ID_INVALID_TRANSITION                   = 0x0006
-EXC_ID_TIMEOUT_WAITING_FOR_RESPONSE         = 0x0007
-EXC_ID_COMMS_FAILURE                        = 0x0008
-EXC_ID_UNKNOWN_ENTITY                       = 0x0009
+EXC_ID_HARDWARE_FAILURE                     = 0x0005
+EXC_ID_SCHEDULER_FAILURE                    = 0x0006
+EXC_ID_INVALID_TRANSITION                   = 0x0007
+EXC_ID_TIMEOUT_WAITING_FOR_RESPONSE         = 0x0008
+EXC_ID_COMMS_FAILURE                        = 0x0009
+EXC_ID_UNKNOWN_ENTITY                       = 0x0010
 
 class XBase(Exception):
     
@@ -58,6 +59,11 @@ class XSoftwareFailure(XBase):
 
     def __init__(self, message: str=None, data: bytes=None):
         super().__init__(EXC_ID_SOFTWARE_FAILURE, message, data)
+
+class XHardwareFailure(XBase):
+
+    def __init__(self, message: str=None, data: bytes=None):
+        super().__init__(EXC_ID_HARDWARE_FAILURE, message, data)
 
 class XSchedulerFailure(XBase):
 

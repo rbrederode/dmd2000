@@ -79,7 +79,6 @@ class TelescopeManager(App):
         self.dm_api = tm_dm.TM_DM()
         # Dish Manager TCP Client
         self.dm_endpoint = TCPClient(description=self.dm_system, queue=self.get_queue(), host=self.get_args().dm_host, port=self.get_args().dm_port)
-        self.dm_endpoint.connect()
         # Register Dish Manager interface with the App
         self.register_interface(self.dm_system, self.dm_api, self.dm_endpoint, InterfaceType.APP_APP)
         # Initialise Dish Manager comms status
@@ -91,7 +90,6 @@ class TelescopeManager(App):
         self.dig_api = tm_dig.TM_DIG()
         # Digitiser TCP Server
         self.dig_endpoint = TCPServer(description=self.dig_system, queue=self.get_queue(), host=self.get_args().dig_host, port=self.get_args().dig_port)
-        self.dig_endpoint.start()
         # Register Digitiser interface with the App
         self.register_interface(self.dig_system, self.dig_api, self.dig_endpoint, InterfaceType.ENTITY_DRIVER)
         # Entity drivers maintain comms status per entity, so no need to initialise comms status here
@@ -101,7 +99,6 @@ class TelescopeManager(App):
         self.sdp_api = tm_sdp.TM_SDP()
         # Science Data Processor TCP Client
         self.sdp_endpoint = TCPClient(description=self.sdp_system, queue=self.get_queue(), host=self.get_args().sdp_host, port=self.get_args().sdp_port)
-        self.sdp_endpoint.connect()
         # Register Science Data Processor interface with the App
         self.register_interface(self.sdp_system, self.sdp_api, self.sdp_endpoint, InterfaceType.APP_APP)
         # Initialise Science Data Processor comms status
@@ -113,7 +110,6 @@ class TelescopeManager(App):
         self.ws_api = tm_ws.TM_WS()
         # Weather Station TCP Client
         self.ws_endpoint = TCPClient(description=self.ws_system, queue=self.get_queue(), host=self.get_args().ws_host, port=self.get_args().ws_port)
-        self.ws_endpoint.connect()
         # Register Weather Station interface with the App
         self.register_interface(self.ws_system, self.ws_api, self.ws_endpoint, InterfaceType.APP_APP)
         # Initialise Weather Station comms status
@@ -176,6 +172,13 @@ class TelescopeManager(App):
             logger.warning(f"Telescope Manager could not load Digitiser configuration from directory {input_dir} file {filename}")
 
         action = Action()
+
+        # Start server endpoints and connect client endpoints to interfaces
+        self.dm_endpoint.connect()
+        self.dig_endpoint.start()
+        self.sdp_endpoint.connect()
+        self.ws_endpoint.connect()
+
         return action
 
     def process_config(self, event: ConfigEvent) -> Action:
@@ -325,7 +328,7 @@ class TelescopeManager(App):
         self.telmodel.dsh_mgr.tm_connected = CommunicationStatus.NOT_ESTABLISHED
         self.telmodel.tel_mgr.dm_connected = CommunicationStatus.NOT_ESTABLISHED
 
-        return self.abort_all_observations()
+        return self.abort_observations()
 
     def process_dm_msg(self, event, api_msg: dict, api_call: dict, payload: bytearray) -> Action:
         """ Processes api messages received on the Dish Manager service access point (SAP)
@@ -345,13 +348,16 @@ class TelescopeManager(App):
             raise XUnknownEntity(f"Telescope Manager received Dish Manager API message for unknown dish {dsh_id}.\n{api_call}")
         
         # If the api call indicates that an error occured
-        if api_call.get('status','') == tm_dm.STATUS_ERROR:
+        if api_call.get('status','') != tm_dm.STATUS_SUCCESS:
             
             logger.error(f"Telescope Manager received error response from Dish Manager for dish {dsh_id}.\n{api_call}")
-            dsh_model.mode = DishMode.UNKNOWN # Set dish mode to UNKNOWN to force safe recovery
-            dsh_model.last_err_msg = api_call['message'] if 'message' in api_call else dsh_model.last_err_msg
-            dsh_model.last_err_dt = datetime.fromisoformat(dt) if dt is not None else datetime.now(timezone.utc)
 
+            # Not that the dsh_model can be None for some error messages (e.g. a status update message)
+            if dsh_model is not None:
+                dsh_model.mode = DishMode.UNKNOWN # Set dish mode to UNKNOWN to force safe recovery
+                dsh_model.last_err_msg = api_call['message'] if 'message' in api_call else dsh_model.last_err_msg
+                dsh_model.last_err_dt = datetime.fromisoformat(dt) if dt is not None else datetime.now(timezone.utc)
+            
             # If the message contains additional observation data, trigger the observation workflow
             obs_data = api_call.get('obs_data', None)
             obs_id = obs_data.get('obs_id', None) if obs_data is not None and isinstance(obs_data, dict) else None
@@ -362,7 +368,7 @@ class TelescopeManager(App):
                 action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
 
         # If the api call does not indicate that an error occured
-        elif api_call.get('status','') != tm_dm.STATUS_ERROR:
+        elif api_call.get('status','') == tm_dm.STATUS_SUCCESS:
 
             # If the api call is a dish mode set property rsp message, update the Dish Model
             if api_call.get('property','') == tm_dm.PROPERTY_MODE:
@@ -381,6 +387,18 @@ class TelescopeManager(App):
             elif api_call.get('property','') == tm_dm.PROPERTY_STATUS:
                 logger.debug(f"Telescope Manager received Dish Manager STATUS update: {api_call['value']}")
                 self.telmodel.dsh_mgr = DishManagerModel.from_dict(api_call['value']) if api_call['value'] is not None else None
+
+                msg = api_call.get('message')
+                if msg is not None and "weather alarm" in msg.lower():
+
+                    # Abort observations if a dish weather alarm is active to allow for safe recovery 
+                    active_dsh_alarms = [dsh for dsh in self.telmodel.dsh_mgr.dish_store.dish_list if dsh.weather_alarm == True]
+
+                    for dsh in active_dsh_alarms:
+                        obs = self.telmodel.oda.obs_store.get_obs_by_dsh_id(dsh.dsh_id)
+                        if obs is not None:
+                            logger.warning(f"Telescope Manager detected active weather alarm on dish {dsh.dsh_id} for observation {obs.obs_id}. Aborting affected observation for safe recovery.")
+                            action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
 
             # If the status update message contains additional observation data, trigger the observation workflow
             obs_data = api_call.get('obs_data', None)
@@ -422,7 +440,8 @@ class TelescopeManager(App):
         self.telmodel.wtr_stn.tm_connected = CommunicationStatus.NOT_ESTABLISHED
         self.telmodel.tel_mgr.ws_connected = CommunicationStatus.NOT_ESTABLISHED
 
-        return self.abort_all_observations()
+        action = Action()
+        return action
 
     def process_ws_msg(self, event, api_msg: dict, api_call: dict, payload: bytearray) -> Action:
         """ Processes api messages received on the Weather Station service access point (SAP)
@@ -466,17 +485,18 @@ class TelescopeManager(App):
         """ Determines the digitiser entity ID based on the remote address of a ConnectEvent, DisconnectEvent, or DataEvent.
             Returns a tuple of the entity ID and entity if found, else None, None.
         """
-        logger.debug(f"Telescope Manager finding digitiser entity ID for remote address: {event.remote_addr[0]}")
+        remote_addr = event.remote_addr[0] if event.remote_addr else 'None'
+        logger.debug(f"Telescope Manager finding digitiser entity ID for remote address: {remote_addr}")
 
         for digitiser in self.telmodel.dig_store.dig_list:
 
             if isinstance(digitiser.app.arguments, dict) and "local_host" in digitiser.app.arguments:
 
-                if digitiser.app.arguments["local_host"] == event.remote_addr[0]:
-                    logger.debug(f"Telescope Manager found digitiser entity ID: {digitiser.dig_id} for remote address: {event.remote_addr}")
+                if digitiser.app.arguments["local_host"] == remote_addr:
+                    logger.debug(f"Telescope Manager found digitiser entity ID: {digitiser.dig_id} for remote address: {remote_addr}")
                     return digitiser.dig_id, digitiser
             else:
-                logger.warning(f"Telescope Manager digitiser {digitiser.dig_id} is not configured with a valid local_host argument to match against remote address: {event.remote_addr[0]}")
+                logger.warning(f"Telescope Manager digitiser {digitiser.dig_id} is not configured with a valid local_host argument to match against remote address: {remote_addr}")
 
         return None, None
 
@@ -501,7 +521,7 @@ class TelescopeManager(App):
             digitiser.last_update = datetime.now(timezone.utc)
 
             # Abort all ongoing observations that are using this digitiser
-            return self.abort_all_observations(dig_id=digitiser.dig_id)
+            return self.abort_observations(dig_id=digitiser.dig_id)
 
     def process_dig_entity_msg(self, event, api_msg: dict, api_call: dict, payload: bytearray, entity: BaseModel) -> Action:
         """ Processes api messages received on the Digitiser service access point (SAP)
@@ -612,7 +632,7 @@ class TelescopeManager(App):
         self.telmodel.sdp.tm_connected = CommunicationStatus.NOT_ESTABLISHED
         self.telmodel.tel_mgr.sdp_connected = CommunicationStatus.NOT_ESTABLISHED
 
-        return self.abort_all_observations()
+        return self.abort_observations()
 
     def process_sdp_msg(self, event, api_msg: dict, api_call: dict, payload: bytearray) -> Action:
         """ Processes api messages received on the Science Data Processor service access point (SAP)
@@ -706,6 +726,7 @@ class TelescopeManager(App):
                             center_freq=completed_scan.center_freq,
                             channels=completed_scan.channels,
                             instance_id=scan.scan_id, 
+                            scan_type=scan.scan_type,
                             filetype="meta") + ".json"
 
                         scan.save_to_disk(output_dir=self.telmodel.get_scan_store_dir(), filename=filename)
@@ -1185,8 +1206,8 @@ class TelescopeManager(App):
         sdp_rsp.set_api_call(sdp_rsp_api_call)  
         return sdp_rsp
 
-    def abort_all_observations(self, dig_id: str = None, dsh_id: str=None, action=None) -> Action:
-        """ Aborts all ongoing observations matching the given digitiser ID or dish manager ID.
+    def abort_observations(self, dig_id: str = None, dsh_id: str=None, action=None) -> Action:
+        """ Aborts ongoing observations matching the given digitiser ID or dish manager ID.
             If both IDs are None, aborts all ongoing observations.
             Returns an Action object containing the observation abort transition
         """
@@ -1202,16 +1223,19 @@ class TelescopeManager(App):
             ids.append(dish2.dsh_id)
 
         for obs in self.telmodel.oda.obs_store.obs_list:
+
+            logger.debug(f"Checking whether to abort observation {obs.obs_id} in state {obs.obs_state.name} for dish manager ID {obs.dsh_id} and digitiser ID {dig_id} with filter dish manager IDs {ids} and filter digitiser ID {dig_id}")
+
             if obs.obs_state in [ObsState.CONFIGURING, ObsState.READY, ObsState.SCANNING]:
 
                 if obs.dsh_id in ids or (dig_id is None and dsh_id is None):
                     
                     dish = self.telmodel.dsh_mgr.get_dish_by_id(obs.dsh_id)
-                    dig_id = dish.dig_id if dish is not None else None
+                    dig = dish.dig_id if dish is not None else None
 
                     logger.info(f"Telescope Manager aborting observation {obs.obs_id}.\nConnection status:\n" + \
                         f"- Dish Manager {obs.dsh_id}: {self.telmodel.dsh_mgr.tm_connected.name}\n" + \
-                        f"- Digitiser {dig_id}: {self.telmodel.dig_store.get_dig_by_id(dig_id).tm_connected.name if dig_id is not None else 'N/A'}\n" + \
+                        f"- Digitiser {dig}: {self.telmodel.dig_store.get_dig_by_id(dig).tm_connected.name if dig is not None else 'N/A'}\n" + \
                         f"- Science Data Processor: {self.telmodel.sdp.tm_connected.name}")
                     action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
 

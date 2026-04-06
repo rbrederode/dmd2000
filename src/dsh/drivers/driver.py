@@ -534,16 +534,20 @@ class DishDriver:
         # Get the stow AltAz from the subclass implementation
         stow_alt, stow_az = self._get_stow_altaz()
 
+        # Get current pointing AltAz from dish model
+        az =  self.dsh_model.pointing_altaz.get("az", None) if self.dsh_model.pointing_altaz else None
+        alt = self.dsh_model.pointing_altaz.get("alt", None) if self.dsh_model.pointing_altaz else None
+
+        if self.get_weather_alarm():
+            logger.warning(f"DishDriver {self.dsh_model.dsh_id} weather alarm is ON. Stowing from {alt}, {az} in altitude only to avoid potential damage from high winds.")
+            stow_az = az if az is not None else stow_az
+
         stow_altaz = AltAz(
             obstime=Time(datetime.now(timezone.utc)), 
             location=self.location, alt=stow_alt*u.deg, az=stow_az*u.deg)   
         
         # Update the desired AltAz in the dish model
         self.set_desired_altaz(stow_altaz)
-
-        # Get current pointing AltAz from dish model
-        alt = self.dsh_model.pointing_altaz.get("alt", None) if self.dsh_model.pointing_altaz else None
-        az = self.dsh_model.pointing_altaz.get("az", None) if self.dsh_model.pointing_altaz else None
 
         # If the dish is already at the stow position, set mode to STOW and return
         if alt is None or az is None:
@@ -557,7 +561,7 @@ class DishDriver:
         # Delegate to subclass implementation
         try:
             with self._rlock:
-                self._set_stow_mode()
+                self._set_stow_mode(alt=stow_alt, az=stow_az)
         except Exception as e:
             if isinstance(e, XCommsFailure):
                 logger.error(f"DishDriver {self.dsh_model.dsh_id} failed to communicate with dish controller: {e}")
@@ -1129,7 +1133,7 @@ class DishDriver:
         """
         raise NotImplementedError("Subclasses should implement this method.")
 
-    def _set_stow_mode(self):
+    def _set_stow_mode(self, alt: float, az: float):
         """
             Sets the dish to stow mode.
             :raises NotImplementedError: If the method is not implemented by a subclass

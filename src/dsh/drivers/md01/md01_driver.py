@@ -142,14 +142,14 @@ class MD01Driver(DishDriver):
         # Nothing to do here
         pass
 
-    def _set_stow_mode(self):
+    def _set_stow_mode(self, alt: float, az: float):
         """
             Perform actions on the MD01 controller when setting the dish to stow mode.
             Do not set the dish model attributes here, that is done in the base class.
             :raises XBase: If there is an error setting the telescope to stow mode.
         """               
         # Slew to stow position        
-        self._set_md01_altaz(self.md01_config.stow_alt, self.md01_config.stow_az)
+        self._set_md01_altaz(alt, az)
 
     def _stop(self):
         """ Stop any movement of the dish on the MD01 controller.
@@ -234,7 +234,7 @@ class MD01Driver(DishDriver):
             time_since_last_cmd = time.time() - self.last_command_time
             if time_since_last_cmd < self.md01_config.rate_limit:
                 sleep_time = self.md01_config.rate_limit - time_since_last_cmd
-                logger.warning(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} rate limiting: {sleep_time:.3f}s before sending cmd {md01_cmd.get_cmd()}")
+                logger.info(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} rate limiting: {sleep_time:.3f}s before sending cmd {md01_cmd.get_cmd()}")
                 time.sleep(sleep_time)
 
     def _send_md01_command(self, md01_cmd: MD01Msg) -> MD01Msg:

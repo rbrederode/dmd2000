@@ -144,10 +144,6 @@ class ObservationExecutionTool:
                 # Save current observation state to disk
                 event.obs.save_to_disk(self.telmodel.get_scan_store_dir())
 
-                # Stop the scanning timer
-                timer_name = f"obs_scanning_timer:{event.obs.obs_id}"
-                action.set_timer_action(Action.Timer(name=timer_name, timer_action=Action.Timer.TIMER_STOP))
-
                 # If the observation is complete, stop scanning and release resources
                 if self.complete_scan(event.obs, action):
                     self.stop_scanning(event.obs, action)
@@ -630,6 +626,10 @@ class ObservationExecutionTool:
         """
         logger.info(f"Observation Execution Tool processing Stop Scanning for observation {obs.obs_id}")
 
+        # Stop the scanning timer
+        timer_name = f"obs_scanning_timer:{obs.obs_id}"
+        action.set_timer_action(Action.Timer(name=timer_name, timer_action=Action.Timer.TIMER_STOP))
+
         # Lookup the dish model for this observation
         dsh_model = next((dsh for dsh in self.telmodel.dsh_mgr.dish_store.dish_list if dsh.dsh_id == obs.dsh_id), None)
 
@@ -705,6 +705,10 @@ class ObservationExecutionTool:
             Returns true if all scans in the observation are complete, false otherwise.
         """
         logger.info(f"Observation Execution Tool processing Complete Scan for observation {obs.obs_id}")
+
+        # Stop the scanning timer
+        timer_name = f"obs_scanning_timer:{obs.obs_id}"
+        action.set_timer_action(Action.Timer(name=timer_name, timer_action=Action.Timer.TIMER_STOP))
 
         # Lookup the current target scan set for the observation
         target_scan_set = obs.get_current_tgt_scan_set()
