@@ -413,6 +413,10 @@ class Scan:
             with open(f"{output_dir}/{filename}", 'w') as f:
                 json.dump(self.get_scan_meta(), f, indent=4)  
 
+            filename = prefix + "-qa" + ".json"
+            with open(f"{output_dir}/{filename}", "w") as f:
+                json.dump(self.get_qa_meta(), f, indent=4)
+
             filename = prefix + "-spr" + ".csv"
             with open(f"{output_dir}/{filename}", 'w') as f:
                 np.savetxt(f, self.spr, delimiter=",", fmt="%.6f")
@@ -453,7 +457,6 @@ class Scan:
         read_file = read_files[0]
 
         logger.info(f"Scan - Reading meta data from {input_dir}/{read_file}")
-
         try:
             with open(f"{input_dir}/{read_file}", 'r') as f:
                 meta = json.load(f)
@@ -507,11 +510,27 @@ class Scan:
                 scan.data_source = ScanDataSource.SPR
                 scan.loaded_secs = [True] * loaded_spectra + [False] * max(0, scan.scan_model.duration - loaded_spectra)
 
+            # Potentially overwrites the quality metrics with regenerated metrics if the qa pipeline step is included 
             scan.process_pipeline()
 
         except Exception as e:
             logger.error(f"Scan - Failed to load data from {input_dir}: {e}")
             return None
+
+        # Attempt to load QA metadata if not already present in the scan model (e.g., from a previous pipeline processing step)
+        if scan.scan_qa is None:
+
+            logger.info(f"Scan - Attempting to read QA metrics from {input_dir}/{file_prefix}-qa.json")
+            try:
+                with open(f"{input_dir}/{file_prefix}-qa.json", 'r') as f:
+                    qa_meta = json.load(f)
+                    scan.scan_qa = ScanQA().from_dict(qa_meta)
+            except FileNotFoundError:
+                logger.warning(f"Scan - QA metadata file not found: {input_dir}/{file_prefix}-qa.json")
+                scan.scan_qa = None
+            except Exception as e:
+                logger.warning(f"Scan - Failed reading QA metadata from {input_dir}/{file_prefix}-qa.json: {e}")
+                scan.scan_qa = None
 
         logger.info(f"Scan - Completed loading scan {input_dir}:\n\n{scan}\n")
         return scan
@@ -577,6 +596,14 @@ class Scan:
         """
         with self._rlock:
             return self.scan_model.to_dict()
+
+    def get_qa_meta(self) -> dict:
+        """
+        Get metadata about the scan QA as a dictionary.
+            :returns: A dictionary containing metadata about the scan QA
+        """
+        with self._rlock:
+            return self.scan_qa.to_dict()
 
 if __name__ == "__main__":
 

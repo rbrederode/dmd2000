@@ -382,6 +382,16 @@ class SignalDisplay:
             self.fig.canvas.draw_idle()
             self.fig.canvas.flush_events()
 
+    def _refresh_to_second(self, l_sec: int):
+        """Update all artists so the figure reflects the provided loaded second."""
+        self._refresh_mean_power_spectrum()
+        self._update_waterfall()
+        self._update_spectrum_axes(l_sec)
+        self._update_qa_overlay(l_sec)
+        self._update_saturation_axis()
+        self._update_total_power_axis(l_sec)
+        self.sec = l_sec
+
     def display(self):
         """Refresh all plots for the current scan if new seconds have arrived since the last update."""
 
@@ -406,8 +416,6 @@ class SignalDisplay:
         if l_sec <= 0:
             return
 
-        self._refresh_mean_power_spectrum()
-
         # If the current displayed scan second needs to be updated
         if self.sec != l_sec:
     
@@ -416,14 +424,9 @@ class SignalDisplay:
             if self.sec is None:
                 self.sec = 0
 
-            # Update the plot lines, overlays, images, bars, and timelines for the new loaded second, then draw the figure
-            self._update_waterfall()
-            self._update_spectrum_axes(l_sec)
-            self._update_qa_overlay(l_sec)
-            self._update_saturation_axis()
-            self._update_total_power_axis(l_sec)
-        
-            self.sec = l_sec
+            self._refresh_to_second(l_sec)
+        else:
+            self._refresh_mean_power_spectrum()
         
         self._draw(is_visible_fig)
 
@@ -438,6 +441,19 @@ class SignalDisplay:
         """
         if self.scan is None or self.fig is None:
             return False
+
+        l_sec = self.scan.get_loaded_seconds()
+        if l_sec <= 0:
+            return False
+
+        if self.sec != l_sec:
+            logger.debug(
+                f"Signal display forcing final refresh for scan {self.scan.scan_model.scan_id} "
+                f"from second {self.sec} to {l_sec} before saving figure"
+            )
+            self._refresh_to_second(l_sec)
+        else:
+            self._refresh_mean_power_spectrum()
 
         scan_id = self.scan.scan_model.scan_id
         if scan_id in self.saved_scan_ids:
@@ -464,6 +480,7 @@ class SignalDisplay:
         filepath = Path(filename).expanduser()
         filepath.parent.mkdir(parents=True, exist_ok=True)
 
+        self.fig.canvas.draw()
         self.fig.savefig(str(filepath))
         self.saved_scan_ids.add(scan_id)
         logger.info(f"Signal display scan {self.scan.scan_model.scan_id} figure saved to {filepath}")

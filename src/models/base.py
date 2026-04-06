@@ -199,6 +199,7 @@ class BaseModel:
         from astropy.time import Time
         from astroplan import Observer
         import astropy.units as u
+        import numpy as np
 
         # enum.IntEnum -> name and enum class
         if isinstance(v, enum.IntEnum):
@@ -224,6 +225,8 @@ class BaseModel:
             return [BaseModel._serialise(x) for x in v]
         if isinstance(v, tuple):
             return tuple(BaseModel._serialise(x) for x in v)
+        if isinstance(v, np.ndarray):
+            return [BaseModel._serialise(x) for x in v.tolist()]
         if isinstance(v, SkyCoord):
             # Check the frame type to determine which attributes to serialize
             if hasattr(v, 'ra') and hasattr(v, 'dec'):
@@ -264,6 +267,7 @@ class BaseModel:
         from astropy.time import Time
         from astroplan import Observer
         import astropy.units as u
+        import numpy as np
 
         from models.app import AppModel
         from models.comms import CommunicationStatus, InterfaceType
@@ -399,6 +403,10 @@ class BaseModel:
                 return QA(**deserialized_fields)
             elif model_type == "ScanQA":
                 deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
+                if isinstance(deserialized_fields.get("spr_qa"), list):
+                    deserialized_fields["spr_qa"] = np.array(deserialized_fields["spr_qa"], dtype=object)
+                if isinstance(deserialized_fields.get("cal_qa"), list):
+                    deserialized_fields["cal_qa"] = np.array(deserialized_fields["cal_qa"], dtype=object)
                 return ScanQA(**deserialized_fields)
             elif model_type == "ResourceAllocations":
                 deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
