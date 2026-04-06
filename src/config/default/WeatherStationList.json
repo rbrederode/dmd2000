@@ -5,7 +5,7 @@
     "weather_stations": [
         {
             "_type": "WeatherStation",
-            "id": "ws001",
+            "ws_id": "ws001",
             "location": "Alston Observatory",
             "latitude": 53.80127,
             "longitude": -2.59308,

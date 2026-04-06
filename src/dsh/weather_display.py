@@ -49,7 +49,11 @@ class WeatherDisplay:
 
     def __init__(self, weather_store: WeatherStationList, ws_id: str):
         self.weather_store = weather_store
-        self.ws_id = ws_id
+        self.ws = weather_store.get_station(ws_id=ws_id)
+
+        if self.ws is None:
+            raise ValueError(f"WeatherDisplay: No weather station found with id {ws_id}")
+
         self.is_active = True
 
         self.fig = None
@@ -68,13 +72,14 @@ class WeatherDisplay:
         self._create_figure()
 
     def _create_figure(self):
-        self.fig = plt.figure(num=f"Weather {self.ws_id}", figsize=FIG_SIZE)
+        self.fig = plt.figure(num=f"Weather Station {self.ws.ws_id}", figsize=FIG_SIZE)
         self.attr_ax = self.fig.add_subplot(self.gs[0])
         plot_gs = GridSpecFromSubplotSpec(2, 1, subplot_spec=self.gs[1], hspace=0.50)
         self.wind_ax = self.fig.add_subplot(plot_gs[0])
         self.precip_ax = self.fig.add_subplot(plot_gs[1], sharex=self.wind_ax)
 
-        self.fig.suptitle(f"Weather Station {self.ws_id}", fontsize=12, y=0.96)
+
+        self.fig.suptitle(f"Station Id: {self.ws.ws_id}, Lat: {self.ws.latitude:.2f}°, Lon: {self.ws.longitude:.2f}°", fontsize=12, y=0.96)
         self._init_attribute_axes()
         self._init_plot_axes()
 
@@ -178,7 +183,7 @@ class WeatherDisplay:
 
     def _close_figure(self):
         if self.fig is not None:
-            plt.close(num=f"Weather {self.ws_id}")
+            plt.close(num=f"Weather {self.ws.ws_id}")
 
     def is_visible_figure(self) -> Optional[bool]:
         if not HAS_APPKIT or self.fig is None:
@@ -219,7 +224,7 @@ class WeatherDisplay:
             self.attr_rects[(label, kind)].set_color(color if color is not None else ("tab:red" if alarm else "tab:green"))
 
     def _update_attributes(self):
-        metrics = self.weather_store.get_alarm_metrics(ws_id=self.ws_id)
+        metrics = self.weather_store.get_alarm_metrics(ws_id=self.ws.ws_id)
 
         latest_sample = metrics["latest_sample"]
         latest_age_sec = metrics["latest_age_sec"]
@@ -249,7 +254,7 @@ class WeatherDisplay:
         self._set_field("Samples", "value", f"{metrics['sample_count']:d}", False)
 
     def _update_plot(self):
-        samples = self.weather_store.get_station_weather(ws_id=self.ws_id)
+        samples = self.weather_store.get_station_weather(ws_id=self.ws.ws_id)
         if not samples:
             self.wind_line.set_data([], [])
             self.precip_line.set_data([], [])

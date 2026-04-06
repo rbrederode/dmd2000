@@ -73,7 +73,7 @@ class WeatherStation(BaseModel):
 
     schema = Schema({
         "_type": And(str, lambda v: v == "WeatherStation"),
-        "id": And(str, lambda v: isinstance(v, str)),                            # Weather station ID
+        "ws_id": And(str, lambda v: isinstance(v, str)),                         # Weather station ID
         "location": And(str, lambda v: isinstance(v, str)),                      # Weather station location description
         "latitude": Or(None, And(float, lambda v: -90 <= v <= 90)),              # Latitude in degrees
         "longitude": Or(None, And(float, lambda v: -180 <= v <= 180)),           # Longitude in degrees
@@ -88,7 +88,7 @@ class WeatherStation(BaseModel):
         # Default values
         defaults = {
             "_type": "WeatherStation",
-            "id": "<undefined>",
+            "ws_id": "<undefined>",
             "location": None,
             "latitude": None,
             "longitude": None,
@@ -159,6 +159,13 @@ class WeatherStationList(BaseModel):
         Returns True if weather monitoring and alarm processing is enabled for the dishes, False otherwise.
         """
         return self.weather_enabled
+
+    def get_station(self, ws_id: str) -> WeatherStation:
+        """Return the WeatherStation object for the given station id, or None if not found."""
+        for ws in self.weather_stations:
+            if ws.ws_id == ws_id:
+                return ws
+        return None
 
     def get_station_ids(self) -> List[str]:
         """Return sorted weather-station ids currently present in the rolling weather list."""
@@ -386,7 +393,7 @@ if __name__ == "__main__":
     print("Testing Weather Station")
     print("*"*50)
 
-    weather_station = WeatherStation(id="ws001", location="Test Location", latitude=40.0, longitude=-105.0, elevation=1600.0)
+    weather_station = WeatherStation(ws_id="ws001", location="Test Location", latitude=40.0, longitude=-105.0, elevation=1600.0)
     pprint.pprint(weather_station.to_dict())
 
     print("*"*50)
