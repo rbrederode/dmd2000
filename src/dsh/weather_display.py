@@ -1,0 +1,293 @@
+from __future__ import annotations
+
+from typing import Optional
+
+import datetime
+import logging
+
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
+
+from models.ws import WeatherStationList
+
+mpl.rcParams["figure.raise_window"] = False
+
+try:
+    from AppKit import NSApplication
+
+    HAS_APPKIT = True
+except ImportError:
+    HAS_APPKIT = False
+
+logger = logging.getLogger(__name__)
+
+FIG_SIZE = (14, 7)
+
+
+class WeatherDisplay:
+    """Live display for a single weather station using the rolling WeatherStationList samples."""
+
+    ATTR_ROWS = [
+        ("Timeout", "Age"),
+        ("Wind Avg", "Wind Avg"),
+        ("Wind Gust", "Wind Gust"),
+        ("Gust Count", "Gust Count"),
+        ("Precipitation", "Precipitation"),
+        ("Last Alarm", "Alarm"),
+        ("Last Update", "Samples"),
+    ]
+
+    RECT_LEFT_X, RECT_RIGHT_X = 2.5, 7.5
+    RECT_W, RECT_H = 2.5, 0.5
+    LABEL_GAP = 0.1
+    GROUP_LEFT_X = 0.25
+    GROUP_RIGHT_X = 10.36
+    GROUP_TOP_Y = 7.68
+    GROUP_BOTTOM_Y = 2.73
+
+    def __init__(self, weather_store: WeatherStationList, ws_id: str):
+        self.weather_store = weather_store
+        self.ws_id = ws_id
+        self.is_active = True
+
+        self.fig = None
+        self.attr_ax = None
+        self.wind_ax = None
+        self.precip_ax = None
+        self.attr_rects = {}
+        self.attr_texts = {}
+        self.wind_line = None
+        self.precip_line = None
+        self.wind_avg_line = None
+        self.wind_gust_line = None
+        self.precip_thresh_line = None
+
+        self.gs = GridSpec(1, 2, width_ratios=[0.36, 0.64], left=0.07, right=0.93, top=0.88, bottom=0.12, wspace=0.18)
+        self._create_figure()
+
+    def _create_figure(self):
+        self.fig = plt.figure(num=f"Weather {self.ws_id}", figsize=FIG_SIZE)
+        self.attr_ax = self.fig.add_subplot(self.gs[0])
+        plot_gs = GridSpecFromSubplotSpec(2, 1, subplot_spec=self.gs[1], hspace=0.50)
+        self.wind_ax = self.fig.add_subplot(plot_gs[0])
+        self.precip_ax = self.fig.add_subplot(plot_gs[1], sharex=self.wind_ax)
+
+        self.fig.suptitle(f"Weather Station {self.ws_id}", fontsize=12, y=0.96)
+        self._init_attribute_axes()
+        self._init_plot_axes()
+
+    def _init_attribute_axes(self):
+        ax = self.attr_ax
+        ax.set_title("Weather Attributes")
+        ax.set_xlim(0, 10.45)
+        ax.set_ylim(0, 8)
+        ax.axis("off")
+
+        ax.text(self.RECT_LEFT_X + self.RECT_W / 2, 7.45, "Thresholds", ha="center", va="center", fontsize=10, fontweight="bold")
+        ax.text(self.RECT_RIGHT_X + self.RECT_W / 2, 7.45, "Actuals", ha="center", va="center", fontsize=10, fontweight="bold")
+
+        group_rect = plt.Rectangle(
+            (self.GROUP_LEFT_X, self.GROUP_BOTTOM_Y),
+            self.GROUP_RIGHT_X - self.GROUP_LEFT_X,
+            self.GROUP_TOP_Y - self.GROUP_BOTTOM_Y,
+            fill=False,
+            edgecolor="tab:gray",
+            linewidth=1.0,
+        )
+        ax.add_patch(group_rect)
+
+        self.attr_rects = {}
+        self.attr_texts = {}
+
+        y_positions = np.linspace(6.9, 1.1, len(self.ATTR_ROWS))
+        for y, (left_label, right_label) in zip(y_positions, self.ATTR_ROWS):
+            if left_label:
+                ax.text(self.RECT_LEFT_X - self.LABEL_GAP, y, left_label, ha="right", va="center", fontsize=9)
+                left_rect = plt.Rectangle(
+                    (self.RECT_LEFT_X, y - 0.2),
+                    self.RECT_W,
+                    self.RECT_H,
+                    color="tab:gray",
+                    alpha=0.5,
+                )
+                ax.add_patch(left_rect)
+                self.attr_rects[(left_label, "threshold")] = left_rect
+                self.attr_texts[(left_label, "threshold")] = ax.text(
+                    self.RECT_LEFT_X + self.RECT_W / 2, y, "", ha="center", va="center", fontsize=8
+                )
+
+            if right_label:
+                ax.text(self.RECT_RIGHT_X - self.LABEL_GAP, y, right_label, ha="right", va="center", fontsize=9)
+                right_rect = plt.Rectangle(
+                    (self.RECT_RIGHT_X, y - 0.2),
+                    self.RECT_W,
+                    self.RECT_H,
+                    color="tab:gray",
+                    alpha=0.5,
+                )
+                ax.add_patch(right_rect)
+                self.attr_rects[(right_label, "value")] = right_rect
+                self.attr_texts[(right_label, "value")] = ax.text(
+                    self.RECT_RIGHT_X + self.RECT_W / 2, y, "", ha="center", va="center", fontsize=8
+                )
+
+    def _init_plot_axes(self):
+        self.wind_ax.set_title("Wind Speed")
+        self.wind_ax.set_xlabel("Seconds")
+        self.wind_ax.set_ylabel("Wind Speed [m/s]")
+        self.wind_ax.grid(True)
+        self.wind_ax.tick_params(axis="x", labelbottom=True)
+
+        self.precip_ax.set_title("Precipitation")
+        self.precip_ax.set_xlabel("Seconds")
+        self.precip_ax.set_ylabel("Precipitation [mm]")
+        self.precip_ax.grid(True)
+
+        self.wind_line, = self.wind_ax.plot([], [], color="tab:blue", linewidth=2, label="Wind Speed")
+        self.wind_avg_line = self.wind_ax.axhline(
+            y=self.weather_store.threshold_wind_avg,
+            color="tab:green",
+            linestyle="dashed",
+            linewidth=1.5,
+            label="Avg Threshold",
+        )
+        self.wind_gust_line = self.wind_ax.axhline(
+            y=self.weather_store.threshold_wind_gust,
+            color="tab:red",
+            linestyle="dashed",
+            linewidth=1.5,
+            label="Gust Threshold",
+        )
+
+        self.precip_line, = self.precip_ax.plot([], [], color="tab:orange", linewidth=2, label="Precipitation")
+        self.precip_thresh_line = self.precip_ax.axhline(
+            y=self.weather_store.threshold_precipitation,
+            color="tab:red",
+            linestyle="dashed",
+            linewidth=1.5,
+            label="Precip Threshold",
+        )
+
+    def get_is_active(self) -> bool:
+        return self.is_active
+
+    def set_is_active(self, active: bool):
+        self.is_active = active
+
+    def _close_figure(self):
+        if self.fig is not None:
+            plt.close(num=f"Weather {self.ws_id}")
+
+    def is_visible_figure(self) -> Optional[bool]:
+        if not HAS_APPKIT or self.fig is None:
+            return None
+
+        key_window = NSApplication.sharedApplication().keyWindow()
+        if key_window is None:
+            return None
+
+        return self.fig.canvas.manager.get_window_title() == key_window.title()
+
+    def display(self):
+        if not self.is_active:
+            self._close_figure()
+            return
+
+        if self.fig is None:
+            return
+
+        is_visible_fig = self.is_visible_figure()
+        if is_visible_fig is False:
+            return
+
+        self._update_attributes()
+        self._update_plot()
+
+        self.fig.canvas.draw_idle()
+        self.fig.canvas.flush_events()
+        plt.pause(0.001)
+
+    def _set_field(self, label: str, kind: str, text: str, alarm: bool = False, color: str = None):
+        if (label, kind) not in self.attr_texts or (label, kind) not in self.attr_rects:
+            return
+        self.attr_texts[(label, kind)].set_text(text)
+        if kind == "threshold":
+            self.attr_rects[(label, kind)].set_color("tab:gray")
+        else:
+            self.attr_rects[(label, kind)].set_color(color if color is not None else ("tab:red" if alarm else "tab:green"))
+
+    def _update_attributes(self):
+        metrics = self.weather_store.get_alarm_metrics(ws_id=self.ws_id)
+
+        latest_sample = metrics["latest_sample"]
+        latest_age_sec = metrics["latest_age_sec"]
+        latest_update = latest_sample.obs_time.strftime("%H:%M:%S") if latest_sample is not None else "—"
+        last_alarm = self.weather_store.trigger_dt.strftime("%H:%M:%S") if self.weather_store.trigger_dt is not None else "—"
+
+        self._set_field("Timeout", "threshold", f"{self.weather_store.threshold_timeout}s", metrics["timeout_triggered"])
+        self._set_field("Age", "value", f"{latest_age_sec:.1f}s" if latest_age_sec is not None else "No Data", metrics["timeout_triggered"])
+
+        self._set_field("Wind Avg", "threshold", f"{self.weather_store.threshold_wind_avg:.1f}m/s", metrics["wind_avg_triggered"])
+        self._set_field("Wind Avg", "value", f"{metrics['avg_wind']:.1f}m/s", metrics["wind_avg_triggered"])
+
+        self._set_field("Wind Gust", "threshold", f"{self.weather_store.threshold_wind_gust:.1f}m/s", metrics["gust_triggered"])
+        self._set_field("Wind Gust", "value", f"{metrics['max_wind']:.1f}m/s", metrics["gust_triggered"])
+
+        self._set_field("Gust Count", "threshold", f"{self.weather_store.threshold_wind_count:d}", metrics["gust_count_triggered"])
+        gust_count_color = "orange" if 0 < metrics["gust_count"] <= self.weather_store.threshold_wind_count else None
+        self._set_field("Gust Count", "value", f"{metrics['gust_count']:d}", metrics["gust_count_triggered"], color=gust_count_color)
+
+        self._set_field("Precipitation", "threshold", f"{self.weather_store.threshold_precipitation:.1f}mm", metrics["precipitation_triggered"])
+        self._set_field("Precipitation", "value", f"{metrics['avg_precipitation']:.1f}mm", metrics["precipitation_triggered"])
+
+        self._set_field("Last Alarm", "threshold", last_alarm + " UTC" if last_alarm != "—" else "—", False)
+        self._set_field("Alarm", "value", "TRIGGERED" if metrics["alarm_triggered"] else "OK", metrics["alarm_triggered"])
+
+        self._set_field("Last Update", "threshold", latest_update + " UTC", False)
+        self._set_field("Samples", "value", f"{metrics['sample_count']:d}", False)
+
+    def _update_plot(self):
+        samples = self.weather_store.get_station_weather(ws_id=self.ws_id)
+        if not samples:
+            self.wind_line.set_data([], [])
+            self.precip_line.set_data([], [])
+            self.wind_ax.relim()
+            self.wind_ax.autoscale_view()
+            self.precip_ax.relim()
+            self.precip_ax.autoscale_view()
+            return
+
+        t0 = samples[0].obs_time
+        times = np.array([(sample.obs_time - t0).total_seconds() for sample in samples], dtype=float)
+        wind = np.array([np.nan if sample.wind_speed is None else sample.wind_speed for sample in samples], dtype=float)
+        precip = np.array([np.nan if sample.precipitation is None else sample.precipitation for sample in samples], dtype=float)
+
+        self.wind_line.set_data(times, wind)
+        self.precip_line.set_data(times, precip)
+        self.wind_line.set_label(f"Wind Speed {wind[~np.isnan(wind)][-1]:.2f} m/s" if np.any(~np.isnan(wind)) else "Wind Speed")
+        self.precip_line.set_label(f"Precipitation {precip[~np.isnan(precip)][-1]:.2f} mm" if np.any(~np.isnan(precip)) else "Precipitation")
+        self.wind_avg_line.set_ydata([self.weather_store.threshold_wind_avg, self.weather_store.threshold_wind_avg])
+        self.wind_avg_line.set_label(f"Avg Threshold {self.weather_store.threshold_wind_avg:.2f} m/s")
+        self.wind_gust_line.set_ydata([self.weather_store.threshold_wind_gust, self.weather_store.threshold_wind_gust])
+        self.wind_gust_line.set_label(f"Gust Threshold {self.weather_store.threshold_wind_gust:.2f} m/s")
+        self.precip_thresh_line.set_ydata([self.weather_store.threshold_precipitation, self.weather_store.threshold_precipitation])
+        self.precip_thresh_line.set_label(f"Precip Threshold {self.weather_store.threshold_precipitation:.2f} mm")
+
+        self.wind_ax.set_xlim(0.0, max(self.weather_store.threshold_timeout + 1.0, times[-1]))
+
+        self.wind_ax.relim()
+        self.wind_ax.autoscale_view(scalex=False, scaley=True)
+        self.precip_ax.relim()
+        self.precip_ax.autoscale_view(scalex=False, scaley=True)
+
+        wind_legend = self.wind_ax.get_legend()
+        if wind_legend is not None:
+            wind_legend.remove()
+        self.wind_ax.legend(loc="upper left", fontsize=8)
+
+        precip_legend = self.precip_ax.get_legend()
+        if precip_legend is not None:
+            precip_legend.remove()
+        self.precip_ax.legend(loc="upper left", fontsize=8)

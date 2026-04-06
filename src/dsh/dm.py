@@ -11,6 +11,7 @@ import threading
 
 from api import tm_dm, ws_dm
 from dsh.dish_display import DishDisplay
+from dsh.weather_display import WeatherDisplay
 from dsh.drivers.driver import DishDriver
 from dsh.drivers.md01.md01_driver import MD01Driver
 from env.app import App
@@ -66,6 +67,7 @@ class DM(App):
         self.dish_drivers = {}        # Dictionary to hold a dish driver for each dish
         self.dish_locks = {}          # Dictionary of threading locks, one per dish
         self.dish_displays = {}       # Dictionary to hold DishDisplay objects for each dish
+        self.weather_displays = {}    # Dictionary to hold WeatherDisplay objects for each weather station
 
     def add_args(self, arg_parser): 
         """ Specifies the Dish Manager's command line arguments.
@@ -340,6 +342,7 @@ class DM(App):
 
         weather = WeatherData.from_dict(api_call['value']) if api_call['value'] is not None and isinstance(api_call['value'], dict) else None
         self.dm_model.weather_store.append(weather) if weather is not None else None
+        return action
 
     def _process_weather_alarm(self, action: Action) -> Action:
         """ Processes weather alarm events triggered by the Weather Station model when a weather threshold is breached.
@@ -647,6 +650,17 @@ def main():
                     continue # Dish display for dish has been deactivated, continue to next dish
 
                 dm.dish_displays[dish_id].display()
+
+            for ws_id in dm.dm_model.weather_store.get_station_ids():
+
+                if ws_id not in dm.weather_displays or dm.weather_displays[ws_id] is None:
+                    logger.info(f"Dish Manager creating new WeatherDisplay for weather station {ws_id}")
+                    dm.weather_displays[ws_id] = WeatherDisplay(weather_store=dm.dm_model.weather_store, ws_id=ws_id)
+
+                if not dm.weather_displays[ws_id].get_is_active():
+                    continue
+
+                dm.weather_displays[ws_id].display()
 
             # Adjust display period up or down based on processing time
             time_elapsed = time.monotonic() - time_start
