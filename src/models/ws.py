@@ -68,14 +68,50 @@ class WeatherData(BaseModel):
             f"  wind_direction={self.wind_direction},\n  precipitation={self.precipitation},\n  dew_point={self.dew_point},\n  air_quality={self.air_quality},\n  uv_index={self.uv_index},\n" + \
             f"  cloud_cover={self.cloud_cover},\n  obs_time={self.obs_time.isoformat() if self.obs_time else None},\n  last_update={self.last_update.isoformat() if self.last_update else None})"
 
+class WeatherStation(BaseModel):
+    """A class representing a weather station."""
+
+    schema = Schema({
+        "_type": And(str, lambda v: v == "WeatherStation"),
+        "id": And(str, lambda v: isinstance(v, str)),                            # Weather station ID
+        "location": And(str, lambda v: isinstance(v, str)),                      # Weather station location description
+        "latitude": Or(None, And(float, lambda v: -90 <= v <= 90)),              # Latitude in degrees
+        "longitude": Or(None, And(float, lambda v: -180 <= v <= 180)),           # Longitude in degrees
+        "elevation": Or(None, And(float, lambda v: v >= 0)),                     # Elevation in meters
+        "last_update": Or(None, And(datetime, lambda v: isinstance(v, datetime))),  # Timestamp when the weather station data was last updated
+    })
+
+    allowed_transitions = {}
+
+    def __init__(self, **kwargs):
+
+        # Default values
+        defaults = {
+            "_type": "WeatherStation",
+            "id": "<undefined>",
+            "location": None,
+            "latitude": None,
+            "longitude": None,
+            "elevation": None,
+            "last_update": datetime.now(timezone.utc),
+        }
+
+        # Apply defaults if not provided in kwargs
+        for key, value in defaults.items():
+            if key not in kwargs:
+                kwargs.setdefault(key, value)
+
+        super().__init__(**kwargs)
+
 class WeatherStationList(BaseModel):
-    """A class representing a list of weather stations."""
+    """A class representing a list of weather data from one or more weather stations."""
 
     schema = Schema({
         "_type": And(str, lambda v: v == "WeatherStationList"),
         "list_id": And(str, lambda v: isinstance(v, str)),                 # Weather Station List identifier e.g. "active"   
         "weather_enabled": And(bool, lambda v: isinstance(v, bool)),       # Flag to enable or disable weather monitoring and alarm processing for the dishes
-        "weather_list": And(list, lambda v: isinstance(v, list)),          # List of WeatherData objects
+        "weather_stations": And(list, lambda v: isinstance(v, list)),      # List of WeatherStation objects
+        "weather_data": And(list, lambda v: isinstance(v, list)),          # List of WeatherData objects
         "threshold_timeout": And(int, lambda v: v >= 0),                   # Maximum age of weather data in seconds to keep in the list
         "threshold_wind_avg": And(float, lambda v: v >= 0),                # Threshold for high wind avg in m/s to trigger an alarm
         "threshold_wind_gust": And(float, lambda v: v >= 0),               # Threshold for high wind gust in m/s to trigger an alarm
@@ -95,7 +131,8 @@ class WeatherStationList(BaseModel):
             "_type": "WeatherStationList",
             "list_id": "active",
             "weather_enabled": True,                    # Default to True to enable weather monitoring and alarm processing
-            "weather_list": [],
+            "weather_stations": [],  
+            "weather_data": [],
             "threshold_timeout": 30,                    # Maximum age of weather data in seconds to keep in the list
             "threshold_wind_gust": 30.0,                # Threshold for high wind gust in m/s to trigger an alarm
             "threshold_wind_avg": 20.0,                 # Threshold for high wind avg in m/s to trigger an alarm
@@ -114,8 +151,8 @@ class WeatherStationList(BaseModel):
         super().__init__(**kwargs)
 
     def __str__(self):
-        weather_str = ",\n\n  ".join(str(wd) for wd in self.weather_list)
-        return f"WeatherStationList (list_id={self.list_id}, len={len(self.weather_list)}, threshold_timeout={self.threshold_timeout}, threshold_wind_gust={self.threshold_wind_gust}, threshold_wind_avg={self.threshold_wind_avg}, threshold_precipitation={self.threshold_precipitation}, threshold_wind_count={self.threshold_wind_count}, last_update={self.last_update.isoformat()}, trigger_dt={self.trigger_dt.isoformat() if self.trigger_dt else None}): [\n  {weather_str}\n]"
+        weather_str = ",\n\n  ".join(str(wd) for wd in self.weather_data)
+        return f"WeatherStationList (list_id={self.list_id}, len={len(self.weather_data)}, threshold_timeout={self.threshold_timeout}, threshold_wind_gust={self.threshold_wind_gust}, threshold_wind_avg={self.threshold_wind_avg}, threshold_precipitation={self.threshold_precipitation}, threshold_wind_count={self.threshold_wind_count}, last_update={self.last_update.isoformat()}, trigger_dt={self.trigger_dt.isoformat() if self.trigger_dt else None}): [\n  {weather_str}\n]"
 
     def is_ws_monitoring_enabled(self) -> bool:
         """
@@ -125,7 +162,7 @@ class WeatherStationList(BaseModel):
 
     def get_station_ids(self) -> List[str]:
         """Return sorted weather-station ids currently present in the rolling weather list."""
-        return sorted({wd.ws_id for wd in self.weather_list if getattr(wd, "ws_id", None) is not None})
+        return sorted({wd.ws_id for wd in self.weather_data if getattr(wd, "ws_id", None) is not None})
 
     def get_station_weather(self, ws_id: str, now: datetime = None) -> List[WeatherData]:
         """Return recent samples for a single weather station within the timeout window."""
@@ -137,7 +174,7 @@ class WeatherStationList(BaseModel):
 
         return sorted(
             [
-                wd for wd in self.weather_list
+                wd for wd in self.weather_data
                 if wd.ws_id == ws_id and wd.obs_time is not None and wd.obs_time >= cutoff
             ],
             key=lambda wd: wd.obs_time,
@@ -151,7 +188,7 @@ class WeatherStationList(BaseModel):
         if ws_id is None:
             station_samples = sorted(
                 [
-                    wd for wd in self.weather_list
+                    wd for wd in self.weather_data
                     if wd.obs_time is not None and wd.obs_time >= cutoff
                 ],
                 key=lambda wd: wd.obs_time,
@@ -173,7 +210,7 @@ class WeatherStationList(BaseModel):
         if ws_id is None:
             startup_age_sec = (now - self.created_dt).total_seconds()
         else:
-            ws_all_samples = [wd for wd in self.weather_list if wd.ws_id == ws_id and wd.obs_time is not None]
+            ws_all_samples = [wd for wd in self.weather_data if wd.ws_id == ws_id and wd.obs_time is not None]
             if ws_all_samples:
                 first_station_time = min(wd.obs_time for wd in ws_all_samples)
                 startup_age_sec = (now - first_station_time).total_seconds()
@@ -221,8 +258,8 @@ class WeatherStationList(BaseModel):
         if not self.weather_enabled:
             return False
 
-        if self.weather_list is None:
-            self.weather_list = []
+        if self.weather_data is None:
+            self.weather_data = []
             self.created_dt = datetime.now(timezone.utc) 
 
         metrics = self.get_alarm_metrics()
@@ -282,11 +319,11 @@ class WeatherStationList(BaseModel):
         if not hasattr(weather_data, 'obs_time') or weather_data.obs_time is None:
             raise ValueError("WeatherData must have an obs_time attribute.")
 
-        self.weather_list.append(weather_data)
+        self.weather_data.append(weather_data)
         
         now = datetime.now(timezone.utc)
         cutoff = now - timedelta(seconds=self.threshold_timeout)
-        self.weather_list = [wd for wd in self.weather_list if wd.obs_time >= cutoff]
+        self.weather_data = [wd for wd in self.weather_data if wd.obs_time >= cutoff]
 
         self.last_update = datetime.now(timezone.utc)
 
@@ -346,30 +383,37 @@ if __name__ == "__main__":
     print(weather) 
 
     print("*"*50)
+    print("Testing Weather Station")
+    print("*"*50)
+
+    weather_station = WeatherStation(id="ws001", location="Test Location", latitude=40.0, longitude=-105.0, elevation=1600.0)
+    pprint.pprint(weather_station.to_dict())
+
+    print("*"*50)
     print("Testing Weather Data List and append method")
     print("*"*50)
 
-    weather_list = WeatherStationList()
-    weather_list.save_to_disk()  # Test saving to disk with empty list
+    weather_data = WeatherStationList(weather_stations=[weather_station])
+    weather_data.save_to_disk()  # Test saving to disk with empty list
 
-    weather_list.append(weather)
-    print(weather_list)
+    weather_data.append(weather)
+    print(weather_data)
 
     print("*"*50)
     print("Testing Weather Data List and append duplicate ws_id")
     print("*"*50)
 
     weather_updated = WeatherData(ws_id="ws001", obs_time=datetime.now(timezone.utc), temperature=26.0, humidity=55.0)
-    weather_list.append(weather_updated)
-    print(weather_list)
+    weather_data.append(weather_updated)
+    print(weather_data)
 
     print("*"*50)
     print("Testing Weather Data List and append different ws_id")
     print("*"*50)
 
     weather_new = WeatherData(ws_id="ws002", obs_time=datetime.now(timezone.utc), temperature=22.0, humidity=65.0)
-    weather_list.append(weather_new)
-    print(weather_list)
+    weather_data.append(weather_new)
+    print(weather_data)
 
     ws001 = WeatherStationModel(id="ws001")
     pprint.pprint(ws001.to_dict())
