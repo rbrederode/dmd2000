@@ -525,6 +525,24 @@ class SDP(App):
             else:
                 logger.warning(f"Science Data Processor received unknown scan config key {key} for digitiser {dig_id} in value: {value}")
 
+        tgt_idx = value.get('tgt_idx') if value is not None and isinstance(value, dict) else None
+        freq_scan = value.get('freq_scan') if value is not None and isinstance(value, dict) else None
+
+        load_model = ScanModel(
+            dig_id=dig.dig_id,
+            obs_id=obs_id,
+            tgt_idx=tgt_idx,
+            freq_scan=freq_scan,
+            scan_type=ScanType.LOAD,
+            start_idx=0,
+            duration=dig.scan_duration,
+            sample_rate=dig.sample_rate,
+            channels=dig.channels,
+            center_freq=dig.center_freq,
+            gain=dig.gain,
+            load=True,
+            status=ScanState.COMPLETE)
+        load_scan = None
         load_found = False
 
         # Check if we already have an equivalent completed load scan in the load queue for this digitiser
@@ -533,8 +551,7 @@ class SDP(App):
 
         for cal in cal_scans:
 
-            if cal.scan_model.center_freq == dig.center_freq and cal.scan_model.sample_rate == dig.sample_rate and cal.scan_model.gain == dig.gain and \
-               cal.scan_model.channels == dig.channels and cal.scan_model.duration == dig.scan_duration and cal.scan_model.status == ScanState.COMPLETE:
+            if cal.scan_model.equivalent(load_model) and cal.get_status() == ScanState.COMPLETE:
                 load_found = True
                 logger.info(f"Science Data Processor found equivalent load scan in load queue for digitiser {dig_id} and observation {obs_id}:\n{cal}")
                 break  # we already have an equivalent load scan in the load queue, so we can keep it and skip preparing a new one
@@ -545,55 +562,18 @@ class SDP(App):
                     logger.info(f"Science Data Processor purged non-equivalent load scan from load queue for digitiser {dig_id} and observation {obs_id}:\n{cal}")
 
         if not load_found:
-            # Check whether a previous load scan is available in the sample store that matches the digitiser's scan parameters
             scan_store_dir = os.path.expanduser(self.get_args().scan_store_dir)
+            load_scan = Scan(scan_model=load_model)
+            equiv_load_scan = load_scan.find_equiv_scan(input_dir=scan_store_dir, scan_type=ScanType.LOAD)
 
-            file_prefix = util.gen_file_prefix(
-                dt=None,
-                entity_id=dig_id,
-                gain=dig.gain,
-                duration=dig.scan_duration,
-                sample_rate=dig.sample_rate,
-                center_freq=dig.center_freq,
-                channels=dig.channels, 
-                scan_type=ScanType.LOAD)
-
-            load_files = [f for f in os.listdir(scan_store_dir) if file_prefix in f and f.endswith('spr.csv')]
-            logger.info(f"Science Data Processor found {len(load_files)} load scan files in sample store matching prefix {file_prefix} for digitiser {dig_id} and observation {obs_id}")
-            load_files = sorted(load_files, key=lambda f: os.path.getctime(os.path.join(scan_store_dir, f)), reverse=True) if len(load_files) > 0 else []
-            load_file = load_files[0].removesuffix('spr.csv') if len(load_files) > 0 else None
-
-            if load_file is not None:
-                load_scan = Scan.from_disk(file_prefix=load_file, input_dir=scan_store_dir, include_iq=False)
-                
-                if load_scan is not None and load_scan.is_load_scan():
-                    load_found = True
-                    self.cal_q.put(load_scan)
-                    logger.info(f"Science Data Processor found equivalent load scan in {self.get_args().scan_store_dir} for digitiser {dig_id} and observation {obs_id}:\n{load_scan}")
+            if equiv_load_scan is not None and equiv_load_scan.get_scan_type() == ScanType.LOAD:
+                load_found = True
+                self.cal_q.put(equiv_load_scan)
+                logger.info(f"Science Data Processor found equivalent load scan in {self.get_args().scan_store_dir} for digitiser {dig_id} and observation {obs_id}:\n{equiv_load_scan}")
 
         if not load_found:
-            # Extract target index and frequency scan index from the digitiser scanning metadata if available, else default to -1 for both
-            tgt_idx = dig.scanning.get("tgt_idx", -1) if dig.scanning is not None and isinstance(dig.scanning, dict) else -1
-            freq_scan = dig.scanning.get("freq_scan", -1) if dig.scanning is not None and isinstance(dig.scanning, dict) else -1
-
-            # Create a default load scan model based on the digitiser metadata and the observation parameters 
-            # This load scan will default to a baseline of ones so will not affect the sky scan when applied
-            load_model = ScanModel(
-                dig_id=dig.dig_id,
-                obs_id=obs_id,             
-                tgt_idx=tgt_idx,           
-                freq_scan=freq_scan,
-                scan_type=ScanType.LOAD,
-                start_idx=0,                 # default load scans start at index 0
-                duration=dig.scan_duration,
-                sample_rate=dig.sample_rate,
-                channels=dig.channels,
-                center_freq=dig.center_freq,
-                gain=dig.gain,
-                load=True,
-                status=ScanState.COMPLETE)
-
-            load_scan = Scan(scan_model=load_model)
+            if load_scan is None:
+                load_scan = Scan(scan_model=load_model)
             Scan.reset_scan_iter_counter(obs_id, tgt_idx, freq_scan)  # reset the scan iteration counter for this observation, target, and frequency scan so that the load scan is applied to the correct sky scan iteration
             self.cal_q.put(load_scan)
             load_found = True
@@ -812,7 +792,7 @@ class SDP(App):
         self._remove_from_queue(scan=scan, queue=self.scan_q) # Remove older completed scans from the scan processing queue
         
         # Add load scan to the load queue and replace equivalent items (not needed anymore)
-        if scan.is_load_scan():
+        if scan.get_scan_type() != ScanType.SKY:
             self._merge_into_queue(scan, self.cal_q) 
 
         return
@@ -825,11 +805,11 @@ class SDP(App):
         queue = queue if queue is not None else self.cal_q
         queue.put(scan)  # Add this scan to the queue
         
-        equivalent_items = [s for s in list(queue.queue) if s != scan and s.equivalent(scan)]
+        equivalent_items = [s for s in list(queue.queue) if s is not scan and s.equivalent(scan)]
 
         for item in equivalent_items:  
             self._remove_from_queue(item, queue=queue)
-            logger.info(f"Science Data Processor removed equivalent {'load' if item.is_load_scan() else 'sky'} scan {item} from queue " + \
+            logger.info(f"Science Data Processor removed equivalent {'load' if item.get_scan_type() == ScanType.LOAD else 'sky'} scan {item} from queue " + \
                 f"for digitiser {item.get_dig_id()} with same parameters as {scan}")
 
     def _remove_from_queue(self, scan: Scan, queue: Queue = None):
@@ -886,11 +866,12 @@ def main():
                     #sig_display_scan.del_iq()
 
                     # Find the equivalent load scan for this scan if it exists in the load queue
-                    load_scans = [s for s in list(sdp.cal_q.queue) if s.equivalent(scan) and s.is_load_scan() == True]
+                    load_scans = [s for s in list(sdp.cal_q.queue) if s.equivalent(scan) and s.get_scan_type() == ScanType.LOAD]
                     logger.debug(f"Science Data Processor found {len(load_scans)} equivalent load scans in load queue for digitiser {dig_id} and observation {scan.get_obs_id()} to apply to signal display")
 
                     # Set the signal display to the current scan
-                    sdp.signal_displays[dig_id].set_scan(scan=scan, load=load_scans[0] if len(load_scans) > 0 else None)
+                    newest_load = max(load_scans, key=lambda s: s.scan_model.created) if len(load_scans) > 0 else None
+                    sdp.signal_displays[dig_id].set_scan(scan=scan, load=newest_load)
 
             for sig_display in sdp.signal_displays.values():
                 # If the signal display has a scan and is active, display the scan

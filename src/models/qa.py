@@ -78,13 +78,13 @@ class ScanQA(BaseModel):
     schema = Schema({
         "_type": And(str, lambda v: v == "ScanQA"),
         "scan_id": And(str, lambda v: isinstance(v, str)),
-        "spr_qa": And(object, lambda v: v is None or (isinstance(v, np.ndarray) and v.dtype == object and all(isinstance(item, QA) or item is None for item in v))),
-        "cal_qa": And(object, lambda v: v is None or (isinstance(v, np.ndarray) and v.dtype == object and all(isinstance(item, QA) or item is None for item in v))),
+        "spr_qa": And(object, lambda v: v is None or (((isinstance(v, list)) or (isinstance(v, np.ndarray) and v.dtype == object)) and all(isinstance(item, QA) or item is None for item in v))),
+        "cal_qa": And(object, lambda v: v is None or (((isinstance(v, list)) or (isinstance(v, np.ndarray) and v.dtype == object)) and all(isinstance(item, QA) or item is None for item in v))),
         "mpr_qa": Or(None, And(QA, lambda v: isinstance(v, QA))),
         "last_update": And(datetime, lambda v: isinstance(v, datetime)),
     })
 
-    def __init__(self, scan_duration=None, **kwargs):
+    def __init__(self, duration=None, **kwargs):
         # Default values
         defaults = {
             "_type": "ScanQA",
@@ -98,21 +98,18 @@ class ScanQA(BaseModel):
             if key not in kwargs:
                 kwargs.setdefault(key, value)
 
-        # If scan_duration is provided, initialize arrays of that length
-        if scan_duration is not None:
-            kwargs["spr_qa"] = np.empty(scan_duration, dtype=object)
-            kwargs["cal_qa"] = np.empty(scan_duration, dtype=object)
-        else:
-            # If lists are provided, convert to arrays
-            if isinstance(kwargs["spr_qa"], list):
-                kwargs["spr_qa"] = np.array(kwargs["spr_qa"], dtype=object)
-            if isinstance(kwargs["cal_qa"], list):
-                kwargs["cal_qa"] = np.array(kwargs["cal_qa"], dtype=object)
+        # If duration is provided, initialize arrays of that length
+        if duration is not None:
+            kwargs["spr_qa"] = np.empty(duration, dtype=object)
+            kwargs["cal_qa"] = np.empty(duration, dtype=object)
 
         super().__init__(**kwargs)
 
     def __str__(self):
-        return f"ScanQA(\n  scan_id={self.scan_id},\n\n  spr_qa=[{', '.join(str(qa) for qa in self.spr_qa)}],\n\n  cal_qa=[{', '.join(str(qa) for qa in self.cal_qa)}],\n\n  mpr_qa={str(self.mpr_qa)},\n  last_update={self.last_update.isoformat()})"
+        spr_qa = "None" if self.spr_qa is None else f"[{', '.join(str(qa) for qa in self.spr_qa)}]"
+        cal_qa = "None" if self.cal_qa is None else f"[{', '.join(str(qa) for qa in self.cal_qa)}]"
+        mpr_qa = "None" if self.mpr_qa is None else str(self.mpr_qa)
+        return f"ScanQA(\n  scan_id={self.scan_id},\n\n  spr_qa={spr_qa},\n\n  cal_qa={cal_qa},\n\n  mpr_qa={mpr_qa},\n  last_update={self.last_update.isoformat()})"
 
     def to_dict(self):
         """Serialise scan QA compactly while preserving second-by-second indexing."""

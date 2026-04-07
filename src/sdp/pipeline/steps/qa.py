@@ -13,12 +13,13 @@ class QA(ProcessingStep):
         super().__init__(config)
 
         self.scan = config.params["scan"] if "scan" in config.params else None
-        self.scan_qa = self.scan.get_qa() if self.scan else None
 
-        logger.debug("QA pipeline step initialisation with scan qa:\n%s", str(self.scan_qa))
+        if self.scan is None:
+            raise ValueError("QA step requires 'scan' in config.params. It is currently None.")
 
-        if self.scan_qa is None:
-            raise ValueError(f"QA: scan_qa {self.scan_qa} must be set before initialising QA step.")
+        self.scan_qa = self.scan.get_qa()
+
+        logger.debug("QA pipeline step initialised with scan:\n%s", str(self.scan))
     
     def process(self, context: Any, signal: Any) -> Any:
         """
@@ -44,6 +45,10 @@ class QA(ProcessingStep):
 
         if not isinstance(context, dict):
             raise ValueError("QA: context must be a dictionary.")
+
+        if self.scan_qa is None:
+            self.scan_qa = self.scan.get_qa()
+            self.scan_qa = self.scan.init_qa() if self.scan_qa is None else self.scan_qa  # Ensure the scan QA is initialised
 
         pipeline = context.get("pipeline", "unknown")  # Get the pipeline name from the context 
         window_frac = context.get("window_frac", 0.2)  # Fraction of channels to consider around the peak for signal region

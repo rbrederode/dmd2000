@@ -4,6 +4,7 @@ from typing import Any, List, Dict
 from numpy.lib.stride_tricks import sliding_window_view
 
 from models.pipeline import StepConfig, StepType
+from models.scan import ScanType
 from sdp.pipeline.pipeline_factory import ProcessingStep
 
 logger = logging.getLogger(__name__)
@@ -16,13 +17,14 @@ class RFIFlag(ProcessingStep):
         logger.info("RFIFlag pipeline step initialisation with config:\n%s", str(self.config))
 
         self.scan = config.params["scan"] if "scan" in config.params else None
-        self.scan_qa = self.scan.get_qa() if self.scan else None
 
-        logger.debug("RFIFlag pipeline step initialisation with scan qa:\n%s", str(self.scan_qa))
+        if self.scan is None:
+            raise ValueError("RFIFlag step requires 'scan' in config.params. It is currently None.")
 
-        if self.scan_qa is None:
-            raise ValueError(f"RFIFlag: scan_qa {self.scan_qa} must be set before initialising RFIFlag step.")
-    
+        self.scan_qa = self.scan.get_qa()
+        
+        logger.debug("RFIFlag pipeline step initialised with scan:\n%s", str(self.scan))
+
     def process(self, context: Any, signal: Any) -> Any:
         """
         Apply a vectorized sliding-window MAD RFI flagging pass to the signal array,
@@ -33,6 +35,15 @@ class RFIFlag(ProcessingStep):
 
         if not isinstance(context, dict):
             raise ValueError("RFIFlag: context must be a dictionary.")
+
+        # If this is a load scan, we should not apply rfi flagging, because we end up dividing the sky signal by the load scan
+        # and this effectively cancels out rfi that is present in both, before we apply rfi flagging in the resultant signal. 
+        if self.scan.get_scan_type() == ScanType.LOAD:
+            return signal
+        
+        if self.scan_qa is None:
+            self.scan_qa = self.scan.get_qa()
+            self.scan_qa = self.scan.init_qa() if self.scan_qa is None else self.scan_qa  # Ensure the scan QA is initialised
 
         pipeline = context.get("pipeline", "unknown")  # Get the pipeline name from the context 
 
@@ -65,7 +76,7 @@ class RFIFlag(ProcessingStep):
 
         qa.rfi_fraction = num_flagged / len(signal) if len(signal) > 0 else 0.0
 
-        logger.info(f"RFIFlag (sliding window): Flagged {num_flagged} channels as RFI outliers using window_size={window_size}, threshold={n}*MAD")
+        logger.debug(f"RFIFlag (sliding window): Flagged {num_flagged} channels as RFI outliers using window_size={window_size}, threshold={n}*MAD")
         return signal
 
 def main():

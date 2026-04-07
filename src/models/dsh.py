@@ -359,7 +359,7 @@ class DishManagerModel(BaseModel):
         if self.weather_store is None:
             return None
 
-        for weather in self.weather_store.weather_list:
+        for weather in self.weather_store.weather_data:
             if weather.ws_id == ws_id:
                 return weather
         return None

@@ -87,7 +87,7 @@ class Scan:
             self.mean_imag = 0.0  # Mean of imaginary value of the raw samples (Q)
              
             # QA attributes for the signal in this scan
-            self.scan_qa = ScanQA(scan_id=self.scan_model.scan_id, scan_duration=self.scan_model.duration)
+            self.scan_qa = None
 
             self.load_scan = None  # Reference to a load scan for calibration
 
@@ -148,6 +148,15 @@ class Scan:
             self.cal = np.zeros((self.scan_model.duration, self.scan_model.channels), dtype=np.float64)     # float64 for calibrated spectrum for each second in duration
             self.mpr = np.ones((self.scan_model.channels,), dtype=np.float64)               # float64 for mean power spectrum over duration for each channel (fft bin)
 
+    def init_qa(self) -> ScanQA:
+        """
+        Initialize the QA attributes for the signal in this scan.
+            :returns: A ScanQA instance containing the initialized QA attributes for this scan
+        """
+        with self._rlock:
+            self.scan_qa = ScanQA(scan_id=self.scan_model.scan_id, duration=self.scan_model.duration)  # Create a new ScanQA instance and assign it to this scan
+            return self.scan_qa
+
     def get_dig_id(self) -> str:
         """
         Get the digitiser ID associated with this scan.
@@ -199,13 +208,6 @@ class Scan:
         with self._rlock:
             self.pipeline = pipeline
 
-    def is_load_scan(self) -> bool:
-        """
-        Check if this scan is a load scan (i.e. load flag is True in the scan model).
-            :returns: True if this is a load scan, False otherwise
-        """
-        return self.scan_model.load
-
     def set_load_scan(self, load_scan: "Scan"):
         """
         Associate a load scan with this sky scan
@@ -214,7 +216,7 @@ class Scan:
         if not isinstance(load_scan, Scan):
             raise XSoftwareFailure(f"Scan {self.scan_model.scan_id} - Provided load_scan is not a Scan instance")
 
-        if not load_scan.is_load_scan():
+        if not load_scan.get_scan_type() == ScanType.LOAD:
             raise XSoftwareFailure(f"Scan {self.scan_model.scan_id} - Provided load_scan {load_scan.scan_model.scan_id} is not a load scan (load flag is not True)")
 
         if not self.equivalent(load_scan):
@@ -364,8 +366,8 @@ class Scan:
             valid_cal_rows = self.cal[loaded_sec_indices, :]
             self.mpr = np.mean(valid_cal_rows, axis=0) if valid_cal_rows.shape[0] > 0 else np.zeros((self.scan_model.channels,), dtype=np.float64)
             loaded_count = len(loaded_sec_indices)
-            if self.pipeline and loaded_count > 0:
-                self.mpr = self.pipeline.process(signal=self.mpr.copy(), context={"pipeline": "mpr", "sec": loaded_count})
+            if loaded_count > 0:
+                self.mpr = self.pipeline.process(signal=self.mpr.copy(), context={"pipeline": "mpr", "sec": loaded_count}) if self.pipeline else self.mpr
 
             if loaded_count == 0:
                 self.set_status(ScanState.EMPTY)
@@ -524,7 +526,7 @@ class Scan:
             try:
                 with open(f"{input_dir}/{file_prefix}-qa.json", 'r') as f:
                     qa_meta = json.load(f)
-                    scan.scan_qa = ScanQA().from_dict(qa_meta)
+                    scan.scan_qa = ScanQA.from_dict(qa_meta)
             except FileNotFoundError:
                 logger.warning(f"Scan - QA metadata file not found: {input_dir}/{file_prefix}-qa.json")
                 scan.scan_qa = None
@@ -603,7 +605,7 @@ class Scan:
             :returns: A dictionary containing metadata about the scan QA
         """
         with self._rlock:
-            return self.scan_qa.to_dict()
+            return self.scan_qa.to_dict() if self.scan_qa is not None else {}
 
 if __name__ == "__main__":
 

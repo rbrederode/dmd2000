@@ -201,6 +201,13 @@ class BaseModel:
         import astropy.units as u
         import numpy as np
 
+        # NumPy scalar -> native Python scalar for JSON compatibility
+        if isinstance(v, np.integer):
+            return int(v)
+        if isinstance(v, np.floating):
+            return float(v)
+        if isinstance(v, np.bool_):
+            return bool(v)
         # enum.IntEnum -> name and enum class
         if isinstance(v, enum.IntEnum):
             return {"_type": "enum.IntEnum", "instance": type(v).__name__, "value": v.name}
@@ -287,6 +294,13 @@ class BaseModel:
         from models.ui import UIDriverType, UIDriver
         from models.ws import WeatherData, WeatherStation, WeatherStationList, WeatherStationModel
         
+        if isinstance(v, np.integer):
+            return int(v)
+        if isinstance(v, np.floating):
+            return float(v)
+        if isinstance(v, np.bool_):
+            return bool(v)
+
         if isinstance(v, dict) and "_type" in v:
 
             model_type = v["_type"]
@@ -403,10 +417,6 @@ class BaseModel:
                 return QA(**deserialized_fields)
             elif model_type == "ScanQA":
                 deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
-                if isinstance(deserialized_fields.get("spr_qa"), list):
-                    deserialized_fields["spr_qa"] = np.array(deserialized_fields["spr_qa"], dtype=object)
-                if isinstance(deserialized_fields.get("cal_qa"), list):
-                    deserialized_fields["cal_qa"] = np.array(deserialized_fields["cal_qa"], dtype=object)
                 return ScanQA(**deserialized_fields)
             elif model_type == "ResourceAllocations":
                 deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}

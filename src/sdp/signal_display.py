@@ -278,6 +278,10 @@ class SignalDisplay:
         Parameters:
             l_sec: The latest loaded second number for the current scan, starting at 1.
         """
+        show_qa_legend = self.scan.scan_qa is not None
+        self.baseline_line.set_label("Noise Baseline (MPR)" if show_qa_legend else "_nolegend_")
+        self.qa_signal_start_line.set_label("Signal Start (MPR)" if show_qa_legend else "_nolegend_")
+        self.qa_signal_end_line.set_label("Signal End (MPR)" if show_qa_legend else "_nolegend_")
 
         if self.scan.scan_qa is not None:
             cal_qa = self.scan.scan_qa.getQA("cal", l_sec - 1)
@@ -304,22 +308,27 @@ class SignalDisplay:
                     self.baseline_line.set_data([], [])
 
                 qa_lines = [
-                    f"RFI Frac: {cal_qa.rfi_fraction:.2%}" if cal_qa is not None and cal_qa.rfi_fraction is not None else "RFI Frac: N/A",
-                    f"Baseline: {mpr_qa.baseline:.2f}" if mpr_qa.baseline is not None else "Baseline: N/A",
-                    f"Noise: {mpr_qa.noise_db:.2f} dB" if mpr_qa.noise_db is not None else "Noise: N/A dB",
-                    f"Signal (sum): {mpr_qa.signal_pwr_db:.2f} dB" if mpr_qa.signal_pwr_db is not None else "Signal (sum): N/A dB",
-                    f"Signal (peak): {mpr_qa.signal_db:.2f} dB" if mpr_qa.signal_db is not None else "Signal (peak): N/A dB",
-                    f"SNR: {mpr_qa.snr_db:.2f} dB" if mpr_qa.snr_db is not None else "SNR: N/A dB",
-                    f"FWHM: {mpr_qa.fwhm:.2f} bins" if mpr_qa.fwhm is not None else "FWHM: N/A bins",
-                    f"DR: {mpr_qa.dynamic_range_db:.2f} dB" if mpr_qa.dynamic_range_db is not None else "DR: N/A dB",
+                    f"RFI Frac: {cal_qa.rfi_fraction:.2%}" if cal_qa is not None and cal_qa.rfi_fraction is not None else "",
+                    f"Baseline: {mpr_qa.baseline:.2f}" if mpr_qa.baseline is not None else "",
+                    f"Noise: {mpr_qa.noise_db:.2f} dB" if mpr_qa.noise_db is not None else "",
+                    f"Signal (sum): {mpr_qa.signal_pwr_db:.2f} dB" if mpr_qa.signal_pwr_db is not None else "",
+                    f"Signal (peak): {mpr_qa.signal_db:.2f} dB" if mpr_qa.signal_db is not None else "",
+                    f"SNR: {mpr_qa.snr_db:.2f} dB" if mpr_qa.snr_db is not None else "",
+                    f"FWHM: {mpr_qa.fwhm:.2f} bins" if mpr_qa.fwhm is not None else "",
+                    f"DR: {mpr_qa.dynamic_range_db:.2f} dB" if mpr_qa.dynamic_range_db is not None else "",
                 ]
                 self.qa_text.set_text("\n".join(qa_lines))
         else:
-            self.qa_text.set_text("QA not available")
+            self.qa_text.set_text("QA metrics not configured")
             self.baseline_line.set_visible(False)
             self.baseline_line.set_data([], [])
             self.qa_signal_start_line.set_visible(False)
             self.qa_signal_end_line.set_visible(False)
+
+        legend1 = self.sig[1].get_legend()
+        if legend1 is not None:
+            legend1.remove()
+        self.sig[1].legend(loc="lower right")
 
     def _update_waterfall(self):
         """Update the waterfall image contents from the current calibrated scan data."""

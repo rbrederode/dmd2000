@@ -3,6 +3,7 @@ import logging
 from typing import Any, List, Dict
 
 from models.pipeline import StepConfig, StepType
+from models.scan import ScanType
 from sdp.pipeline.pipeline_factory import ProcessingStep, ProcessingPipeline
 
 logger = logging.getLogger(__name__)
@@ -21,10 +22,10 @@ class LoadCal(ProcessingStep):
             raise ValueError(f"LoadCal: scan {self.scan} and cal_q {self.cal_q} must be set before initialising LoadCal step.")
 
         # Find the equivalent load scan to apply to the signal if it exists in the calibration queue
-        load_scans = [s for s in list(self.cal_q.queue) if s.equivalent(self.scan) and s.is_load_scan() == True]
+        load_scans = [s for s in list(self.cal_q.queue) if s.equivalent(self.scan) and s.get_scan_type() == ScanType.LOAD]
                         
         if len(load_scans) > 0:
-            self.load_scan = load_scans[0]  # Remember the equivalent load scan to use
+            self.load_scan = max(load_scans, key=lambda s: s.scan_model.created)  # Remember the newest equivalent load scan to use
             logger.debug(f"LoadCal pipeline step found load scan to apply in Processing Pipeline\n{self.load_scan}")
         else:
             self.load_scan = None
@@ -42,6 +43,11 @@ class LoadCal(ProcessingStep):
 
         if not isinstance(signal, np.ndarray):
             raise ValueError("LoadCal: input signal must be a numpy array.")
+
+        # If this is a load scan, we should not apply the load calibration, otherwise we will divide the load scan by itself and end up 
+        # with an array of ones, losing the actual load calibration values. Instead, we return the signal unchanged for load scans.
+        if self.scan.get_scan_type() == ScanType.LOAD:
+            return signal
 
         # Check if the length of the input signal array matches the length of the load scan's spectrum
         if not self.load_scan or signal.shape[0] != self.load_scan.mpr.shape[0]:
