@@ -120,7 +120,7 @@ class Scan:
             return False
 
         return self.scan_model.equivalent(other.scan_model)
-    
+
     def get_start_end_idx(self) -> (int, int):
         """ Get the starting and ending index of the digitiser read counter for this scan.
             :returns: The starting and ending index as a tuple of integers
@@ -322,6 +322,59 @@ class Scan:
 
         return True
 
+    def load_spr(self, sec: int, spr: np.ndarray, read_start: datetime = None, read_end: datetime = None) -> bool:
+        """
+        Load a pre-computed summed power spectrum row into the scan.
+            :param sec: Second within the scan to load the spectrum (1 <= sec <= scan duration)
+            :param spr: Summed power spectrum for the given second
+            :param read_start: Optional timestamp when the source data started
+            :param read_end: Optional timestamp when the source data ended
+            :returns: True if the spectrum was loaded successfully, False otherwise
+        """
+
+        if sec < 1 or sec > self.scan_model.duration:
+            logger.warning(f"Scan {self.scan_model.scan_id} - Invalid second ({sec}) for scan duration {self.scan_model.duration}")
+            self.scan_model.load_failures += 1
+            return False
+
+        if spr is None or len(spr) != self.scan_model.channels:
+            logger.warning(
+                f"Scan {self.scan_model.scan_id} - Invalid summed power spectrum length. "
+                f"Expected {self.scan_model.channels}, got {len(spr) if spr is not None else 0}."
+            )
+            self.scan_model.load_failures += 1
+            return False
+
+        spr = np.asarray(spr, dtype=np.float64)
+        cal = self.pipeline.process(signal=spr.copy(), context={"pipeline": "cal", "sec": sec}) if self.pipeline else spr.copy()
+
+        with self._rlock:
+            self.spr[sec - 1, :] = spr
+            self.cal[sec - 1, :] = cal
+
+            loaded_mask = np.array(self.loaded_secs, dtype=bool)
+            loaded_mask[sec - 1] = True
+            mpr = np.mean(self.cal[loaded_mask, :], axis=0) if np.any(loaded_mask) else np.zeros((self.scan_model.channels,), dtype=np.float64)
+            self.mpr = self.pipeline.process(signal=mpr.copy(), context={"pipeline": "mpr", "sec": sec}) if self.pipeline else mpr
+
+            self.loaded_secs[sec - 1] = True
+            self.data_source = ScanDataSource.SPR
+
+        if read_start is not None:
+            self.scan_model.read_start = read_start if self.scan_model.read_start is None else min(self.scan_model.read_start, read_start)
+        if read_end is not None:
+            self.scan_model.read_end = read_end if self.scan_model.read_end is None else max(self.scan_model.read_end, read_end)
+
+        loaded_count = np.count_nonzero(self.loaded_secs)
+        if loaded_count == 0:
+            self.set_status(ScanState.EMPTY)
+        elif loaded_count < self.scan_model.duration:
+            self.set_status(ScanState.WIP)
+        else:
+            self.set_status(ScanState.COMPLETE)
+
+        return True
+
     def process_pipeline(self) -> bool:
         """
         Process all loaded scan data through the associated pipeline.
@@ -376,7 +429,7 @@ class Scan:
             else:
                 self.set_status(ScanState.COMPLETE)
 
-        logger.info(f"Scan {self.scan_model.scan_id} - Completed processing loaded scan data through pipeline.")
+        logger.info(f"Scan - {self.scan_model.scan_id} Completed processing loaded scan data through pipeline.")
         return True
 
     def save_to_disk(self, output_dir, include_iq: bool = False) -> bool:
@@ -691,13 +744,13 @@ if __name__ == "__main__":
             from sdp.signal_display import SignalDisplay
 
             factory = build_test_pipeline_factory()
-            scan_q = Queue()
+            sky_q = Queue()
             cal_q = Queue()
 
             cal_q.put(load_scan3)
-            scan_q.put(sky_scan3)
+            sky_q.put(sky_scan3)
 
-            pipeline = factory.create_pipeline(scan=sky_scan3, scan_q=scan_q, cal_q=cal_q)
+            pipeline = factory.create_pipeline(scan=sky_scan3, sky_q=sky_q, cal_q=cal_q)
             sky_scan3.set_pipeline(pipeline)
             sky_scan3.process_pipeline()
             processed_scan3 = sky_scan3

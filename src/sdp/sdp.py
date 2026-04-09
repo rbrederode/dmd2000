@@ -62,7 +62,7 @@ class SDP(App):
         self.register_interface(self.dig_system, self.dig_api, self.dig_endpoint, InterfaceType.ENTITY_DRIVER)
         # Entity drivers maintain comms status per entity, so no need to initialise comms status here
 
-        self.scan_q = Queue()            # Queue of sky scans being processed and displayed
+        self.sky_q = Queue()             # Queue of sky scans being processed and displayed
         self.cal_q = Queue()             # Queue of calibration scans to apply to sky scans
         self.signal_displays = {}        # Dictionary to hold SignalDisplay objects for each digitiser
 
@@ -243,7 +243,7 @@ class SDP(App):
                 match = None
 
                 # Find pending scans for this digitiser
-                pending_scans = [s for s in list(self.scan_q.queue) if s.get_status() in [ScanState.EMPTY, ScanState.WIP] and s.get_dig_id() == dig_id]
+                pending_scans = [s for s in list(self.sky_q.queue) if s.get_status() in [ScanState.EMPTY, ScanState.WIP] and s.get_dig_id() == dig_id]
                 abort_scans = []
 
                 self.sdp_model.scans_wip = len(pending_scans)
@@ -298,10 +298,10 @@ class SDP(App):
                     scan = Scan(scan_model=scan_model)
 
                     # Create a signal processing pipeline using the pipeline factory and associate it with the scan
-                    pipeline = SDP.pipeline_factory.create_pipeline(scan, self.scan_q, self.cal_q) if SDP.pipeline_factory else None
+                    pipeline = SDP.pipeline_factory.create_pipeline(scan, self.sky_q, self.cal_q) if SDP.pipeline_factory else None
                     scan.set_pipeline(pipeline)
 
-                    self.scan_q.put(scan)
+                    self.sky_q.put(scan)
                     self.sdp_model.scans_created += 1
                     match = scan
 
@@ -535,7 +535,7 @@ class SDP(App):
             freq_scan=freq_scan,
             scan_type=ScanType.LOAD,
             start_idx=0,
-            duration=dig.scan_duration,
+            duration=1,
             sample_rate=dig.sample_rate,
             channels=dig.channels,
             center_freq=dig.center_freq,
@@ -591,7 +591,7 @@ class SDP(App):
         # Reset the scan iteration counter for this observation, so that we can start from scan_iter=0 again
         obs_id = value if value is not None and isinstance(value, str) else None
         # Find pending scans for this observation and abort them
-        pending_scans = [s for s in list(self.scan_q.queue) if s.get_status() in [ScanState.EMPTY, ScanState.WIP] and s.get_obs_id() == obs_id]
+        pending_scans = [s for s in list(self.sky_q.queue) if s.get_status() in [ScanState.EMPTY, ScanState.WIP] and s.get_obs_id() == obs_id]
         for scan in pending_scans:
             self._abort_scan(scan)
         
@@ -779,7 +779,7 @@ class SDP(App):
         scan.del_iq()
 
         self.sdp_model.scans_aborted += 1
-        self._remove_from_queue(scan=scan, queue=self.scan_q)  # Remove the aborted scan from the scan processing queue
+        self._remove_from_queue(scan=scan, queue=self.sky_q)  # Remove the aborted scan from the sky processing queue
 
     def _complete_scan(self, scan: Scan):
         """ Completes a scan and performs necessary cleanup.
@@ -789,7 +789,7 @@ class SDP(App):
         self.sdp_model.scans_completed += 1
         self.sdp_model.scans_wip -= 1
 
-        self._remove_from_queue(scan=scan, queue=self.scan_q) # Remove older completed scans from the scan processing queue
+        self._remove_from_queue(scan=scan, queue=self.sky_q) # Remove older completed scans from the sky processing queue
         
         # Add load scan to the load queue and replace equivalent items (not needed anymore)
         if scan.get_scan_type() != ScanType.SKY:
@@ -798,7 +798,7 @@ class SDP(App):
         return
 
     def _merge_into_queue(self, scan: Scan, queue: Queue = None):
-        """ Adds a scan t o the specified queue, replacing any equivalent scans that are already in the queue.
+        """ Adds a scan to the specified queue, replacing any equivalent scans that are already in the queue.
             :params scan: the scan to add to the queue
             :params queue: the queue to add the scan to, defaults to the load (baseline) queue if not specified
         """
@@ -816,7 +816,7 @@ class SDP(App):
         """ Removes a scan from the queue without marking it as aborted or completed.
             Used for cleanup of pending scans on startup or observation reset.
         """
-        queue = queue if queue is not None else self.scan_q
+        queue = queue if queue is not None else self.sky_q
 
         try:
             queue.queue.remove(scan) # Remove this scan from the underlying queue
@@ -834,12 +834,12 @@ def main():
         while True:
             time_start = time.monotonic()
           
-            # For each processing scan in the scan queue, allocate it to a signal display
-            # We are expecting one processing scan per digitiser to be in the scan queue
-            for i in range(sdp.scan_q.qsize()):
+            # For each processing scan in the sky queue, allocate it to a signal display
+            # We are expecting one processing scan per digitiser to be in the sky queue
+            for i in range(sdp.sky_q.qsize()):
 
                 try:
-                    scan = sdp.scan_q.queue[i]
+                    scan = sdp.sky_q.queue[i]
                 except IndexError:
                     continue  # Scan index not valid, continue to next scan
 

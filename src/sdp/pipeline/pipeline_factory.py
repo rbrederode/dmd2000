@@ -66,7 +66,7 @@ class ProcessingPipelineFactory:
     def __init__(self, pipeline_config: PipelineConfig):
         self.pipeline_config = pipeline_config
 
-    def get_steps_for_dig(self, scan: "Scan" = None, scan_q: Queue = None, cal_q: Queue = None) -> List[ProcessingStep]:
+    def get_steps_for_dig(self, scan: "Scan" = None, sky_q: Queue = None, cal_q: Queue = None) -> List[ProcessingStep]:
         """ 
         Get the list of ProcessingStep instances for the given digitiser ID based on the pipeline configuration.
         If there are no specific steps for the dig_id, it will fall back to the 'default' steps.
@@ -75,7 +75,7 @@ class ProcessingPipelineFactory:
 
         for config in step_configs:
             config.params['scan']   = scan      # The scan that the pipeline will process
-            config.params['scan_q'] = scan_q    # Pipeline steps are provided access to the scan queue if needed
+            config.params['sky_q'] = sky_q    # Pipeline steps are provided access to the sky queue if needed
             config.params['cal_q']  = cal_q     # Pipeline steps are provided access to the calibration queue if needed
 
         return [self.instantiate_step(config) for config in step_configs]
@@ -109,6 +109,9 @@ class ProcessingPipelineFactory:
         # Return an instance of the step class (passing config to the constructor)
         return step_map[config.step.value](config)
 
-    def create_pipeline(self, scan: "Scan", scan_q: Queue, cal_q: Queue):
-        steps = self.get_steps_for_dig(scan, scan_q, cal_q)
+    def create_pipeline(self, scan: "Scan", sky_q: Queue, cal_q: Queue):
+        steps = self.get_steps_for_dig(scan, sky_q, cal_q)
         return ProcessingPipeline(steps)
+
+    def __str__(self):
+        return f"ProcessingPipelineFactory(pipeline_config={self.pipeline_config})"

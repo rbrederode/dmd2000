@@ -152,7 +152,7 @@ def main():
 
     from queue import Queue
  
-    scan_q = Queue()  # Set the calibration queue in the pipeline factory to None
+    sky_q = Queue()   # Set the sky queue in the pipeline factory to None
     cal_q = Queue()   # Set the calibration queue in the pipeline factory to None
 
     from models.scan import ScanModel, ScanState
@@ -182,7 +182,7 @@ def main():
     from obs.scan import Scan
 
     scan = Scan(scan_model=scan001)
-    scan_q.put(scan)  # Put the scan in the scan queue for processing
+    sky_q.put(scan)  # Put the scan in the sky queue for processing
 
     load001 = scan001.copy()
     load001.load = True
@@ -191,8 +191,8 @@ def main():
     cal_q.put(load_scan)  # Put the load scan in the cal queue for processing
 
     params={}
-    params['scan'] = scan     # The scan that the pipeline will process
-    params['scan_q'] = scan_q    # Pipeline steps are provided access to the scan queue if needed
+    params['scan'] = scan      # The scan that the pipeline will process
+    params['sky_q'] = sky_q    # Pipeline steps are provided access to the sky queue if needed
     params['cal_q'] = cal_q      # Pipeline steps are provided access to the calibration queue if needed
 
     # Example StepConfig for QA calculations

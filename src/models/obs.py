@@ -199,6 +199,14 @@ class Observation(BaseModel):
 
         return self.target_configs[tgt_idx] if 0 <= tgt_idx < len(self.target_configs) else None
 
+    def get_target_scan_set_by_index(self, tgt_idx:int) -> TargetScanSet:
+        """Retrieve a target scan set by its index from the target scans list."""
+
+        if tgt_idx is None or not isinstance(tgt_idx, int):
+            return None
+
+        return self.target_scans[tgt_idx] if 0 <= tgt_idx < len(self.target_scans) else None
+
     def get_target_scan_by_index(self, tgt_idx:int, freq_scan:int, scan_iter:int) -> ScanModel:
         """Retrieve a target scan by its indices from the target scans list."""
 

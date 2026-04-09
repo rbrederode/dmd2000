@@ -106,6 +106,8 @@ class ScanModel(BaseModel):
 
     @property
     def scan_id(self):
+        if self.scan_iter is not None and int(self.scan_iter) < 0:
+            return f"{self.obs_id}-{self.tgt_idx}-{self.freq_scan}"
         return f"{self.obs_id}-{self.tgt_idx}-{self.freq_scan}-{self.scan_iter}"
 
     def update_from_model(self, other_scan_model):
@@ -141,7 +143,6 @@ class ScanModel(BaseModel):
                      float(self.center_freq) == float(other.center_freq) and \
                      float(self.sample_rate) == float(other.sample_rate) and \
                      int(self.channels) == int(other.channels) and \
-                     int(self.duration) == int(other.duration) and \
                      float(self.gain) == float(other.gain)
 
         logger.debug(f"Scan equivalence is {equivalent} between:\n{self}\nand\n{other}\n")

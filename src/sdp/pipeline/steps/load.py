@@ -21,19 +21,26 @@ class LoadCal(ProcessingStep):
         if self.scan is None or self.cal_q is None:
             raise ValueError(f"LoadCal: scan {self.scan} and cal_q {self.cal_q} must be set before initialising LoadCal step.")
 
-        # Find the equivalent load scan to apply to the signal if it exists in the calibration queue
-        load_scans = [s for s in list(self.cal_q.queue) if s.equivalent(self.scan) and s.get_scan_type() == ScanType.LOAD]
-                        
-        if len(load_scans) > 0:
-            self.load_scan = max(load_scans, key=lambda s: s.scan_model.created)  # Remember the newest equivalent load scan to use
-            logger.debug(f"LoadCal pipeline step found load scan to apply in Processing Pipeline\n{self.load_scan}")
-        else:
-            self.load_scan = None
-            logger.warning(f"LoadCal pipeline step did not find load to apply to scan in Processing Pipeline\n{self.scan}")
+        # If this is a load scan, we should not apply the load calibration, otherwise we will divide the load scan by itself.
+        # Instead, we will look for an equivalent load scan in the calibration queue to apply to the signal if this is not a load scan. 
+        if self.scan.get_scan_type() != ScanType.LOAD:
+
+            # Find the equivalent load scan to apply to the signal if it exists in the calibration queue
+            load_scans = [
+                s for s in list(self.cal_q.queue)
+                if self.scan.equivalent(s) and s.get_scan_type() == ScanType.LOAD
+            ]
+                            
+            if len(load_scans) > 0:
+                self.load_scan = max(load_scans, key=lambda s: s.scan_model.created)  # Remember the newest equivalent load scan to use
+                logger.debug(f"LoadCal pipeline step found load scan to apply in Processing Pipeline\n{self.load_scan}")
+            else:
+                self.load_scan = None
+                logger.warning(f"LoadCal pipeline step did not find load to apply to scan in Processing Pipeline\n{self.scan}")
     
     def process(self, context: Any, signal: Any) -> Any:
         """
-        Divid signal by mean load scan power. Uses an equivalent load scan identified during initialisation. 
+        Divid signal by mean load scan power. Uses an equivalent load scan from the calibration queue if one exists
         Args:
             context: dict containing static parameters for applying load file
             input_signal: 1D numpy array containing input spectrum (signal)
@@ -49,6 +56,10 @@ class LoadCal(ProcessingStep):
         if self.scan.get_scan_type() == ScanType.LOAD:
             return signal
 
+        #sky_duration = float(self.scan.scan_model.duration) if self.scan.scan_model.duration else 0.0
+        #load_duration = float(self.load_scan.scan_model.duration) if self.load_scan and self.load_scan.scan_model.duration else 0.0
+        #duration_ratio = (sky_duration / load_duration) if load_duration > 0.0 and sky_duration > 0.0 else 1.0
+
         # Check if the length of the input signal array matches the length of the load scan's spectrum
         if not self.load_scan or signal.shape[0] != self.load_scan.mpr.shape[0]:
             logger.warning(f"LoadCal: load_scan {'found but' if self.load_scan else 'not found'} and must be the same shape {str(self.load_scan.mpr.shape[0])+' ' if self.load_scan else ''}" + \
@@ -63,7 +74,7 @@ def main():
 
     from queue import Queue
  
-    scan_q = Queue()  # Set the calibration queue in the pipeline factory to None
+    sky_q = Queue()   # Set the sky queue in the pipeline factory to None
     cal_q = Queue()   # Set the calibration queue in the pipeline factory to None
 
     from models.scan import ScanModel, ScanState
@@ -93,7 +104,7 @@ def main():
     from obs.scan import Scan
 
     scan = Scan(scan_model=scan001)
-    scan_q.put(scan)  # Put the scan in the scan queue for processing
+    sky_q.put(scan)  # Put the scan in the sky queue for processing
 
     load001 = scan001.copy()
     load001.load = True
@@ -102,8 +113,8 @@ def main():
     cal_q.put(load_scan)  # Put the load scan in the cal queue for processing
 
     params={}
-    params['scan'] = scan     # The scan that the pipeline will process
-    params['scan_q'] = scan_q    # Pipeline steps are provided access to the scan queue if needed
+    params['scan'] = scan      # The scan that the pipeline will process
+    params['sky_q'] = sky_q    # Pipeline steps are provided access to the sky queue if needed
     params['cal_q'] = cal_q      # Pipeline steps are provided access to the calibration queue if needed
 
     # Example StepConfig for gain calibration
