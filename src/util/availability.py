@@ -53,7 +53,7 @@ def _parse_logs(log_files: List[str], app_name: str, heartbeat_timeout_sec: int,
         List[Event]: List of events (timestamp, state).
     """
     state_pattern = re.compile(rf"App {re.escape(app_name)} health state transition .* -> (\w+)")
-    heartbeat_pattern = re.compile(r"Heartbeat")
+    heartbeat_pattern = re.compile(r"Heartbeat(?:\s+state=(\w+))?")
 
     transitions = []
     heartbeats = []
@@ -78,8 +78,11 @@ def _parse_logs(log_files: List[str], app_name: str, heartbeat_timeout_sec: int,
 
                 if m := state_pattern.search(line):
                     transitions.append((ts, m.group(1)))
-                elif heartbeat_pattern.search(line):
+                elif m := heartbeat_pattern.search(line):
                     heartbeats.append(ts)
+                    heartbeat_state = m.group(1)
+                    if heartbeat_state is not None:
+                        transitions.append((ts, heartbeat_state))
 
     transitions.sort()
     heartbeats.sort()

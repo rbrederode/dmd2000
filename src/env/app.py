@@ -331,7 +331,7 @@ class App:
         """Updates the last heartbeat timestamp to the current time."""
         with self._lock:
             self._last_heartbeat = datetime.now(timezone.utc)
-            self.avail_logger.info("Heartbeat")
+            self.avail_logger.info(f"Heartbeat state={self.app_model.health.name}")
 
     def set_health_state(self, health: HealthState):
         """Sets the health state of the application.
@@ -383,7 +383,7 @@ class App:
         with self._lock:
             logs_dir = App.logs_dir / "availability"
             end_period = datetime.now(timezone.utc)
-            start_period = end_period.replace(minute=0, second=0, microsecond=0) - timedelta(hours=1)
+            start_period = end_period - timedelta(hours=1)
             
             self.app_model.availability = get_app_availability(
                 logs_dir, 
