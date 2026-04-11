@@ -53,6 +53,10 @@ class DCSpike(ProcessingStep):
         signal[start:end][mask] = np.mean(signal[start:end][~mask]) 
         return signal
 
+    @classmethod
+    def describe(cls) -> str:
+        return "Remove the central DC spike by detecting outliers around the centre channel and replacing them with neighbouring values."
+
 def main():
 
     import logging

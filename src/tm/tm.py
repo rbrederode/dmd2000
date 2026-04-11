@@ -30,7 +30,7 @@ from models.base import BaseModel
 from models.comms import CommunicationStatus, InterfaceType
 from models.dig import DigitiserModel
 from models.dsh import DishManagerModel, Feed, Capability, DishMode, PointingState
-from models.obs import Observation, ObsTransition, ObsState
+from models.obs import ObsModel, ObsTransition, ObsState
 from models.oda import ODAModel, ObsList, ScanStore
 from models.health import HealthState
 from models.scan import ScanModel, ScanState
@@ -853,7 +853,7 @@ class TelescopeManager(App):
         elif event.name.startswith("obs_configuring_timer"):
             logger.info(f"Telescope Manager observation configuring timer event: {event}")
 
-            obs: Observation = event.user_ref if isinstance(event.user_ref, Observation) else None
+            obs: ObsModel = event.user_ref if isinstance(event.user_ref, ObsModel) else None
 
             if obs is not None and obs.obs_state == ObsState.CONFIGURING:
                 logger.warning(f"Telescope Manager observation {obs.obs_id} configuration timeout occurred, aborting observation")
@@ -863,7 +863,7 @@ class TelescopeManager(App):
         elif event.name.startswith("obs_scanning_timer"):
             logger.info(f"Telescope Manager observation scanning timer event: {event}")
 
-            obs: Observation = event.user_ref if isinstance(event.user_ref, Observation) else None
+            obs: ObsModel = event.user_ref if isinstance(event.user_ref, ObsModel) else None
 
             if obs is not None and obs.obs_state == ObsState.SCANNING:
                 logger.warning(f"Telescope Manager observation {obs.obs_id} scanning timeout occurred, ending scan")
@@ -873,7 +873,7 @@ class TelescopeManager(App):
         elif event.name.startswith("obs_abort_timer"):
             logger.info(f"Telescope Manager observation abort timer fired: {event.name}")
 
-            obs: Observation = event.user_ref if isinstance(event.user_ref, Observation) else None
+            obs: ObsModel = event.user_ref if isinstance(event.user_ref, ObsModel) else None
 
             if obs is not None and obs.obs_state == ObsState.ABORTED:
                 logger.warning(f"Telescope Manager observation {obs.obs_id} abort timeout occurred, releasing resources")

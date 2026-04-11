@@ -145,6 +145,10 @@ class QA(ProcessingStep):
         # No modifications to the signal !
         return signal
 
+    @classmethod
+    def describe(cls) -> str:
+        return "Measure high-level quality metrics such as baseline, SNR, linewidth, and dynamic range and store them on the scan."
+
 def main():
 
     import logging

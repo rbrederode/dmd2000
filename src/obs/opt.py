@@ -6,13 +6,18 @@ import numpy as np
 import logging
 from queue import Queue
 
-from models.obs import Observation
-from models.pipeline import PipelineConfig, StepConfig, StepType
-from models.scan import ScanDataSource, ScanModel, ScanType, ScanState
-from obs.obs_display import ObsDisplay
-from scan import Scan
+from models.obs import ObsModel
+from models.pipeline import PipelineConfig
+from models.scan import ScanModel, ScanType, ScanState
+try:
+    from obs.obs_display import ObsDisplay
+    from obs.scan import Scan
+except ModuleNotFoundError:
+    from obs_display import ObsDisplay
+    from scan import Scan
 from sdp.pipeline.pipeline_factory import ProcessingPipelineFactory
 from sdp.signal_display import SignalDisplay
+from util.xbase import XSoftwareFailure
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +61,7 @@ def init_args():
 
     return parser.parse_args()
 
-def load_obs_metadata(dir: str, obs_id: str) -> Observation | None:
+def load_obs_metadata(dir: str, obs_id: str) -> ObsModel | None:
     """ Load observation metadata from disk.
         Parameters:
             dir:        Directory containing the observation metadata file.
@@ -74,7 +79,7 @@ def load_obs_metadata(dir: str, obs_id: str) -> Observation | None:
    
     with open(obs_path, 'r') as f:
         obs_data = json.load(f)
-    obs = Observation().from_dict(obs_data)
+    obs = ObsModel().from_dict(obs_data)
    
     return obs
 
@@ -88,7 +93,7 @@ def _print_title(title: str):
     print(title)
     print("="*len(title)+"\n")
 
-def print_obs_header(obs: Observation):
+def print_obs_header(obs: ObsModel):
     """ Print a summary of observation-level metadata.
         Parameters:
             obs: Observation model to summarise. 
@@ -103,7 +108,7 @@ def print_obs_header(obs: Observation):
     print(f"End Time:       {obs.end_dt.isoformat()}")
     print(f"Description:    {obs.description}\n")
 
-def print_sky_scans(obs: Observation, sky_q: Queue | None = None, blacklist: list[str] | None = None, scan_filter=None):
+def print_sky_scans(obs: ObsModel, sky_q: Queue | None = None, blacklist: list[str] | None = None, scan_filter=None):
     """ Print a table of SKY scans in the observation.
         Parameters:
             obs:         Observation model containing the scan metadata to print.
@@ -206,7 +211,7 @@ def print_sky_scans(obs: Observation, sky_q: Queue | None = None, blacklist: lis
 
     print("")
 
-def print_cal_scans(obs: Observation, cal_q: Queue | None = None, blacklist: list[str] | None = None, scan_filter=None):
+def print_cal_scans(obs: ObsModel, cal_q: Queue | None = None, blacklist: list[str] | None = None, scan_filter=None):
     """ Print a table of calibration scans in the observation.
         Parameters:
             obs:         Observation model containing the scan metadata to print.
@@ -264,6 +269,103 @@ def print_cal_scans(obs: Observation, cal_q: Queue | None = None, blacklist: lis
 
     print("")
 
+def print_aggregated_scans(obs: ObsModel, sky_q: Queue | None = None, int_arrays: dict | None = None, blacklist: list[str] | None = None, scan_filter=None):
+    """ Print a table of processed aggregated SKY scans held in ``sky_q``.
+
+        Parameters:
+            obs:         Observation model used to look up target metadata for
+                         each aggregated scan.
+            sky_q:       Queue containing aggregated SKY ``Scan`` objects.
+            int_arrays:  Optional integrated array dictionary used to source the
+                         aggregated duration in seconds for each scan.
+            blacklist:   Optional list of full scan IDs currently marked as
+                         excluded.
+            scan_filter: Optional predicate receiving a ``Scan`` and returning
+                         ``True`` when the row should be printed.
+    """
+    _print_title("Aggregated SKY Scans")
+
+    blacklist = blacklist or []
+
+    columns = [
+        ("Excl", 4),
+        ("Scan Index", 10),
+        ("Scan Type", 10),
+        ("Tgt ID", 14),
+        ("Tgt Coordinates", 30),
+        ("Tgt Pointing Type", 18),
+        ("Feed", 10),
+        ("Dig ID", 6),
+        ("Center Freq", 11),
+        ("Sample Rate", 11),
+        ("Gain", 7),
+        ("Channels", 8),
+        ("Duration", 8),
+        ("Image", 8),
+        ("SNR (dB)", 10),
+        ("FWHM", 10),
+        ("DR (dB)", 10),
+    ]
+
+    header = " ".join(_fmt_cell(name, width) for name, width in columns)
+    divider = " ".join("-" * width for _, width in columns)
+    print(header)
+    print(divider)
+
+    if sky_q is None or len(sky_q.queue) == 0:
+        print("")
+        return
+
+    for scan in list(sky_q.queue):
+        if scan is None or scan.get_scan_type() != ScanType.SKY:
+            continue
+        if scan_filter is not None and not scan_filter(scan):
+            continue
+
+        scan_model = scan.scan_model
+        tgt_idx = scan_model.tgt_idx
+        target = obs.get_target_by_index(tgt_idx) if tgt_idx is not None and tgt_idx >= 0 else None
+        target_config = obs.get_target_config_by_index(tgt_idx) if tgt_idx is not None and tgt_idx >= 0 else None
+
+        coords = _format_target_coordinates(target)
+
+        scan_id_parts = str(scan_model.scan_id).split("-")
+        scan_index = "-".join(scan_id_parts[-2:]) if int(getattr(scan_model, "scan_iter", -1)) < 0 else _get_scan_index(scan_model.scan_id)
+        integrated_secs = None
+        if int_arrays is not None:
+            integrated_entry = int_arrays.get((scan_model.tgt_idx, scan_model.freq_scan))
+            integrated_secs = integrated_entry.get("secs") if integrated_entry is not None else None
+
+        scan_qa = scan.get_qa()
+        mpr_qa = scan_qa.getQA("mpr", 0) if scan_qa is not None else None
+        snr_db = getattr(mpr_qa, "snr_db", None)
+        fwhm = getattr(mpr_qa, "fwhm", None)
+        dr_db = getattr(mpr_qa, "dynamic_range_db", None)
+
+        row = [
+            "[x]" if scan_model.scan_id in blacklist else "[ ]",
+            scan_index,
+            scan_model.scan_type.name,
+            target.id if target is not None and target.id is not None else "",
+            coords,
+            target.pointing.name if target is not None and target.pointing is not None else "",
+            target_config.feed.name if target_config is not None and target_config.feed is not None else "",
+            scan_model.dig_id,
+            _fmt_float(scan_model.center_freq, scale=1e6, precision=2, suffix=" MHz"),
+            _fmt_float(scan_model.sample_rate, scale=1e6, precision=2, suffix=" MHz"),
+            _fmt_float(scan_model.gain, precision=1, suffix=" dB"),
+            str(scan_model.channels),
+            _fmt_float(integrated_secs if integrated_secs is not None else scan_model.duration, precision=0, suffix=" s"),
+            _scan_image_link(scan_model, 8),
+            _fmt_float(snr_db, precision=2),
+            _fmt_float(fwhm, precision=2),
+            _fmt_float(dr_db, precision=2),
+        ]
+
+        print(" ".join(_fmt_cell(value, width) for value, (_, width) in zip(row, columns)))
+
+    print("")
+
 def _fmt_cell(value, width) -> str:
     """Format a single table cell to a fixed width. """
     return f"{str(value):<{width}}"
@@ -300,7 +402,7 @@ def _get_scan_index(scan_id: str) -> str:
         user-facing selection prompts. """
     return "-".join(scan_id.split("-")[-3:]) if scan_id else ""
 
-def blacklist_scans(obs: Observation, blacklist: list[str] | None = None) -> tuple[list[str], str]:
+def blacklist_scans(obs: ObsModel, blacklist: list[str] | None = None) -> tuple[list[str], str]:
     """ Let the user incrementally build or reduce the scan blacklist using short scan indexes from the console.
         Parameters:
             obs:        Observation model used to validate user-entered scan indexes.
@@ -359,158 +461,168 @@ def blacklist_scans(obs: Observation, blacklist: list[str] | None = None) -> tup
     return blacklist, "\n".join(messages)
 
 
-def print_pipeline_config(pipeline_factory: ProcessingPipelineFactory):
-    """ Show the configured processing steps that OPT will use.
+def print_pipeline_config(obs: ObsModel, pipeline_factory: ProcessingPipelineFactory):
+    """ Show the configured processing steps that OPT will use as a fixed-width table.
+
         Parameters:
+            obs: Observation model used to derive the digitiser ID whose pipeline
+                 configuration should be displayed.
             pipeline_factory: Factory containing the pipeline configuration to display.
-        Returns:
-            ``None``.
     """
-    print("="*40)
-    print("Processing Pipeline Configuration")
-    print("="*40)
+    _print_title("Processing Pipeline Configuration")
 
+    context_columns = [
+        ("Context", 8),
+        ("Name", 24),
+        ("Input", 30),
+        ("Usage", 90),
+        ("Output", 6),
+    ]
+    context_rows = [
+        ("spr", "Summed Power Spectrum", "Raw power summed over seconds", "Apply minimal pipeline steps to preserve the original spectrum for later processing.", "spr⁎"),
+        ("cal", "Calibrated Spectrum", "spr⁎", "Apply calibration steps such as bandpass correction, gain calibration, and rfi exclusion.", "cal⁎"),
+        ("mpr", "Mean Power Spectrum", "cal⁎", "Apply QA steps such as SNR calculation, FWHM estimation, and dynamic range calculation.", "mpr⁎"),
+    ]
+    context_header = " ".join(_fmt_cell(name, width) for name, width in context_columns)
+    context_divider = " ".join("-" * width for _, width in context_columns)
+    print(context_header)
+    print(context_divider)
+    for row in context_rows:
+        print(" ".join(_fmt_cell(value, width) for value, (_, width) in zip(row, context_columns)))
     print("")
-    print(pipeline_factory)
-    print("")
-
-def init_sky_arrays(obs: Observation, blacklist: list[str] | None = None) -> dict:
-    """ Create per-target, per-frequency-scan accumulators for SKY scan power aggregation while excluding blacklisted scans.
-        Parameters:
-            obs:        Observation model providing SKY scan metadata.
-            blacklist:  Optional list of full scan IDs to exclude.
-        Returns:
-            A dictionary keyed by target index, where each value is a list indexed
-            by frequency scan and containing aggregation entries with ``spr_sum``
-            and accumulated ``seconds``, or ``None`` when no SKY scan exists for
-            that slot.
-    """
-    blacklist = set(blacklist or [])
-    sky_arrays = {}
     
-    for tgt_idx, _ in enumerate(obs.target_scans):
+    columns = [
+        ("Dig ID", 8),
+        ("Context", 8),
+        ("Step Name", 12),
+        ("Step Description", 96),
+    ]
 
-        target_scan_set = obs.get_target_scan_set_by_index(tgt_idx)
-        freq_scan_arrays = []
+    header = " ".join(_fmt_cell(name, width) for name, width in columns)
+    divider = " ".join("-" * width for _, width in columns)
+    print(header)
+    print(divider)
 
-        if target_scan_set is None or target_scan_set.freq_scans is None:
-            sky_arrays[tgt_idx] = freq_scan_arrays
-            continue
+    dig_id = None
+    for target_scan_set in obs.target_scans:
+        for scan_model in target_scan_set.scans:
+            if scan_model is not None and getattr(scan_model, "dig_id", None):
+                dig_id = scan_model.dig_id
+                break
+        if dig_id is not None:
+            break
 
-        freq_scans = target_scan_set.freq_scans
-        scan_iterations = target_scan_set.scan_iterations or 0
+    for item in pipeline_factory.describe_steps_for_dig(dig_id):
+        row = [
+            dig_id or "default",
+            item["params"].get("pipeline", ""),
+            item["step"].name,
+            item["description"],
+        ]
+        print(" ".join(_fmt_cell(value, width) for value, (_, width) in zip(row, columns)))
 
-        for freq_scan_idx in range(freq_scans):
-            first_scan_model = None
+    print("")
+    print("Processing Pipeline Steps are configurable via the PipelineConfig.json file located in the ./config/<profile> directory.")
+    print("")
 
-            for scan_iter in range(scan_iterations):
-
-                scan_model = target_scan_set.get_scan_by_index(freq_scan_idx, scan_iter)
-
-                if scan_model is None or scan_model.scan_id in blacklist or scan_model.scan_type != ScanType.SKY:
-                    continue
-
-                if scan_model is not None:
-                    first_scan_model = scan_model
-                    break
-
-            if first_scan_model is not None:
-                freq_scan_arrays.append({
-                    "spr_sum": np.zeros(first_scan_model.channels),
-                    "seconds": 0,
-                })
-            else:
-                freq_scan_arrays.append(None)
-
-        sky_arrays[tgt_idx] = freq_scan_arrays
-
-    return sky_arrays
-
-def init_cal_arrays(obs: Observation, blacklist: list[str] | None = None) -> dict:
-    """ Create calibration accumulation containers keyed by calibration scan
-        type and frequency scan index, excluding blacklisted scans.
+def init_integrated_arrays(obs: ObsModel, blacklist: list[str] | None = None) -> dict:
+    """ Create a dictionary of integrated arrays to aggregate scan interations for each tgt_idx and freq_scan combination.
+        Excludes blacklisted scans. 
+        
+        Aggregates: summed power (spr), mean power (mpr), total power (tpw), seconds, count of scan iterations
 
         Parameters:
             obs:        Observation model providing calibration scan metadata.
             blacklist:  Optional list of full scan IDs to exclude.
 
         Returns:
-            A nested dictionary of the form
-            ``cal_arrays[scan_type][freq_scan_idx]`` containing ``mpr_sum`` and
-            accumulated ``count`` for each calibration slot.
+            A dictionary: {tgt_idx-freq_scan_idx: {"spr_sum": np.array, "mpr_sum": np.array, "tpw_sum": [], "secs": float, "scans": int}}
     """
     blacklist = set(blacklist or [])
-    cal_arrays = {}
-    template_by_type = {}
-    freq_scans_by_type = {}
+    int_arrays = {}             # Structure: {(tgt_idx,freq_scan_idx): {"spr_sum": np.array, "mpr_sum": np.array, "tpw_sum": [], "secs": float, "scans": int}}
+    scanmodel_templates = {}    # Structure: {(tgt_idx,freq_scan_idx): ScanModel} used to find a template for each aggregated scan based on the freq_scan
 
     for target_scan_set in obs.target_scans:
         for scan_model in target_scan_set.scans:
-            if scan_model is None or scan_model.scan_id in blacklist or scan_model.scan_type == ScanType.SKY:
+            if scan_model is None or scan_model.scan_id in blacklist:
                 continue
 
-            if scan_model.scan_type not in template_by_type:
-                template_by_type[scan_model.scan_type] = scan_model.channels
-            if scan_model.scan_type not in freq_scans_by_type:
-                freq_scans_by_type[scan_model.scan_type] = set()
-            freq_scans_by_type[scan_model.scan_type].add(scan_model.freq_scan)
+            tgt_idx = scan_model.tgt_idx
+            freq_scan_idx = scan_model.freq_scan
 
-    for scan_type, channels in template_by_type.items():
-        cal_arrays[scan_type] = {}
-        for freq_scan_idx in sorted(freq_scans_by_type.get(scan_type, set())):
-            cal_arrays[scan_type][freq_scan_idx] = {
-                "mpr_sum": np.zeros(channels),
-                "count": 0,
-            }
+            scanmodel_templates.setdefault((tgt_idx, freq_scan_idx), scan_model)
 
-    return cal_arrays
+    for (tgt_idx, freq_scan_idx), scanmodel in scanmodel_templates.items():
+        int_arrays.setdefault((tgt_idx, freq_scan_idx), {})
+        int_arrays[(tgt_idx, freq_scan_idx)] = {
+            "spr_sum": np.zeros(scanmodel.channels),    # Known to be sized by channel count
+            "mpr_sum": np.zeros(scanmodel.channels),    # Known to be sized by channel count
+            "tpw_sum": [],                              # A list total power readings that can grow incrementally
+            "secs": 0.0,                                # Total seconds accumulated across scans 
+            "scans": 0,                                 # Count of scan iterations accumulated
+        }
 
-def update_cal_arrays(cal_arrays: dict, scan: Scan):
-    """ Add a processed calibration scan's mean power spectrum to the
-        relevant calibration aggregation entry.
+    return int_arrays
 
+def update_int_arrays(int_arrays: dict, scan: Scan):
+    """ Add a processed scan's summed power spectrum to the relevant integration entry.
+        
         Parameters:
-            cal_arrays: Calibration aggregation dictionary created by
-                        ``init_cal_arrays``.
-            scan:       Processed calibration ``Scan`` whose ``mpr`` should be
-                        accumulated.
+            int_arrays: Integration aggregation dictionary created by ``init_int_arrays``.
+            scan:       Processed integration ``Scan`` whose ``spr`` should be accumulated.
     """
-    if scan is None or scan.get_scan_type() == ScanType.SKY or scan.mpr is None:
-        return
-
-    scan_type = scan.get_scan_type()
-    freq_scan_idx = scan.scan_model.freq_scan
-
-    if scan_type not in cal_arrays or freq_scan_idx not in cal_arrays[scan_type]:
-        return
-
-    cal_arrays[scan_type][freq_scan_idx]["mpr_sum"] += scan.mpr
-    cal_arrays[scan_type][freq_scan_idx]["count"] += 1
-
-def update_sky_arrays(sky_arrays: dict, scan: Scan):
-    """Accumulate a SKY scan's summed power spectrum into sky_arrays."""
-
-    if scan is None or scan.get_scan_type() != ScanType.SKY or scan.spr is None:
+    if scan is None or scan.spr is None or scan.mpr is None:
         return
 
     tgt_idx = scan.scan_model.tgt_idx
     freq_scan_idx = scan.scan_model.freq_scan
-    sky_entry = sky_arrays.get(tgt_idx, [None])[freq_scan_idx]
 
-    if sky_entry is None:
+    if (tgt_idx, freq_scan_idx) not in int_arrays:
         return
 
-    sky_entry["spr_sum"] += np.sum(scan.spr, axis=0)
-    sky_entry["seconds"] += scan.get_loaded_seconds()
+    int_arrays[(tgt_idx, freq_scan_idx)]["spr_sum"] += np.sum(scan.spr, axis=0)  # Note: summing multiple rows (seconds) to get a single spectrum per scan iteration
+    int_arrays[(tgt_idx, freq_scan_idx)]["mpr_sum"] += np.sum(scan.mpr, axis=0)  # Note: summing a single integrated row per scan iteration
+    int_arrays[(tgt_idx, freq_scan_idx)]["tpw_sum"].extend(np.sum(scan.cal, axis=1).tolist())  # Extending the list by summing across channels to get total power per second
 
-def init_aggregated_cal_scans(obs: Observation, cal_arrays: dict, pipeline_factory: "ProcessingPipelineFactory" = None, blacklist: list[str] | None = None, sky_q: Queue | None = None, cal_q: Queue | None = None) -> dict:
-    """ Build synthetic calibration ``Scan`` objects that will later be loaded
-        from aggregated calibration spectra and reused by the normal pipeline
-        and display code.
+    int_arrays[(tgt_idx, freq_scan_idx)]["secs"] += scan.get_loaded_seconds()
+    int_arrays[(tgt_idx, freq_scan_idx)]["scans"] += 1
+
+def print_int_arrays_shape(int_arrays: dict):
+    """ Show the current integrated array structure and accumulation progress without dumping the full arrays.
 
         Parameters:
+            int_arrays: Integrated array dictionary to summarise.
+    """
+    _print_title("Integrated Array Shape")
+
+    if not int_arrays:
+        print("No integrated arrays initialised.")
+        print("")
+        return
+
+    for (tgt_idx, freq_scan_idx), entry in sorted(int_arrays.items()):
+        spr_sum = entry.get("spr_sum")
+        mpr_sum = entry.get("mpr_sum")
+        tpw_sum = entry.get("tpw_sum")
+        secs = entry.get("secs")
+        scans = entry.get("scans")
+        spr_shape = spr_sum.shape if spr_sum is not None else None
+        mpr_shape = mpr_sum.shape if mpr_sum is not None else None
+        tpw_shape = len(tpw_sum) if tpw_sum is not None else None
+        print(
+            f"(tgt_idx={tgt_idx}, freq_scan={freq_scan_idx}): "
+            f"spr_sum shape={spr_shape}, mpr_sum shape={mpr_shape}, tpw_sum shape={tpw_shape}, secs={secs}, scans={scans}"
+        )
+    print("")
+
+def integrate_cal_scans(dir: str, obs: ObsModel, int_arrays: dict, pipeline_factory: "ProcessingPipelineFactory" = None, blacklist: list[str] | None = None, sky_q: Queue | None = None, cal_q: Queue | None = None, signal_displays: list[SignalDisplay] | None = None):
+    """ Iterate over calibration scan iterations for each target and aggregate their summed power spectra into integrated arrays, 
+        then build synthetic calibration ``Scan`` objects that will used by sky scans later. 
+
+        Parameters:
+            dir:        Directory containing the scan files.
             obs:        Observation model used to source template scan metadata.
-            cal_arrays: Calibration aggregation dictionary describing which
+            int_arrays: Integrated aggregation dictionary describing which
                         aggregated scans are required.
             pipeline_factory: Optional factory used to attach a processing pipeline
                               to each manufactured scan.
@@ -518,194 +630,207 @@ def init_aggregated_cal_scans(obs: Observation, cal_arrays: dict, pipeline_facto
                         selection.
             sky_q:      Optional SKY queue passed into the pipeline factory.
             cal_q:      Optional calibration queue passed into the pipeline factory.
-
-        Returns:
-            A nested dictionary of manufactured calibration ``Scan`` objects keyed
-            by scan type and frequency scan index.
+            signal_displays: Optional list of signal displays for visualizing the integrated scans.
     """
-    blacklist = set(blacklist or [])
-    aggregated_cal_scans = {}
-    template_by_key = {}
 
+    if obs is None or cal_q is None:
+        logger.error("Observation and calibration queue are required to initialize integrated calibration scans.")
+        raise XSoftwareFailure("Missing required parameters for initializing integrated calibration scans.")
+
+    dir = os.path.expanduser(dir) if dir is not None else dir
+    blacklist = set(blacklist or [])
+
+    # Load non-blacklisted calibration scans from disk and accumulate their spectra into the integrated arrays based on their tgt_idx and freq_scan.
+    # Calibration scans are processed by the pipeline before integration to give the pipeline a chance to apply necessary corrections 
     for target_scan_set in obs.target_scans:
         for scan_model in target_scan_set.scans:
             if scan_model is None or scan_model.scan_id in blacklist or scan_model.scan_type == ScanType.SKY:
                 continue
 
-            scan_type = scan_model.scan_type
-            freq_scan_idx = scan_model.freq_scan
-            if scan_type in cal_arrays and freq_scan_idx in cal_arrays[scan_type]:
-                template_by_key.setdefault((scan_type, freq_scan_idx), scan_model)
+            files_prefix = scan_model.files_prefix
 
-    for scan_type, freq_scan_entries in cal_arrays.items():
-        aggregated_cal_scans[scan_type] = {}
-
-        for freq_scan_idx in freq_scan_entries.keys():
-            template = template_by_key.get((scan_type, freq_scan_idx))
-            if template is None:
+            if not files_prefix:
+                logger.error(f"OPT skipping scan {scan_model.scan_id} with missing files_prefix while initializing integrated calibration scans.")
                 continue
 
-            aggregate_model = ScanModel(
-                obs_id=obs.obs_id,
-                tgt_idx=template.tgt_idx,
-                freq_scan=freq_scan_idx,
-                scan_iter=-1,
-                scan_id=f"{obs.obs_id}-agg-{scan_type.name.lower()}-{freq_scan_idx}",
-                dig_id=template.dig_id,
-                scan_type=scan_type,
-                status=ScanState.COMPLETE,
-                center_freq=template.center_freq,
-                start_freq=template.start_freq,
-                end_freq=template.end_freq,
-                sample_rate=template.sample_rate,
-                gain=template.gain,
-                channels=template.channels,
-                duration=template.duration,
-                created=template.created,
-                read_start=template.read_start,
-                read_end=template.read_end,
-                files_directory=template.files_directory,
-            )
+            scan = Scan(scan_model=scan_model)
 
-            aggregate_scan = Scan(scan_model=aggregate_model)
-            aggregate_scan.set_status(ScanState.EMPTY)
-            if pipeline_factory is not None and sky_q is not None and cal_q is not None:
-                aggregate_scan.set_pipeline(
-                    pipeline_factory.create_pipeline(scan=aggregate_scan, sky_q=sky_q, cal_q=cal_q)
-                )
-            aggregated_cal_scans[scan_type][freq_scan_idx] = aggregate_scan
+            print(f"Loading scan {scan_model.scan_id} from disk for integration...{files_prefix} in {dir}")
 
-    return aggregated_cal_scans
+            # Calibration scans are loaded and pushed through the processing pipeline immediately.
+            pipeline = pipeline_factory.create_pipeline(scan=scan, sky_q=sky_q, cal_q=cal_q) if pipeline_factory is not None and scan_model.scan_type != ScanType.SKY else None
+            scan = scan.from_disk(file_prefix=files_prefix, input_dir=dir, include_iq=False, pipeline=pipeline)
 
-def init_aggregated_sky_scans(obs: Observation, sky_arrays: dict, pipeline_factory: "ProcessingPipelineFactory" = None, blacklist: list[str] | None = None, sky_q: Queue | None = None, cal_q: Queue | None = None) -> dict:
-    """Build synthetic SKY Scan objects keyed by target and frequency scan index."""
+            if scan is None or scan.mpr is None:
+                logger.error(f"OPT failed to load scan: {files_prefix} in {dir} while initializing integrated calibration scans.")
+                continue
 
+            update_int_arrays(int_arrays=int_arrays, scan=scan)
+            scan.__del__()  # Explicitly release memory as quickly as possible 
+
+    # Now build a synthetic calibration scan for each tgt_idx and freq_scan combination to be available to SKY scan processing
+    for (tgt_idx, freq_scan_idx), entry in sorted(int_arrays.items()):
+        spr_sum = entry.get("spr_sum")
+        mpr_sum = entry.get("mpr_sum")
+        secs = entry.get("secs")
+        scans = entry.get("scans")
+
+        if spr_sum is None or mpr_sum is None or secs == 0 or scans == 0:
+            logger.warning(f"Skipping integrated calibration scan for (tgt_idx={tgt_idx}, freq_scan={freq_scan_idx}) due to missing data or zero seconds/scans.")
+            continue
+
+        scanmodel_template = obs.get_target_scan_by_index(tgt_idx, freq_scan_idx, 0)
+
+        if scanmodel_template is None:
+            logger.error(f"Failed to find a template scan model for (tgt_idx={tgt_idx}, freq_scan={freq_scan_idx}) while initializing integrated calibration scans.")
+            continue
+
+        synthetic_scan_model = ScanModel(
+            obs_id=obs.obs_id,
+            tgt_idx=tgt_idx,
+            freq_scan=freq_scan_idx,
+            scan_iter=-1,
+            scan_id=f"{obs.obs_id}-int-{tgt_idx}-{freq_scan_idx}",
+            dig_id=scanmodel_template.dig_id,
+            scan_type=scanmodel_template.scan_type,
+            status=ScanState.COMPLETE,
+            channels=scanmodel_template.channels,
+            center_freq=scanmodel_template.center_freq,
+            sample_rate=scanmodel_template.sample_rate,
+            gain=scanmodel_template.gain,
+            duration=1,
+        )
+
+        synthetic_scan = Scan(scan_model=synthetic_scan_model)
+        synthetic_scan.load_spr(sec=1, spr=spr_sum / secs)  # Load the summed power spectrum directly into the synthetic scan
+
+        cal_q.put(synthetic_scan)
+        
+def integrate_sky_scans(dir: str, obs: ObsModel, int_arrays: dict, pipeline_factory: "ProcessingPipelineFactory" = None, blacklist: list[str] | None = None, sky_q: Queue | None = None, cal_q: Queue | None = None, signal_displays: list[SignalDisplay] | None = None):
+    """ Build synthetic sky ``Scan`` objects that will later be loaded
+        from aggregated calibration spectra and reused by the normal pipeline
+        and display code.
+
+        Parameters:
+            dir:        Directory containing the scan files.
+            obs:        Observation model used to source template scan metadata.
+            int_arrays: Integrated aggregation dictionary describing which
+                        aggregated scans are required.
+            pipeline_factory: Optional factory used to attach a processing pipeline
+                              to each manufactured scan.
+            blacklist:  Optional list of full scan IDs to exclude from template
+                        selection.
+            sky_q:      Optional SKY queue passed into the pipeline factory.
+            cal_q:      Optional calibration queue passed into the pipeline factory.
+            signal_displays: Optional list of signal displays for visualizing the integrated scans.
+    """
+
+    if obs is None or sky_q is None or cal_q is None:
+        logger.error("Observation, sky and calibration queues are required to initialize integrated sky scans.")
+        raise XSoftwareFailure("Missing required parameters for initializing integrated sky scans.")
+
+
+    print("Length of cal_q is {}".format(cal_q.qsize()))
+
+    dir = os.path.expanduser(dir) if dir is not None else dir
     blacklist = set(blacklist or [])
-    aggregated_sky_scans = {}
-    template_by_key = {}
 
-    for tgt_idx, target_scan_set in enumerate(obs.target_scans):
+    for target_scan_set in obs.target_scans:
         for scan_model in target_scan_set.scans:
             if scan_model is None or scan_model.scan_id in blacklist or scan_model.scan_type != ScanType.SKY:
                 continue
-            if sky_arrays.get(tgt_idx) is None or sky_arrays[tgt_idx][scan_model.freq_scan] is None:
-                continue
-            template_by_key.setdefault((tgt_idx, scan_model.freq_scan), scan_model)
 
-    for tgt_idx, freq_scan_entries in sky_arrays.items():
-        aggregated_sky_scans[tgt_idx] = {}
-        for freq_scan_idx, sky_entry in enumerate(freq_scan_entries):
-            if sky_entry is None:
+            dig_id = scan_model.dig_id
+            files_prefix = scan_model.files_prefix
+
+            if not files_prefix:
+                logger.error(f"OPT skipping scan {scan_model.scan_id} with missing files_prefix while initializing integrated sky scans.")
                 continue
 
-            template = template_by_key.get((tgt_idx, freq_scan_idx))
-            if template is None:
+            scan = Scan(scan_model=scan_model)
+
+            print(f"Loading scan {scan_model.scan_id} from disk for integration...{files_prefix} in {dir}")
+
+             # If the scan does not have an equivalent calibration scan in cal_q, then create an equivalent load calibration scan and insert it into cal_q
+            cal_scan = None            
+            for cal in list(cal_q.queue):
+                if cal.scan_model.equivalent(scan_model) and cal.get_scan_type() == ScanType.LOAD and cal.get_status() == ScanState.COMPLETE and cal.scan_model.scan_id != scan.scan_model.scan_id:
+                    cal_scan = cal
+                    logger.info(f"OPT found equivalent calibration scan in cal_q for scan {scan_model.scan_id}:\n{cal_scan}")
+                    break
+
+                logger.info(f"OPT no equivalent calibration scan in cal_q for scan {scan_model.scan_id} - checked cal_scan {cal.scan_model.scan_id} with status {cal.get_status().name} and type {cal.get_scan_type().name}")
+
+            # Sky scans are loaded and pushed through the processing pipeline.
+            pipeline = pipeline_factory.create_pipeline(scan=scan, sky_q=sky_q, cal_q=cal_q) if pipeline_factory is not None else None
+            scan = scan.from_disk(file_prefix=files_prefix, input_dir=dir, include_iq=False, pipeline=pipeline)
+
+            if scan is None or scan.spr is None or scan.mpr is None:
+                logger.error(f"OPT failed to load scan: {files_prefix} in {dir} while initializing integrated sky scans.")
                 continue
 
-            aggregate_model = ScanModel(
-                obs_id=obs.obs_id,
-                tgt_idx=tgt_idx,
-                freq_scan=freq_scan_idx,
-                scan_iter=-1,
-                scan_id=f"{obs.obs_id}-{tgt_idx}-{freq_scan_idx}-agg",
-                dig_id=template.dig_id,
-                scan_type=ScanType.SKY,
-                status=ScanState.COMPLETE,
-                center_freq=template.center_freq,
-                start_freq=template.start_freq,
-                end_freq=template.end_freq,
-                sample_rate=template.sample_rate,
-                gain=template.gain,
-                channels=template.channels,
-                duration=max(1, int(sky_entry.get("seconds", 0))),
-                created=template.created,
-                read_start=template.read_start,
-                read_end=template.read_end,
-                files_directory=template.files_directory,
+            if dig_id in signal_displays and scan.get_scan_type() == ScanType.SKY:
+
+                signal_displays[dig_id].set_scan(scan=scan, load=cal_scan)
+                signal_displays[dig_id].display()
+
+            update_int_arrays(int_arrays=int_arrays, scan=scan)
+            scan.__del__()  # Explicitly release memory used by the loaded scan
+
+    # Now build synthetic SKY scans from the integrated arrays for later processing and display.
+    for (tgt_idx, freq_scan_idx), entry in sorted(int_arrays.items()):
+
+        scanmodel_template = obs.get_target_scan_by_index(tgt_idx, freq_scan_idx, 0)
+        if scanmodel_template is None or scanmodel_template.scan_type != ScanType.SKY:
+            continue
+
+        spr_sum = entry.get("spr_sum")
+        mpr_sum = entry.get("mpr_sum")
+        secs = entry.get("secs")
+        scans = entry.get("scans")
+
+        if spr_sum is None or mpr_sum is None or secs == 0 or scans == 0:
+            logger.warning(f"Skipping integrated sky scan for (tgt_idx={tgt_idx}, freq_scan={freq_scan_idx}) due to missing data or zero seconds/scans.")
+            continue
+
+        if scanmodel_template is None:
+            logger.error(f"Failed to find a template scan model for (tgt_idx={tgt_idx}, freq_scan={freq_scan_idx}) while initializing integrated sky scans.")
+            continue
+
+        dig_id=scanmodel_template.dig_id
+
+        synthetic_scan_model = ScanModel(
+            obs_id=obs.obs_id,
+            tgt_idx=tgt_idx,
+            freq_scan=freq_scan_idx,
+            scan_iter=-1,
+            scan_id=f"{obs.obs_id}-int-{tgt_idx}-{freq_scan_idx}",
+            dig_id=scanmodel_template.dig_id,
+            scan_type=scanmodel_template.scan_type,
+            status=ScanState.COMPLETE,
+            channels=scanmodel_template.channels,
+            center_freq=scanmodel_template.center_freq,
+            sample_rate=scanmodel_template.sample_rate,
+            gain=scanmodel_template.gain,
+            duration=1,
+        )
+
+        synthetic_scan = Scan(scan_model=synthetic_scan_model)
+        if synthetic_scan.pipeline is None and pipeline_factory is not None:
+            synthetic_scan.set_pipeline(
+                pipeline_factory.create_pipeline(scan=synthetic_scan, sky_q=sky_q, cal_q=cal_q)
             )
+        synthetic_scan.load_spr(sec=1, spr=spr_sum / secs)  # Load the summed power spectrum directly into the synthetic scan
+        synthetic_scan.save_to_disk(output_dir=dir, include_iq=False)
+        sky_q.put(synthetic_scan)
 
-            aggregate_scan = Scan(scan_model=aggregate_model)
-            aggregate_scan.set_status(ScanState.EMPTY)
-            if pipeline_factory is not None and sky_q is not None and cal_q is not None:
-                aggregate_scan.set_pipeline(
-                    pipeline_factory.create_pipeline(scan=aggregate_scan, sky_q=sky_q, cal_q=cal_q)
-                )
-            aggregated_sky_scans[tgt_idx][freq_scan_idx] = aggregate_scan
+        if dig_id in signal_displays:
 
-    return aggregated_sky_scans
+            signal_displays[dig_id].set_scan(scan=synthetic_scan, load=None)
+            signal_displays[dig_id].display()
+            signal_displays[dig_id].save_scan_figure(output_dir=dir)
 
-def update_aggregated_cal_scan(aggregate_scan: Scan, cal_entry: dict):
-    """ Rebuild a synthetic calibration ``Scan`` from the accumulated
-        calibration power and total contributing seconds.
-
-        Parameters:
-            aggregate_scan: Manufactured calibration ``Scan`` to update.
-            cal_entry:      Calibration aggregation entry containing ``mpr_sum`` and ``seconds``.
-    """
-    if aggregate_scan is None or cal_entry is None:
-        return
-
-    count = cal_entry.get("count", 0)
-    if count <= 0:
-        return
-
-    avg_mpr = cal_entry["mpr_sum"] / count
-    aggregate_scan.scan_model.duration = 1
-    aggregate_scan.init_data_arrays()
-    aggregate_scan.loaded_secs = aggregate_scan.scan_model.duration * [False]
-    aggregate_scan.set_status(ScanState.EMPTY)
-    for sec in range(1, aggregate_scan.scan_model.duration + 1):
-        aggregate_scan.load_spr(sec=sec, spr=avg_mpr, read_start=aggregate_scan.scan_model.read_start, read_end=aggregate_scan.scan_model.read_end)
-
-def update_aggregated_sky_scan(aggregate_scan: Scan, sky_entry: dict):
-    """Refresh a manufactured SKY scan from a sky_arrays entry."""
-
-    if aggregate_scan is None or sky_entry is None:
-        return
-
-    seconds = sky_entry.get("seconds", 0)
-    if seconds <= 0:
-        return
-
-    avg_spr = sky_entry["spr_sum"] / seconds
-    aggregate_scan.scan_model.duration = int(seconds)
-    aggregate_scan.init_data_arrays()
-    aggregate_scan.loaded_secs = aggregate_scan.scan_model.duration * [False]
-    aggregate_scan.set_status(ScanState.EMPTY)
-    for sec in range(1, aggregate_scan.scan_model.duration + 1):
-        aggregate_scan.load_spr(sec=sec, spr=avg_spr, read_start=aggregate_scan.scan_model.read_start, read_end=aggregate_scan.scan_model.read_end)
-
-def print_cal_arrays_shape(cal_arrays: dict):
-    """Print a compact summary of ``cal_arrays``.
-
-    Purpose:
-        Show the current calibration aggregation structure and accumulation
-        progress without dumping the full arrays.
-
-    Parameters:
-        cal_arrays: Calibration aggregation dictionary to summarise.
-
-    Returns:
-        ``None``.
-    """
-
-    _print_title("Calibration Array Shape")
-
-    if not cal_arrays:
-        print("No calibration arrays initialised.")
-        print("")
-        return
-
-    for scan_type, freq_scan_entries in cal_arrays.items():
-        print(f"{scan_type.name}: {len(freq_scan_entries)} freq_scans")
-        for freq_scan_idx, entry in freq_scan_entries.items():
-            mpr_sum = entry.get("mpr_sum")
-            count = entry.get("count")
-            shape = mpr_sum.shape if mpr_sum is not None else None
-            print(f"  freq_scan[{freq_scan_idx}]: mpr_sum shape={shape}, count={count}")
-    print("")
-
-def init_signal_displays(obs: Observation, blacklist: list[str] | None = None) -> dict:
+def init_signal_displays(obs: ObsModel, blacklist: list[str] | None = None) -> dict:
     """ Create one ``SignalDisplay`` per digitiser used by the observation.
 
         Parameters:
@@ -734,8 +859,7 @@ def init_signal_displays(obs: Observation, blacklist: list[str] | None = None) -
     return signal_displays
 
 def init_pipeline_factory(input_dir: str) -> ProcessingPipelineFactory:
-    """ Load ``PipelineConfig.json`` and construct the OPT processing pipeline
-        factory.
+    """ Load ``PipelineConfig.json`` and construct the OPT processing pipeline factory.
 
         Parameters:
             input_dir: Directory containing the pipeline configuration file.
@@ -760,147 +884,6 @@ def init_pipeline_factory(input_dir: str) -> ProcessingPipelineFactory:
 
     return ProcessingPipelineFactory(pipeline_config=pipeline_config)
 
-def process_scan_data(obs: Observation, sky_arrays: dict, signal_displays: dict, pipeline_factory: "ProcessingPipelineFactory" = None, cal_arrays: dict | None = None, aggregated_cal_scans: dict | None = None, aggregated_sky_scans: dict | None = None, blacklist: list[str] | None = None):
-    """ Replay the observation scans from disk, apply calibration and QA
-        processing, update SKY and calibration aggregations, and refresh signal
-        displays.
-
-        Parameters:
-            obs: Observation model defining the scans to replay.
-            sky_arrays: SKY aggregation arrays keyed by target and frequency scan.
-            signal_displays: Digitiser signal displays used for interactive
-                visualisation.
-            pipeline_factory: Optional factory used to build a processing pipeline
-                for each replayed scan.
-            cal_arrays: Optional calibration aggregation dictionary.
-            aggregated_cal_scans: Optional manufactured aggregated calibration
-                scans to keep updated during replay.
-            blacklist: Optional list of full scan IDs to exclude from processing.
-    """
-    global sky_q, cal_q
-    blacklist = set(blacklist or [])
-
-    for tgt_idx, target_scan_set in enumerate(obs.target_scans):
-  
-        target = obs.get_target_by_index(tgt_idx)
-        target_config = obs.get_target_config_by_index(tgt_idx)
-        target_scan_set = obs.get_target_scan_set_by_index(tgt_idx)
-
-        for scan_idx, scan_model in enumerate(target_scan_set.scans):
-            if scan_model.scan_id in blacklist:
-                logger.info(f"OPT skipping blacklisted scan {scan_model.scan_id}")
-                continue
-
-            freq_scan = scan_model.freq_scan
-            scan_iter = scan_model.scan_iter
-
-            dig_id = scan_model.dig_id
-            files_prefix = scan_model.files_prefix
-            files_directory = scan_model.files_directory
-
-            if not files_prefix or not files_directory:
-                logger.error(f"OPT skipping scan {scan_model.scan_id} with missing files_prefix or files_directory.")
-                continue
-
-            scan = Scan(scan_model=scan_model)
-
-            # If the scan does not have an equivalent calibration scan in cal_q, then create an equivalent load calibration scan and insert it into cal_q
-            cal_scan = None
-            if scan_model.scan_type == ScanType.SKY:
-                for cal in list(cal_q.queue):
-                    if cal.scan_model.equivalent(scan_model) and cal.get_scan_type() == ScanType.LOAD and cal.get_status() == ScanState.COMPLETE and cal.scan_model.scan_id != scan.scan_model.scan_id:
-                        cal_scan = cal
-                        logger.info(f"OPT found equivalent calibration scan in cal_q for scan {scan_model.scan_id}:\n{cal_scan}")
-                        break
-
-                    logger.info(f"OPT no equivalent calibration scan in cal_q for scan {scan_model.scan_id} - checked cal_scan {cal.scan_model.scan_id} with status {cal.get_status().name} and type {cal.get_scan_type().name}")
-
-                if cal_scan is None:
-
-                    cal_scan_model = ScanModel(
-                        dig_id=scan_model.dig_id,
-                        scan_type=ScanType.LOAD,
-                        read_start=scan_model.read_start,
-                        center_freq=scan_model.center_freq,
-                        start_freq=scan_model.start_freq,
-                        end_freq=scan_model.end_freq,
-                        sample_rate=scan_model.sample_rate,
-                        gain=scan_model.gain,
-                        channels=scan_model.channels,
-                        duration=1,
-                        files_prefix=files_prefix.replace("sky", "load"),
-                        files_directory=files_directory,
-                        status=ScanState.COMPLETE)
-                    
-                    cal_scan = Scan(scan_model=cal_scan_model)
-                    cal_q.put(cal_scan)
-
-            # Calibration scans are processed immediately. SKY scans are only aggregated here and processed later as synthetic scans.
-            pipeline = pipeline_factory.create_pipeline(scan=scan, sky_q=sky_q, cal_q=cal_q) if pipeline_factory is not None and scan_model.scan_type != ScanType.SKY else None
-            scan = scan.from_disk(file_prefix=files_prefix, input_dir=files_directory, include_iq=False, pipeline=pipeline)
-
-            if scan is None or scan.spr is None:
-                logger.error(f"OPT failed to load scan: {files_prefix} in {files_directory}")
-                continue
-
-            if scan.get_scan_type() == ScanType.SKY:
-                if aggregated_sky_scans is None:
-                    sky_q.put(scan)
-            elif aggregated_cal_scans is None:
-                cal_q.put(scan)
-
-            if dig_id in signal_displays and scan.get_scan_type() != ScanType.SKY:
-                signal_displays[dig_id].set_scan(scan=scan, load=cal_scan)
-                signal_displays[dig_id].display()
-                input("Press Enter to continue...")
-
-            if scan.get_scan_type() == ScanType.SKY:
-                update_sky_arrays(sky_arrays, scan)
-            if cal_arrays is not None and scan.get_scan_type() != ScanType.SKY:
-                update_cal_arrays(cal_arrays, scan)
-                if aggregated_cal_scans is not None:
-                    aggregate_scan = aggregated_cal_scans.get(scan.get_scan_type(), {}).get(freq_scan)
-                    update_aggregated_cal_scan(aggregate_scan, cal_arrays[scan.get_scan_type()][freq_scan])
-                    if aggregate_scan is not None and all(existing.scan_model.scan_id != aggregate_scan.scan_model.scan_id for existing in list(cal_q.queue)):
-                        cal_q.put(aggregate_scan)
-
-    if aggregated_sky_scans is not None:
-        for tgt_idx, freq_scan_entries in aggregated_sky_scans.items():
-            for freq_scan_idx, aggregate_scan in freq_scan_entries.items():
-                sky_entry = sky_arrays[tgt_idx][freq_scan_idx]
-                if aggregate_scan.pipeline is None and pipeline_factory is not None:
-                    aggregate_scan.set_pipeline(
-                        pipeline_factory.create_pipeline(scan=aggregate_scan, sky_q=sky_q, cal_q=cal_q)
-                    )
-                update_aggregated_sky_scan(aggregate_scan, sky_entry)
-                if all(existing.scan_model.scan_id != aggregate_scan.scan_model.scan_id for existing in list(sky_q.queue)):
-                    sky_q.put(aggregate_scan)
-
-                if aggregate_scan.get_dig_id() in signal_displays:
-                    matching_loads = [
-                        cal for cal in list(cal_q.queue)
-                        if cal.get_scan_type() == ScanType.LOAD and cal.scan_model.equivalent(aggregate_scan.scan_model)
-                    ]
-                    load_scan = max(matching_loads, key=lambda s: s.scan_model.created) if matching_loads else None
-                    if load_scan is None:
-                        fallback_load_model = ScanModel(
-                            dig_id=aggregate_scan.scan_model.dig_id,
-                            scan_type=ScanType.LOAD,
-                            read_start=aggregate_scan.scan_model.read_start,
-                            center_freq=aggregate_scan.scan_model.center_freq,
-                            start_freq=aggregate_scan.scan_model.start_freq,
-                            end_freq=aggregate_scan.scan_model.end_freq,
-                            sample_rate=aggregate_scan.scan_model.sample_rate,
-                            gain=aggregate_scan.scan_model.gain,
-                            channels=aggregate_scan.scan_model.channels,
-                            duration=1,
-                            status=ScanState.COMPLETE,
-                        )
-                        load_scan = Scan(scan_model=fallback_load_model)
-                    signal_displays[aggregate_scan.get_dig_id()].set_scan(scan=aggregate_scan, load=load_scan)
-                    signal_displays[aggregate_scan.get_dig_id()].display()
-                    input("Press Enter to continue...")
-
 def main():
     """ Parse CLI arguments, load observation metadata, let the user manage the
         blacklist, initialise processing state, and replay scans through the
@@ -919,7 +902,6 @@ def main():
         return
 
     log_path = os.path.expanduser(os.path.join(args.dir, f"{args.obs}-opt.log"))
-    print(f"OPT logs written to {log_path}")
 
     with redirect_root_logging(log_path):
         
@@ -927,6 +909,7 @@ def main():
         blacklist_msgs = ""
         while True:
             os.system('cls' if os.name == 'nt' else 'clear')
+            print(f"OPT logs written to {log_path}")
             print_obs_header(obs)
             print_cal_scans(obs=obs, blacklist=blacklist)
             print_sky_scans(obs=obs, blacklist=blacklist)
@@ -940,47 +923,45 @@ def main():
             blacklist = updated_blacklist
 
         signal_displays = init_signal_displays(obs)
-        pipeline_factory = init_pipeline_factory(input_dir='config/' + args.profile)
-        sky_arrays = init_sky_arrays(obs, blacklist)
-        cal_arrays = init_cal_arrays(obs, blacklist)
-
-        aggregated_cal_scans = init_aggregated_cal_scans(
-            obs,
-            cal_arrays,
-            pipeline_factory=pipeline_factory,
-            blacklist=blacklist,
-            sky_q=sky_q,
-            cal_q=cal_q,
-        )
-        aggregated_sky_scans = init_aggregated_sky_scans(
-            obs,
-            sky_arrays,
-            pipeline_factory=None,
-            blacklist=blacklist,
-            sky_q=sky_q,
-            cal_q=cal_q,
-        )
         
-        process_scan_data(
-            obs,
-            sky_arrays,
-            signal_displays,
-            pipeline_factory=pipeline_factory,
-            cal_arrays=cal_arrays,
-            aggregated_cal_scans=aggregated_cal_scans,
-            aggregated_sky_scans=aggregated_sky_scans,
-            blacklist=blacklist,
-        )
-        print_cal_arrays_shape(cal_arrays)
-        print_sky_scans(obs=obs, sky_q=sky_q, blacklist=blacklist)
+        pipeline_factory = init_pipeline_factory(input_dir='config/' + args.profile)
+        print_pipeline_config(obs, pipeline_factory)
 
-        aggregated_sky_scan_list = []
-        for freq_scan_entries in aggregated_sky_scans.values():
-            aggregated_sky_scan_list.extend(freq_scan_entries.values())
+        # Initialise cal and sky dictionaries containing the accumulated calibration (mpr) and sky power (spr) for each frequency scan 
+        int_arrays = init_integrated_arrays(obs, blacklist)
+
+        integrate_cal_scans(
+            dir=args.dir,
+            obs=obs,
+            int_arrays=int_arrays, 
+            pipeline_factory=pipeline_factory, 
+            blacklist=blacklist, 
+            sky_q=sky_q, 
+            cal_q=cal_q,
+            signal_displays=signal_displays)
+
+        integrate_sky_scans(
+            dir=args.dir,
+            obs=obs,
+            int_arrays=int_arrays, 
+            pipeline_factory=pipeline_factory, 
+            blacklist=blacklist, 
+            sky_q=sky_q, 
+            cal_q=cal_q,
+            signal_displays=signal_displays)
+
+        print_int_arrays_shape(int_arrays)
 
         obs_display = ObsDisplay(obs_id=obs.obs_id)
-        obs_display.set_scan(aggregated_sky_scan_list, obs=obs)
+        obs_display.set_scan(
+            [scan for scan in list(sky_q.queue) if scan.get_scan_type() == ScanType.SKY],
+            obs=obs,
+            int_arrays=int_arrays,
+        )
         obs_display.display()
+
+        print_sky_scans(obs=obs, sky_q=sky_q, blacklist=blacklist)
+        print_aggregated_scans(obs=obs, sky_q=sky_q, int_arrays=int_arrays, blacklist=blacklist)
 
     input("Press Enter to continue...")
 

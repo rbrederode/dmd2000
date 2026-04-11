@@ -29,6 +29,7 @@ class ObsDisplay:
         self.ax_vel = None
         self.freq_min_mhz = None
         self.freq_max_mhz = None
+        self.int_arrays = {}
 
     def __str__(self):
         return f"ObsDisplay(obs_id={self.obs_id})"
@@ -48,21 +49,25 @@ class ObsDisplay:
             self.ax_freq.cla()
             self.ax_vel.cla()
 
-    def set_scan(self, scans: Iterable, obs=None):
+    def set_scan(self, scans: Iterable, obs=None, int_arrays: dict | None = None):
         """Set the aggregated scans to display.
 
         Parameters:
             scans: Iterable of aggregated SKY Scan instances to plot.
             obs: Optional Observation model used to derive the full frequency span.
+            int_arrays: Optional integrated array dictionary used to source
+                total-power timelines for the observation.
         """
         if scans is None:
             self.scans = []
+            self.int_arrays = int_arrays or {}
             return
 
         self.scans = sorted(
             [scan for scan in scans if getattr(scan, "scan_model", None) is not None],
             key=lambda scan: (scan.scan_model.center_freq, scan.scan_model.freq_scan),
         )
+        self.int_arrays = int_arrays or {}
 
         self.freq_min_mhz = None
         self.freq_max_mhz = None
@@ -112,19 +117,45 @@ class ObsDisplay:
         self.ax_freq.legend(loc="upper right")
 
     def _plot_velocity_panel(self):
-        """Reserve the lower half of the display for a future velocity plot."""
-        self.ax_vel.set_title("Velocity Plot")
-        self.ax_vel.set_xlabel("Velocity")
-        self.ax_vel.set_ylabel("Power")
+        """Use the lower half of the display for integrated total power over time."""
+        self.ax_vel.set_title("Integrated Total Power")
+        self.ax_vel.set_xlabel("Time (sec)")
+        self.ax_vel.set_ylabel("Power [a.u.]")
         self.ax_vel.grid(True, alpha=0.25)
-        self.ax_vel.text(
-            0.5,
-            0.5,
-            "Velocity plot not yet implemented",
-            ha="center",
-            va="center",
-            transform=self.ax_vel.transAxes,
-        )
+
+        if not self.scans:
+            self.ax_vel.text(
+                0.5,
+                0.5,
+                "No aggregated scans available",
+                ha="center",
+                va="center",
+                transform=self.ax_vel.transAxes,
+            )
+            return
+
+        cmap = mpl.colormaps["plasma"]
+        colours = cmap(np.linspace(0, 1, len(self.scans)))
+        max_secs = 0
+
+        for idx, scan in enumerate(self.scans):
+            entry = self.int_arrays.get((scan.scan_model.tgt_idx, scan.scan_model.freq_scan), {})
+            tpw_sum = entry.get("tpw_sum")
+            if tpw_sum is None or len(tpw_sum) == 0:
+                continue
+
+            time_axis = np.arange(1, len(tpw_sum) + 1)
+            scan_id_parts = str(scan.scan_model.scan_id).split("-")
+            label = f"Scan {'-'.join(scan_id_parts[-2:])}" if len(scan_id_parts) >= 2 else f"Scan {scan.scan_model.scan_id}"
+            self.ax_vel.plot(time_axis, tpw_sum, color=colours[idx], linewidth=1.5, label=label)
+            mean_tpw = float(np.mean(tpw_sum))
+            self.ax_vel.axhline(mean_tpw, color=colours[idx], linestyle="--", linewidth=1.0, alpha=0.9)
+            max_secs = max(max_secs, len(tpw_sum))
+
+        if max_secs > 0:
+            self.ax_vel.set_xlim(1, max_secs)
+
+        self.ax_vel.legend(loc="upper right")
 
     def display(self):
         """Render the observation display."""

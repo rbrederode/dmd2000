@@ -281,7 +281,7 @@ class BaseModel:
         from models.dig import DigitiserList, DigitiserModel
         from models.dsh import DishMode, DishModel, DishList, DishManagerModel, Feed, PointingState, Capability, DriverType, PECModel
         from models.health import HealthState
-        from models.obs import ObsState, Observation
+        from models.obs import ObsState, ObsModel
         from models.oda import ObsList, ScanStore, ODAModel
         from models.oet import OETModel
         from models.pipeline import StepConfig, StepType, PipelineConfig
@@ -388,9 +388,9 @@ class BaseModel:
             elif model_type == "Observer":
                 location = BaseModel._deserialise(v["location"])
                 return Observer(name=v["name"], location=location)
-            elif model_type == "Observation":
+            elif model_type == "Observation" or model_type == "ObsModel":
                 deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
-                return Observation(**deserialized_fields)
+                return ObsModel(**deserialized_fields)
             elif model_type == "ObsList":
                 deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
                 return ObsList(**deserialized_fields)

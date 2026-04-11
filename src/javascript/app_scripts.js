@@ -13,6 +13,21 @@ function testOnEdit() {
   onEditHandler(e);
 }
 
+function UTCNow() {
+  const d = new Date();
+
+  console.log(d.getTimezoneOffset())
+
+  // Shift back by timezone offset, multiply by 60000 to get offset in milleseconds
+  return new Date(d.getTime() + d.getTimezoneOffset() * 60000);
+}
+
+function getTimezoneOffset() {
+  const d = new Date();
+  return d.getTimezoneOffset() / 1440
+}
+
+
 // Configuration
 const WEBHOOK_URL = 'https://webhook.dmd2000.org/webhook';
 const WEBHOOK_TOKEN = PropertiesService.getScriptProperties().getProperty('WEBHOOK_TOKEN');
@@ -656,7 +671,7 @@ function onEditHandler(e) {
             "value": "EMPTY"
     };
     // Add targets and meta data to the observation
-    obsJsonObj["_type"] = "Observation"
+    obsJsonObj["_type"] = "ObsModel"
     obsJsonObj["target_configs"] = target_configs
     obsJsonObj["targets"] = targets
     obsJsonObj["user_email"] = userEmail

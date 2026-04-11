@@ -5,7 +5,7 @@ import time
 from queue import Queue
 from datetime import datetime
 
-from models.obs import Observation
+from models.obs import ObsModel
 from util.xbase import XSoftwareFailure
 
 import logging
@@ -260,7 +260,7 @@ class ConfigEvent:
 
 class ObsEvent:
 
-    def __init__(self, obs: Observation=None, transition=None, user_ref=None, timestamp=None):
+    def __init__(self, obs: ObsModel=None, transition=None, user_ref=None, timestamp=None):
         """Initialize the obs event with the given parameters.
 
         Parameters

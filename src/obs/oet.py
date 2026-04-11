@@ -10,7 +10,7 @@ from ipc.action import Action
 from models.comms import CommunicationStatus
 from models.dsh import DishManagerModel, Feed, Capability, DishMode, PointingState
 from models.health import HealthState
-from models.obs import Observation, ObsTransition, ObsState
+from models.obs import ObsModel, ObsTransition, ObsState
 from models.oda import ODAModel, ObsList, ScanStore
 from models.scan import ScanModel, ScanState
 from models.target import TargetModel, PointingType
@@ -361,7 +361,7 @@ class ObservationExecutionTool:
 
             return granted_all_resources
 
-    def release_resources(self, obs: Observation, action: Action) -> bool:
+    def release_resources(self, obs: ObsModel, action: Action) -> bool:
         """ Process an observation resource release request.
             Returns true if at least one active resource was released, false otherwise.
         """
@@ -783,4 +783,3 @@ class ObservationExecutionTool:
 
         return on_target
         
-

@@ -185,23 +185,27 @@ class SignalDisplay:
         self.mean_tpwr_line.set_ydata([np.nan, np.nan])
         self.sig[4].legend(loc="lower right")
 
-    def set_scan(self, scan: Scan, load: Scan):
-        """Bind a sky scan and matching load scan to this display and initialise all plot artists.
+    def set_scan(self, scan: Scan, load: Scan | None):
+        """Bind a scan and optional matching load scan to this display and initialise all plot artists.
 
         Parameters:
-            scan: The sky Scan instance to display.
-            load: The equivalent load/baseline Scan to overlay on the plots.
+            scan: The Scan instance to display.
+            load: Optional equivalent load/baseline Scan to overlay on the plots.
         """
         if not self.is_active:
             self._close_figure()    # Close the figure if it exists
             return
 
-        if scan is None or load is None:
-            logger.warning(f"Signal display for {self.dig_id} cannot set_scan when {'scan' if scan is None else 'baseline'} is None")
+        if scan is None:
+            logger.warning(f"Signal display for {self.dig_id} cannot set_scan when scan is None")
             return
 
-        if scan.scan_model.dig_id != self.dig_id or load.scan_model.dig_id != self.dig_id:
-            logger.warning(f"Signal display for {self.dig_id} cannot set_scan for scan or baseline from different dig_id {scan.scan_model.dig_id}")
+        if scan.scan_model.dig_id != self.dig_id:
+            logger.warning(f"Signal display for {self.dig_id} cannot set_scan for scan from different dig_id {scan.scan_model.dig_id}")
+            return
+
+        if load is not None and load.scan_model.dig_id != self.dig_id:
+            logger.warning(f"Signal display for {self.dig_id} cannot set_scan for baseline from different dig_id {load.scan_model.dig_id}")
             return
 
         self.scan = scan
@@ -240,11 +244,15 @@ class SignalDisplay:
         Parameters:
             l_sec: The latest loaded second number for the current scan, starting at 1.
         """
-        label = "Load (BSL)"
-
         self.spr_line.set_data(self.freq_axis, self.scan.spr[l_sec - 1, :])
-        self.load_line.set_data(self.freq_axis, self.load.mpr)
-        self.load_line.set_label(label)
+        if self.load is not None and self.load.mpr is not None:
+            self.load_line.set_data(self.freq_axis, self.load.mpr)
+            self.load_line.set_label("Load (BSL)")
+            self.load_line.set_visible(True)
+        else:
+            self.load_line.set_data([], [])
+            self.load_line.set_label("_nolegend_")
+            self.load_line.set_visible(False)
         self.cal_line.set_data(self.freq_axis, self.scan.cal[l_sec - 1, :])
         self.mpr_line.set_data(self.freq_axis, self.scan.mpr)
 

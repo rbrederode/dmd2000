@@ -23,7 +23,6 @@ from ipc.tcp_server import TCPServer
 from models.comms import CommunicationStatus, InterfaceType
 from models.dsh import DishManagerModel, DriverType, PointingState, DishMode, Capability
 from models.health import HealthState
-from models.obs import Observation
 from models.oda import ObsList, ScanStore
 from models.target import TargetModel, PointingType
 from models.ws import WeatherData, WeatherStationList

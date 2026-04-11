@@ -32,6 +32,11 @@ class GainCal(ProcessingStep):
         # ... apply load file logic using context parameters ...
         return signal
 
+    @classmethod
+    def describe(cls) -> str:
+        return "Apply gain calibration to scale the spectrum using configured gain information."
+
+
 def main():
  
     # Example StepConfig for gain calibration
@@ -49,4 +54,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

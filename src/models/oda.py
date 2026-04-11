@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from schema import Schema, And, Or, Use, SchemaError
 
 from models.base import BaseModel
-from models.obs import Observation, ObsState
+from models.obs import ObsModel, ObsState
 
 # Models comprising the Observation Data Archive (ODA)
 
@@ -117,7 +117,7 @@ if __name__ == "__main__":
     
     import pprint
 
-    obs_list_dict = {'_type': 'ObsList', 'obs_list': [{'_type': 'Observation', 'dsh_id': 'Dish002', 'capabilities': 'Drift Scan over Zenith', 'diameter': 3, 'f/d_ratio': 1.3, 'latitude': 53.2421, 'longitude': -2.3067, 'total_integration_time': 60, 'estimated_slewing_time': 30, 'estimated_observation_duration': '00:01:30', 'scheduling_block_start': {'_type': 'datetime', 'value': '2025-12-07T19:00:00.000Z'}, 'scheduling_block_end': {'_type': 'datetime', 'value': '2025-12-07T20:00:00.000Z'}, 'obs_id': '2025-12-07T19:00Z-Dish002', 'obs_state': {'_type': 'enum.IntEnum', 'instance': 'ObsState', 'value': 'IDLE'}, 'target_configs': [{'_type': 'TargetConfig', 'feed': {'_type': 'enum.IntEnum', 'instance': 'Feed', 'value': 'H3T_1420'}, 'gain': 12, 'center_freq': 1420400000, 'bandwidth': 1000000, 'sample_rate': 2400000, 'target': {'_type': 'TargetModel', 'sky_coord': {'_type': 'SkyCoord', 'frame': 'icrs', 'ra': 204.2538, 'dec': -29.8658}, 'id': 'M83', 'type': {'_type': 'enum.IntEnum', 'instance': 'TargetType', 'value': 'SIDEREAL'}}, 'integration_time': 60, 'spectral_resolution': 128, 'target_id': 1}], 'user_email': 'ray.brederode@skao.int', 'created': {'_type': 'datetime', 'value': '2025-12-07T18:19:37.503Z'}}], 'last_update': {'_type': 'datetime', 'value': '2025-12-07T18:19:46.369Z'}}
+    obs_list_dict = {'_type': 'ObsList', 'obs_list': [{'_type': 'ObsModel', 'dsh_id': 'Dish002', 'capabilities': 'Drift Scan over Zenith', 'diameter': 3, 'f/d_ratio': 1.3, 'latitude': 53.2421, 'longitude': -2.3067, 'total_integration_time': 60, 'estimated_slewing_time': 30, 'estimated_observation_duration': '00:01:30', 'scheduling_block_start': {'_type': 'datetime', 'value': '2025-12-07T19:00:00.000Z'}, 'scheduling_block_end': {'_type': 'datetime', 'value': '2025-12-07T20:00:00.000Z'}, 'obs_id': '2025-12-07T19:00Z-Dish002', 'obs_state': {'_type': 'enum.IntEnum', 'instance': 'ObsState', 'value': 'IDLE'}, 'target_configs': [{'_type': 'TargetConfig', 'feed': {'_type': 'enum.IntEnum', 'instance': 'Feed', 'value': 'H3T_1420'}, 'gain': 12, 'center_freq': 1420400000, 'bandwidth': 1000000, 'sample_rate': 2400000, 'target': {'_type': 'TargetModel', 'sky_coord': {'_type': 'SkyCoord', 'frame': 'icrs', 'ra': 204.2538, 'dec': -29.8658}, 'id': 'M83', 'type': {'_type': 'enum.IntEnum', 'instance': 'TargetType', 'value': 'SIDEREAL'}}, 'integration_time': 60, 'spectral_resolution': 128, 'target_id': 1}], 'user_email': 'ray.brederode@skao.int', 'created': {'_type': 'datetime', 'value': '2025-12-07T18:19:37.503Z'}}], 'last_update': {'_type': 'datetime', 'value': '2025-12-07T18:19:46.369Z'}}
   
     obslist001 = ObsList().from_dict(obs_list_dict) 
     print("="*40)
@@ -152,7 +152,7 @@ if __name__ == "__main__":
     ss002.from_dict(ss001.to_dict())
     pprint.pprint(ss002.to_dict())
 
-    obs001 = Observation(
+    obs001 = ObsModel(
         obs_id="obs001",
         title="Test Observation",
         description="This is a test observation of a celestial target.",
@@ -174,4 +174,3 @@ if __name__ == "__main__":
     print("Observation List with One Observation")
     print("="*40)
     pprint.pprint(obs_list.to_dict())
-

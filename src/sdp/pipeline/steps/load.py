@@ -67,6 +67,10 @@ class LoadCal(ProcessingStep):
 
         return signal / self.load_scan.mpr if self.load_scan is not None else signal
 
+    @classmethod
+    def describe(cls) -> str:
+        return "Apply an equivalent load calibration spectrum to normalize the input signal."
+
 def main():
 
     import logging

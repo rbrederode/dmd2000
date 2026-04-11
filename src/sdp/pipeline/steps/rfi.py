@@ -79,6 +79,11 @@ class RFIFlag(ProcessingStep):
         logger.debug(f"RFIFlag (sliding window): Flagged {num_flagged} channels as RFI outliers using window_size={window_size}, threshold={n}*MAD")
         return signal
 
+    @classmethod
+    def describe(cls) -> str:
+        return "Detect and suppress likely RFI outliers using a sliding-window median absolute deviation filter."
+
+
 def main():
  
     # Set log level to info for demonstration

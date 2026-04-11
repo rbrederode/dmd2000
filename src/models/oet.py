@@ -7,7 +7,7 @@ from models.app import AppModel
 from models.base import BaseModel
 from models.comms import CommunicationStatus
 from models.health import HealthState
-from models.obs import Observation, ObsState
+from models.obs import ObsModel, ObsState
 from models.scan import ScanModel, ScanState
 from models.target import TargetModel, SkyCoord
 from util.xbase import XInvalidTransition, XAPIValidationFailed, XSoftwareFailure
@@ -23,7 +23,7 @@ class OETModel(BaseModel):
         "obs_created": And(int, lambda v: v >= 0),
         "obs_completed": And(int, lambda v: v >= 0),
         "obs_aborted": And(int, lambda v: v >= 0),
-        "processing_obs": And(list, lambda v: all(isinstance(item, Observation) for item in v)),
+        "processing_obs": And(list, lambda v: all(isinstance(item, ObsModel) for item in v)),
         "tm_connected": And(CommunicationStatus, lambda v: isinstance(v, CommunicationStatus)),
         "last_update": And(datetime, lambda v: isinstance(v, datetime)),
     })
@@ -60,7 +60,7 @@ class OETModel(BaseModel):
 
         super().__init__(**kwargs)
 
-    def add_obs(self, obs: Observation):
+    def add_obs(self, obs: ObsModel):
         """Add an observation to the processing queue.
             A single observation is maintained in the processing observations list per digitiser id.
             If an observation with the same digitiser id already exists, it will be replaced.
@@ -69,7 +69,7 @@ class OETModel(BaseModel):
             obs (Observation): The observation model to add.
         """
 
-        if not isinstance(obs, Observation):
+        if not isinstance(obs, ObsModel):
             raise XAPIValidationFailed("obs must be an instance of Observation")
         # Replace existing observation with the same observation id
         for i, existing_obs in enumerate(self.processing_obs):
@@ -82,7 +82,7 @@ class OETModel(BaseModel):
 
 if __name__ == "__main__":
 
-    obs001 = Observation(
+    obs001 = ObsModel(
         obs_id="obs001",
         title="Test Observation",
         description="This is a test observation of a celestial target.",

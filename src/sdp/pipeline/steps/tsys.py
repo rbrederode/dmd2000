@@ -32,6 +32,10 @@ class TsysCal(ProcessingStep):
         # ... apply load file logic using context parameters ...
         return signal
 
+    @classmethod
+    def describe(cls) -> str:
+        return "Apply system temperature calibration to convert the spectrum using Tsys reference information."
+
 def main():
 
     # Example StepConfig for gain calibration

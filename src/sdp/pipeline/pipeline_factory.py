@@ -12,6 +12,7 @@ class ProcessingStep:
     Base class for all processing steps in a processing pipeline.
     Each step should implement the process method.
     """
+
     def __init__(self, config: StepConfig = None):
 
         if config is None or not isinstance(config, StepConfig):
@@ -25,6 +26,14 @@ class ProcessingStep:
         Override this method in subclasses.
         """
         raise NotImplementedError("process() must be implemented by subclasses.")
+
+    @classmethod
+    def describe(cls) -> str:
+        """
+        Return a high-level description of what the processing step does.
+        Subclasses should override this with a user-facing summary.
+        """
+        return f"{cls.__name__}: No description available."
 
 class ProcessingPipeline:
     """
@@ -80,10 +89,9 @@ class ProcessingPipelineFactory:
 
         return [self.instantiate_step(config) for config in step_configs]
 
-    def instantiate_step(self, config: StepConfig) -> ProcessingStep:
+    def get_step_class(self, step_type: StepType):
         """
-        Instantiate a processing step based on its StepConfig.
-        cfg is a StepConfig instance.
+        Resolve the ProcessingStep subclass for a given StepType.
         """
         # Import step classes here to avoid circular imports
         from sdp.pipeline.steps.nop      import Nop
@@ -93,21 +101,44 @@ class ProcessingPipelineFactory:
         from sdp.pipeline.steps.tsys     import TsysCal
         from sdp.pipeline.steps.rfi      import RFIFlag
         from sdp.pipeline.steps.qa       import QA
-        # Add more step imports as needed
 
         step_map = {
-            StepType.NOP.value:      Nop,
-            StepType.DC_SPIKE.value: DCSpike,
-            StepType.LOAD.value:     LoadCal,
-            StepType.GAIN_CAL.value: GainCal,
-            StepType.TSYS_CAL.value: TsysCal,
-            StepType.RFI_FLAG.value: RFIFlag,
-            StepType.QA.value:       QA,
-            # Add more step types as needed
+            StepType.NOP:      Nop,
+            StepType.DC_SPIKE: DCSpike,
+            StepType.LOAD:     LoadCal,
+            StepType.GAIN_CAL: GainCal,
+            StepType.TSYS_CAL: TsysCal,
+            StepType.RFI_FLAG: RFIFlag,
+            StepType.QA:       QA,
         }
+        return step_map[step_type]
 
+    def describe_step(self, config: StepConfig) -> str:
+        """
+        Return the high-level description for a configured processing step.
+        """
+        return self.get_step_class(config.step).describe()
+
+    def describe_steps_for_dig(self, dig_id: str) -> List[dict]:
+        """
+        Return the configured steps and descriptions for a digitiser ID.
+        """
+        return [
+            {
+                "step": config.step,
+                "params": config.params,
+                "description": self.describe_step(config),
+            }
+            for config in self.pipeline_config.get_steps(dig_id)
+        ]
+
+    def instantiate_step(self, config: StepConfig) -> ProcessingStep:
+        """
+        Instantiate a processing step based on its StepConfig.
+        cfg is a StepConfig instance.
+        """
         # Return an instance of the step class (passing config to the constructor)
-        return step_map[config.step.value](config)
+        return self.get_step_class(config.step)(config)
 
     def create_pipeline(self, scan: "Scan", sky_q: Queue, cal_q: Queue):
         steps = self.get_steps_for_dig(scan, sky_q, cal_q)
