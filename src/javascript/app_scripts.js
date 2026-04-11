@@ -1039,10 +1039,13 @@ function generateJSON(sheet, cellRanges, returnObject = false, log = false, type
       let key = rawKey.toString().toLowerCase().replace(/ /g, "_");
 
       let value = row[1];
+      if (typeof value === "string") value = value.trim();
 
       if (log) Logger.log("Key:" + key + " Value:"+ value);
 
       if (!key || value === "") return;
+
+      Logger.log("Row rawKey=%s normalizedKey=%s value=%s", rawKey, key, value);
 
       // Convert Feed key/value pairs to enum objects
       if (key === "feed") {
@@ -1054,8 +1057,10 @@ function generateJSON(sheet, cellRanges, returnObject = false, log = false, type
       } else if (key === 'altaz') {
         // .*?alt:([+-]?[0-9.]+) → Altitude (signed digits + decimal)
         // .*?az:([+-]?[0-9.]+)  → Azimuth (signed digits + decimal)
-        const regex = /^alt:([+-]?[0-9.]+).*?az:([+-]?[0-9.]+)/;
+        const regex = /^\s*alt:\s*([+-]?[0-9.]+).*?az:\s*([+-]?[0-9.]+)/i;
         const match = value.match(regex);
+
+        Logger.log("Entering altaz branch with value=%s", value);
 
         if (match) {
           const alt = match[1];
@@ -1200,6 +1205,13 @@ function generateJSON(sheet, cellRanges, returnObject = false, log = false, type
   // Update pointing if it was set
   var t = jsonObj.target;
   var pointing = jsonObj.pointing;
+
+  Logger.log("Before pointing update: target=%s, pointing=%s, keys=%s",
+    JSON.stringify(t),
+    JSON.stringify(pointing),
+    Object.keys(jsonObj).join(", ")
+  );
+
   if (pointing) {
     t.pointing.value = pointing.toUpperCase().replace(/\s+/g, "_");
     delete jsonObj.pointing;

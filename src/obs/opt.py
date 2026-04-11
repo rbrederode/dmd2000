@@ -107,12 +107,7 @@ def print_sky_scans(obs: ObsModel, sky_q: Queue | None = None, blacklist: list[s
             if scan_filter is not None and not scan_filter(scan_model):
                 continue
 
-            if target is not None and target.sky_coord is not None:
-                coords = f"RA {target.sky_coord.ra.to_string(unit='hour', precision=0)} Dec {target.sky_coord.dec.to_string(unit='deg', precision=2)}"
-            elif target is not None and target.altaz is not None:
-                coords = f"Alt {target.altaz.alt.to_string(unit='deg', precision=0)} Az {target.altaz.az.to_string(unit='deg', precision=2)}"
-            else:
-                coords = ""
+            coords = fmt_target_coords(target)
 
             row = [
                 "[x]" if scan_model.scan_id in blacklist else "[ ]",

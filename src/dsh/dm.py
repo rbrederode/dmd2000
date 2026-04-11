@@ -13,6 +13,7 @@ from api import tm_dm, ws_dm
 from dsh.dish_display import DishDisplay
 from dsh.weather_display import WeatherDisplay
 from dsh.drivers.driver import DishDriver
+from dsh.drivers.drift.driver import DriftDriver
 from dsh.drivers.md01.md01_driver import MD01Driver
 from env.app import App
 from ipc.message import APIMessage
@@ -137,6 +138,15 @@ class DM(App):
                     timer_action=driver.get_poll_interval_ms())) 
 
                 logger.info(f"DM instantiated MD01 driver for Dish {dish.dsh_id}")
+            elif driver_type == DriverType.DRIFT.name:
+                driver = DriftDriver(dsh_model=dish)
+                self.dish_drivers[dish.dsh_id] = driver
+
+                action.set_timer_action(Action.Timer(
+                    name=f"driver_timer_{dish.dsh_id}_{type(driver).__name__}",
+                    timer_action=driver.get_poll_interval_ms()))
+
+                logger.info(f"DM instantiated Drift driver for Dish {dish.dsh_id}")
             else:
                 logger.warning(f"DM cannot instantiate driver for Dish {dish.dsh_id} with unknown driver type {driver_type}")
 
@@ -461,7 +471,7 @@ class DM(App):
                 # If the dish pointing state transitioned to READY, it means we have reached the desired slew position
                 # Pointing state would be SLEW if still slewing or TRACK if already tracking (if necessary)
                 if target is not None and dish_driver.get_pointing_state() == PointingState.READY:
-                    logger.info(f"DM reached slew target and is now in READY state for target {target} acquisition in observation {target.obs_id} with Dish {dish_id}.")
+                    logger.debug(f"DM reached slew target and is now in READY state for target {target} acquisition in observation {target.obs_id} with Dish {dish_id}.")
 
                     status = tm_dm.STATUS_SUCCESS
                     msg = f"Dish {dish_id} reached slew target and is now in READY state for target {target_id} acquisition in observation {target.obs_id}."

@@ -48,14 +48,14 @@ class Scan:
                 scan_model: The ScanModel instance containing the parameters for this scan
         """
 
-        # Compose a key from obs_id, tgt_idx, freq_scan
-        # Obs_id is unique per observation and per dish (and hence digitiser).
-        # Preserve explicitly negative scan iterations for manufactured scans,
-        # which intentionally use a shortened scan_id without the iteration suffix.
-        preserve_scan_iter = scan_model.scan_iter is not None and int(scan_model.scan_iter) < 0
+        # Compose a key from obs_id, tgt_idx, freq_scan (obs_id is unique per observation, digitiser and dish)
+        
+        # Do not compose a key for scans that are already marked as COMPLETE or synthesised, 
+        # as they will not be receiving new data and should not be assigned a scan_iter based on 
+        # the counter (which is used to track iterations of scans that are being loaded with data).
         key = (
             (scan_model.obs_id, scan_model.tgt_idx, scan_model.freq_scan)
-            if scan_model.status != ScanState.COMPLETE and not preserve_scan_iter
+            if scan_model.status != ScanState.COMPLETE and not scan_model.synthesised
             else None
         )
 

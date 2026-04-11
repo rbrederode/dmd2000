@@ -385,6 +385,11 @@ class BaseModel:
                 from dsh.drivers.md01.md01_model import MD01Config
                 deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
                 return MD01Config(**deserialized_fields)
+            elif model_type == "DriftConfig":
+                # Import lazily to avoid package import errors when optional drivers are not present
+                from dsh.drivers.drift.model import DriftConfig
+                deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
+                return DriftConfig(**deserialized_fields)
             elif model_type == "Observer":
                 location = BaseModel._deserialise(v["location"])
                 return Observer(name=v["name"], location=location)

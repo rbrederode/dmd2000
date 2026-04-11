@@ -110,7 +110,7 @@ class ScanModel(BaseModel):
 
     @property
     def scan_id(self):
-        if self.scan_iter is not None and int(self.scan_iter) < 0:
+        if self.synthesised:
             return f"{self.obs_id}-{self.tgt_idx}-{self.freq_scan}"
         return f"{self.obs_id}-{self.tgt_idx}-{self.freq_scan}-{self.scan_iter}"
 

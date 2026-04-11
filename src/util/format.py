@@ -33,6 +33,10 @@ def fmt_target_coords(target: TargetModel) -> str:
     if target is not None and target.sky_coord is not None:
         return f"RA {target.sky_coord.ra.to_string(unit='hour', precision=0)} Dec {target.sky_coord.dec.to_string(unit='deg', precision=2)}"
     if target is not None and target.altaz is not None:
+        if isinstance(target.altaz, dict):
+            alt = target.altaz.get("alt", "")
+            az = target.altaz.get("az", "")
+            return f"Alt {alt} Az {az}".strip()
         return f"Alt {target.altaz.alt.to_string(unit='deg', precision=0)} Az {target.altaz.az.to_string(unit='deg', precision=2)}"
     return ""
 
