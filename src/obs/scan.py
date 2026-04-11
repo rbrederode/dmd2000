@@ -49,8 +49,15 @@ class Scan:
         """
 
         # Compose a key from obs_id, tgt_idx, freq_scan
-        # Obs_id is unique per observation and per dish (and hence digitiser)
-        key = (scan_model.obs_id, scan_model.tgt_idx, scan_model.freq_scan) if scan_model.status != ScanState.COMPLETE else None
+        # Obs_id is unique per observation and per dish (and hence digitiser).
+        # Preserve explicitly negative scan iterations for manufactured scans,
+        # which intentionally use a shortened scan_id without the iteration suffix.
+        preserve_scan_iter = scan_model.scan_iter is not None and int(scan_model.scan_iter) < 0
+        key = (
+            (scan_model.obs_id, scan_model.tgt_idx, scan_model.freq_scan)
+            if scan_model.status != ScanState.COMPLETE and not preserve_scan_iter
+            else None
+        )
 
         if key is not None:
 

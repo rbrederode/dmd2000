@@ -12,6 +12,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.gridspec import GridSpec
+from matplotlib.ticker import MaxNLocator
 
 from util import gen_file_prefix
 
@@ -151,6 +152,14 @@ class SignalDisplay:
         self.init_waterfall_axes(self.sig[2])
         self.init_saturation_axes(self.sig[3])
         self.init_total_power_axes(self.sig[4], self.scan.scan_model.duration)
+
+    def _is_integrated_scan(self) -> bool:
+        """Return whether the current scan is a manufactured integrated scan."""
+        return (
+            self.scan is not None
+            and self.scan.scan_model is not None
+            and bool(getattr(self.scan.scan_model, "synthesised", False))
+        )
 
     def _create_scan_artists(self):
         """Create persistent artists for the current scan so later updates can mutate them in place."""
@@ -526,10 +535,11 @@ class SignalDisplay:
         """
         axes.set_title("Waterfall Plot of Spectrum")
         axes.set_xlabel("Frequency [MHz]")
-        axes.set_ylabel("Time [sec]")
+        axes.set_ylabel("Integrated Scans" if self._is_integrated_scan() else "Time [sec]")
         axes.set_aspect("auto")
         axes.set_facecolor("black")
         axes.grid(False)
+        axes.yaxis.set_major_locator(MaxNLocator(integer=True))
 
     def init_saturation_axes(self, axes):
         """Initialise the SDR saturation subplot axis.
@@ -552,8 +562,9 @@ class SignalDisplay:
             duration: Scan duration in seconds, used to set x limits.
         """
         axes.set_title("Total Power Timeline")
-        axes.set_xlabel("Time [sec]")
+        axes.set_xlabel("Integrated Scans" if self._is_integrated_scan() else "Time [sec]")
         axes.set_ylabel("Total Power [a.u.]")
         axes.set_facecolor("white")
         axes.set_xlim(1, duration)
         axes.grid(True)
+        axes.xaxis.set_major_locator(MaxNLocator(integer=True))

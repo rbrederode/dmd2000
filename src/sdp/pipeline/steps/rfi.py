@@ -14,7 +14,7 @@ class RFIFlag(ProcessingStep):
     def __init__(self, config: StepConfig = None):
         super().__init__(config)
 
-        logger.info("RFIFlag pipeline step initialisation with config:\n%s", str(self.config))
+        logger.debug("RFIFlag pipeline step initialisation with config:\n%s", str(self.config))
 
         self.scan = config.params["scan"] if "scan" in config.params else None
 

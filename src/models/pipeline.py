@@ -107,10 +107,10 @@ class PipelineConfig(BaseModel):
 
 if __name__ == "__main__":
     import pprint
-    step1 = StepConfig(step=StepType.DC_SPIKE, params={"pipeline": "spr"})
-    step2 = StepConfig(step=StepType.LOAD, params={"pipeline": "cal"})
-    step3 = StepConfig(step=StepType.RFI_FLAG, params={"pipeline": "cal", "threshold": 5, "window_size": 21})
-    step4 = StepConfig(step=StepType.QA, params={"pipeline": "cal", "window_frac": 0.2})
+    step1 = StepConfig(step=StepType.DC_SPIKE, params={"context": "spr"})
+    step2 = StepConfig(step=StepType.LOAD, params={"context": "cal"})
+    step3 = StepConfig(step=StepType.RFI_FLAG, params={"context": "cal", "threshold": 5, "window_size": 21})
+    step4 = StepConfig(step=StepType.QA, params={"context": "cal", "window_frac": 0.2})
     config = PipelineConfig(steps_map={
         "default": [step1, step2, step3, step4],
         "dig001": [step1, step4],

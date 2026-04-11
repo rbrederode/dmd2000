@@ -5,6 +5,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.gridspec import GridSpec
+from matplotlib.ticker import MultipleLocator
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,6 @@ class ObsDisplay:
         self.ax_vel = None
         self.freq_min_mhz = None
         self.freq_max_mhz = None
-        self.int_arrays = {}
 
     def __str__(self):
         return f"ObsDisplay(obs_id={self.obs_id})"
@@ -49,25 +49,21 @@ class ObsDisplay:
             self.ax_freq.cla()
             self.ax_vel.cla()
 
-    def set_scan(self, scans: Iterable, obs=None, int_arrays: dict | None = None):
+    def set_scan(self, scans: Iterable, obs=None):
         """Set the aggregated scans to display.
 
         Parameters:
             scans: Iterable of aggregated SKY Scan instances to plot.
             obs: Optional Observation model used to derive the full frequency span.
-            int_arrays: Optional integrated array dictionary used to source
-                total-power timelines for the observation.
         """
         if scans is None:
             self.scans = []
-            self.int_arrays = int_arrays or {}
             return
 
         self.scans = sorted(
             [scan for scan in scans if getattr(scan, "scan_model", None) is not None],
             key=lambda scan: (scan.scan_model.center_freq, scan.scan_model.freq_scan),
         )
-        self.int_arrays = int_arrays or {}
 
         self.freq_min_mhz = None
         self.freq_max_mhz = None
@@ -117,11 +113,12 @@ class ObsDisplay:
         self.ax_freq.legend(loc="upper right")
 
     def _plot_velocity_panel(self):
-        """Use the lower half of the display for integrated total power over time."""
+        """Use the lower half of the display for integrated total power per synthesized scan row."""
         self.ax_vel.set_title("Integrated Total Power")
-        self.ax_vel.set_xlabel("Time (sec)")
+        self.ax_vel.set_xlabel("Integrated Scans")
         self.ax_vel.set_ylabel("Power [a.u.]")
         self.ax_vel.grid(True, alpha=0.25)
+        self.ax_vel.xaxis.set_major_locator(MultipleLocator(1))
 
         if not self.scans:
             self.ax_vel.text(
@@ -139,18 +136,20 @@ class ObsDisplay:
         max_secs = 0
 
         for idx, scan in enumerate(self.scans):
-            entry = self.int_arrays.get((scan.scan_model.tgt_idx, scan.scan_model.freq_scan), {})
-            tpw_sum = entry.get("tpw_sum")
-            if tpw_sum is None or len(tpw_sum) == 0:
+            if scan.cal is None or scan.get_loaded_seconds() <= 0:
                 continue
 
-            time_axis = np.arange(1, len(tpw_sum) + 1)
+            tpw_sum = np.sum(scan.cal[:scan.get_loaded_seconds(), :], axis=1)
+            if tpw_sum.size == 0:
+                continue
+
+            time_axis = np.arange(1, tpw_sum.size + 1)
             scan_id_parts = str(scan.scan_model.scan_id).split("-")
             label = f"Scan {'-'.join(scan_id_parts[-2:])}" if len(scan_id_parts) >= 2 else f"Scan {scan.scan_model.scan_id}"
             self.ax_vel.plot(time_axis, tpw_sum, color=colours[idx], linewidth=1.5, label=label)
             mean_tpw = float(np.mean(tpw_sum))
             self.ax_vel.axhline(mean_tpw, color=colours[idx], linestyle="--", linewidth=1.0, alpha=0.9)
-            max_secs = max(max_secs, len(tpw_sum))
+            max_secs = max(max_secs, tpw_sum.size)
 
         if max_secs > 0:
             self.ax_vel.set_xlim(1, max_secs)

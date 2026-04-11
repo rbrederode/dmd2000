@@ -9,7 +9,7 @@
                     "instance": "StepType",
                     "value": "DC_SPIKE"
                 },
-                "params": {"pipeline": "spr"},
+                "params": {"context": "spr"},
                 "last_update": {
                     "_type": "datetime",
                     "value": "2026-03-14T10:27:33.526265+00:00"
@@ -22,7 +22,7 @@
                     "instance": "StepType",
                     "value": "LOAD"
                 },
-                "params": {"pipeline": "cal"},
+                "params": {"context": "cal"},
                 "last_update": {
                     "_type": "datetime",
                     "value": "2026-03-14T10:27:33.526265+00:00"
@@ -35,7 +35,7 @@
                     "instance": "StepType",
                     "value": "RFI_FLAG"
                 },
-                "params": {"pipeline": "cal", "threshold": 5, "window_size": 21},
+                "params": {"context": "cal", "threshold": 5, "window_size": 21},
                 "last_update": {
                     "_type": "datetime",
                     "value": "2026-03-14T10:27:33.526265+00:00"
@@ -48,7 +48,7 @@
                     "instance": "StepType",
                     "value": "QA"
                 },
-                "params": {"pipeline": "mpr", "window_frac": 0.2},
+                "params": {"context": "mpr", "window_frac": 0.2},
                 "last_update": {
                     "_type": "datetime",
                     "value": "2026-03-14T10:27:33.526265+00:00"

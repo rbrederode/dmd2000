@@ -1,5 +1,6 @@
 import numpy as np
 import logging
+from queue import Queue
 from typing import Any, List, Dict
 
 from models.pipeline import StepConfig, StepType
@@ -14,12 +15,13 @@ class LoadCal(ProcessingStep):
         super().__init__(config)
 
         self.scan = config.params["scan"] if "scan" in config.params else None
-        self.cal_q = config.params["cal_q"] if "cal_q" in config.params else None
+        self.cal_q = config.params["cal_q"] if "cal_q" in config.params else None 
+        self.cal_q = Queue() if self.cal_q is None else self.cal_q  # If no calibration queue is provided, create an empty queue
 
         logger.debug("LoadCal pipeline step initialisation with scan:\n%s", str(self.scan))
 
-        if self.scan is None or self.cal_q is None:
-            raise ValueError(f"LoadCal: scan {self.scan} and cal_q {self.cal_q} must be set before initialising LoadCal step.")
+        if self.scan is None:
+            raise ValueError(f"LoadCal: scan {self.scan} must be set before initialising LoadCal step.")
 
         # If this is a load scan, we should not apply the load calibration, otherwise we will divide the load scan by itself.
         # Instead, we will look for an equivalent load scan in the calibration queue to apply to the signal if this is not a load scan. 
@@ -55,10 +57,6 @@ class LoadCal(ProcessingStep):
         # with an array of ones, losing the actual load calibration values. Instead, we return the signal unchanged for load scans.
         if self.scan.get_scan_type() == ScanType.LOAD:
             return signal
-
-        #sky_duration = float(self.scan.scan_model.duration) if self.scan.scan_model.duration else 0.0
-        #load_duration = float(self.load_scan.scan_model.duration) if self.load_scan and self.load_scan.scan_model.duration else 0.0
-        #duration_ratio = (sky_duration / load_duration) if load_duration > 0.0 and sky_duration > 0.0 else 1.0
 
         # Check if the length of the input signal array matches the length of the load scan's spectrum
         if not self.load_scan or signal.shape[0] != self.load_scan.mpr.shape[0]:
