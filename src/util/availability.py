@@ -1,11 +1,31 @@
 import csv
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 import os
 import re
 from typing import List, Tuple
 
 Event = Tuple[datetime, str]  # (timestamp, state)
+
+
+def _parse_log_timestamp(ts_str: str, end_tz) -> datetime | None:
+    """Parse a log timestamp, supporting explicit UTC and legacy local-time lines."""
+    if ts_str.endswith(" UTC"):
+        try:
+            ts = datetime.strptime(ts_str.removesuffix(" UTC"), "%Y-%m-%d %H:%M:%S,%f")
+            ts = ts.replace(tzinfo=timezone.utc)
+            return ts.astimezone(end_tz) if end_tz is not None else ts.replace(tzinfo=None)
+        except ValueError:
+            return None
+
+    try:
+        ts = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S,%f")
+    except ValueError:
+        return None
+
+    local_tz = datetime.now().astimezone().tzinfo
+    ts = ts.replace(tzinfo=local_tz)
+    return ts.astimezone(end_tz) if end_tz is not None else ts.replace(tzinfo=None)
 
 def _validate_percent(value: float) -> float:
     """Clamp a percentage-like value into the schema-safe range [0.0, 100.0]."""
@@ -70,17 +90,10 @@ def _parse_logs(log_files: List[str], app_name: str, heartbeat_timeout_sec: int,
         with open(logfile, "r", encoding="utf-8") as f:
             for line in f:
                 ts_str = line.split("|")[0].strip()
-                try:
-                    ts = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S,%f")
-                except ValueError:
+                ts = _parse_log_timestamp(ts_str, end_tz)
+                if ts is None:
                     logging.warning(f"Bad timestamp in {logfile}: {line.strip()}")
                     continue
-
-                # Normalize timezone to match end_period to avoid naive/aware mixing
-                if end_tz is not None and ts.tzinfo is None:
-                    ts = ts.replace(tzinfo=end_tz)
-                elif end_tz is None and ts.tzinfo is not None:
-                    ts = ts.replace(tzinfo=None)
 
                 if m := state_pattern.search(line):
                     transitions.append((ts, m.group(1)))

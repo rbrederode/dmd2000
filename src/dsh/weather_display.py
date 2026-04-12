@@ -153,7 +153,7 @@ class WeatherDisplay:
         self.wind_line, = self.wind_ax.plot([], [], color="tab:blue", linewidth=2, label="Wind Speed")
         self.wind_avg_line = self.wind_ax.axhline(
             y=self.weather_store.threshold_wind_avg,
-            color="tab:green",
+            color="tab:orange",
             linestyle="dashed",
             linewidth=1.5,
             label="Avg Threshold",
@@ -166,7 +166,7 @@ class WeatherDisplay:
             label="Gust Threshold",
         )
 
-        self.precip_line, = self.precip_ax.plot([], [], color="tab:orange", linewidth=2, label="Precipitation")
+        self.precip_line, = self.precip_ax.plot([], [], color="tab:purple", linewidth=2, label="Precipitation")
         self.precip_thresh_line = self.precip_ax.axhline(
             y=self.weather_store.threshold_precipitation,
             color="tab:red",

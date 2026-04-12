@@ -370,7 +370,8 @@ class App:
             utc=True)
 
         handler.suffix = "%Y-%m-%d"  # results in e.g. dm.log.2026-04-05
-        formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
+        formatter = logging.Formatter("%(asctime)s UTC | %(levelname)s | %(message)s")
+        formatter.converter = time.gmtime
         handler.setFormatter(formatter)
 
         logger.addHandler(handler)

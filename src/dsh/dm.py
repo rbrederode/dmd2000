@@ -4,6 +4,9 @@ from astropy.coordinates import SkyCoord, EarthLocation, AltAz
 from astropy.time import Time
 from datetime import datetime, timezone, timedelta
 import logging
+from logging.handlers import TimedRotatingFileHandler
+import os
+from pathlib import Path
 import pytest
 from queue import Queue
 import time
@@ -27,6 +30,7 @@ from models.health import HealthState
 from models.oda import ObsList, ScanStore
 from models.target import TargetModel, PointingType
 from models.ws import WeatherData, WeatherStationList
+from util.alarm_rsp_efficiency import get_alarm_rsp_efficiency
 from util import log
 from util.xbase import XBase, XStreamUnableToExtract, XSoftwareFailure
 
@@ -68,6 +72,8 @@ class DM(App):
         self.dish_locks = {}          # Dictionary of threading locks, one per dish
         self.dish_displays = {}       # Dictionary to hold DishDisplay objects for each dish
         self.weather_displays = {}    # Dictionary to hold WeatherDisplay objects for each weather station
+        self.alarm_logger = self.get_alarm_logger()
+        self.last_alarm_metrics_refresh_hour = None
 
     def add_args(self, arg_parser): 
         """ Specifies the Dish Manager's command line arguments.
@@ -105,7 +111,14 @@ class DM(App):
             logger.warning(f"DM could not load Weather Station configuration from directory {input_dir} file {filename}")
 
         self.dm_model.weather_store = weatherstation_store if weatherstation_store is not None else WeatherStationList()
+
+        # Reset runtime alarm timing so the startup grace period is measured from
+        # the current DM process start, not from a persisted config timestamp.
+        self.dm_model.weather_store.created_dt = datetime.now(timezone.utc)
+        self.dm_model.weather_store.trigger_dt = None
+
         logger.info(f"DM initialised Weather Station configuration:\n{self.dm_model.weather_store}")
+        self._log_alarm_event(event_type="snapshot", reason="startup")
 
         # Load Dish configuration from disk, config file is located in ./config/<profile>/<model>.json
         # <profile> can be specified as a cmd line argument (provided by the App base class) default='default'
@@ -384,6 +397,8 @@ class DM(App):
 
         # If the weather alarm status has just transitioned to True, then inform the Telescope Manager
         if not prev_alarm_status and self.alarm_triggered:
+            self.dm_model.weather_store.trigger_dt = datetime.now(timezone.utc)
+            self._log_alarm_event(event_type="transition", active=True)
             self._send_status_adv_to_tm(action=action, message="Dish Manager weather alarm threshold breached")
         
         return action
@@ -394,6 +409,8 @@ class DM(App):
 
         if not self.dm_model.weather_store.is_ws_monitoring_enabled():
             return action
+
+        prev_alarm_status = self.alarm_triggered
 
         # For each dish driver, revert the weather alarm state to False
         for dish_id, dish_driver in self.dish_drivers.items():
@@ -410,6 +427,10 @@ class DM(App):
                     logger.error(f"DM failed to revert weather alarm state for Dish {dish_id}: {e}")
 
         self.alarm_triggered = False
+        if prev_alarm_status and not self.alarm_triggered:
+            self._log_alarm_event(event_type="transition", active=False)
+            self._send_status_adv_to_tm(action=action, message="Dish Manager weather alarm cleared, conditions back to safe levels")
+
         return action
 
     def process_timer_event(self, event) -> Action:
@@ -524,6 +545,7 @@ class DM(App):
         """ Processes status update events.
         """
         self.get_app_processor_state()
+        self._refresh_weather_alarm_metrics()
 
         action = self._send_status_adv_to_tm()
         return action
@@ -602,6 +624,78 @@ class DM(App):
 
         tm_rsp.set_api_call(tm_rsp_api_call)  
         return tm_rsp
+
+    def _refresh_weather_alarm_metrics(self):
+        """Refresh rolling weather alarm response metrics at most once per hour."""
+        now = datetime.now(timezone.utc)
+        current_hour = now.replace(minute=0, second=0, microsecond=0)
+
+        if self.last_alarm_metrics_refresh_hour == current_hour:
+            return
+
+        metrics = get_alarm_rsp_efficiency(
+            log_dir=str(Path(App.logs_dir).expanduser() / "alarm"),
+            log_name=self.app_model.app_name,
+            start_period=now - timedelta(days=30),
+            end_period=now,
+        )
+
+        self.dm_model.weather_store.last_mth_alarm_count = metrics["alarm_count"]
+        self.dm_model.weather_store.last_mth_alarm_activated = metrics["downtime_sec"] / 60.0
+        self.dm_model.weather_store.last_mth_alarm_deactivated = metrics["uptime_sec"] / 60.0
+        self.dm_model.weather_store.last_mth_alarm_mtta = metrics["mean_time_to_alarm_sec"] / 60.0
+        self.dm_model.weather_store.last_mth_alarm_mttr = metrics["mean_time_to_recovery_sec"] / 60.0
+
+        self.last_alarm_metrics_refresh_hour = current_hour
+
+    def get_alarm_logger(self) -> logging.Logger:
+        """Get a dedicated rotating logger for weather alarm transitions."""
+        log_dir = Path(App.logs_dir).expanduser() / "alarm"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        logger_name = f"{self.app_model.app_name}.alarm"
+        alarm_logger = logging.getLogger(logger_name)
+        alarm_logger.setLevel(logging.INFO)
+        alarm_logger.propagate = False
+        alarm_logger.handlers.clear()
+
+        handler = TimedRotatingFileHandler(
+            filename=os.path.join(log_dir, f"{self.app_model.app_name}.log"),
+            when="midnight",
+            interval=1,
+            backupCount=731,
+            encoding="utf-8",
+            utc=True,
+        )
+        handler.suffix = "%Y-%m-%d"
+        formatter = logging.Formatter("%(asctime)s UTC | %(levelname)s | %(message)s")
+        formatter.converter = time.gmtime
+        handler.setFormatter(formatter)
+        alarm_logger.addHandler(handler)
+        return alarm_logger
+
+    def _log_alarm_event(self, event_type: str, active: bool = None, reason: str = None):
+        """Log a weather alarm event and current alarm metrics.
+
+        Parameters:
+            event_type: ``transition`` or ``snapshot``.
+            active: Explicit alarm state for transition events.
+            reason: Optional reason label for snapshot events, e.g. ``startup``.
+        """
+        if event_type == "transition":
+            state = "ACTIVE" if active else "CLEAR"
+            self.alarm_logger.info(f"WeatherAlarm transition state={state}")
+        elif event_type == "snapshot":
+            metrics = self.dm_model.weather_store.get_alarm_metrics()
+            state = "ACTIVE" if metrics["alarm_triggered"] else "CLEAR"
+            snapshot_reason = reason or "snapshot"
+            self.alarm_logger.info(f"WeatherAlarm snapshot reason={snapshot_reason} state={state}")
+        else:
+            raise ValueError(f"Unsupported weather alarm event type: {event_type}")
+
+        self.alarm_logger.info(
+            "WeatherAlarm metrics " + self.dm_model.weather_store.format_alarm_metrics()
+        )
 
 # Runs tests: pytest dsh/dm.py -v -s 
 # -v for verbose output (or -vv or -vvv for more verbosity)

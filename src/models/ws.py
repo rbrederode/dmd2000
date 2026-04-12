@@ -118,6 +118,11 @@ class WeatherStationList(BaseModel):
         "threshold_wind_count": And(int, lambda v: v >= 0),                # Number of wind gust samples above threshold to trigger an alarm
         "threshold_precipitation": And(float, lambda v: v >= 0),           # Threshold for heavy precipitation in mm to trigger an alarm
         "trigger_dt": Or(None, And(datetime, lambda v: isinstance(v, datetime))),  # Timestamp when the last alarm was triggered
+        "last_mth_alarm_count": And(int, lambda v: v >= 0),                # Number of alarm activations over the trailing month
+        "last_mth_alarm_activated": And(float, lambda v: v >= 0),          # Minutes alarm was active over the trailing month
+        "last_mth_alarm_deactivated": And(float, lambda v: v >= 0),        # Minutes alarm was clear over the trailing month
+        "last_mth_alarm_mtta": And(float, lambda v: v >= 0),               # Mean minutes between alarm activations over the trailing month
+        "last_mth_alarm_mttr": And(float, lambda v: v >= 0),               # Mean minutes to recovery over the trailing month
         "created_dt": And(datetime, lambda v: isinstance(v, datetime)),    # Timestamp when the weather station list was created
         "last_update": And(datetime, lambda v: isinstance(v, datetime)),
     })
@@ -139,6 +144,11 @@ class WeatherStationList(BaseModel):
             "threshold_precipitation": 10.0,            # Threshold for heavy precipitation in mm to trigger an alarm
             "threshold_wind_count": 3,                  # Number of wind samples above threshold to trigger an alarm
             "trigger_dt": None,                         # Timestamp when the last alarm was triggered
+            "last_mth_alarm_count": 0,
+            "last_mth_alarm_activated": 0.0,
+            "last_mth_alarm_deactivated": 0.0,
+            "last_mth_alarm_mtta": 0.0,
+            "last_mth_alarm_mttr": 0.0,
             "created_dt": datetime.now(timezone.utc),
             "last_update": datetime.now(timezone.utc),
         }
@@ -152,7 +162,7 @@ class WeatherStationList(BaseModel):
 
     def __str__(self):
         weather_str = ",\n\n  ".join(str(wd) for wd in self.weather_data)
-        return f"WeatherStationList (list_id={self.list_id}, len={len(self.weather_data)}, threshold_timeout={self.threshold_timeout}, threshold_wind_gust={self.threshold_wind_gust}, threshold_wind_avg={self.threshold_wind_avg}, threshold_precipitation={self.threshold_precipitation}, threshold_wind_count={self.threshold_wind_count}, last_update={self.last_update.isoformat()}, trigger_dt={self.trigger_dt.isoformat() if self.trigger_dt else None}): [\n  {weather_str}\n]"
+        return f"WeatherStationList (list_id={self.list_id}, len={len(self.weather_data)}, threshold_timeout={self.threshold_timeout}, threshold_wind_gust={self.threshold_wind_gust}, threshold_wind_avg={self.threshold_wind_avg}, threshold_precipitation={self.threshold_precipitation}, threshold_wind_count={self.threshold_wind_count}, last_mth_alarm_count={self.last_mth_alarm_count}, last_mth_alarm_activated={self.last_mth_alarm_activated}, last_mth_alarm_deactivated={self.last_mth_alarm_deactivated}, last_mth_alarm_mtta={self.last_mth_alarm_mtta}, last_mth_alarm_mttr={self.last_mth_alarm_mttr}, last_update={self.last_update.isoformat()}, trigger_dt={self.trigger_dt.isoformat() if self.trigger_dt else None}): [\n  {weather_str}\n]"
 
     def is_ws_monitoring_enabled(self) -> bool:
         """
@@ -252,6 +262,37 @@ class WeatherStationList(BaseModel):
             "precipitation_triggered": precipitation_triggered,
             "alarm_triggered": alarm_triggered,
         }
+
+    def format_alarm_metrics(self, ws_id: str = None, now: datetime = None) -> str:
+        """Return alarm metrics as a stable key=value string for logging."""
+        metrics = self.get_alarm_metrics(ws_id=ws_id, now=now)
+        latest_sample = metrics.get("latest_sample")
+        latest_ws_id = getattr(latest_sample, "ws_id", None) if latest_sample is not None else None
+        latest_obs_time = latest_sample.obs_time.isoformat() if latest_sample is not None and latest_sample.obs_time is not None else None
+
+        parts = [
+            f"ws_id={ws_id if ws_id is not None else 'all'}",
+            f"sample_count={metrics.get('sample_count', 0)}",
+            f"latest_ws_id={latest_ws_id}",
+            f"latest_obs_time={latest_obs_time}",
+            f"latest_age_sec={metrics.get('latest_age_sec')}",
+            f"avg_wind={metrics.get('avg_wind', 0.0):.3f}",
+            f"max_wind={metrics.get('max_wind', 0.0):.3f}",
+            f"gust_count={metrics.get('gust_count', 0)}",
+            f"avg_precipitation={metrics.get('avg_precipitation', 0.0):.3f}",
+            f"threshold_timeout={self.threshold_timeout}",
+            f"threshold_wind_avg={self.threshold_wind_avg:.3f}",
+            f"threshold_wind_gust={self.threshold_wind_gust:.3f}",
+            f"threshold_wind_count={self.threshold_wind_count}",
+            f"threshold_precipitation={self.threshold_precipitation:.3f}",
+            f"timeout_triggered={metrics.get('timeout_triggered', False)}",
+            f"wind_avg_triggered={metrics.get('wind_avg_triggered', False)}",
+            f"gust_triggered={metrics.get('gust_triggered', False)}",
+            f"gust_count_triggered={metrics.get('gust_count_triggered', False)}",
+            f"precipitation_triggered={metrics.get('precipitation_triggered', False)}",
+            f"alarm_triggered={metrics.get('alarm_triggered', False)}",
+        ]
+        return "\n".join(f"  {part}" for part in parts)
     
     def alarm(self) -> bool:
         """
@@ -270,8 +311,6 @@ class WeatherStationList(BaseModel):
             self.created_dt = datetime.now(timezone.utc) 
 
         metrics = self.get_alarm_metrics()
-
-        self.trigger_dt = datetime.now(timezone.utc) if metrics["alarm_triggered"] else self.trigger_dt    
 
         logger.debug(
             f"WeatherStationList with {metrics['sample_count']} samples: "
