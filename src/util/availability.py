@@ -6,6 +6,7 @@ import re
 from typing import List, Tuple
 
 Event = Tuple[datetime, str]  # (timestamp, state)
+logger = logging.getLogger(__name__)
 
 
 def _parse_log_timestamp(ts_str: str, end_tz) -> datetime | None:
@@ -68,6 +69,28 @@ def _collect_log_files(log_dir: str, app_name: str, start: datetime, end: dateti
 
     return files
 
+
+def _iter_sanitized_log_lines(logfile: str):
+    """Yield decoded log lines while tolerating embedded NUL bytes.
+
+    NUL bytes usually indicate the file was truncated or externally rotated while a
+    process still had it open. We strip them so parsing can continue and emit a
+    warning to the standard logs for observability.
+    """
+    data = open(logfile, "rb").read()
+    nul_count = data.count(b"\x00")
+    if nul_count:
+        logger.warning(
+            "Availability log %s contains %d NUL byte(s). This often indicates external truncation or rotation while the app still had the file open.",
+            logfile,
+            nul_count,
+        )
+        data = data.replace(b"\x00", b"")
+
+    for line in data.decode("utf-8", errors="replace").splitlines():
+        if line:
+            yield line
+
 def _parse_logs(log_files: List[str], app_name: str, heartbeat_timeout_sec: int, end_period: datetime) -> List[Event]:
 
     """ Parse log files to extract state transitions and heartbeat timeouts.
@@ -87,21 +110,20 @@ def _parse_logs(log_files: List[str], app_name: str, heartbeat_timeout_sec: int,
     end_tz = end_period.tzinfo
 
     for logfile in log_files:
-        with open(logfile, "r", encoding="utf-8") as f:
-            for line in f:
-                ts_str = line.split("|")[0].strip()
-                ts = _parse_log_timestamp(ts_str, end_tz)
-                if ts is None:
-                    logging.warning(f"Bad timestamp in {logfile}: {line.strip()}")
-                    continue
+        for line in _iter_sanitized_log_lines(logfile):
+            ts_str = line.split("|")[0].strip()
+            ts = _parse_log_timestamp(ts_str, end_tz)
+            if ts is None:
+                logger.warning("Bad timestamp in %s: %s", logfile, line.strip())
+                continue
 
-                if m := state_pattern.search(line):
-                    transitions.append((ts, m.group(1)))
-                elif m := heartbeat_pattern.search(line):
-                    heartbeats.append(ts)
-                    heartbeat_state = m.group(1)
-                    if heartbeat_state is not None:
-                        transitions.append((ts, heartbeat_state))
+            if m := state_pattern.search(line):
+                transitions.append((ts, m.group(1)))
+            elif m := heartbeat_pattern.search(line):
+                heartbeats.append(ts)
+                heartbeat_state = m.group(1)
+                if heartbeat_state is not None:
+                    transitions.append((ts, heartbeat_state))
 
     transitions.sort()
     heartbeats.sort()

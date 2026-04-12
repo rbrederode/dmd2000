@@ -39,13 +39,18 @@ class WeatherDisplay:
         ("Last Update", "Samples"),
     ]
 
+    SUMMARY_ITEMS = [
+        ("Last Mth Count", "Alarm Count"),
+        ("Last Mth Active", "Activated"),
+        ("Last Mth Clear", "Deactivated"),
+        ("Mean Recovery", "MTTR"),
+    ]
+
     RECT_LEFT_X, RECT_RIGHT_X = 2.5, 7.5
-    RECT_W, RECT_H = 2.5, 0.5
+    RECT_W, RECT_H = 2.5, 0.35
     LABEL_GAP = 0.1
     GROUP_LEFT_X = 0.25
     GROUP_RIGHT_X = 10.36
-    GROUP_TOP_Y = 7.68
-    GROUP_BOTTOM_Y = 2.73
 
     def __init__(self, weather_store: WeatherStationList, ws_id: str):
         self.weather_store = weather_store
@@ -93,10 +98,12 @@ class WeatherDisplay:
         ax.text(self.RECT_LEFT_X + self.RECT_W / 2, 7.45, "Thresholds", ha="center", va="center", fontsize=10, fontweight="bold")
         ax.text(self.RECT_RIGHT_X + self.RECT_W / 2, 7.45, "Actuals", ha="center", va="center", fontsize=10, fontweight="bold")
 
+        y_positions = np.linspace(6.85, 2.05, len(self.ATTR_ROWS))
+
         group_rect = plt.Rectangle(
-            (self.GROUP_LEFT_X, self.GROUP_BOTTOM_Y),
+            (self.GROUP_LEFT_X, y_positions[4] - 0.38),
             self.GROUP_RIGHT_X - self.GROUP_LEFT_X,
-            self.GROUP_TOP_Y - self.GROUP_BOTTOM_Y,
+            (y_positions[0] + 0.38) - (y_positions[4] - 0.38),
             fill=False,
             edgecolor="tab:gray",
             linewidth=1.0,
@@ -106,12 +113,11 @@ class WeatherDisplay:
         self.attr_rects = {}
         self.attr_texts = {}
 
-        y_positions = np.linspace(6.9, 1.1, len(self.ATTR_ROWS))
         for y, (left_label, right_label) in zip(y_positions, self.ATTR_ROWS):
             if left_label:
-                ax.text(self.RECT_LEFT_X - self.LABEL_GAP, y, left_label, ha="right", va="center", fontsize=9)
+                ax.text(self.RECT_LEFT_X - self.LABEL_GAP, y, left_label, ha="right", va="center", fontsize=8)
                 left_rect = plt.Rectangle(
-                    (self.RECT_LEFT_X, y - 0.2),
+                    (self.RECT_LEFT_X, y - self.RECT_H / 2),
                     self.RECT_W,
                     self.RECT_H,
                     color="tab:gray",
@@ -124,9 +130,9 @@ class WeatherDisplay:
                 )
 
             if right_label:
-                ax.text(self.RECT_RIGHT_X - self.LABEL_GAP, y, right_label, ha="right", va="center", fontsize=9)
+                ax.text(self.RECT_RIGHT_X - self.LABEL_GAP, y, right_label, ha="right", va="center", fontsize=8)
                 right_rect = plt.Rectangle(
-                    (self.RECT_RIGHT_X, y - 0.2),
+                    (self.RECT_RIGHT_X, y - self.RECT_H / 2),
                     self.RECT_W,
                     self.RECT_H,
                     color="tab:gray",
@@ -137,6 +143,49 @@ class WeatherDisplay:
                 self.attr_texts[(right_label, "value")] = ax.text(
                     self.RECT_RIGHT_X + self.RECT_W / 2, y, "", ha="center", va="center", fontsize=8
                 )
+
+        summary_positions = [
+            (0, 1.15),
+            (1, 1.15),
+            (1, 0.45),
+            (0, 0.45),
+        ]
+        summary_rect_x = [self.RECT_LEFT_X, self.RECT_RIGHT_X]
+
+        for (label, value_key), (col_idx, y) in zip(self.SUMMARY_ITEMS, summary_positions):
+            rect_x = summary_rect_x[col_idx]
+            ax.text(rect_x - self.LABEL_GAP, y, label, ha="right", va="center", fontsize=8)
+            rect = plt.Rectangle(
+                (rect_x, y - self.RECT_H / 2),
+                self.RECT_W,
+                self.RECT_H,
+                color="tab:gray",
+                alpha=0.5,
+            )
+            ax.add_patch(rect)
+            self.attr_rects[(value_key, "summary")] = rect
+            self.attr_texts[(value_key, "summary")] = ax.text(
+                rect_x + self.RECT_W / 2, y, "", ha="center", va="center", fontsize=8
+            )
+
+        ax.text(
+            self.RECT_LEFT_X,
+            -0.04,
+            "Last mth format: DD:HH:MM:SS",
+            ha="left",
+            va="bottom",
+            fontsize=8,
+            color="tab:gray",
+        )
+        ax.text(
+            self.RECT_LEFT_X,
+            -0.24,
+            "Last mth data updated hourly",
+            ha="left",
+            va="bottom",
+            fontsize=8,
+            color="tab:gray",
+        )
 
     def _init_plot_axes(self):
         self.wind_ax.set_title("Wind Speed")
@@ -220,8 +269,18 @@ class WeatherDisplay:
         self.attr_texts[(label, kind)].set_text(text)
         if kind == "threshold":
             self.attr_rects[(label, kind)].set_color("tab:gray")
+        elif kind == "summary":
+            self.attr_rects[(label, kind)].set_color(color if color is not None else "tab:gray")
         else:
             self.attr_rects[(label, kind)].set_color(color if color is not None else ("tab:red" if alarm else "tab:green"))
+
+    @staticmethod
+    def _format_duration(minutes: float) -> str:
+        total_seconds = max(0, int(round((minutes or 0.0) * 60.0)))
+        days, remainder = divmod(total_seconds, 86400)
+        hours, remainder = divmod(remainder, 3600)
+        mins, secs = divmod(remainder, 60)
+        return f"{days:02d}:{hours:02d}:{mins:02d}:{secs:02d}"
 
     def _update_attributes(self):
         metrics = self.weather_store.get_alarm_metrics(ws_id=self.ws.ws_id)
@@ -252,6 +311,11 @@ class WeatherDisplay:
 
         self._set_field("Last Update", "threshold", latest_update + " UTC", False)
         self._set_field("Samples", "value", f"{metrics['sample_count']:d}", False)
+
+        self._set_field("Alarm Count", "summary", f"{self.weather_store.last_mth_alarm_count:d}", False)
+        self._set_field("Activated", "summary", self._format_duration(self.weather_store.last_mth_alarm_activated), False, color="tab:red")
+        self._set_field("Deactivated", "summary", self._format_duration(self.weather_store.last_mth_alarm_deactivated), False, color="tab:green")
+        self._set_field("MTTR", "summary", self._format_duration(self.weather_store.last_mth_alarm_mttr), False)
 
     def _update_plot(self):
         samples = self.weather_store.get_station_weather(ws_id=self.ws.ws_id)
