@@ -7,6 +7,12 @@ from typing import List, Tuple
 
 Event = Tuple[datetime, str]  # (timestamp, state)
 
+def _validate_percent(value: float) -> float:
+    """Clamp a percentage-like value into the schema-safe range [0.0, 100.0]."""
+    if value is None:
+        return 0.0
+    return max(0.0, min(100.0, float(value)))
+
 def _day_iter(start: datetime, end: datetime):
     """Generate days between start and end datetimes."""
     current = start.date()
@@ -169,7 +175,7 @@ def get_app_availability(log_dir: str, app_name: str, start_period: datetime, en
     )
 
     total = (end_period - start_period).total_seconds()
-    return (weighted_up / total) * 100 if total > 0 else 0.0
+    return _validate_percent((weighted_up / total) * 100 if total > 0 else 0.0)
 
 def get_app_reliability(log_dir: str, app_name: str, start_period: datetime, end_period: datetime, heartbeat_timeout_sec: int = 60) -> dict:
     """ Calculate the reliability metrics (MTBF, MTTR, Availability) of an application over a specified period.
@@ -194,7 +200,7 @@ def get_app_reliability(log_dir: str, app_name: str, start_period: datetime, end
     mtbf = sum(up_durations) / len(up_durations) if up_durations else 0.0
     mttr = sum(down_durations) / len(down_durations) if down_durations else 0.0
 
-    reliability = (mtbf / (mtbf + mttr) * 100) if (mtbf + mttr) > 0 else 100.0
+    reliability = _validate_percent((mtbf / (mtbf + mttr) * 100) if (mtbf + mttr) > 0 else 100.0)
 
     return {
         "mtbf_sec": mtbf,
