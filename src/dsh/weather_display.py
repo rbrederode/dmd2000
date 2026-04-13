@@ -318,7 +318,10 @@ class WeatherDisplay:
         self._set_field("MTTR", "summary", self._format_duration(self.weather_store.last_mth_alarm_mttr), False)
 
     def _update_plot(self):
-        samples = self.weather_store.get_station_weather(ws_id=self.ws.ws_id)
+        samples = self.weather_store.get_station_weather(
+            ws_id=self.ws.ws_id,
+            window_sec=self.weather_store.retention_period,
+        )
         if not samples:
             self.wind_line.set_data([], [])
             self.precip_line.set_data([], [])
@@ -344,7 +347,7 @@ class WeatherDisplay:
         self.precip_thresh_line.set_ydata([self.weather_store.threshold_precipitation, self.weather_store.threshold_precipitation])
         self.precip_thresh_line.set_label(f"Precip Threshold {self.weather_store.threshold_precipitation:.2f} mm")
 
-        self.wind_ax.set_xlim(0.0, max(self.weather_store.threshold_timeout + 1.0, times[-1]))
+        self.wind_ax.set_xlim(0.0, max(self.weather_store.retention_period + 1.0, times[-1]))
 
         self.wind_ax.relim()
         self.wind_ax.autoscale_view(scalex=False, scaley=True)

@@ -108,6 +108,7 @@ class DishModel(BaseModel):
         "latitude": And(Or(int, float), lambda v: -90.0 <= v <= 90.0),                            # Dish latitude (degrees)
         "longitude": And(Or(int, float), lambda v: -180.0 <= v <= 180.0),                         # Dish longitude (degrees)
         "height": And(Or(int, float), lambda v: v >= 0.0),                                        # Dish height (meters) above sea level
+        "ws_id": Or(None, And(str, lambda v: isinstance(v, str))),                                # Preferred weather station id for this dish
         "feed": And(Feed, lambda v: isinstance(v, Feed)),                                         # Current feed installed on the dish
         "dig_id": Or(None, And(str, lambda v: isinstance(v, str))),                               # Current digitiser id assigned to the dish
         "mode": And(DishMode, lambda v: isinstance(v, DishMode)),
@@ -172,6 +173,7 @@ class DishModel(BaseModel):
             "latitude": 0.0,
             "longitude": 0.0,
             "height": 0.0,
+            "ws_id": None,
             "feed": Feed.NONE,
             "dig_id": None,
             "mode": DishMode.UNKNOWN,
@@ -536,5 +538,4 @@ if __name__ == "__main__":
     default_dshlist.save_to_disk(output_dir="./config/default")
 
     
-
 

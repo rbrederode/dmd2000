@@ -62,6 +62,16 @@ class ScanModel(BaseModel):
         "load_failures": And(int, lambda v: v >= 0),                                # Number of times loading this scan has failed (used for retry logic)
         "files_prefix": Or(None, And(str, lambda v: isinstance(v, str))),           # Prefix of filenames containing scan data (e.g. "ODT-2026-03-11T2100Z-dish002-7-0-0-dig002-g23.0-du60-bw2.05-cf1420.07-ch2048")
         "files_directory": Or(None, And(str, lambda v: isinstance(v, str))),        # Directory where the scan data is stored (e.g. "~/samples")
+        "target_alt_pec_rms": Or(None, And(Or(int, float), lambda v: v >= 0.0)),   # Target-level RMS periodic error correction in altitude (degrees)
+        "target_az_pec_rms": Or(None, And(Or(int, float), lambda v: v >= 0.0)),     # Target-level RMS periodic error correction in azimuth (degrees)
+        "target_pec_last_update": Or(None, And(datetime, lambda v: isinstance(v, datetime))),  # Timestamp of the PEC value copied from the Dish Manager
+        "ws_id": Or(None, And(str, lambda v: isinstance(v, str))),                  # Weather station id used to contextualise this scan
+        "ws_sec": Or(None, And(int, lambda v: v >= 0)),                         # Rolling weather summary window in seconds
+        "wind_avg": Or(None, And(Or(int, float), lambda v: v >= 0.0)),              # Rolling average wind speed in m/s
+        "wind_rms": Or(None, And(Or(int, float), lambda v: v >= 0.0)),              # Rolling RMS wind speed in m/s
+        "wind_max": Or(None, And(Or(int, float), lambda v: v >= 0.0)),              # Rolling maximum wind speed in m/s
+        "wind_sample_count": Or(None, And(int, lambda v: v >= 0)),                  # Number of wind samples used for the rolling summary
+        "wind_sample_time": Or(None, And(datetime, lambda v: isinstance(v, datetime))),  # Timestamp of the latest weather sample used
         "synthesised": And(bool, lambda v: isinstance(v, bool)),                    # Flag indicating whether this scan was synthesised from other scans (e.g. for a load scan synthesised from a sky scan)
         "last_update": And(datetime, lambda v: isinstance(v, datetime)),            # Timestamp when the scan model was last updated
     })
@@ -96,6 +106,16 @@ class ScanModel(BaseModel):
         "loaded_secs": [],
         "files_prefix": None,
         "files_directory": None,
+        "target_alt_pec_rms": None,
+        "target_az_pec_rms": None,
+        "target_pec_last_update": None,
+        "ws_id": None,
+        "ws_sec": None,
+        "wind_avg": None,
+        "wind_rms": None,
+        "wind_max": None,
+        "wind_sample_count": None,
+        "wind_sample_time": None,
         "synthesised": False,
         "last_update": datetime.now(timezone.utc)
     }

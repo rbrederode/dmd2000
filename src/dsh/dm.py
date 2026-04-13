@@ -116,6 +116,7 @@ class DM(App):
         # the current DM process start, not from a persisted config timestamp.
         self.dm_model.weather_store.created_dt = datetime.now(timezone.utc)
         self.dm_model.weather_store.trigger_dt = None
+        self.dm_model.weather_store.weather_summaries = self.dm_model.weather_store.get_weather_summaries()
 
         logger.info(f"DM initialised Weather Station configuration:\n{self.dm_model.weather_store}")
         self._log_alarm_event(event_type="snapshot", reason="startup")
@@ -298,7 +299,7 @@ class DM(App):
 
             # Retrieve the target model and unique target identifier from the API call
             target = TargetModel.from_dict(api_call['value']) if isinstance(api_call.get('value'), dict) else None
-            target_id = target.obs_id + f"_{target.tgt_idx}" if target is not None else None
+            target_id = target.obs_id + f"-{target.tgt_idx}" if target is not None else None
 
             # Prevent concurrent access to the dish driver
             with dish_lock:
@@ -562,6 +563,12 @@ class DM(App):
         """ Constructs a status advice message for the Telescope Manager.
         """
         tm_adv = APIMessage(api_version=self.tm_api.get_api_version())
+        dm_status = self.dm_model.to_dict()
+
+        # Keep retained weather samples local to DM and send only compact rolling summaries to TM.
+        weather_store = dm_status.get("weather_store")
+        if isinstance(weather_store, dict):
+            weather_store["weather_data"] = []
 
         tm_adv.set_json_api_header(
             api_version=self.tm_api.get_api_version(), 
@@ -572,7 +579,7 @@ class DM(App):
                 "msg_type": "adv", 
                 "action_code": "set", 
                 "property": tm_dm.PROPERTY_STATUS, 
-                "value": self.dm_model.to_dict(), 
+                "value": dm_status, 
                 "status": tm_dm.STATUS_SUCCESS if status is None else status,
                 "message": "DM status update" if message is None else message
             })

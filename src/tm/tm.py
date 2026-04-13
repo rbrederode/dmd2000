@@ -39,7 +39,7 @@ from models.target import TargetModel
 from models.telescope import TelescopeModel
 from models.tm import ResourceType, AllocationState, ResourceAllocations, Allocation
 from models.ui import UIDriver, UIDriverType
-from models.ws import WeatherStationModel
+from models.ws import WeatherStationModel, WeatherSummary
 from obs.oet import ObservationExecutionTool
 from util import log, util
 from util.timer import Timer, TimerManager
@@ -381,7 +381,7 @@ class TelescopeManager(App):
             # If the api call is a capability state set property rsp message, update the Dish Model
             elif api_call.get('property','') == tm_dm.PROPERTY_TARGET:
                 dsh_model.target = TargetModel.from_dict(api_call['value']) if api_call['value'] is not None and isinstance(api_call['value'], dict) else None
-                dsh_model.tgt_id = dsh_model.target.obs_id + f"_{dsh_model.target.tgt_idx}" if dsh_model.target is not None else None
+                dsh_model.tgt_id = dsh_model.target.obs_id + f"-{dsh_model.target.tgt_idx}" if dsh_model.target is not None else None
                 
             # If the api call is a status update message, update the Dish Manager model
             elif api_call.get('property','') == tm_dm.PROPERTY_STATUS:
@@ -420,6 +420,89 @@ class TelescopeManager(App):
                 action.set_timer_action(Action.Timer(name=f"{dsh_id}_req_timer_final:{dt}", timer_action=Action.Timer.TIMER_STOP))
 
         return action
+
+    def _apply_target_pec_to_scan(self, obs, scan: ScanModel):
+        """Copy the latest target-level PEC from the DM snapshot onto a completed scan."""
+        if obs is None or scan is None:
+            return
+
+        dsh_mgr = self.telmodel.dsh_mgr
+        dsh_model = dsh_mgr.get_dish_by_id(obs.dsh_id) if dsh_mgr is not None and obs.dsh_id is not None else None
+
+        if dsh_model is None:
+            logger.debug(f"Telescope Manager could not find dish {obs.dsh_id} to attach PEC to scan {scan.scan_id}.")
+            return
+
+        tgt_idx = scan.tgt_idx
+        tgt_id = f"{obs.obs_id}-{tgt_idx}" if obs.obs_id is not None and tgt_idx is not None else None
+        tgt_pec = dsh_model.get_pec_by_tgt_id(tgt_id) if tgt_id is not None else None
+
+        if tgt_pec is None:
+            logger.debug(f"Telescope Manager could not find target PEC {tgt_id} for scan {scan.scan_id}.")
+            return
+
+        scan.target_alt_pec_rms = float(tgt_pec.alt_rms)
+        scan.target_az_pec_rms = float(tgt_pec.az_rms)
+        scan.target_pec_last_update = tgt_pec.last_update
+
+    def _select_weather_summary_for_dish(self, dsh_model) -> WeatherSummary:
+        """Select the most appropriate weather summary for a dish."""
+        weather_store = self.telmodel.dsh_mgr.weather_store if self.telmodel.dsh_mgr is not None else None
+        summaries = weather_store.weather_summaries if weather_store is not None else []
+
+        if not summaries:
+            return None
+
+        if dsh_model.ws_id is not None:
+            summary = weather_store.get_summary_by_ws_id(dsh_model.ws_id)
+            if summary is not None:
+                return summary
+
+        if len(summaries) == 1:
+            return summaries[0]
+
+        nearest_summary = None
+        nearest_distance = float("inf")
+
+        for summary in summaries:
+            station = weather_store.get_station(summary.ws_id)
+            if station is None or station.latitude is None or station.longitude is None:
+                continue
+
+            distance = (station.latitude - dsh_model.latitude) ** 2 + (station.longitude - dsh_model.longitude) ** 2
+            if distance < nearest_distance:
+                nearest_distance = distance
+                nearest_summary = summary
+
+        return nearest_summary if nearest_summary is not None else summaries[0]
+
+    def _apply_weather_summary_to_scan(self, obs, scan: ScanModel):
+        """Copy the latest rolling weather summary from the DM snapshot onto a completed scan."""
+        if obs is None or scan is None:
+            return
+
+        dsh_mgr = self.telmodel.dsh_mgr
+        dsh_model = dsh_mgr.get_dish_by_id(obs.dsh_id) if dsh_mgr is not None and obs.dsh_id is not None else None
+
+        if dsh_model is None:
+            logger.debug(f"Telescope Manager could not find dish {obs.dsh_id} to attach weather metadata to scan {scan.scan_id}.")
+            return
+
+        summary = self._select_weather_summary_for_dish(dsh_model)
+        if summary is None:
+            logger.debug(f"Telescope Manager could not find a weather summary for dish {dsh_model.dsh_id} and scan {scan.scan_id}.")
+            return
+        if summary.sample_count == 0 or summary.last_sample_time is None:
+            logger.debug(f"Telescope Manager found no fresh weather samples for dish {dsh_model.dsh_id} and scan {scan.scan_id}.")
+            return
+
+        scan.ws_id = summary.ws_id
+        scan.ws_sec = summary.sample_secs
+        scan.wind_avg = float(summary.wind_avg)
+        scan.wind_rms = float(summary.wind_rms)
+        scan.wind_max = float(summary.wind_max)
+        scan.wind_sample_count = summary.sample_count
+        scan.wind_sample_time = summary.last_sample_time
 
     def process_ws_connected(self, event) -> Action:
         """ Processes Weather Station connected events.
@@ -716,6 +799,8 @@ class TelescopeManager(App):
                     # If we identified the scan within the observation, update its metadata on disk
                     if scan is not None:
                         scan.update_from_model(completed_scan)
+                        self._apply_target_pec_to_scan(obs, scan)
+                        self._apply_weather_summary_to_scan(obs, scan)
 
                         filename = util.gen_file_prefix(
                             dt=completed_scan.read_start,

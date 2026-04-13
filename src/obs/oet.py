@@ -436,7 +436,7 @@ class ObservationExecutionTool:
 
             else:
                 logger.info(f"Observation Execution Tool found Dish already configured for correct target for observation {obs.obs_id} with index {obs.tgt_idx}-{obs.tgt_scan}. " +
-                    f"Dish target ID {dsh_model.tgt_id} matches expected target ID {obs.obs_id}_{obs.tgt_idx}. On Target {on_target}")
+                    f"Dish target ID {dsh_model.tgt_id} matches expected target ID {obs.obs_id}-{obs.tgt_idx}. On Target {on_target}")
   
             if len(new_dsh_config) > 0:
 
@@ -764,7 +764,7 @@ class ObservationExecutionTool:
         if obs is None or target is None or dish is None:
             raise XSoftwareFailure(f"Observation Execution Tool could not determine if dish is on target due to missing observation, dish or target.")
 
-        target_id = obs.obs_id + f"_{obs.tgt_idx}" # Unique target identifier within the observation (see DishModel.tgt_id)
+        target_id = obs.obs_id + f"-{obs.tgt_idx}" # Unique target identifier within the observation (see DishModel.tgt_id)
         if dish.tgt_id != target_id:
             logger.info(f"Observation Execution Tool found Dish {dish.dsh_id} is NOT configured to point to correct target {target_id} for observation {obs.obs_id} " +
                 f"Dish target ID {dish.tgt_id} does not match expected target ID {target_id}.")
