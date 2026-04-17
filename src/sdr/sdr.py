@@ -182,9 +182,58 @@ class SDR:
 
             for _ in range(time_in_secs):  # Discard samples for each second in the duration
                 discard = np.zeros(int(sample_rate), dtype=np.complex128)  # Initialize a numpy array to hold the samples
-                discard = self.rtlsdr.read_samples(int(sample_rate)) # Read samples from the SDR
+                discard = self._read_samples_blocking(int(sample_rate))
                 logger.info(f"SDR stabilising: Discarded {discard.size} samples, Sample Rate {sample_rate/1e6} MHz, Center Frequency {self.get_center_freq()/1e6} MHz, Gain {self.get_gain()} dB, Sample Power {np.sum(np.abs(discard)**2):.2f} [a.u.]")
             del discard  # Free up memory
+
+    def _handle_read_error(self, err: Exception, operation: str):
+        if isinstance(err, LibUSBError):
+            logger.error(f"SDR USB/Device error {operation}: {err}")
+        else:
+            logger.exception(f"SDR unexpected exception {operation}: {err}")
+
+        try:
+            if self.rtlsdr is not None:
+                self.rtlsdr.close()
+        except Exception as close_err:
+            logger.warning(f"SDR close after read error also failed: {close_err}")
+
+        self.rtlsdr = None
+        self.connected = CommunicationStatus.NOT_ESTABLISHED
+        raise XHardwareFailure(f"SDR device disconnected or unavailable {operation}: {err}")
+
+    def _read_samples_blocking(self, num_samples: int, chunk_size: int = DEFAULT_READ_SIZE) -> np.ndarray:
+        """Read complex samples from the SDR in smaller chunks to reduce USB overflows."""
+
+        if self.rtlsdr is None:
+            logger.warning("SDR device not connected.")
+            raise XHardwareFailure("SDR device not connected.")
+
+        if num_samples <= 0:
+            return np.zeros(0, dtype=np.complex64)
+
+        chunk_size = max(1, min(int(chunk_size), int(num_samples)))
+        chunks = []
+        remaining = int(num_samples)
+
+        while remaining > 0:
+            request_size = min(chunk_size, remaining)
+            try:
+                chunk = self.rtlsdr.read_samples(request_size)
+            except Exception as err:
+                self._handle_read_error(err, f"while reading {request_size} samples")
+
+            chunk = np.asarray(chunk, dtype=np.complex64)
+            if chunk.size == 0:
+                raise XHardwareFailure("SDR returned zero samples during blocking read.")
+
+            chunks.append(chunk)
+            remaining -= chunk.size
+
+        if len(chunks) == 1:
+            return chunks[0]
+
+        return np.concatenate(chunks)[:num_samples]
 
     def get_gain_gaussianity(self, sample_rate=None, time_in_secs=1):
         """
@@ -204,11 +253,14 @@ class SDR:
                 logger.warning("SDR device not connected.")
                 return False, (0.0, 0.0)
 
-            x = np.zeros(samples, dtype=np.complex128)
-            x = self.rtlsdr.read_samples(samples)
+            x = self._read_samples_blocking(samples)
 
         # Take a random subset of samples to avoid warning and speed up test
-        idx = np.random.choice(samples, size=sample_limit, replace=False)
+        sample_count = len(x)
+        if sample_count == 0:
+            raise XHardwareFailure("SDR returned zero samples for gaussianity test.")
+
+        idx = np.random.choice(sample_count, size=min(sample_limit, sample_count), replace=False)
         r_samples = x.real[idx]
         i_samples = x.imag[idx]
 
@@ -453,46 +505,21 @@ class SDR:
 
             try:
                 self.sample_rate = int(self.rtlsdr.sample_rate)
-        
-                x = np.zeros(self.sample_rate, dtype=np.complex128)
 
                 # Record start/end times associated with sample set (in epoch seconds)
                 read_start = time.time()
-                x = self.rtlsdr.read_samples(self.sample_rate)
+                x = self._read_samples_blocking(self.sample_rate)
                 read_end = time.time()
 
                 # Increment read counter and copy to local variable for access outside the mutex
                 self.read_counter += 1
                 count = self.read_counter
 
-            except LibUSBError as e:
-                logger.error(f"SDR USB/Device error reading samples from SDR: {e}")
-
-                try:
-                    if self.rtlsdr is not None:
-                        self.rtlsdr.close()
-                except Exception as close_err:
-                    logger.warning(f"SDR close after LibUSBError also failed: {close_err}")
-
-                self.rtlsdr = None
-                self.connected = CommunicationStatus.NOT_ESTABLISHED
-                raise XHardwareFailure(f"SDR device disconnected or unavailable while reading samples: {e}")
-
             except Exception as e:
-                logger.exception(f"SDR unexpected exception while reading samples: {e}")
+                self._handle_read_error(e, "while reading samples from SDR")
 
-                try:
-                    if self.rtlsdr is not None:
-                        self.rtlsdr.close()
-                except Exception as close_err:
-                    logger.warning(f"SDR close after unexpected read error also failed: {close_err}")
-
-                self.rtlsdr = None
-                self.connected = CommunicationStatus.NOT_ESTABLISHED
-                raise XHardwareFailure(f"SDR unexpected exception while reading samples: {e}")
-
-        # Convert from complex128 to complex64 to save resources (network, memory, CPU)
-        x = np.array(x, dtype=np.complex64) 
+        # Ensure consistent complex64 output for downstream processing.
+        x = np.array(x, dtype=np.complex64)
 
         metadata = {
             'read_counter': count,
