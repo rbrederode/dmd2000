@@ -66,7 +66,7 @@ class ScanModel(BaseModel):
         "target_az_pec_rms": Or(None, And(Or(int, float), lambda v: v >= 0.0)),     # Target-level RMS periodic error correction in azimuth (degrees)
         "target_pec_last_update": Or(None, And(datetime, lambda v: isinstance(v, datetime))),  # Timestamp of the PEC value copied from the Dish Manager
         "ws_id": Or(None, And(str, lambda v: isinstance(v, str))),                  # Weather station id used to contextualise this scan
-        "ws_sec": Or(None, And(int, lambda v: v >= 0)),                         # Rolling weather summary window in seconds
+        "ws_sec": Or(None, And(int, lambda v: v >= 0)),                             # Rolling weather summary window in seconds
         "wind_avg": Or(None, And(Or(int, float), lambda v: v >= 0.0)),              # Rolling average wind speed in m/s
         "wind_rms": Or(None, And(Or(int, float), lambda v: v >= 0.0)),              # Rolling RMS wind speed in m/s
         "wind_max": Or(None, And(Or(int, float), lambda v: v >= 0.0)),              # Rolling maximum wind speed in m/s
