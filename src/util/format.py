@@ -5,6 +5,22 @@ from models.target import TargetModel
 import logging
 logger = logging.getLogger(__name__)
 
+def fmt_bool(value: str | bool) -> bool:
+    """Parse common boolean spellings into a bool."""
+    if isinstance(value, bool):
+        return value
+
+    value_normalized = str(value).strip().lower()
+    if value_normalized in {"true", "1", "yes", "y", "on"}:
+        return True
+    if value_normalized in {"false", "0", "no", "n", "off"}:
+        return False
+
+    raise ValueError(
+        f"Expected a boolean value, got '{value}'. "
+        "Use true/false, yes/no, on/off, or 1/0."
+    )
+
 def fmt_cell(value, width) -> str:
     """Format a single table cell to a fixed width. """
     return f"{str(value):<{width}}"

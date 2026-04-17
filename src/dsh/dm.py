@@ -743,6 +743,17 @@ def main():
     dm = DM()
     dm.start()
 
+    if dm.is_headless():
+        logger.info("Dish Manager running in headless mode; skipping dish and weather displays.")
+        try:
+            while True:
+                time.sleep(1.0)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            dm.stop()
+        return
+
     display_period_sec = 1.0
 
     try:

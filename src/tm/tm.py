@@ -62,6 +62,8 @@ DIG001_CONFIG = TM_UI_API + "B3"    # Range for Digitiser 001 configuration
 
 class TelescopeManager(App):
 
+    AUTO_GAIN_TIMEOUT_MS = 30000
+
     telmodel = TelescopeModel()
 
     def __init__(self, app_name: str = "tm"):
@@ -224,6 +226,15 @@ class TelescopeManager(App):
 
             # If scanning is turned on we need to provide the observation id and tgt_idx and freq_scan
             new_scan_config["scanning"] = {'obs_id': obs_id, 'tgt_idx': 0, 'freq_scan': 0} if scanning else scanning
+
+            # SDP scan_config expects a concrete numeric gain. When gain is AUTO, defer the
+            # gain update until the digitiser returns a resolved gain value.
+            if str(new_scan_config.get("gain", "")).upper() == "AUTO":
+                logger.info(
+                    f"Telescope Manager deferring SDP scan_config gain update for digitiser {dig_id} "
+                    "until auto gain is resolved."
+                )
+                new_scan_config.pop("gain", None)
             
             old_sdp_config = {}
             new_sdp_config = {}
@@ -889,7 +900,7 @@ class TelescopeManager(App):
                 action.set_msg_to_remote(req_msg)
                 action.set_timer_action(Action.Timer(
                     name=final_timer, 
-                    timer_action=self.telmodel.tel_mgr.app.msg_timeout_ms,
+                    timer_action=self._get_request_timeout_ms(req_msg),
                     echo_data=req_msg))
 
         # Handle a final request msg timer e.g. dig002_req_timer_final:<timestamp> or sdp002_req_timer_final:<timestamp>
@@ -1043,8 +1054,12 @@ class TelescopeManager(App):
 
             property = method = value = None
 
-            (method, value) = map.get_method_name_value(config_key, config_value)
-            (property, value) = map.get_property_name_value(config_key, config_value) if method is None else (None, config_value)
+            method, method_value = map.get_method_name_value(config_key, config_value)
+
+            if method is None:
+                property, value = map.get_property_name_value(config_key, config_value)
+            else:
+                property, value = None, method_value
 
             if method is None and property is None:
                 if config_key not in ["obs_id", "dig_id"]: # obs_id and dig_id are used for internal tracking
@@ -1060,7 +1075,7 @@ class TelescopeManager(App):
             action.set_msg_to_remote(dig_req)
             action.set_timer_action(Action.Timer(
                 name=f"{dig_id}_req_timer_retry:{dig_req.get_timestamp()}", 
-                timer_action=self.telmodel.tel_mgr.app.msg_timeout_ms, 
+                timer_action=self._get_request_timeout_ms(dig_req), 
                 echo_data=dig_req))
                 
         return action
@@ -1223,6 +1238,20 @@ class TelescopeManager(App):
             })
 
         return dig_req
+
+    def _get_request_timeout_ms(self, req_msg: APIMessage) -> int:
+        """Return a request timeout tailored to the API call being sent."""
+        timeout_ms = self.telmodel.tel_mgr.app.msg_timeout_ms
+        api_call = req_msg.get_api_call() if req_msg is not None else {}
+
+        if (
+            isinstance(api_call, dict)
+            and api_call.get("action_code") == tm_dig.ACTION_CODE_METHOD
+            and api_call.get("method") == tm_dig.METHOD_GET_AUTO_GAIN
+        ):
+            return max(timeout_ms, self.AUTO_GAIN_TIMEOUT_MS)
+
+        return timeout_ms
 
     def _construct_req_to_sdp(self, property=None, value=None, message=None) -> APIMessage:
         """ Constructs a request message to the Science Data Processor.

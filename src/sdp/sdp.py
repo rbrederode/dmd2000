@@ -476,6 +476,13 @@ class SDP(App):
             logger.error(f"Science Data Processor signal display request missing dig_id in value: {value}")
             return False
 
+        if self.is_headless():
+            logger.info(
+                f"Science Data Processor running headless; ignoring signal display request for "
+                f"digitiser {dig_id} active={active}"
+            )
+            return True
+
         if dig_id not in self.signal_displays:
             self.signal_displays[dig_id] = SignalDisplay(dig_id=dig_id)
 
@@ -827,6 +834,17 @@ class SDP(App):
 def main():
     sdp = SDP()
     sdp.start()
+
+    if sdp.is_headless():
+        logger.info("Science Data Processor running in headless mode; skipping signal displays.")
+        try:
+            while True:
+                time.sleep(1.0)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            sdp.stop()
+        return
 
     display_period_sec = 1.0  # Initial display period in seconds
 

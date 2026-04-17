@@ -17,6 +17,7 @@ from models.comms import InterfaceType
 from models.proc import ProcessorModel
 from models.health import HealthState
 from util.availability import get_app_reliability, get_app_availability
+from util.format import fmt_bool
 from util.xbase import XBase, XSoftwareFailure
 from util.timer import Timer, TimerManager
 from env import events
@@ -91,6 +92,9 @@ class App:
     def get_name(self):
         return self.app_model.app_name
 
+    def is_headless(self) -> bool:
+        return bool(getattr(self.get_args(), "headless", False))
+
     def set_name(self, name: str):
         self.app_model.app_name = name
 
@@ -117,6 +121,7 @@ class App:
         arg_parser.add_argument("--num_processors", "-np", type=int, required=False, help="Number of processor threads to create", default=4)
         arg_parser.add_argument("--profile", type=str, required=False, help="Configuration profile to use e.g. default, alston etc. See ./config directory for existing profiles", default="default") 
         arg_parser.add_argument("--entity_id", type=str, required=False, help="Alphanumeric entity ID to uniquely identify a dish or digitiser instance <[A-Z][a-z][0-9]+> e.g. dsh001", default="<undefined>")
+        arg_parser.add_argument("--headless",type=fmt_bool,nargs="?",const=True,required=False,default=False,help="Disable displays and UI interactions for apps that support them. Accepts true/false.")
 
     def start(self):
         """Starts the application."""
