@@ -307,7 +307,6 @@ class WeatherStationList(BaseModel):
         alarm_triggered = any([
             timeout_triggered,
             wind_avg_triggered,
-            gust_triggered,
             gust_count_triggered,
             precipitation_triggered,
         ])
@@ -447,7 +446,7 @@ class WeatherStationList(BaseModel):
         elif metrics["gust_triggered"]:
             logger.warning(
                 f"WeatherStationList registered {metrics['gust_count']} wind gust samples exceeding gust threshold of "
-                f"{self.threshold_wind_gust:.2f} m/s, but below count threshold of {self.threshold_wind_count} samples to trigger alarm."
+                f"{self.threshold_wind_gust:.2f} m/s, but not exceeding count threshold of {self.threshold_wind_count} samples to trigger alarm."
             )
         
         if metrics["precipitation_triggered"]:
