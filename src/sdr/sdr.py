@@ -1,14 +1,18 @@
 from rtlsdr import RtlSdr, RtlSdrTcpClient
+from rtlsdr import librtlsdr
 from rtlsdr.rtlsdr import LibUSBError
 from scipy.stats import shapiro, normaltest, norm
 
 import numpy as np
 import math
-import sys
 import subprocess
 import threading
 import time
 import functools
+import select
+import sys
+import termios
+import tty
 
 from models.comms import CommunicationStatus
 from util.xbase import XSoftwareFailure, XHardwareFailure
@@ -24,6 +28,7 @@ class SDR:
         enable/disable the bias tee, and stabilize the device by discarding initial samples.
     """
     _mutex = threading.RLock()      # Mutex controlling access to the SDR
+    AUTO_GAIN_SETTLE_SEC = 0.05     # Allow tuner writes to settle before synchronous reads
 
     def __init__(self, bias_t_enabled=False):
         """ Initialize the SDR interface and connect to the first available RTL-SDR device.     """
@@ -182,7 +187,10 @@ class SDR:
 
             for _ in range(time_in_secs):  # Discard samples for each second in the duration
                 discard = np.zeros(int(sample_rate), dtype=np.complex128)  # Initialize a numpy array to hold the samples
-                discard = self._read_samples_blocking(int(sample_rate))
+                try:
+                    discard = self.rtlsdr.read_samples(int(sample_rate))
+                except Exception as err:
+                    self._handle_read_error(err, f"while stabilising with {int(sample_rate)} samples")
                 logger.info(f"SDR stabilising: Discarded {discard.size} samples, Sample Rate {sample_rate/1e6} MHz, Center Frequency {self.get_center_freq()/1e6} MHz, Gain {self.get_gain()} dB, Sample Power {np.sum(np.abs(discard)**2):.2f} [a.u.]")
             del discard  # Free up memory
 
@@ -202,38 +210,19 @@ class SDR:
         self.connected = CommunicationStatus.NOT_ESTABLISHED
         raise XHardwareFailure(f"SDR device disconnected or unavailable {operation}: {err}")
 
-    def _read_samples_blocking(self, num_samples: int, chunk_size: int = DEFAULT_READ_SIZE) -> np.ndarray:
-        """Read complex samples from the SDR in smaller chunks to reduce USB overflows."""
+    def _reset_buffer(self):
+        """Flush the SDR's internal USB buffer if the device is available."""
 
         if self.rtlsdr is None:
             logger.warning("SDR device not connected.")
-            raise XHardwareFailure("SDR device not connected.")
+            return
 
-        if num_samples <= 0:
-            return np.zeros(0, dtype=np.complex64)
-
-        chunk_size = max(1, min(int(chunk_size), int(num_samples)))
-        chunks = []
-        remaining = int(num_samples)
-
-        while remaining > 0:
-            request_size = min(chunk_size, remaining)
-            try:
-                chunk = self.rtlsdr.read_samples(request_size)
-            except Exception as err:
-                self._handle_read_error(err, f"while reading {request_size} samples")
-
-            chunk = np.asarray(chunk, dtype=np.complex64)
-            if chunk.size == 0:
-                raise XHardwareFailure("SDR returned zero samples during blocking read.")
-
-            chunks.append(chunk)
-            remaining -= chunk.size
-
-        if len(chunks) == 1:
-            return chunks[0]
-
-        return np.concatenate(chunks)[:num_samples]
+        result = librtlsdr.rtlsdr_reset_buffer(self.rtlsdr.dev_p)
+        if result < 0:
+            self._handle_read_error(
+                LibUSBError(result, "Could not reset buffer"),
+                "while resetting SDR buffer",
+            )
 
     def get_gain_gaussianity(self, sample_rate=None, time_in_secs=1):
         """
@@ -253,7 +242,10 @@ class SDR:
                 logger.warning("SDR device not connected.")
                 return False, (0.0, 0.0)
 
-            x = self._read_samples_blocking(samples)
+            try:
+                x = self.rtlsdr.read_samples(samples)
+            except Exception as err:
+                self._handle_read_error(err, f"while reading {samples} samples for gaussianity test")
 
         # Take a random subset of samples to avoid warning and speed up test
         sample_count = len(x)
@@ -306,6 +298,10 @@ class SDR:
             for gain in Glist:
 
                 self.set_gain(gain)  # Set the SDR gain
+                # Auto-gain rapidly retunes the tuner, so give the hardware a short
+                # settle period and flush any stale USB samples before testing.
+                time.sleep(self.AUTO_GAIN_SETTLE_SEC)
+                self._reset_buffer()
                 result, (p_r, p_i) = self.get_gain_gaussianity(sample_rate=sample_rate, time_in_secs=time_in_secs)
 
                 p_r_list.append(p_r)
@@ -508,7 +504,7 @@ class SDR:
 
                 # Record start/end times associated with sample set (in epoch seconds)
                 read_start = time.time()
-                x = self._read_samples_blocking(self.sample_rate)
+                x = self.rtlsdr.read_samples(self.sample_rate)
                 read_end = time.time()
 
                 # Increment read counter and copy to local variable for access outside the mutex
@@ -531,6 +527,36 @@ class SDR:
         #logger.info(f"SDR READ SAMPLES: requested {self.sample_rate} samples, read {x.size} samples, start={read_start}, end={read_end}, duration={(read_end-read_start):.3f} seconds")
         return metadata, x
 
+def _run_test_iteration(sdr: SDR):
+    """Run the standalone SDR test sequence once."""
+
+    sdr.stabilise()
+    gain = sdr.get_auto_gain(sample_rate=2.4e6, time_in_secs=1, p_threshold=0.05)
+
+    sdr.set_sample_rate(2.0e6)
+    logger.info(f"SDR Sample Rate set to {sdr.get_sample_rate()/1e6} MHz")
+
+    sdr.set_center_freq(435e6)  # Set frequency to 435 MHz
+    logger.info(f"SDR Center Frequency set to {sdr.get_center_freq()/1e6} MHz")
+    sdr.set_sample_rate(2.4e6)  # Set sample rate to 2.4 MHz
+    logger.info(f"SDR Sample Rate set to {sdr.get_sample_rate()/1e6} MHz")
+    sdr.set_gain(8.7)           # Set gain to 8.7 dB
+    logger.info(f"SDR Gain set to {sdr.get_gain()} dB")
+
+    logger.info(
+        f"SDR Config - Center Frequency: {sdr.get_center_freq()/1e6} MHz, "
+        f"Sample Rate: {sdr.get_sample_rate()/1e6} MHz, Gain: {sdr.get_gain()} dB"
+    )
+
+    if sdr.get_center_freq() != 435e6 or sdr.get_sample_rate() != 2.4e6 or sdr.get_gain() != 8.7:
+        logger.error("SDR configuration did not apply correctly.")
+
+    logger.info(f"SDR Tuner Type: {sdr.get_tuner_type()}, Available Gains: {sdr.get_gains()}")
+
+    samples = sdr.read_samples()
+    logger.info(f"Meta Data returned by read_samples call {samples[0]}")
+    logger.info(f"Read {len(samples[1])} samples from SDR.")
+
 def main():
 
     # Configure logging
@@ -543,32 +569,28 @@ def main():
     logger = logging.getLogger(__name__)
 
     sdr = SDR()
+
     info = sdr.get_eeprom_info()
     if info:
         logger.info(f"SDR Information: {info}")
-    
-    sdr.stabilise()
 
-    sdr.set_sample_rate(2.0e6)
-    logger.info(f"SDR Sample Rate set to {sdr.get_sample_rate()/1e6} MHz")
+    logger.info("Running SDR test loop. Press any key to stop.")
 
-    sdr.set_center_freq(435e6)  # Set frequency to 435 MHz
-    logging.info(f"SDR Center Frequency set to {sdr.get_center_freq()/1e6} MHz")
-    sdr.set_sample_rate(2.4e6)  # Set sample rate to 2.4 MHz
-    logging.info(f"SDR Sample Rate set to {sdr.get_sample_rate()/1e6} MHz")
-    sdr.set_gain(8.7)             # Set gain to 8.7 dB
-    logging.info(f"SDR Gain set to {sdr.get_gain()} dB")
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
 
-    logging.info(f"SDR Config - Center Frequency: {sdr.get_center_freq()/1e6} MHz, Sample Rate: {sdr.get_sample_rate()/1e6} MHz, Gain: {sdr.get_gain()} dB")
+    try:
+        tty.setcbreak(fd)
+        while True:
+            _run_test_iteration(sdr)
 
-    if sdr.get_center_freq() != 435e6 or sdr.get_sample_rate() != 2.4e6 or sdr.get_gain() != 8.7:
-        logger.error("SDR configuration did not apply correctly.")
-
-    logging.info(f"SDR Tuner Type: {sdr.get_tuner_type()}, Available Gains: {sdr.get_gains()}")
-
-    samples = sdr.read_samples()
-    logger.info(f"Meta Data returned by read_samples call {samples[0]}")
-    logger.info(f"Read {len(samples[1])} samples from SDR.")
+            if select.select([sys.stdin], [], [], 0)[0]:
+                sys.stdin.read(1)
+                logger.info("Key press detected, stopping SDR demo loop.")
+                break
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        sdr.close()
 
 if __name__ == "__main__":
     main()

@@ -571,6 +571,12 @@ class Digitiser(App):
         if api_call.get('property') is not None:
             tm_rsp_api_call["property"] = api_call['property']
 
+        if api_call.get('method') is not None:
+            tm_rsp_api_call["method"] = api_call['method']
+
+        if api_call.get('params') is not None:
+            tm_rsp_api_call["params"] = api_call['params']
+
         if value is not None:
             tm_rsp_api_call["value"] = value
         
