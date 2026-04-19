@@ -61,7 +61,8 @@ function sendWebhook(toSystem, jsonStr) {
     const responseCode = response.getResponseCode();
     
     if (responseCode === 200) {
-      console.log('Webhook sent successfully');
+      console.log('Webhook sent successfully ALSTON-RT' + "." + fromSystem + "." + toSystem);
+      console.log(jsonStr);
     } else {
       console.error('Webhook failed with status:', responseCode);
       console.error('Response:', response.getContentText());
@@ -445,7 +446,7 @@ function consolidateRows(sheet) {
  * DIG00X sheet:
  *   - If columns D:E (5) rows 4-10 are edited:
  *     → Generates a JSON string representing the Digitiser configuration.
- *     → Writes JSON to TM_UI_API sheet cell B3.
+ *     → Sends the JSON string to TM via a webhook
  *
  * OBS DESIGN sheet:
  *   - If cell B25 or B30 is edited:
@@ -483,7 +484,6 @@ function onEditHandler(e) {
   Logger.log(`onEdit triggered on sheet: ${sheetName}, cell: ${e.range.getA1Notation()} col: ${col} row: ${row} by user: ${userEmail}`);
 
   const ss = SpreadsheetApp.getActive();
-  const apiSheet = ss.getSheetByName("TM_UI_API");
   const obsSheet = ss.getSheetByName("DB OBS LIST")
 
   // ---------- OBS STORE sheet: Reset Observation ----------
@@ -512,9 +512,6 @@ function onEditHandler(e) {
   // ---------- DIG00X sheet: Digitiser config ----------
   if (sheetName === "DIG00X" && col === 4 && row >= 3 && row <= 11) {
     const jsonStr = generateJSON(sheet, ["A3:B3","C3:D11"]);
-
-    apiSheet.getRange("B3").setValue(jsonStr);
-    Logger.log("Digitiser JSON updated in TM_UI_API B3");
     sendWebhook("dig", jsonStr);
     return;
   }
@@ -522,9 +519,6 @@ function onEditHandler(e) {
   // ---------- DM00X sheet: Dish config ----------
   if (sheetName === "DM00X" && col === 4 && row >= 3 && row <= 4) {
     const jsonStr = generateJSON(sheet, ["C1:D1","C3:D4"]);
-
-    apiSheet.getRange("F3").setValue(jsonStr);
-    Logger.log("Dish JSON updated in TM_UI_API F3");
     sendWebhook("dsh", jsonStr);
     return;
   }
@@ -702,7 +696,7 @@ function onEditHandler(e) {
     sheet.getRange("E32").clearContent();
     targetSheet.getRange("A2:A").clearContent();
     
-    // Update TM_UI_API
+    // Generate the ObsList and send it
     obsListJSON = generateObsList()
     sendWebhook("odt", obsListJSON);
     return;
