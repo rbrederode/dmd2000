@@ -1,0 +1,37 @@
+{
+    "_type": "WeatherStationList",
+    "list_id": "active",
+    "weather_enabled": true,
+    "weather_stations": [
+        {
+            "_type": "WeatherStation",
+            "ws_id": "ws001",
+            "location": "Jodrell Bank Observatory",
+            "latitude": 53.2421,
+            "longitude": -2.3067,
+            "elevation": 35.0,
+            "last_update": {
+                "_type": "datetime",
+                "value": "2026-04-06T09:55:59.613217+00:00"
+            }
+        }
+    ],
+    "weather_data": [],
+    "weather_summaries": [],
+    "threshold_timeout": 30,
+    "retention_period": 300,
+    "summary_window": 60,
+    "threshold_wind_avg": 20.0,
+    "threshold_wind_gust": 30.0,
+    "threshold_wind_count": 3,
+    "threshold_precipitation": 10.0,
+    "trigger_dt": null,
+    "created_dt": {
+        "_type": "datetime",
+        "value": "2026-04-06T09:56:00.134585+00:00"
+    },
+    "last_update": {
+        "_type": "datetime",
+        "value": "2026-04-06T09:56:00.134590+00:00"
+    }
+}
