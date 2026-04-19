@@ -315,8 +315,8 @@ class Scan:
         self.scan_model.read_start = read_start if self.scan_model.read_start is None else min(self.scan_model.read_start, read_start)  # Update read start time
         self.scan_model.read_end = read_end if self.scan_model.read_end is None else max(self.scan_model.read_end, read_end)  # Update read end time
         self.scan_model.gap = (read_start - self.prev_read_end).total_seconds() if self.prev_read_end is not None else None
-        if self.scan_model.gap is not None:
-            logger.debug(f"Scan {self.scan_model.scan_id} - Gap of {self.scan_model.gap:.3f} seconds detected between last read end {self.prev_read_end} and current read start {read_start}.")
+        if self.scan_model.gap is not None and self.scan_model.gap > 0.1:
+            logger.warning(f"Scan {self.scan_model.scan_id} - Gap of {self.scan_model.gap:.3f} seconds detected between last read end {self.prev_read_end} and current read start {read_start}.")
         self.prev_read_end = read_end  # Update last read end time
 
         # Update scan status based on loaded rows
