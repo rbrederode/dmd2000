@@ -6,7 +6,6 @@ from scipy.stats import shapiro, normaltest, norm
 import numpy as np
 import math
 import subprocess
-import threading
 import time
 import functools
 import select
@@ -27,70 +26,62 @@ class SDR:
         This class provides methods to connect to the SDR, retrieve device information,
         enable/disable the bias tee, and stabilize the device by discarding initial samples.
     """
-    _mutex = threading.RLock()      # Mutex controlling access to the SDR
     AUTO_GAIN_SETTLE_SEC = 0.05     # Allow tuner writes to settle before synchronous reads
 
     def __init__(self, bias_t_enabled=False):
         """ Initialize the SDR interface and connect to the first available RTL-SDR device.     """
-        
-        with SDR._mutex:
 
-            self.rtlsdr = None
-            self.connected = CommunicationStatus.NOT_ESTABLISHED
-            self.read_counter = 0
+        self.rtlsdr = None
+        self.connected = CommunicationStatus.NOT_ESTABLISHED
+        self.read_counter = 0
 
-            self.info = self._read_eeprom_info()
-            if self.info:
-                logger.info(f"SDR connected, device information: {self.info}")
+        self.info = self._read_eeprom_info()
+        if self.info:
+            logger.info(f"SDR connected, device information: {self.info}")
+        else:
+            logger.warning("SDR unable to retrieve device information.")
+
+        # Set Bias-T if requested
+        if bias_t_enabled:
+            if self._set_bias_t(enable=True):
+                logger.info("SDR Bias-T enabled during initialization.")
             else:
-                logger.warning("SDR unable to retrieve device information.")
+                logger.warning("SDR failed to enable Bias-T during initialization.")
 
-            # Set Bias-T if requested
-            if bias_t_enabled:
-                if self._set_bias_t(enable=True):
-                    logger.info("SDR Bias-T enabled during initialization.")
-                else:
-                    logger.warning("SDR failed to enable Bias-T during initialization.")
+        if self.open():
+            logger.info("SDR connection successful during initialization.")
 
-            if self.open():
-                logger.info("SDR connection successful during initialization.")
-
-                # Cached rtlsdr properties
-                self.gain = self.rtlsdr.gain if self.rtlsdr is not None else None
-                self.center_freq = self.rtlsdr.center_freq if self.rtlsdr is not None else None
-                self.bandwidth = self.rtlsdr.bandwidth if self.rtlsdr is not None else None
-                self.freq_correction = self.rtlsdr.freq_correction if self.rtlsdr is not None else None
-                self.sample_rate = int(math.ceil(self.rtlsdr.sample_rate)) if self.rtlsdr is not None else None
+            # Cached rtlsdr properties
+            self.gain = self.rtlsdr.gain if self.rtlsdr is not None else None
+            self.center_freq = self.rtlsdr.center_freq if self.rtlsdr is not None else None
+            self.bandwidth = self.rtlsdr.bandwidth if self.rtlsdr is not None else None
+            self.freq_correction = self.rtlsdr.freq_correction if self.rtlsdr is not None else None
+            self.sample_rate = int(math.ceil(self.rtlsdr.sample_rate)) if self.rtlsdr is not None else None
     
     def open(self) -> bool:
         """ Open the SDR device connection if not already connected.
             :returns: True if the SDR is connected, False otherwise
         """
-        with SDR._mutex:
+        if self.rtlsdr is None:
+            try:
+                self.rtlsdr = RtlSdr()
+                self.connected = CommunicationStatus.ESTABLISHED
+                logger.info("SDR connection established.")
+            except OSError as e:
+                logger.error(f"SDR could not connect due to OSError: {e}")
+                return False
+            except Exception as e:
+                logger.exception(f"SDR could not connect due to exception: {e}")
+                return False
 
-            if self.rtlsdr is None:
-                try:
-                    self.rtlsdr = RtlSdr()
-                    self.connected = CommunicationStatus.ESTABLISHED
-                    logger.info("SDR connection established.")
-                except OSError as e:
-                    logger.error(f"SDR could not connect due to OSError: {e}")
-                    return False
-                except Exception as e:
-                    logger.exception(f"SDR could not connect due to exception: {e}")
-                    return False
-
-            return True
+        return True
     
     def close(self):
-
-        with SDR._mutex:
-
-            if self.rtlsdr:
-                self.rtlsdr.close()
-                self.rtlsdr = None
-                self.connected = CommunicationStatus.NOT_ESTABLISHED
-                logger.info("SDR connection closed.")
+        if self.rtlsdr:
+            self.rtlsdr.close()
+            self.rtlsdr = None
+            self.connected = CommunicationStatus.NOT_ESTABLISHED
+            logger.info("SDR connection closed.")
 
     def get_comms_status(self) -> CommunicationStatus:
         """ Get the current comms status of the SDR device.
@@ -116,31 +107,29 @@ class SDR:
             logger.warning("SDR device must be closed before reading EEPROM information.")
             return None
 
-        with SDR._mutex:
+        try:
+            result = subprocess.run(['rtl_eeprom', '-d', '0'], capture_output=True, text=True)
+        except Exception as e:
+            logger.exception(f"SDR exception occurred while retrieving SDR information. {e}")
+            raise e
 
-            try:
-                result = subprocess.run(['rtl_eeprom', '-d', '0'], capture_output=True, text=True)
-            except Exception as e:
-                logger.exception(f"SDR exception occurred while retrieving SDR information. {e}")
-                raise e
+        eeprom_info = {}
 
-            eeprom_info = {}
+        # Strangely the rtl_eeprom command returns the device information in stderr, not stdout
+        output = result.stderr
 
-            # Strangely the rtl_eeprom command returns the device information in stderr, not stdout
-            output = result.stderr
+        if output.strip() == "No supported devices found.":
+            logger.warning("No local RTL-SDR devices found.")
+        else:
+            for line in output.splitlines():
+                if 'Manufacturer' in line:
+                    eeprom_info['Manufacturer'] = line.split(':', 1)[1].strip()
+                if 'Product' in line:
+                    eeprom_info['Product'] = line.split(':', 1)[1].strip()
+                if 'Serial number' in line:
+                    eeprom_info['Serial'] = line.split(':', 1)[1].strip()
 
-            if output.strip() == "No supported devices found.":
-                logger.warning("No local RTL-SDR devices found.")
-            else: 
-                for line in output.splitlines():
-                    if 'Manufacturer' in line:
-                        eeprom_info['Manufacturer'] = line.split(':', 1)[1].strip()
-                    if 'Product' in line:
-                        eeprom_info['Product'] = line.split(':', 1)[1].strip()
-                    if 'Serial number' in line:
-                        eeprom_info['Serial'] = line.split(':', 1)[1].strip()
-            
-            return eeprom_info
+        return eeprom_info
 
     def _set_bias_t(self, enable=True):
         """ Enable or disable the bias tee on the RTL-SDR device.
@@ -152,24 +141,22 @@ class SDR:
             logger.warning("SDR device must be closed before calling rtl_biast.")
             return None
 
-        with SDR._mutex:
+        cmd = ['rtl_biast', '-b', '1'] if enable else ['rtl_biast', '-b', '0']
 
-            cmd = ['rtl_biast', '-b', '1'] if enable else ['rtl_biast', '-b', '0']
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True)
+        except Exception as e:
+            logger.exception(f"SDR exception occurred while running command: {' '.join(cmd)} {e}")
+            raise e
 
-            try:
-                result = subprocess.run(cmd, capture_output=True, text=True)
-            except Exception as e:
-                logger.exception(f"SDR exception occurred while running command: {' '.join(cmd)} {e}")
-                raise e
+        if result.returncode == 0:
+            logger.info(f"SDR switched BiasT to {'ON' if enable else 'OFF'} with command: {' '.join(cmd)}")
+        else:
+            logger.error(f"SDR failed to switch BiasT {'ON' if enable else 'OFF'} with command: {' '.join(cmd)}, return code: {result.returncode}")
+            logger.error(result.stdout)
+            logger.error(result.stderr)
 
-            if result.returncode == 0:
-                logger.info(f"SDR switched BiasT to {'ON' if enable else 'OFF'} with command: {' '.join(cmd)}")
-            else:
-                logger.error(f"SDR failed to switch BiasT {'ON' if enable else 'OFF'} with command: {' '.join(cmd)}, return code: {result.returncode}")
-                logger.error(result.stdout)
-                logger.error(result.stderr)
-
-            return result.returncode == 0  # Return True if the command was successful, False otherwise
+        return result.returncode == 0  # Return True if the command was successful, False otherwise
 
     def stabilise(self, sample_rate=2.4e6, time_in_secs=5):
         """
@@ -177,22 +164,20 @@ class SDR:
         We typically see the SDR lose power over time as it warms up.
         """
 
-        with SDR._mutex:
+        if self.rtlsdr is None:
+            logger.warning("SDR device not connected.")
+            return
 
-            if self.rtlsdr is None:
-                logger.warning("SDR device not connected.")
-                return
+        logger.info(f"SDR stabilising: Discarding samples for {time_in_secs} seconds at Sample Rate {sample_rate/1e6} MHz, Center Frequency {self.get_center_freq()/1e6} MHz, Gain {self.get_gain()}")
 
-            logger.info(f"SDR stabilising: Discarding samples for {time_in_secs} seconds at Sample Rate {sample_rate/1e6} MHz, Center Frequency {self.get_center_freq()/1e6} MHz, Gain {self.get_gain()}")
-
-            for _ in range(time_in_secs):  # Discard samples for each second in the duration
-                discard = np.zeros(int(sample_rate), dtype=np.complex128)  # Initialize a numpy array to hold the samples
-                try:
-                    discard = self.rtlsdr.read_samples(int(sample_rate))
-                except Exception as err:
-                    self._handle_read_error(err, f"while stabilising with {int(sample_rate)} samples")
-                logger.info(f"SDR stabilising: Discarded {discard.size} samples, Sample Rate {sample_rate/1e6} MHz, Center Frequency {self.get_center_freq()/1e6} MHz, Gain {self.get_gain()} dB, Sample Power {np.sum(np.abs(discard)**2):.2f} [a.u.]")
-            del discard  # Free up memory
+        for _ in range(time_in_secs):  # Discard samples for each second in the duration
+            discard = np.zeros(int(sample_rate), dtype=np.complex128)  # Initialize a numpy array to hold the samples
+            try:
+                discard = self.rtlsdr.read_samples(int(sample_rate))
+            except Exception as err:
+                self._handle_read_error(err, f"while stabilising with {int(sample_rate)} samples")
+            logger.info(f"SDR stabilising: Discarded {discard.size} samples, Sample Rate {sample_rate/1e6} MHz, Center Frequency {self.get_center_freq()/1e6} MHz, Gain {self.get_gain()} dB, Sample Power {np.sum(np.abs(discard)**2):.2f} [a.u.]")
+        del discard  # Free up memory
 
     def _handle_read_error(self, err: Exception, operation: str):
         if isinstance(err, LibUSBError):
@@ -236,16 +221,14 @@ class SDR:
 
         samples = int(time_in_secs * sample_rate)
 
-        with SDR._mutex:
+        if self.rtlsdr is None:
+            logger.warning("SDR device not connected.")
+            return False, (0.0, 0.0)
 
-            if self.rtlsdr is None:
-                logger.warning("SDR device not connected.")
-                return False, (0.0, 0.0)
-
-            try:
-                x = self.rtlsdr.read_samples(samples)
-            except Exception as err:
-                self._handle_read_error(err, f"while reading {samples} samples for gaussianity test")
+        try:
+            x = self.rtlsdr.read_samples(samples)
+        except Exception as err:
+            self._handle_read_error(err, f"while reading {samples} samples for gaussianity test")
 
         # Take a random subset of samples to avoid warning and speed up test
         sample_count = len(x)
@@ -286,37 +269,32 @@ class SDR:
             logger.warning("SDR device not connected.")
             return None, None
 
-        # Lock access to the SDR during gain testing so that no other thread can interfere
-        # Ideally streaming should be stopped ahead of this call and then restarted afterwards
-        with SDR._mutex:
+        # Remember original SDR gain setting
+        orig_gain = self.gain
+        sample_rate = sample_rate if sample_rate is not None else self.sample_rate
 
-            # Remember original SDR gain setting
-            orig_gain = self.gain 
-            sample_rate = sample_rate if sample_rate is not None else self.sample_rate
+        # Loop over each gain setting
+        for gain in Glist:
+            self.set_gain(gain)  # Set the SDR gain
+            # Auto-gain rapidly retunes the tuner, so give the hardware a short
+            # settle period and flush any stale USB samples before testing.
+            time.sleep(self.AUTO_GAIN_SETTLE_SEC)
+            self._reset_buffer()
+            result, (p_r, p_i) = self.get_gain_gaussianity(sample_rate=sample_rate, time_in_secs=time_in_secs)
 
-            # Loop over each gain setting
-            for gain in Glist:
+            p_r_list.append(p_r)
+            p_i_list.append(p_i)
 
-                self.set_gain(gain)  # Set the SDR gain
-                # Auto-gain rapidly retunes the tuner, so give the hardware a short
-                # settle period and flush any stale USB samples before testing.
-                time.sleep(self.AUTO_GAIN_SETTLE_SEC)
-                self._reset_buffer()
-                result, (p_r, p_i) = self.get_gain_gaussianity(sample_rate=sample_rate, time_in_secs=time_in_secs)
+        gaussian = False
+        gauss_gain = None
+        for i in range(len(Glist) - 1):
+            if (p_r_list[i] > p_threshold and p_i_list[i] > p_threshold and
+                p_r_list[i+1] > p_threshold and p_i_list[i+1] > p_threshold):
+                gaussian = True
+                gauss_gain = Glist[i+1]
+                break
 
-                p_r_list.append(p_r)
-                p_i_list.append(p_i)
-
-            gaussian = False
-            gauss_gain = None
-            for i in range(len(Glist) - 1):
-                if (p_r_list[i] > p_threshold and p_i_list[i] > p_threshold and
-                    p_r_list[i+1] > p_threshold and p_i_list[i+1] > p_threshold):
-                    gaussian = True
-                    gauss_gain = Glist[i+1]
-                    break
-
-                self.set_gain(orig_gain)  # Restore original gain setting
+        self.set_gain(orig_gain)  # Restore original gain setting
 
         # If we find a gaussian gain
         if gaussian:
@@ -332,126 +310,100 @@ class SDR:
         return gauss_gain
 
     def get_center_freq(self):
-       with SDR._mutex:
+        if self.rtlsdr is None:
+            logger.warning("SDR device not connected.")
+            return
 
-            if self.rtlsdr is None:
-                logger.warning("SDR device not connected.")
-                return
-
-            return self.rtlsdr.center_freq # Hz
+        return self.rtlsdr.center_freq # Hz
 
     def set_center_freq(self, value):
-        with SDR._mutex:
+        if self.rtlsdr is None:
+            logger.warning("SDR device not connected.")
+            return
 
-            if self.rtlsdr is None:
-                logger.warning("SDR device not connected.")
-                return
-
-            self.rtlsdr.center_freq = value
-            self.center_freq = value
+        self.rtlsdr.center_freq = value
+        self.center_freq = value
 
     def get_sample_rate(self):
-        with SDR._mutex:
+        if self.rtlsdr is None:
+            logger.warning("SDR device not connected.")
+            return
 
-            if self.rtlsdr is None:
-                logger.warning("SDR device not connected.")
-                return
-
-            return self.rtlsdr.sample_rate # Hz
+        return self.rtlsdr.sample_rate # Hz
 
     def set_sample_rate(self, value):
-        with SDR._mutex:
+        if self.rtlsdr is None:
+            logger.warning("SDR device not connected.")
+            return
 
-            if self.rtlsdr is None:
-                logger.warning("SDR device not connected.")
-                return
-
-            self.rtlsdr.sample_rate = value
-            self.sample_rate = int(math.ceil(value))
+        self.rtlsdr.sample_rate = value
+        self.sample_rate = int(math.ceil(value))
 
     def get_bandwidth(self):
-        with SDR._mutex:
+        if self.rtlsdr is None:
+            logger.warning("SDR device not connected.")
+            return
 
-            if self.rtlsdr is None:
-                logger.warning("SDR device not connected.")
-                return
-
-            return self.rtlsdr.bandwidth # MHz
+        return self.rtlsdr.bandwidth # MHz
 
     def set_bandwidth(self, value):
-        with SDR._mutex:
+        if self.rtlsdr is None:
+            logger.warning("SDR device not connected.")
+            return
 
-            if self.rtlsdr is None:
-                logger.warning("SDR device not connected.")
-                return
-
-            self.rtlsdr.bandwidth = value
-            self.bandwidth = value
+        self.rtlsdr.bandwidth = value
+        self.bandwidth = value
 
     def get_gain(self):
-        with SDR._mutex:
+        if self.rtlsdr is None:
+            logger.warning("SDR device not connected.")
+            return
 
-            if self.rtlsdr is None:
-                logger.warning("SDR device not connected.")
-                return
-
-            return self.rtlsdr.gain
+        return self.rtlsdr.gain
 
     def set_gain(self, value):
-        with SDR._mutex:
+        if self.rtlsdr is None:
+            logger.warning("SDR device not connected.")
+            return
 
-            if self.rtlsdr is None:
-                logger.warning("SDR device not connected.")
-                return
-
-            self.rtlsdr.gain = value
-            self.gain = value
+        self.rtlsdr.gain = value
+        self.gain = value
 
     def get_freq_correction(self):
-        with SDR._mutex:
+        if self.rtlsdr is None:
+            logger.warning("SDR device not connected.")
+            return
 
-            if self.rtlsdr is None:
-                logger.warning("SDR device not connected.")
-                return
-
-            return self.rtlsdr.ppm # ppm
+        return self.rtlsdr.ppm # ppm
 
     def set_freq_correction(self, value):
-        with SDR._mutex:
+        if self.rtlsdr is None:
+            logger.warning("SDR device not connected.")
+            return
 
-            if self.rtlsdr is None:
-                logger.warning("SDR device not connected.")
-                return
-
-            self.rtlsdr.ppm = value
-            self.freq_correction = value
+        self.rtlsdr.ppm = value
+        self.freq_correction = value
 
     def get_gains(self):
-        with SDR._mutex:
+        if self.rtlsdr is None:
+            logger.warning("SDR device not connected.")
+            return
 
-            if self.rtlsdr is None:
-                logger.warning("SDR device not connected.")
-                return
-
-            return self.rtlsdr.get_gains()
+        return self.rtlsdr.get_gains()
 
     def get_tuner_type(self):
-        with SDR._mutex:
+        if self.rtlsdr is None:
+            logger.warning("SDR device not connected.")
+            return
 
-            if self.rtlsdr is None:
-                logger.warning("SDR device not connected.")
-                return
-            
-            return self.rtlsdr.get_tuner_type()
+        return self.rtlsdr.get_tuner_type()
     
     def set_direct_sampling(self, value):
-        with SDR._mutex:
+        if self.rtlsdr is None:
+            logger.warning("SDR device not connected.")
+            return
 
-            if self.rtlsdr is None:
-                logger.warning("SDR device not connected.")
-                return
-
-            self.rtlsdr.direct_sampling = value
+        self.rtlsdr.direct_sampling = value
 
     def read_bytes(self) -> (dict, bytes):
         """ Read self.sample_rate number of bytes from the SDR device.
@@ -459,24 +411,25 @@ class SDR:
                 A dictionary of metadata associated with the byte read
                 A numpy array of uint8 samples read from the SDR
         """
-        with SDR._mutex:
+        if self.rtlsdr is None:
+            logger.warning("SDR device not connected.")
+            return None, None
 
-            if self.rtlsdr is None:
-                logger.warning("SDR device not connected.")
-                return None, None
+        self.sample_rate = int(self.rtlsdr.sample_rate)
 
-            self.sample_rate = int(self.rtlsdr.sample_rate)
+        x = bytes(self.sample_rate)
 
-            x = bytes(self.sample_rate) 
-            
+        try:
             # Record start/end times associated with sample set (in epoch seconds)
             read_start = time.time()
             x = self.rtlsdr.read_bytes(self.sample_rate)
             read_end = time.time()
-            
-            # Increment read counter and copy to local variable for access outside the mutex
+
             self.read_counter += 1
             count = self.read_counter
+
+        except Exception as e:
+            self._handle_read_error(e, "while reading bytes from SDR")
 
         metadata = {
             'read_counter': count,
@@ -493,26 +446,23 @@ class SDR:
                 A dictionary of metadata associated with the sample read
                 A numpy array of complex64 samples read from the SDR
         """
-        with SDR._mutex:
+        if self.rtlsdr is None:
+            logger.warning("SDR device not connected.")
+            return None, None
 
-            if self.rtlsdr is None:
-                logger.warning("SDR device not connected.")
-                return None, None
+        try:
+            self.sample_rate = int(self.rtlsdr.sample_rate)
 
-            try:
-                self.sample_rate = int(self.rtlsdr.sample_rate)
+            # Record start/end times associated with sample set (in epoch seconds)
+            read_start = time.time()
+            x = self.rtlsdr.read_samples(self.sample_rate)
+            read_end = time.time()
 
-                # Record start/end times associated with sample set (in epoch seconds)
-                read_start = time.time()
-                x = self.rtlsdr.read_samples(self.sample_rate)
-                read_end = time.time()
+            self.read_counter += 1
+            count = self.read_counter
 
-                # Increment read counter and copy to local variable for access outside the mutex
-                self.read_counter += 1
-                count = self.read_counter
-
-            except Exception as e:
-                self._handle_read_error(e, "while reading samples from SDR")
+        except Exception as e:
+            self._handle_read_error(e, "while reading samples from SDR")
 
         # Ensure consistent complex64 output for downstream processing.
         x = np.array(x, dtype=np.complex64)

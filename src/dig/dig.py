@@ -17,7 +17,7 @@ from models.app import AppModel
 from models.comms import CommunicationStatus, InterfaceType
 from models.dig import DigitiserModel
 from models.health import HealthState
-from sdr.sdr import SDR
+from sdr.facade import SDR
 from util import log, util
 from util.timer import Timer, TimerManager
 from util.xbase import XBase, XStreamUnableToExtract, XSoftwareFailure, XHardwareFailure, XAPIValidationFailed
@@ -313,6 +313,9 @@ class Digitiser(App):
             # Restart the timer to keep retrying periodically
             action.set_timer_action(Action.Timer(name=f"sdr_retry", timer_action=5000))
 
+            if self.sdr is not None:
+                self.dig_model.sdr_connected = self.sdr.get_comms_status()
+
             if self.dig_model.sdr_connected == CommunicationStatus.NOT_ESTABLISHED:
                 self.sdr = SDR()  # Retry connecting to the SDR
                 self.dig_model.sdr_connected = self.sdr.get_comms_status()
@@ -389,6 +392,8 @@ class Digitiser(App):
                 return tm_dig.STATUS_ERROR, f"Digitiser property {prop_name} is not callable", None, None
         
         except Exception as e:
+            if isinstance(e, XHardwareFailure):
+                self.dig_model.sdr_connected = CommunicationStatus.NOT_ESTABLISHED
             logger.exception(f"Digitiser failed to set property {prop_name} to {prop_value}: {e}")
             return tm_dig.STATUS_ERROR, f"Digitiser failed to set property {prop_name} to {prop_value}: {e}", None, None
 
@@ -431,6 +436,8 @@ class Digitiser(App):
         try:  # Call the getter method
             value = getter() if callable(getter) else getter
         except Exception as e:
+            if isinstance(e, XHardwareFailure):
+                self.dig_model.sdr_connected = CommunicationStatus.NOT_ESTABLISHED
             logger.error(f"Digitiser failed to get property {prop_name}: {e}")
             return tm_dig.STATUS_ERROR, f"Digitiser failed to get property {prop_name}: {e}", None, None
 
@@ -482,6 +489,8 @@ class Digitiser(App):
         try:  # Call the method
             result = call(**args) if args is not None else call() if callable(call) else call
         except (XSoftwareFailure, XHardwareFailure) as e:
+            if isinstance(e, XHardwareFailure):
+                self.dig_model.sdr_connected = CommunicationStatus.NOT_ESTABLISHED
             logger.error(f"Digitiser method {method} failed with exception: {e}")
             return tm_dig.STATUS_ERROR, f"Digitiser method {method} failed with exception: {e}", None, None
 
