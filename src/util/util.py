@@ -7,12 +7,27 @@ from typing import TYPE_CHECKING
 import numpy as np
 import re
 import scipy.constants as const
+import socket
 
 import logging
 logger = logging.getLogger(__name__)
 
 f_e = 1420.405751768 * u.MHz  # Rest frequency of HI hyperfine transition
 speed_of_light = const.speed_of_light * (u.meter / u.second)
+
+DEFAULT_LOOPBACK_IP = "127.0.0.1"
+
+def resolve_default_host(service_point: str, fallback_host: str = DEFAULT_LOOPBACK_IP) -> str:
+    """Resolve the local hostname for a service point and fall back safely when unavailable."""
+    try:
+        return socket.gethostbyname(socket.gethostname())
+    except socket.gaierror:
+        logger.warning(
+            "%s could not resolve local hostname; falling back to %s",
+            service_point,
+            fallback_host,
+        )
+        return fallback_host
 
 def unpack_result(result) -> tuple:
         """ Unpacks a tuple result containing status, message, value, and payload.

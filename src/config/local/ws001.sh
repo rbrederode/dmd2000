@@ -2,36 +2,11 @@
 
 set -euo pipefail
 
-SESSION_DIR="$HOME/github/alston-rt/src"
-RUN_CMD='cd "$HOME/github/alston-rt/src" && python ws/ws.py --profile local --dm_host 127.0.0.1 --tm_host 127.0.0.1 --sim calm; exec bash'
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LAUNCHER="$SCRIPT_DIR/../../../scripts/launch/launch_app.sh"
 
-launch_linux_terminal() {
-    local cmd="$1"
-
-    if command -v x-terminal-emulator >/dev/null 2>&1; then
-        x-terminal-emulator -e bash -ic "$cmd" &
-    elif command -v lxterminal >/dev/null 2>&1; then
-        lxterminal -e "bash -ic '$cmd'" &
-    elif command -v xfce4-terminal >/dev/null 2>&1; then
-        xfce4-terminal --command="bash -ic '$cmd'" &
-    elif command -v gnome-terminal >/dev/null 2>&1; then
-        gnome-terminal -- bash -ic "$cmd" &
-    elif command -v konsole >/dev/null 2>&1; then
-        konsole -e bash -ic "$cmd" &
-    else
-        echo "No supported terminal launcher found."
-        echo "Tried: x-terminal-emulator, lxterminal, xfce4-terminal, gnome-terminal, konsole"
-        exit 1
-    fi
-}
-
-if command -v osascript >/dev/null 2>&1; then
-    osascript <<EOF
-tell application "Terminal"
-    activate
-    do script "cd \"$SESSION_DIR\" && python ws/ws.py --profile local --dm_host 127.0.0.1 --tm_host 127.0.0.1 --sim calm; exec bash"
-end tell
-EOF
-else
-    launch_linux_terminal "$RUN_CMD"
-fi
+exec "$LAUNCHER" \
+    --title "$(basename "$0" .sh)" \
+    --session-dir "src" \
+    -- \
+    python ws/ws.py --profile local --dm_host 127.0.0.1 --tm_host 127.0.0.1 --sim calm
