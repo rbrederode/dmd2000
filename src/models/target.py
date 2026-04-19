@@ -142,6 +142,18 @@ class TargetModel(BaseModel):
             if key not in kwargs:
                 kwargs.setdefault(key, value)
 
+        altaz = kwargs.get("altaz")
+        if isinstance(altaz, dict):
+            normalised_altaz = dict(altaz)
+            for axis in ("alt", "az"):
+                value = normalised_altaz.get(axis)
+                if isinstance(value, str):
+                    try:
+                        normalised_altaz[axis] = float(value)
+                    except ValueError:
+                        pass
+            kwargs["altaz"] = normalised_altaz
+
         super().__init__(**kwargs)
 
     def __str__(self):

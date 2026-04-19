@@ -851,8 +851,8 @@ class DishDriver:
             # Drift scan target
             alt = target.altaz.get("alt")
             az = target.altaz.get("az")
-            alt_q = alt if hasattr(alt, 'unit') else alt * u.deg
-            az_q = az if hasattr(az, 'unit') else az * u.deg
+            alt_q = alt if hasattr(alt, 'unit') else float(alt) * u.deg
+            az_q = az if hasattr(az, 'unit') else float(az) * u.deg
             desired_altaz = AltAz(obstime=time, location=self.location, alt=alt_q, az=az_q)
 
         elif target.pointing == PointingType.OFFSET_SCAN:
@@ -1186,4 +1186,3 @@ if __name__ == "__main__":
         capability=Capability.OPERATE_FULL,
         last_update=datetime.now(timezone.utc)
     )
-
