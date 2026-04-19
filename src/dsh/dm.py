@@ -468,27 +468,29 @@ class DM(App):
 
                 # Get latest AltAz from the dish driver called regardless of the current pointing state or dish mode
                 try:
-                    altaz = dish_driver.get_current_altaz()
+                    dish_driver.get_current_altaz()
                 except XBase as e:
                     logger.error(f"DM failed to get current AltAz for Dish {dish_id}: {e}")
-                finally:
-                    
-                    # Review dish health state to determine if action is needed
-                    if dish_driver.get_health_state() == HealthState.FAILED:
 
-                        self._send_status_adv_to_tm(
-                            action=action,
-                            target_id=target_id,
-                            target=target,
-                            status=tm_dm.STATUS_ERROR,
-                            message=f"Dish {dish_id} health state is FAILED",
+                # Review dish health state to determine if action is needed
+                if dish_driver.get_health_state() == HealthState.FAILED:
+
+                    self._send_status_adv_to_tm(
+                        action=action,
+                        target_id=target_id,
+                        target=target,
+                        status=tm_dm.STATUS_ERROR,
+                        message=f"Dish {dish_id} health state is FAILED",
+                    )
+
+                    # Tone down the driver poll rate to once per minute to reduce log spam until the issue is resolved
+                    action.set_timer_action(
+                        Action.Timer(
+                            name=f"driver_timer_{dish_id}_{type(dish_driver).__name__}",
+                            timer_action=60000,
                         )
-                        
-                        # Tone down the driver poll rate to once per minute to reduce log spam until the issue is resolved
-                        action.set_timer_action(
-                            Action.Timer(name=f"driver_timer_{dish_id}_{type(dish_driver).__name__}", 
-                            timer_action=60000)) 
-                        return action
+                    )
+                    return action
 
                 # If the dish pointing state transitioned to READY, it means we have reached the desired slew position
                 # Pointing state would be SLEW if still slewing or TRACK if already tracking (if necessary)
