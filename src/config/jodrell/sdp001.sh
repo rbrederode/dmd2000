@@ -3,7 +3,7 @@
 set -euo pipefail
 
 SESSION_DIR="$HOME/github/alston-rt/src"
-RUN_CMD='cd "$HOME/github/alston-rt/src" && python -m sdp.sdp --profile local --entity_id sdp001 --tm_host 127.0.0.1 --dig_host 127.0.0.1 --scan_store_dir ~/samples; exec bash'
+RUN_CMD='cd "$HOME/github/alston-rt/src" && python -m sdp.sdp --profile jodrell --entity_id sdp001 --tm_host 127.0.0.1 --dig_host 127.0.0.1 --scan_store_dir ~/samples; exec bash'
 
 launch_linux_terminal() {
     local cmd="$1"
@@ -29,7 +29,7 @@ if command -v osascript >/dev/null 2>&1; then
     osascript <<EOF
 tell application "Terminal"
     activate
-    do script "cd \"$SESSION_DIR\" && python -m sdp.sdp --profile local --entity_id sdp001 --tm_host 127.0.0.1 --dig_host 127.0.0.1 --scan_store_dir ~/samples; exec bash"
+    do script "cd \"$SESSION_DIR\" && python -m sdp.sdp --profile jodrell --entity_id sdp001 --tm_host 127.0.0.1 --dig_host 127.0.0.1 --scan_store_dir ~/samples; exec bash"
 end tell
 EOF
 else
