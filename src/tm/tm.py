@@ -134,6 +134,7 @@ class TelescopeManager(App):
 
         arg_parser.add_argument("--ws_host", type=str, required=False, help="TCP server host to connect to the Weather Station", default="localhost")
         arg_parser.add_argument("--ws_port", type=int, required=False, help="TCP server port to connect to the Weather Station", default=50003) 
+        arg_parser.add_argument("-o", type=str, required=False, help="Path to an observation definition JSON file to inject as an ODT config event at startup")
 
     def process_init(self) -> Action:
         """ Processes initialisation event on startup once all app processors are running.
@@ -180,6 +181,22 @@ class TelescopeManager(App):
         self.dig_endpoint.start()
         self.sdp_endpoint.connect()
         self.ws_endpoint.connect()
+
+        # If an observation file was specified on startup, load the obs definition file and inject a config event 
+        observation_file = getattr(self.get_args(), "observation_file", None)
+        if observation_file:
+            odt_config = ObsList.from_disk(observation_file).to_dict()
+            config_event = ConfigEvent(
+                category="ODT",
+                old_config=None,
+                new_config=odt_config,
+                timestamp=datetime.now(timezone.utc),
+            )
+            self.get_queue().put(config_event)
+            logger.info(
+                f"Telescope Manager injected startup ODT config event from observation file "
+                f"{Path(observation_file).expanduser()}"
+            )
 
         return action
 
@@ -657,8 +674,29 @@ class TelescopeManager(App):
         # If the api call does not indicate that an error occured
         elif api_call.get('status','') != tm_dig.STATUS_ERROR:
 
-            # If the api call is a status update message, update the Digitiser model
-            if api_call.get('property','') == tm_dig.PROPERTY_STATUS:
+            obs_data = api_call.get('obs_data', None)
+            if obs_data is not None and isinstance(obs_data, dict):
+                obs_data = dict(obs_data)
+
+            # If the api call is a successful method response, handle it separately from property updates
+            if api_call.get('action_code') == tm_dig.ACTION_CODE_METHOD:
+                method = api_call.get('method')
+
+                if method == tm_dig.METHOD_GET_AUTO_GAIN:
+                    gain_value = api_call.get('value')
+                    if gain_value is not None:
+                        digitiser.gain = float(gain_value)
+                        logger.info(f"Telescope Manager received Digitiser auto gain result: {digitiser.gain} dB")
+
+                        if obs_data is not None and str(obs_data.get('gain', '')).upper() == "AUTO":
+                            obs_data['gain'] = digitiser.gain
+                    else:
+                        logger.warning("Telescope Manager received Digitiser auto gain response without a gain value.")
+                else:
+                    logger.info(f"Telescope Manager received Digitiser method response: {method} = {api_call.get('value')}")
+
+            # Else if the api call is a status update message, update the Digitiser model
+            elif api_call.get('property','') == tm_dig.PROPERTY_STATUS:
                 logger.debug(f"Telescope Manager received Digitiser STATUS update: {api_call['value']}")
                 digitiser.update_from_model(DigitiserModel.from_dict(api_call['value']))
 
@@ -673,14 +711,13 @@ class TelescopeManager(App):
                     logger.error(f"Telescope Manager error setting attribute {api_call.get('property','')} on Digitiser: {e}")
                     return action
             else:
-                logger.warning(f"Telescope Manager received unknown Digitiser property update: {api_call['property']}")
+                logger.warning(f"Telescope Manager received unknown Digitiser property update: {api_call.get('property')}")
                 return action
 
             # If the api call is a rsp message
             if api_call['msg_type'] == tm_dig.MSG_TYPE_RSP:
 
                 # If the status update message contains additional observation data, extract the related observation 
-                obs_data = api_call.get('obs_data', None)
                 obs_id = obs_data.get('obs_id', None) if obs_data is not None and isinstance(obs_data, dict) else None
                 obs = self.telmodel.oda.obs_store.get_obs_by_id(obs_id) if obs_id is not None else None
 

@@ -1,4 +1,5 @@
 import enum
+import json
 from pathlib import Path
 from datetime import datetime, timezone
 from schema import Schema, And, Or, Use, SchemaError
@@ -83,6 +84,52 @@ class ObsList(BaseModel):
             if obs.dsh_id == dsh_id:
                 return obs
         return None
+
+    @classmethod
+    def from_disk(cls, observation_file: str):
+        """Load an observation definition file and normalise it into an ObsList instance.
+
+        Accepts:
+        - an ObsList JSON object
+        - a single ObsModel JSON object
+        - a raw list of observation dictionaries
+        """
+
+        obs_path = Path(observation_file).expanduser()
+        if not obs_path.is_absolute():
+            obs_path = Path.cwd() / obs_path
+
+        with obs_path.open("r", encoding="utf-8") as f:
+            observation_data = json.load(f)
+
+        if isinstance(observation_data, dict):
+            model_type = observation_data.get("_type")
+            if model_type == "ObsList":
+                return cls.from_dict(observation_data)
+            if model_type == "ObsModel":
+                return cls.from_dict({
+                    "_type": "ObsList",
+                    "obs_list": [observation_data],
+                    "last_update": {
+                        "_type": "datetime",
+                        "value": datetime.now(timezone.utc).isoformat()
+                    }
+                })
+
+        if isinstance(observation_data, list):
+            return cls.from_dict({
+                "_type": "ObsList",
+                "obs_list": observation_data,
+                "last_update": {
+                    "_type": "datetime",
+                    "value": datetime.now(timezone.utc).isoformat()
+                }
+            })
+
+        raise ValueError(
+            f"ODA encountered unsupported observation file format in {obs_path}. "
+            "Expected an ObsList dict, ObsModel dict, or a list of observations."
+        )
 
 class ODAModel(BaseModel):
     """A class representing the observation data archive."""
