@@ -2,9 +2,9 @@
 
 set -euo pipefail
 
-SESSION_DIR="$HOME/github/alston-rt/src"
+SESSION_DIR="$HOME/alston-rt/src"
 SCRIPT_DIR="$SESSION_DIR/config/local"
-VENV_DIR="$HOME/github/alston-rt/venv"
+VENV_DIR="$HOME/alston-rt/venv"
 
 build_cmd() {
     local script_name="$1"

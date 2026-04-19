@@ -2,8 +2,8 @@
 
 set -euo pipefail
 
-SESSION_DIR="$HOME/github/alston-rt/src"
-RUN_CMD='cd "$HOME/github/alston-rt/src" && python tm/tm.py --profile jodrell --entity_id tm001 --dig_host 127.0.0.1 --sdp_host 127.0.0.1 --dm_host 127.0.0.1 --ws_host 127.0.0.1; exec bash'
+SESSION_DIR="$HOME/alston-rt/src"
+RUN_CMD='cd "$HOME/alston-rt/src" && python tm/tm.py --profile jodrell --entity_id tm001 --dig_host 127.0.0.1 --sdp_host 127.0.0.1 --dm_host 127.0.0.1 --ws_host 127.0.0.1; exec bash'
 
 launch_linux_terminal() {
     local cmd="$1"

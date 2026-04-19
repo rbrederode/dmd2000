@@ -1,7 +1,7 @@
 {
     "_type": "WeatherStationList",
     "list_id": "active",
-    "weather_enabled": true,
+    "weather_enabled": false,
     "weather_stations": [
         {
             "_type": "WeatherStation",
