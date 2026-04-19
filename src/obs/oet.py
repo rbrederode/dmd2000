@@ -92,7 +92,7 @@ class ObservationExecutionTool:
 
                     # Check if there are other observations waiting for the same resources just released so that they can be assigned
                     for obs in waiting_obs:
-                        if obs.obs_id != event.obs.obs_id and obs.dsh_id == event.obs.dsh_id and obs.dig_id == event.obs.dig_id:
+                        if obs.obs_id != event.obs.obs_id and obs.dsh_id == event.obs.dsh_id:
                             action.set_obs_transition(obs=obs, transition=ObsTransition.ASSIGN_RESOURCES)
 
                 # Save current observation state to disk
