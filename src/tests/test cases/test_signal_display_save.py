@@ -7,6 +7,7 @@ from models.scan import ScanType
 class FakeFigure:
     def __init__(self):
         self.saved_paths = []
+        self.canvas = SimpleNamespace(draw=lambda: None)
 
     def savefig(self, path):
         self.saved_paths.append(path)
@@ -24,13 +25,17 @@ def make_scan(scan_id="obs-0-0-1"):
         channels=1024,
         scan_type=ScanType.SKY,
     )
-    return SimpleNamespace(scan_model=scan_model)
+    return SimpleNamespace(
+        scan_model=scan_model,
+        get_loaded_seconds=lambda: 1,
+    )
 
 
 def test_save_scan_figure_only_saves_each_scan_once(tmp_path):
     display = SignalDisplay(dig_id="dig001")
     display.fig = FakeFigure()
     display.scan = make_scan()
+    display.sec = 1
 
     assert display.save_scan_figure(str(tmp_path)) is True
     assert display.save_scan_figure(str(tmp_path)) is False
@@ -41,9 +46,11 @@ def test_save_scan_figure_allows_next_scan_to_save(tmp_path):
     display = SignalDisplay(dig_id="dig001")
     display.fig = FakeFigure()
     display.scan = make_scan(scan_id="obs-0-0-1")
+    display.sec = 1
 
     assert display.save_scan_figure(str(tmp_path)) is True
 
     display.scan = make_scan(scan_id="obs-0-0-2")
+    display.sec = 1
     assert display.save_scan_figure(str(tmp_path)) is True
     assert len(display.fig.saved_paths) == 2

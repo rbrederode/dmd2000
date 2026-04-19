@@ -113,19 +113,18 @@ def _benchmark_read_method(sdr: SDR, method_name: str, read_fn, samples_per_read
     }
 
     try:
-        with SDR._mutex:
-            _restore_cached_configuration(sdr)
-            warmup = np.asarray(read_fn(samples_per_read), dtype=np.complex64)
-            logger.info(f"SDR benchmark warmup for {method_name}: {warmup.size} samples")
+        _restore_cached_configuration(sdr)
+        warmup = np.asarray(read_fn(samples_per_read), dtype=np.complex64)
+        logger.info(f"SDR benchmark warmup for {method_name}: {warmup.size} samples")
 
-            started = time.perf_counter()
-            total_samples = 0
+        started = time.perf_counter()
+        total_samples = 0
 
-            for _ in range(iterations):
-                samples = np.asarray(read_fn(samples_per_read), dtype=np.complex64)
-                total_samples += samples.size
+        for _ in range(iterations):
+            samples = np.asarray(read_fn(samples_per_read), dtype=np.complex64)
+            total_samples += samples.size
 
-            elapsed = time.perf_counter() - started
+        elapsed = time.perf_counter() - started
 
         result["total_samples_read"] = total_samples
         result["elapsed_sec"] = elapsed
@@ -159,10 +158,9 @@ def benchmark_read_overhead(sdr: SDR, sample_rate: float = 2.4e6, duration_secs:
     if samples_per_read <= 0:
         raise ValueError("sample_rate must be greater than zero")
 
-    with SDR._mutex:
-        _restore_cached_configuration(sdr)
-        sdr.rtlsdr.sample_rate = sample_rate
-        sdr.sample_rate = int(math.ceil(sdr.rtlsdr.sample_rate))
+    _restore_cached_configuration(sdr)
+    sdr.rtlsdr.sample_rate = sample_rate
+    sdr.sample_rate = int(math.ceil(sdr.rtlsdr.sample_rate))
 
     logger.info(
         f"SDR benchmark starting: {iterations} reads of {samples_per_read} samples "
@@ -202,10 +200,9 @@ def benchmark_read_overhead(sdr: SDR, sample_rate: float = 2.4e6, duration_secs:
 
     if original_sample_rate is not None:
         try:
-            with SDR._mutex:
-                _restore_cached_configuration(sdr)
-                sdr.rtlsdr.sample_rate = original_sample_rate
-                sdr.sample_rate = int(math.ceil(sdr.rtlsdr.sample_rate))
+            _restore_cached_configuration(sdr)
+            sdr.rtlsdr.sample_rate = original_sample_rate
+            sdr.sample_rate = int(math.ceil(sdr.rtlsdr.sample_rate))
         except XHardwareFailure as err:
             benchmark["restore_error"] = str(err)
 
@@ -240,10 +237,9 @@ def benchmark_chunk_sizes(sdr: SDR, sample_rate: float = 2.4e6, duration_secs: i
     if samples_per_read <= 0:
         raise ValueError("sample_rate must be greater than zero")
 
-    with SDR._mutex:
-        _restore_cached_configuration(sdr)
-        sdr.rtlsdr.sample_rate = sample_rate
-        sdr.sample_rate = int(math.ceil(sdr.rtlsdr.sample_rate))
+    _restore_cached_configuration(sdr)
+    sdr.rtlsdr.sample_rate = sample_rate
+    sdr.sample_rate = int(math.ceil(sdr.rtlsdr.sample_rate))
 
     logger.info(
         f"SDR chunk-size benchmark starting: {iterations} reads of {samples_per_read} samples "
@@ -310,10 +306,9 @@ def benchmark_chunk_sizes(sdr: SDR, sample_rate: float = 2.4e6, duration_secs: i
 
     if original_sample_rate is not None:
         try:
-            with SDR._mutex:
-                _restore_cached_configuration(sdr)
-                sdr.rtlsdr.sample_rate = original_sample_rate
-                sdr.sample_rate = int(math.ceil(sdr.rtlsdr.sample_rate))
+            _restore_cached_configuration(sdr)
+            sdr.rtlsdr.sample_rate = original_sample_rate
+            sdr.sample_rate = int(math.ceil(sdr.rtlsdr.sample_rate))
         except XHardwareFailure as err:
             results["restore_error"] = str(err)
 

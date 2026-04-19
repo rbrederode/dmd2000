@@ -11,15 +11,9 @@ import numpy as np
 from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
 
 from models.ws import WeatherStationList
+from util.matplotlib_window import get_figure_visibility
 
 mpl.rcParams["figure.raise_window"] = False
-
-try:
-    from AppKit import NSApplication
-
-    HAS_APPKIT = True
-except ImportError:
-    HAS_APPKIT = False
 
 logger = logging.getLogger(__name__)
 
@@ -235,14 +229,7 @@ class WeatherDisplay:
             plt.close(num=f"Weather {self.ws.ws_id}")
 
     def is_visible_figure(self) -> Optional[bool]:
-        if not HAS_APPKIT or self.fig is None:
-            return None
-
-        key_window = NSApplication.sharedApplication().keyWindow()
-        if key_window is None:
-            return None
-
-        return self.fig.canvas.manager.get_window_title() == key_window.title()
+        return get_figure_visibility(self.fig)
 
     def display(self):
         if not self.is_active:

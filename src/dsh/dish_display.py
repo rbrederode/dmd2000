@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 import datetime
 import logging
@@ -14,6 +14,7 @@ import numpy as np
 from matplotlib.gridspec import GridSpec
 
 from models.dsh import Capability, DishMode, PointingState
+from util.matplotlib_window import get_figure_visibility
 
 if TYPE_CHECKING:
     from dsh.drivers.driver import DishDriver
@@ -21,14 +22,6 @@ if TYPE_CHECKING:
 
 # Disable automatic window raising (backend-specific)
 mpl.rcParams["figure.raise_window"] = False
-
-try:
-    from AppKit import NSApplication
-
-    HAS_APPKIT = True
-except ImportError:
-    HAS_APPKIT = False
-    print("AppKit not available. Install pyobjc: pip install pyobjc")
 
 logger = logging.getLogger(__name__)
 
@@ -163,26 +156,13 @@ class DishDisplay:
         if self.fig is not None:
             plt.close(num=f"Dish {self.driver.dsh_model.dsh_id}")
 
-    def is_visible_figure(self) -> bool:
+    def is_visible_figure(self) -> Optional[bool]:
         """Return whether this display figure is the active visible window, or None if unknown.
 
         Returns:
             True if visible, False if not visible, or None when visibility cannot be determined.
         """
-        if not HAS_APPKIT or self.fig is None:
-            logger.warning(
-                f"Dish display checking whether figure for {self.driver.dsh_model.dsh_id} is visible but "
-                + ("AppKit not available" if not HAS_APPKIT else "figure is None")
-            )
-            return None
-
-        key_window = NSApplication.sharedApplication().keyWindow()
-        if key_window is None:
-            return None
-
-        key_window_title = key_window.title()
-        fig_title = self.fig.canvas.manager.get_window_title()
-        return fig_title == key_window_title
+        return get_figure_visibility(self.fig)
 
     def get_is_active(self) -> bool:
         """Return whether this dish display is active.

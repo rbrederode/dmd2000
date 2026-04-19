@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from sdp.scan import Scan
@@ -15,17 +15,10 @@ from matplotlib.gridspec import GridSpec
 from matplotlib.ticker import MaxNLocator
 
 from util import gen_file_prefix
+from util.matplotlib_window import get_figure_visibility
 
 # Disable automatic window raising (backend-specific)
 mpl.rcParams["figure.raise_window"] = False
-
-try:
-    from AppKit import NSApplication
-
-    HAS_APPKIT = True
-except ImportError:
-    HAS_APPKIT = False
-    print("AppKit not available. Install pyobjc: pip install pyobjc")
 
 logger = logging.getLogger(__name__)
 
@@ -109,25 +102,12 @@ class SignalDisplay:
 
         self._reset_artist_refs()
 
-    def is_visible_figure(self) -> bool:
+    def is_visible_figure(self) -> Optional[bool]:
         """ Return whether this signal display figure is visible or hidden. 
             A figure can be active but not visible if another figure window is in focus.
             The signal display is considered visible if its figure window is the key window in the OS
         """
-        if not HAS_APPKIT or self.fig is None:
-            logger.warning(
-                f"Signal display checking whether figure for {self.dig_id} is visible but "
-                + ("AppKit not available" if not HAS_APPKIT else "figure is None")
-            )
-            return None
-
-        key_window = NSApplication.sharedApplication().keyWindow()
-        if key_window is None:
-            return None
-
-        key_window_title = key_window.title()
-        fig_title = self.fig.canvas.manager.get_window_title()
-        return fig_title == key_window_title
+        return get_figure_visibility(self.fig)
 
     def get_is_active(self) -> bool:
         """Return whether this signal display is active and eligible to update."""
