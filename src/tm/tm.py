@@ -134,7 +134,9 @@ class TelescopeManager(App):
 
         arg_parser.add_argument("--ws_host", type=str, required=False, help="TCP server host to connect to the Weather Station", default="localhost")
         arg_parser.add_argument("--ws_port", type=int, required=False, help="TCP server port to connect to the Weather Station", default=50003) 
-        arg_parser.add_argument("-o", type=str, required=False, help="Path to an observation definition JSON file to inject as an ODT config event at startup")
+        arg_parser.add_argument("--observation_file", "-o", dest="observation_file", type=str, required=False,
+            help="Path to an observation definition JSON file to inject as an ODT config event at startup",
+        )
 
     def process_init(self) -> Action:
         """ Processes initialisation event on startup once all app processors are running.
@@ -1396,6 +1398,17 @@ def main():
   
     tm = TelescopeManager()
     tm.start()
+
+    if tm.is_headless():
+        logger.info("Telescope Manager running in headless mode; skipping ui initialization and updates.")
+        try:
+            while True:
+                time.sleep(1.0)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            tm.stop()
+        return
     
     # Start webhook handler in background thread
     webhook_handler = WebhookHandler(event_queue=tm.get_queue(), host='127.0.0.1', port=5001)
