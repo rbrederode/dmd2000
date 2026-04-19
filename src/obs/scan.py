@@ -603,6 +603,9 @@ class Scan:
         If scan_type is provided, only scans of that type are considered.
             :returns: The matching equivalent scan if it exists, None otherwise
         """
+        if not os.path.exists(input_dir):
+            logger.warning(f"Scan {self.scan_model.scan_id} - Missing scan store directory: {input_dir}")
+            return None
 
         file_prefix = gen_file_prefix(dt=None, entity_id=self.scan_model.dig_id, gain=self.scan_model.gain, duration=self.scan_model.duration,
                 sample_rate=self.scan_model.sample_rate, center_freq=self.scan_model.center_freq, channels=self.scan_model.channels,
