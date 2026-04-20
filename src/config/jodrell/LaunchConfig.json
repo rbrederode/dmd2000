@@ -35,16 +35,6 @@
         },
         {
             "_type": "LaunchModel",
-            "app_name": "mdsim",
-            "entity_id": "mdsim",
-            "env": {},
-            "program": "python",
-            "args": [
-                "dsh/drivers/md01/md01_simulator.py", "--host", "127.0.0.1"
-            ]
-        },
-        {
-            "_type": "LaunchModel",
             "app_name": "sdp",
             "entity_id": "sdp001",
             "env": {},
@@ -71,21 +61,8 @@
                 "--dig_host", "127.0.0.1",
                 "--sdp_host", "127.0.0.1",
                 "--dm_host", "127.0.0.1",
-                "--ws_host", "127.0.0.1"
-            ]
-        },
-        {
-            "_type": "LaunchModel",
-            "app_name": "ws",
-            "entity_id": "ws001",
-            "env": {},
-            "program": "python",
-            "args": [
-                "ws/ws.py",
-                "--profile", "jodrell",
-                "--dm_host", "127.0.0.1",
-                "--tm_host", "127.0.0.1",
-                "--sim", "calm"
+                "--ws_host", "127.0.0.1",
+                "-o src/config/jodrell/obs.json"
             ]
         }
     ]
