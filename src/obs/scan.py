@@ -152,8 +152,9 @@ class Scan:
             # so we only retain them when explicitly requested (e.g. offline IQ reload/debug flows).
             if self.retain_iq:
                 num_rows = int(np.ceil(self.scan_model.duration * self.scan_model.sample_rate / self.scan_model.channels))
-                self.raw = np.zeros((num_rows, self.scan_model.channels), dtype=np.complex64)
-                self.pwr = np.zeros((num_rows, self.scan_model.channels), dtype=np.float64)
+            # so we only retain them when explicitly requested (e.g. offline IQ reload/debug flows).
+                self.raw = np.zeros((num_rows, self.scan_model.channels), dtype=np.complex64)               # complex64 for raw IQ samples i.e. 8 bytes per sample (4 bytes for real and 4 bytes for imaginary parts)
+                self.pwr = np.zeros((num_rows, self.scan_model.channels), dtype=np.float64)                 # float64 for power spectrum data
             else:
                 self.raw = None
                 self.pwr = None
@@ -297,7 +298,7 @@ class Scan:
         # has been explicitly enabled for this scan.
         with self._rlock:
             if self.retain_iq and self.raw is not None and self.pwr is not None:
-                row_start = int((sec - 1) * self.scan_model.sample_rate / self.scan_model.channels)
+                row_start = int((sec - 1) * self.scan_model.sample_rate / self.scan_model.channels)   # Calculate the starting row index (zero based) using sec (1-based index) and sample_rate and channels
                 self.raw[row_start:row_start + iq.shape[0],:] = iq
                 self.pwr[row_start:row_start + iq.shape[0],:] = pwr
 
@@ -617,7 +618,6 @@ class Scan:
         """
         if not os.path.exists(input_dir):
             logger.warning(f"Scan {self.scan_model.scan_id} - Missing scan store directory: {input_dir}")
-            os.makedirs(input_dir, exist_ok=True)
             return None
 
         file_prefix = gen_file_prefix(dt=None, entity_id=self.scan_model.dig_id, gain=self.scan_model.gain, duration=self.scan_model.duration,

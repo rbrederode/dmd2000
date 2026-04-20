@@ -4,7 +4,7 @@ from models.scan import ScanModel, ScanState, ScanType
 from obs.scan import Scan
 
 
-def test_find_equiv_scan_creates_missing_input_dir(tmp_path):
+def test_find_equiv_scan_returns_none_for_missing_input_dir(tmp_path):
     missing_dir = tmp_path / "samples"
 
     scan = Scan(
@@ -30,5 +30,4 @@ def test_find_equiv_scan_creates_missing_input_dir(tmp_path):
     result = scan.find_equiv_scan(input_dir=str(missing_dir), scan_type=ScanType.LOAD)
 
     assert result is None
-    assert missing_dir.exists()
-    assert missing_dir.is_dir()
+    assert not missing_dir.exists()
