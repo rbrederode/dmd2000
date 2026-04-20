@@ -7,6 +7,21 @@ import sys
 import time
 from pathlib import Path
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+SRC_DIR = SCRIPT_DIR.parent
+REPO_ROOT = SRC_DIR.parent
+
+# When this file is executed directly, Python puts src/util at the front of sys.path.
+# That can cause `import util.xbase` to resolve `util.py` as a top-level module instead
+# of the `util` package. Ensure src is searched first and the script directory itself
+# does not shadow the package.
+while str(SCRIPT_DIR) in sys.path:
+    sys.path.remove(str(SCRIPT_DIR))
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(1, str(REPO_ROOT))
+
 
 def resolve_repo_root(explicit_repo_root: str | None) -> Path:
     if explicit_repo_root:
@@ -87,6 +102,8 @@ def main() -> int:
     src_dir = repo_root / "src"
     if str(src_dir) not in sys.path:
         sys.path.insert(0, str(src_dir))
+    if str(repo_root) not in sys.path:
+        sys.path.insert(1, str(repo_root))
 
     from models.launch import LaunchConfigModel
 
