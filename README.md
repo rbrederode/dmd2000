@@ -1,7 +1,6 @@
-# alston-rt
-Alston Radio Telescope
+# DMD2000
 
-This repository contains the source code for the Alston Radio Telescope. The Alston Radio Telescope will be constructed during 2025-2026 as part of a MSc programme undertaken with the University of Lancashire. 
+This repository contains the source code for the software to be deployed at the Alston Radio Telescope. The Alston Radio Telescope will be constructed during 2025-2026 as part of a MSc programme undertaken with the University of Lancashire. 
 
 # Mission Statement
 
