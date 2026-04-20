@@ -103,19 +103,19 @@ launch_linux_terminal() {
     local cmd="$1"
     local geometry="${WINDOW_COLUMNS}x${WINDOW_ROWS}"
 
-    if command -v x-terminal-emulator >/dev/null 2>&1; then
-        x-terminal-emulator -geometry "$geometry" -e bash -ic "$cmd" &
-    elif command -v lxterminal >/dev/null 2>&1; then
-        lxterminal --geometry="$geometry" -e "bash -ic '$cmd'" &
+    if command -v lxterminal >/dev/null 2>&1; then
+        lxterminal --geometry="$geometry" --command="bash -ic '$cmd'" &
     elif command -v xfce4-terminal >/dev/null 2>&1; then
         xfce4-terminal --geometry="$geometry" --command="bash -ic '$cmd'" &
     elif command -v gnome-terminal >/dev/null 2>&1; then
         gnome-terminal --geometry="$geometry" -- bash -ic "$cmd" &
     elif command -v konsole >/dev/null 2>&1; then
         konsole --geometry "$geometry" -e bash -ic "$cmd" &
+    elif command -v x-terminal-emulator >/dev/null 2>&1; then
+        x-terminal-emulator -e bash -ic "$cmd" &
     else
         echo "No supported terminal launcher found."
-        echo "Tried: x-terminal-emulator, lxterminal, xfce4-terminal, gnome-terminal, konsole"
+        echo "Tried: lxterminal, xfce4-terminal, gnome-terminal, konsole, x-terminal-emulator"
         exit 1
     fi
 }
