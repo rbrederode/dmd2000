@@ -62,7 +62,8 @@
                 "--sdp_host", "127.0.0.1",
                 "--dm_host", "127.0.0.1",
                 "--ws_host", "127.0.0.1",
-                "-o src/config/jodrell/obs.json"
+                "-o", "config/jodrell/obs.json",
+		        "--headless"
             ]
         }
     ]
