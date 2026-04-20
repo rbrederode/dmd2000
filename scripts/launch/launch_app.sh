@@ -43,6 +43,10 @@ quote_shell_words() {
     printf '%s' "${quoted[*]}"
 }
 
+quote_for_bash_c() {
+    printf '%q' "$1"
+}
+
 resolve_repo_root() {
     local launcher_dir
 
@@ -83,7 +87,7 @@ build_run_cmd() {
     title_quoted="$(printf '%q' "$WINDOW_TITLE")"
     session_dir_quoted="$(printf '%q' "$SESSION_DIR")"
 
-    printf "%s" "printf '\\033]0;%s\\007' $title_quoted; cd $session_dir_quoted"
+    printf '%s' "printf \"\\033]0;%s\\007\" $title_quoted; cd $session_dir_quoted"
 
     if [ "${#EXPORT_ENVS[@]}" -gt 0 ]; then
         printf ' && export'
@@ -102,15 +106,18 @@ build_run_cmd() {
 launch_linux_terminal() {
     local cmd="$1"
     local geometry="${WINDOW_COLUMNS}x${WINDOW_ROWS}"
+    local bash_invocation
+
+    bash_invocation="bash -ic $(quote_for_bash_c "$cmd")"
 
     if command -v lxterminal >/dev/null 2>&1; then
-        lxterminal --geometry="$geometry" --command="bash -ic '$cmd'" &
+        lxterminal --title="$WINDOW_TITLE" --geometry="$geometry" --command="$bash_invocation" &
     elif command -v xfce4-terminal >/dev/null 2>&1; then
-        xfce4-terminal --geometry="$geometry" --command="bash -ic '$cmd'" &
+        xfce4-terminal --title="$WINDOW_TITLE" --geometry="$geometry" --command="$bash_invocation" &
     elif command -v gnome-terminal >/dev/null 2>&1; then
-        gnome-terminal --geometry="$geometry" -- bash -ic "$cmd" &
+        gnome-terminal --title="$WINDOW_TITLE" --geometry="$geometry" -- bash -ic "$cmd" &
     elif command -v konsole >/dev/null 2>&1; then
-        konsole --geometry "$geometry" -e bash -ic "$cmd" &
+        konsole --geometry "$geometry" -p tabtitle="$WINDOW_TITLE" -e bash -ic "$cmd" &
     elif command -v x-terminal-emulator >/dev/null 2>&1; then
         x-terminal-emulator -e bash -ic "$cmd" &
     else
