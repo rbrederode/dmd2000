@@ -55,7 +55,14 @@ def resolve_entity_ids(positional_entity_ids: list[str], option_entity_ids: list
     return entity_ids
 
 
-def build_launch_command(repo_root: Path, launch, print_command: bool = False, keep_open: bool = True) -> list[str]:
+def build_launch_command(
+    repo_root: Path,
+    launch,
+    print_command: bool = False,
+    keep_open: bool = True,
+    columns: int | None = None,
+    rows: int | None = None,
+) -> list[str]:
     launcher = repo_root / "scripts" / "launch" / "launch_app.sh"
     command = [
         str(launcher),
@@ -66,6 +73,12 @@ def build_launch_command(repo_root: Path, launch, print_command: bool = False, k
         "--repo-root",
         str(repo_root),
     ]
+
+    if columns is not None:
+        command.extend(["--columns", str(columns)])
+
+    if rows is not None:
+        command.extend(["--rows", str(rows)])
 
     if print_command:
         command.append("--print-command")
@@ -90,6 +103,8 @@ def main() -> int:
     parser.add_argument("--print-command", action="store_true", help="Print the resolved launch command without starting a terminal")
     parser.add_argument("--no-keep-open", action="store_true", help="Do not keep the launched terminal session open after the program exits")
     parser.add_argument("--launch-delay", type=float, default=0.2, help="Delay in seconds between launching multiple entities")
+    parser.add_argument("--columns", type=int, required=False, help="Requested terminal width in text columns")
+    parser.add_argument("--rows", type=int, required=False, help="Requested terminal height in text rows")
 
     args = parser.parse_args()
 
@@ -127,6 +142,8 @@ def main() -> int:
             launch=launch,
             print_command=args.print_command,
             keep_open=not args.no_keep_open,
+            columns=args.columns,
+            rows=args.rows,
         )
 
         completed = subprocess.run(command, check=False)

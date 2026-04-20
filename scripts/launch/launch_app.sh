@@ -8,11 +8,13 @@ REPO_ROOT=""
 KEEP_OPEN=true
 PRINT_COMMAND=false
 EXPORT_ENVS=()
+WINDOW_COLUMNS=160
+WINDOW_ROWS=45
 
 usage() {
     cat <<'EOF'
 Usage:
-  launch_app.sh --title <title> --session-dir <dir> [--repo-root <dir>] [--env KEY=VALUE ...] [--no-keep-open] [--print-command] -- <command> [args...]
+  launch_app.sh --title <title> --session-dir <dir> [--repo-root <dir>] [--env KEY=VALUE ...] [--columns <n>] [--rows <n>] [--no-keep-open] [--print-command] -- <command> [args...]
 
 Examples:
   launch_app.sh --title dig001 --session-dir src --env GPIOZERO_PIN_FACTORY=mock -- \
@@ -99,17 +101,18 @@ build_run_cmd() {
 
 launch_linux_terminal() {
     local cmd="$1"
+    local geometry="${WINDOW_COLUMNS}x${WINDOW_ROWS}"
 
     if command -v x-terminal-emulator >/dev/null 2>&1; then
-        x-terminal-emulator -e bash -ic "$cmd" &
+        x-terminal-emulator -geometry "$geometry" -e bash -ic "$cmd" &
     elif command -v lxterminal >/dev/null 2>&1; then
-        lxterminal -e "bash -ic '$cmd'" &
+        lxterminal --geometry="$geometry" -e "bash -ic '$cmd'" &
     elif command -v xfce4-terminal >/dev/null 2>&1; then
-        xfce4-terminal --command="bash -ic '$cmd'" &
+        xfce4-terminal --geometry="$geometry" --command="bash -ic '$cmd'" &
     elif command -v gnome-terminal >/dev/null 2>&1; then
-        gnome-terminal -- bash -ic "$cmd" &
+        gnome-terminal --geometry="$geometry" -- bash -ic "$cmd" &
     elif command -v konsole >/dev/null 2>&1; then
-        konsole -e bash -ic "$cmd" &
+        konsole --geometry "$geometry" -e bash -ic "$cmd" &
     else
         echo "No supported terminal launcher found."
         echo "Tried: x-terminal-emulator, lxterminal, xfce4-terminal, gnome-terminal, konsole"
@@ -133,6 +136,14 @@ while [ "$#" -gt 0 ]; do
             ;;
         --env)
             EXPORT_ENVS+=("$2")
+            shift 2
+            ;;
+        --columns)
+            WINDOW_COLUMNS="$2"
+            shift 2
+            ;;
+        --rows)
+            WINDOW_ROWS="$2"
             shift 2
             ;;
         --keep-open)
@@ -184,6 +195,10 @@ if command -v osascript >/dev/null 2>&1; then
 tell application "Terminal"
     activate
     do script "$APPLE_CMD"
+    try
+        set number of columns of front window to $WINDOW_COLUMNS
+        set number of rows of front window to $WINDOW_ROWS
+    end try
 end tell
 EOF
 else
