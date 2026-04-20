@@ -9,4 +9,4 @@ exec "$LAUNCHER" \
     --title "$(basename "$0" .sh)" \
     --session-dir "src" \
     -- \
-    python -m sdp.sdp --profile jodrell --entity_id sdp001 --tm_host 127.0.0.1 --dig_host 127.0.0.1 --scan_store_dir ~/samples
+    python -m sdp.sdp --profile jodrell --entity_id sdp001 --headless --tm_host 127.0.0.1 --dig_host 127.0.0.1 --scan_store_dir ~/samples

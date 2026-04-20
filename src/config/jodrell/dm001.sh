@@ -9,4 +9,4 @@ exec "$LAUNCHER" \
     --title "$(basename "$0" .sh)" \
     --session-dir "src" \
     -- \
-    python dsh/dm.py --profile jodrell --entity_id dm001 --tm_host 127.0.0.1 --ws_host 127.0.0.1
+    python dsh/dm.py --profile jodrell --entity_id dm001 --headless --tm_host 127.0.0.1 --ws_host 127.0.0.1
