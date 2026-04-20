@@ -281,6 +281,7 @@ class BaseModel:
         from models.dig import DigitiserList, DigitiserModel
         from models.dsh import DishMode, DishModel, DishList, DishManagerModel, Feed, PointingState, Capability, DriverType, PECModel
         from models.health import HealthState
+        from models.launch import LaunchModel, LaunchConfigModel
         from models.obs import ObsState, ObsModel
         from models.oda import ObsList, ScanStore, ODAModel
         from models.oet import OETModel
@@ -385,6 +386,12 @@ class BaseModel:
                 from dsh.drivers.md01.md01_model import MD01Config
                 deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
                 return MD01Config(**deserialized_fields)
+            elif model_type == "LaunchModel":
+                deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
+                return LaunchModel(**deserialized_fields)
+            elif model_type == "LaunchConfigModel":
+                deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
+                return LaunchConfigModel(**deserialized_fields)
             elif model_type == "DriftConfig":
                 # Import lazily to avoid package import errors when optional drivers are not present
                 from dsh.drivers.drift.model import DriftConfig
