@@ -39,13 +39,14 @@ class Scan:
             for key in keys_to_remove:
                 del Scan._scan_iter_counter[key]
 
-    def __init__(self, scan_model: ScanModel):
+    def __init__(self, scan_model: ScanModel, retain_iq: bool = False):
         """ Initialize a scan with the given parameters.
             A scan holds raw IQ samples, power spectrum, summed power spectrum and baseline data arrays.
             The data arrays are initialized to zero and incrementally loaded as samples arrive.
 
             Parameters
                 scan_model: The ScanModel instance containing the parameters for this scan
+                retain_iq: Whether to retain full-resolution raw IQ / power arrays in memory
         """
 
         # Compose a key from obs_id, tgt_idx, freq_scan (obs_id is unique per observation, digitiser and dish)
@@ -77,6 +78,7 @@ class Scan:
         with self._rlock:
 
             self.scan_model = scan_model
+            self.retain_iq = retain_iq
             self.pipeline = None            # Processing pipeline to calibrate scan data
             self.data_source = ScanDataSource.NONE   # Highest-fidelity scan data currently loaded into this scan
 
@@ -146,11 +148,16 @@ class Scan:
         """
         with self._rlock:
 
-            # Calculate the number of rows in the spectrogram based on duration and sample rate
-            num_rows = int(np.ceil(self.scan_model.duration * self.scan_model.sample_rate / self.scan_model.channels))      # number of rows in the spectrogram
+            # Full-resolution IQ / power matrices are extremely memory-hungry at radio sample rates,
+            # so we only retain them when explicitly requested (e.g. offline IQ reload/debug flows).
+            if self.retain_iq:
+                num_rows = int(np.ceil(self.scan_model.duration * self.scan_model.sample_rate / self.scan_model.channels))
+                self.raw = np.zeros((num_rows, self.scan_model.channels), dtype=np.complex64)
+                self.pwr = np.zeros((num_rows, self.scan_model.channels), dtype=np.float64)
+            else:
+                self.raw = None
+                self.pwr = None
 
-            self.raw = np.zeros((num_rows, self.scan_model.channels), dtype=np.complex64)   # complex64 for raw IQ samples i.e. 8 bytes per sample (4 bytes for real and 4 bytes for imaginary parts)
-            self.pwr = np.zeros((num_rows, self.scan_model.channels), dtype=np.float64)     # float64 for power spectrum data
             self.spr = np.zeros((self.scan_model.duration, self.scan_model.channels), dtype=np.float64)     # float64 for summed pwr for each second in duration
             self.cal = np.zeros((self.scan_model.duration, self.scan_model.channels), dtype=np.float64)     # float64 for calibrated spectrum for each second in duration
             self.mpr = np.ones((self.scan_model.channels,), dtype=np.float64)               # float64 for mean power spectrum over duration for each channel (fft bin)
@@ -272,9 +279,6 @@ class Scan:
         iq = iq[:int(self.scan_model.sample_rate - (self.scan_model.sample_rate % self.scan_model.channels))].astype(np.complex64)  # Discard excess samples that don't fit into the channels
         iq = iq.reshape(-1, self.scan_model.channels) # Reshape to have rows each of size channels columns
 
-        row_start = int((sec - 1) * self.scan_model.sample_rate / self.scan_model.channels)   # Calculate the starting row index (zero based) using sec
-        row_end = int(sec * self.scan_model.sample_rate / self.scan_model.channels)           # Calculate the ending row index (zero based) using sec
-
         # Calculate the power spectrum for all rows in one vectorized FFT pass
         # This is more efficient than iterating through rows and calculating the FFT for each row separately
         # for j in range(iq.shape[0]):
@@ -286,10 +290,17 @@ class Scan:
         spr = self.pipeline.process(signal=spr, context={"pipeline": "spr", "sec": sec}) if self.pipeline else spr                # Push the summed power spectrum through the spr pipeline
         cal = self.pipeline.process(signal=spr.copy(), context={"pipeline": "cal", "sec": sec}) if self.pipeline else spr.copy()  # Push the summed power spectrum through the cal pipeline
 
-        # Store the raw, power and summed spectrum data in the appropriate rows of the scan data arrays
+        mean_real = np.mean(np.abs(iq.real)) * 100
+        mean_imag = np.mean(np.abs(iq.imag)) * 100
+
+        # Store only the per-second products needed by the live SDP path unless IQ retention
+        # has been explicitly enabled for this scan.
         with self._rlock:
-            self.raw[row_start:row_start + iq.shape[0],:] = iq
-            self.pwr[row_start:row_start + iq.shape[0],:] = pwr
+            if self.retain_iq and self.raw is not None and self.pwr is not None:
+                row_start = int((sec - 1) * self.scan_model.sample_rate / self.scan_model.channels)
+                self.raw[row_start:row_start + iq.shape[0],:] = iq
+                self.pwr[row_start:row_start + iq.shape[0],:] = pwr
+
             self.spr[sec - 1,:] = spr  # sec is 1-based index, so adjust for 0-based array index
             self.cal[sec - 1,:] = cal  # sec is 1-based index, so adjust for 0-based array index
 
@@ -301,12 +312,9 @@ class Scan:
             self.mpr = self.pipeline.process(signal=mpr, context={"pipeline": "mpr", "sec": sec}) if self.pipeline else mpr
 
             self.loaded_secs[sec - 1] = True  # Mark this second as loaded only after mpr is populated
-            self.data_source = ScanDataSource.RAW
-
-            indices = np.linspace(row_start, row_end - 1, int(self.raw.shape[0]*0.01), dtype=int)
-
-            self.mean_real = np.mean(np.abs(self.raw[row_start:row_end, ].real))*100  # Find the mean real value in the raw samples (I)
-            self.mean_imag = np.mean(np.abs(self.raw[row_start:row_end, ].imag))*100  # Find the mean imaginary value in the raw samples (Q)
+            self.data_source = ScanDataSource.RAW if self.retain_iq else ScanDataSource.SPR
+            self.mean_real = mean_real
+            self.mean_imag = mean_imag
 
         # Count how many rows have self.loaded_secs marked as True
         actual_rows = np.count_nonzero(self.loaded_secs)
@@ -467,6 +475,10 @@ class Scan:
 
         try:
             if include_iq:
+                if self.raw is None:
+                    raise XSoftwareFailure(
+                        f"Scan {self.scan_model.scan_id} - IQ retention is disabled, so raw IQ data is not available to save."
+                    )
                 filename = prefix + "-raw" + ".iq"
                 with open(f"{output_dir}/{filename}", 'wb') as f:
                     self.raw.tofile(f)
@@ -532,7 +544,7 @@ class Scan:
             logger.warning(f"Scan - Loading incomplete scan with status: {scan_model.status.name} from disk.\n{scan_model.to_dict()}")
 
         # Create the Scan instance (this initialises data arrays via __init__)
-        scan = cls(scan_model)
+        scan = cls(scan_model, retain_iq=include_iq)
         scan.set_pipeline(pipeline)
 
         try:
@@ -605,6 +617,7 @@ class Scan:
         """
         if not os.path.exists(input_dir):
             logger.warning(f"Scan {self.scan_model.scan_id} - Missing scan store directory: {input_dir}")
+            os.makedirs(input_dir, exist_ok=True)
             return None
 
         file_prefix = gen_file_prefix(dt=None, entity_id=self.scan_model.dig_id, gain=self.scan_model.gain, duration=self.scan_model.duration,
@@ -653,6 +666,11 @@ class Scan:
             if hasattr(self, 'raw') and self.raw is not None:
                 logger.info(f"Scan {self.scan_model.scan_id} - Deleting raw IQ data from memory.")
                 del self.raw
+                self.raw = None
+            if hasattr(self, 'pwr') and self.pwr is not None:
+                logger.info(f"Scan {self.scan_model.scan_id} - Deleting power spectrum data from memory.")
+                del self.pwr
+                self.pwr = None
 
     def get_scan_meta(self) -> dict:
         """
