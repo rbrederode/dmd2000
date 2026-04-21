@@ -4134,7 +4134,7 @@
       "sample_rate": 2048000,
       "integration_time": 300,
       "spectral_resolution": 2048,
-      "tgt_idx": 2048,
+      "tgt_idx": 256,
       "obs_id": "ODT-2026-04-18T0900Z-dish001"
     },
     {
@@ -8230,7 +8230,7 @@
         "instance": "PointingType",
         "value": "DRIFT_SCAN"
       },
-      "tgt_idx": 2048,
+      "tgt_idx": 256,
       "obs_id": "ODT-2026-04-18T0900Z-dish001"
     },
     {
