@@ -46,7 +46,7 @@ class Scan:
 
             Parameters
                 scan_model: The ScanModel instance containing the parameters for this scan
-                retain_iq: Whether to retain full-resolution raw IQ / power arrays in memory
+                retain_iq: Whether to retain full-resolution raw IQ samples in memory
         """
 
         # Compose a key from obs_id, tgt_idx, freq_scan (obs_id is unique per observation, digitiser and dish)
@@ -87,7 +87,7 @@ class Scan:
 
             # Data arrays that hold data for a given scan of {duration} seconds
             self.raw = None  # Raw IQ samples for the duration of the scan
-            self.pwr = None  # Power spectrum for the duration of the scan
+            self.pwr = None  # Power spectrum for the most recently processed second
             self.spr = None  # Summed power spectrum for each second in the duration of the scan
             self.cal = None  # Calibrated power spectrum for each second in the duration of the scan
             self.mpr = None  # Mean power spectrum over duration of the scan
@@ -148,20 +148,25 @@ class Scan:
         """
         with self._rlock:
 
-            # Full-resolution IQ / power matrices are extremely memory-hungry at radio sample rates,
+            # Full-resolution IQ matrices are extremely memory-hungry at radio sample rates,
             # so we only retain them when explicitly requested (e.g. offline IQ reload/debug flows).
             if self.retain_iq:
                 num_rows = int(np.ceil(self.scan_model.duration * self.scan_model.sample_rate / self.scan_model.channels))
-            # so we only retain them when explicitly requested (e.g. offline IQ reload/debug flows).
                 self.raw = np.zeros((num_rows, self.scan_model.channels), dtype=np.complex64)               # complex64 for raw IQ samples i.e. 8 bytes per sample (4 bytes for real and 4 bytes for imaginary parts)
-                self.pwr = np.zeros((num_rows, self.scan_model.channels), dtype=np.float64)                 # float64 for power spectrum data
             else:
                 self.raw = None
-                self.pwr = None
+
+            # Power is only needed a second at a time, so avoid holding a scan-sized array in memory.
+            self.pwr = None
 
             self.spr = np.zeros((self.scan_model.duration, self.scan_model.channels), dtype=np.float64)     # float64 for summed pwr for each second in duration
             self.cal = np.zeros((self.scan_model.duration, self.scan_model.channels), dtype=np.float64)     # float64 for calibrated spectrum for each second in duration
             self.mpr = np.ones((self.scan_model.channels,), dtype=np.float64)               # float64 for mean power spectrum over duration for each channel (fft bin)
+
+    def get_rows_per_sec(self) -> int:
+        """Get the number of FFT rows represented by one second of data."""
+        trimmed_samples = int(self.scan_model.sample_rate - (self.scan_model.sample_rate % self.scan_model.channels))
+        return trimmed_samples // self.scan_model.channels
 
     def init_qa(self) -> ScanQA:
         """
@@ -297,10 +302,12 @@ class Scan:
         # Store only the per-second products needed by the live SDP path unless IQ retention
         # has been explicitly enabled for this scan.
         with self._rlock:
-            if self.retain_iq and self.raw is not None and self.pwr is not None:
-                row_start = int((sec - 1) * self.scan_model.sample_rate / self.scan_model.channels)   # Calculate the starting row index (zero based) using sec (1-based index) and sample_rate and channels
+            if self.retain_iq and self.raw is not None:
+                row_start = (sec - 1) * self.get_rows_per_sec()   # Calculate the starting row index (zero based) using sec (1-based index)
                 self.raw[row_start:row_start + iq.shape[0],:] = iq
-                self.pwr[row_start:row_start + iq.shape[0],:] = pwr
+
+            # Keep only the latest per-second power block in memory when IQ retention is enabled.
+            self.pwr = pwr if self.retain_iq else None
 
             self.spr[sec - 1,:] = spr  # sec is 1-based index, so adjust for 0-based array index
             self.cal[sec - 1,:] = cal  # sec is 1-based index, so adjust for 0-based array index
@@ -367,6 +374,7 @@ class Scan:
         with self._rlock:
             self.spr[sec - 1, :] = spr
             self.cal[sec - 1, :] = cal
+            self.pwr = None
 
             loaded_mask = np.array(self.loaded_secs, dtype=bool)
             loaded_mask[sec - 1] = True
@@ -409,16 +417,19 @@ class Scan:
             self.cal.fill(0.0)  # Clear the calibrated spectrum array before re-processing
 
             if self.data_source == ScanDataSource.RAW:
-                self.pwr = np.abs(np.fft.fftshift(np.fft.fft(self.raw, axis=1), axes=1)) ** 2
-                rows_per_sec = self.pwr.shape[0] // self.scan_model.duration if self.scan_model.duration > 0 else 0
+                rows_per_sec = self.get_rows_per_sec() if self.scan_model.duration > 0 else 0
 
                 for sec in loaded_sec_indices:
                     row_start = sec * rows_per_sec
-                    row_end = (sec + 1) * rows_per_sec if sec < self.scan_model.duration - 1 else self.pwr.shape[0]
+                    row_end = (sec + 1) * rows_per_sec if sec < self.scan_model.duration - 1 else self.raw.shape[0]
 
-                    signal = np.sum(self.pwr[row_start:row_end, :], axis=0)
+                    pwr = np.abs(np.fft.fftshift(np.fft.fft(self.raw[row_start:row_end, :], axis=1), axes=1)) ** 2
+                    signal = np.sum(pwr, axis=0)
                     self.spr[sec, :] = self.pipeline.process(signal=signal, context={"pipeline": "spr", "sec": sec + 1}) if self.pipeline else signal
                     self.cal[sec, :] = self.pipeline.process(signal=self.spr[sec, :].copy(), context={"pipeline": "cal", "sec": sec + 1}) if self.pipeline else self.spr[sec, :].copy()
+
+                    # Expose the last power block processed without retaining scan-wide power data.
+                    self.pwr = pwr
 
                 valid_raw = self.raw[np.any(self.raw != 0, axis=1)]
                 if valid_raw.shape[0] > 0:

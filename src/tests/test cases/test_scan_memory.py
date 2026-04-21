@@ -68,5 +68,5 @@ def test_scan_can_optionally_retain_iq():
     assert scan.raw is not None
     assert scan.pwr is not None
     assert scan.raw.shape == (4, 4)
-    assert scan.pwr.shape == (4, 4)
+    assert scan.pwr.shape == (2, 4)
     assert scan.data_source == ScanDataSource.RAW
