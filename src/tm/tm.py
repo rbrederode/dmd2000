@@ -48,18 +48,6 @@ from webhook_handler import WebhookHandler
 
 logger = logging.getLogger(__name__)
 
-# If modifying these scopes, delete the file token.json.
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
-
-# The SHEET ID for the ALSTON RADIO TELESCOPE google sheet
-ALSTON_RADIO_TELESCOPE = "1r73N0VZHSQC6RjRv94gzY50pTgRvaQWfctGGOMZVpzc"
-
-TM_UI_API = "TM_UI_API!"            # Range for UI-TM API data
-TM_UI_UPDATE_INTERVAL_S = 45        # Update interval in seconds
-
-ODT_OBS_LIST = TM_UI_API + "D2"     # Range for Observation Design Tool
-DIG001_CONFIG = TM_UI_API + "B3"    # Range for Digitiser 001 configuration
-
 class TelescopeManager(App):
 
     AUTO_GAIN_TIMEOUT_MS = 30000
@@ -72,6 +60,12 @@ class TelescopeManager(App):
 
         # Lock for thread-safe allocation of shared resources
         self._rlock = threading.RLock()  
+
+        # When TM is started with -o/--observation_file we temporarily treat that
+        # observation definition as the authoritative ODT source until it completes.
+        self._startup_odt_protection_enabled = False
+        self._startup_odt_pending_config = None
+        self._startup_odt_protected_obs_ids = set()
 
         # Observation Execution Tool is an internal component of the TM used to manage observation workflows
         self.oet = ObservationExecutionTool(telmodel=self.telmodel, tm=self)
@@ -138,6 +132,21 @@ class TelescopeManager(App):
             help="Path to an observation definition JSON file to inject as an ODT config event at startup",
         )
 
+    def _is_startup_odt_event(self, event: ConfigEvent) -> bool:
+        """Return True when the provided ODT config event is the startup -o injection."""
+        return (
+            event is not None
+            and event.category.upper() == "ODT"
+            and self._startup_odt_pending_config is not None
+            and event.new_config == self._startup_odt_pending_config
+        )
+
+    def _disable_startup_odt_protection(self):
+        """Release precedence of the startup -o observation over other ODT sources."""
+        self._startup_odt_protection_enabled = False
+        self._startup_odt_pending_config = None
+        self._startup_odt_protected_obs_ids.clear()
+
     def process_init(self) -> Action:
         """ Processes initialisation event on startup once all app processors are running.
             Runs in single threaded mode and switches to multi-threading mode after this method completes.
@@ -188,6 +197,9 @@ class TelescopeManager(App):
         observation_file = getattr(self.get_args(), "observation_file", None)
         if observation_file:
             odt_config = ObsList.from_disk(observation_file).to_dict()
+            self._startup_odt_protection_enabled = True
+            self._startup_odt_pending_config = odt_config
+            self._startup_odt_protected_obs_ids.clear()
             config_event = ConfigEvent(
                 category="ODT",
                 old_config=None,
@@ -271,9 +283,18 @@ class TelescopeManager(App):
             # Observation Design Tool (ODT) is the source of truth for new (ObsState = EMPTY) observations
             # Observation Data Archive (ODA) is the source of truth for in progress (ObsState != EMPTY) observations
 
+            is_startup_odt_event = self._is_startup_odt_event(event)
+            if self._startup_odt_protection_enabled and not is_startup_odt_event:
+                logger.info(
+                    "Ignoring external ODT configuration update because the startup "
+                    "-o observation still has precedence."
+                )
+                return action
+
             # Extract a list of ObsState = EMPTY observations from the incoming ODT configuration event (JSON)
             odt = ObsList.from_dict(event.new_config)
             odt_empty_obs = [obs for obs in odt.obs_list if obs.obs_state == ObsState.EMPTY]
+            startup_protected_obs_ids = set()
             
             # Create dictionary of EMPTY ODT observation ids for quick lookup
             odt_empty_obs_dict = {obs.obs_id: obs for obs in odt_empty_obs}
@@ -290,6 +311,8 @@ class TelescopeManager(App):
                         # Update existing EMPTY observations in the ODA with new data from ODT
                         logger.info(f"Updating existing EMPTY observation {existing_obs.obs_id} with new data from ODT")
                         self.telmodel.oda.obs_store.obs_list[i] = odt_empty_obs_dict[existing_obs.obs_id]
+                        if is_startup_odt_event:
+                            startup_protected_obs_ids.add(odt_empty_obs_dict[existing_obs.obs_id].obs_id)
                     else: 
                         # Remove EMPTY observations from ODA that are no longer in ODT
                         logger.info(f"Removing existing EMPTY observation {existing_obs.obs_id} as it is no longer present in ODT")
@@ -313,6 +336,12 @@ class TelescopeManager(App):
                     # END DEBUG CODE, REMOVE LATER
 
                     self.telmodel.oda.obs_store.obs_list.append(odt_obs)
+                    if is_startup_odt_event:
+                        startup_protected_obs_ids.add(odt_obs.obs_id)
+
+            if is_startup_odt_event:
+                self._startup_odt_protected_obs_ids = startup_protected_obs_ids
+                self._startup_odt_pending_config = None
 
             # Start timer to initiate the next scheduled observation if applicable
             self.oet.start_next_obs_timer(action)
@@ -337,7 +366,22 @@ class TelescopeManager(App):
         """ Defer workflow transitions on observations to the Observation Execution Tool (OET).
             Returns an Action object with actions to be performed.
         """
-        return self.oet.process_obs_event(event)
+        action = self.oet.process_obs_event(event)
+
+        if (
+            event.transition == ObsTransition.RELEASE_RESOURCES
+            and event.obs is not None
+            and event.obs.obs_id in self._startup_odt_protected_obs_ids
+        ):
+            self._startup_odt_protected_obs_ids.discard(event.obs.obs_id)
+            logger.info(
+                f"Startup -o observation {event.obs.obs_id} released resources; "
+                "removing its ODT protection."
+            )
+            if not self._startup_odt_protected_obs_ids:
+                self._disable_startup_odt_protection()
+
+        return action
 
     def process_dm_connected(self, event) -> Action:
         """ Processes Dish Manager connected events.
