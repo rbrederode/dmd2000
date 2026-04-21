@@ -120,6 +120,21 @@ class ObservationExecutionTool:
                             echo_data=event.obs))
             
             elif event.transition == ObsTransition.READY:
+                if event.obs.obs_state == ObsState.SCANNING:
+                    logger.info(
+                        f"Observation Execution Tool ignoring duplicate READY transition for "
+                        f"observation {event.obs.obs_id} because it is already SCANNING."
+                    )
+                    return action
+
+                if event.obs.obs_state not in (ObsState.CONFIGURING, ObsState.READY):
+                    logger.warning(
+                        f"Observation Execution Tool ignoring READY transition for "
+                        f"observation {event.obs.obs_id} in unexpected state "
+                        f"{event.obs.obs_state.name}."
+                    )
+                    return action
+
                 event.obs.obs_state = ObsState.READY
 
                 # Attempt to start scanning, returns true if scanning successfully requested, false otherwise
@@ -127,6 +142,28 @@ class ObservationExecutionTool:
                     action.set_obs_transition(obs=event.obs, transition=ObsTransition.SCAN_STARTED)
 
             elif event.transition == ObsTransition.SCAN_STARTED:
+                if event.obs.obs_state == ObsState.CONFIGURING:
+                    logger.warning(
+                        f"Observation Execution Tool received SCAN_STARTED for observation "
+                        f"{event.obs.obs_id} while it was still CONFIGURING. "
+                        "Promoting to READY to absorb a stale configuration event."
+                    )
+                    event.obs.obs_state = ObsState.READY
+
+                elif event.obs.obs_state == ObsState.SCANNING:
+                    logger.info(
+                        f"Observation Execution Tool ignoring duplicate SCAN_STARTED transition "
+                        f"for observation {event.obs.obs_id} because it is already SCANNING."
+                    )
+                    return action
+
+                elif event.obs.obs_state != ObsState.READY:
+                    logger.warning(
+                        f"Observation Execution Tool ignoring SCAN_STARTED transition for "
+                        f"observation {event.obs.obs_id} in unexpected state "
+                        f"{event.obs.obs_state.name}."
+                    )
+                    return action
 
                 event.obs.obs_state = ObsState.SCANNING
                 timer_name = f"obs_scanning_timer:{event.obs.obs_id}"
