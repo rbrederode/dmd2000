@@ -301,6 +301,8 @@ class DM(App):
             target = TargetModel.from_dict(api_call['value']) if isinstance(api_call.get('value'), dict) else None
             target_id = target.obs_id + f"-{target.tgt_idx}" if target is not None else None
 
+            target_acquired = False
+
             # Prevent concurrent access to the dish driver
             with dish_lock:
                 try:
@@ -309,10 +311,12 @@ class DM(App):
                         dish_driver.clear_target_tuple()
                         dish_driver.set_dish_mode(DishMode.STANDBY_FP)
 
-                    # Else if a valid target is provided, set the new target and set dish to OPERATE mode (it will initiate slewing) 
+                    # Else if a valid target is provided, set the new target and set dish to OPERATE mode (it will initiate slewing if necessary) 
                     elif target is not None and target_id is not None:
                         dish_driver.set_target_tuple(target_id, target)
                         dish_driver.set_dish_mode(DishMode.OPERATE)
+                        # If the dish is already on target, we can indicate that in the response to TM so the OET workflow can be optimized accordingly 
+                        target_acquired = dish_driver.get_pointing_state() == PointingState.READY
 
                     else:
                         raise XSoftwareFailure(f"Invalid target provided to set for dish {dish_id}\n{api_call}")
@@ -329,7 +333,13 @@ class DM(App):
 
             msg = f"DM set target {target_id if target_id is not None else 'None'} for Dish {dish_id}."
             logger.info(msg + f"\n{target.to_dict() if target is not None else 'No Target'}")
-            rsp_msg = self._construct_rsp_to_tm(status=tm_dm.STATUS_SUCCESS, message=msg, api_msg=api_msg, api_call=api_call)            
+            rsp_msg = self._construct_rsp_to_tm(
+                status=tm_dm.STATUS_SUCCESS,
+                message=msg,
+                api_msg=api_msg,
+                api_call=api_call,
+                include_obs_data=target_acquired,
+            )
             action.set_msg_to_remote(rsp_msg)
 
         return action
@@ -492,9 +502,10 @@ class DM(App):
                     )
                     return action
 
-                # If the dish pointing state transitioned to READY, it means we have reached the desired slew position
-                # Pointing state would be SLEW if still slewing or TRACK if already tracking (if necessary)
-                if target is not None and dish_driver.get_pointing_state() == PointingState.READY:
+                # If the dish pointing state transitioned to READY, it means we have reached the desired slew position.
+                # Drift scans do not slew to a new position, so suppress READY status spam for active DRIFT_SCAN targets.
+                # Pointing state would be SLEW if still slewing or TRACK if already tracking (if necessary).
+                if (target is not None and dish_driver.get_pointing_state() == PointingState.READY and target.pointing != PointingType.DRIFT_SCAN):
                     logger.debug(f"DM reached slew target and is now in READY state for target {target} acquisition in observation {target.obs_id} with Dish {dish_id}.")
 
                     status = tm_dm.STATUS_SUCCESS
@@ -605,7 +616,7 @@ class DM(App):
             
         return action
 
-    def _construct_rsp_to_tm(self, status, message, api_msg: dict, api_call: dict) -> APIMessage:
+    def _construct_rsp_to_tm(self, status, message, api_msg: dict, api_call: dict, include_obs_data: bool = False) -> APIMessage:
         """ Constructs a response message to the Telescope Manager.
         """
         # Prepare rsp msg to tm containing result of an api call
@@ -623,9 +634,10 @@ class DM(App):
         if api_call.get('value') is not None:
             tm_rsp_api_call["value"] = api_call['value']
 
-        # Exclude obs_data on Sucessful Set Target as this will trigger an OET workflow transition and review
-        # Set Target takes time to slew and acquire the target, so a status update is initiated to communicate this event
-        if status == tm_dm.STATUS_ERROR or api_call.get('property') != tm_dm.PROPERTY_TARGET:
+        # Exclude obs_data on successful set-target unless the dish is already on target.
+        # In the usual case set-target leads to a slew/track/scan acquisition and a later status update
+        # is used to trigger the TM/OET workflow review. If no acquisition is needed, keep obs_data here.
+        if status == tm_dm.STATUS_ERROR or api_call.get('property') != tm_dm.PROPERTY_TARGET or include_obs_data:
             tm_rsp_api_call["obs_data"] = api_call['obs_data']
 
         if message is not None:
