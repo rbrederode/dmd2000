@@ -18,6 +18,7 @@ from models.proc import ProcessorModel
 from models.health import HealthState
 from util.availability import get_app_reliability, get_app_availability
 from util.format import fmt_bool
+from util.version import get_version_info
 from util.xbase import XBase, XSoftwareFailure
 from util.timer import Timer, TimerManager
 from env import events
@@ -34,11 +35,15 @@ class App:
 
     def __init__(self, app_name: str, app_model: AppModel):
 
+        version_info = get_version_info()
+
         if app_name is None or app_name.strip() == "":
             raise XSoftwareFailure("App requires a non-empty app name to initialise itself")
 
         self.app_model = app_model if app_model is not None else AppModel(app_name=app_name)
         self.app_model.app_name = app_name
+        
+        self.app_model.version = version_info
         self.app_model.app_running = True
         
         self.queue = Queue()                     # Event queue for the application
