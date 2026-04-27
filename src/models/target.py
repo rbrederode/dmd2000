@@ -181,7 +181,7 @@ class TargetConfig(BaseModel):
         "tgt_idx": And(int, lambda v: v >= -1),                                 # Target list index (-1 = not set, 0-based)
 
         "feed": And(Feed, lambda v: isinstance(v, Feed)),                       # Feed enum
-        "gain": And(Or(int, float), lambda v: v >= 0.0),                        # Gain (dBi)
+        "gain": Or(And(str, lambda v: v.upper() == "AUTO"), And(Or(int, float), lambda v: v >= 0.0)),  # Gain (dBi) or AUTO
         "center_freq": And(Or(int, float), lambda v: v >= 0.0),                 # Center frequency (Hz) 
         "bandwidth": And(Or(int, float), lambda v: v >= 0.0),                   # Bandwidth (Hz) 
         "sample_rate": And(Or(int, float), lambda v: v >= 0.0),                 # Sample rate (Hz) 
@@ -358,7 +358,7 @@ class TargetScanSet(BaseModel):
                 start_freq=scan_start_freq,
                 center_freq=scan_center_freq,
                 end_freq=scan_end_freq,
-                gain=tgt_config.gain,
+                gain=0.0 if str(tgt_config.gain).upper() == "AUTO" else tgt_config.gain,
                 status=ScanState.EMPTY,
                 last_update=datetime.now(timezone.utc)
             )

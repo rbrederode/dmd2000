@@ -21,7 +21,7 @@ class LoadState(BaseModel):
     schema = Schema({
         "_type": And(str, lambda v: v == "LoadState"),
         "load": And(bool, lambda v: isinstance(v, bool)),
-        "gpio_pin": And(int, lambda v: 0 <= v <= 27), # GPIO pin number for load control to switch a relay on/off
+        "gpio_pin": Or(None, And(int, lambda v: 0 <= v <= 27)), # None disables GPIO load relay control
         "last_update": And(datetime, lambda v: isinstance(v, datetime)),
     })
 
@@ -316,4 +316,3 @@ if __name__ == "__main__":
     )
 
     default_diglist.save_to_disk(output_dir="./config/default")
-

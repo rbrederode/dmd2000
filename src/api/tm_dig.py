@@ -50,7 +50,7 @@ TO = (
 )
 
 # Allowable properties to get or set
-PROPERTY_LOAD_STATE     = 'load_state'       # Load status True/False and GPIO pin number in a dictionary e.g. {"load": True, "gpio_pin": 17}
+PROPERTY_LOAD_STATE     = 'load_state'       # Load status and optional GPIO pin e.g. {"load": True, "gpio_pin": 17}; gpio_pin None disables GPIO control
 PROPERTY_CENTER_FREQ    = 'center_freq'      # Center frequency in Hz
 PROPERTY_SAMPLE_RATE    = 'sample_rate'      # Sample rate in samples per second
 PROPERTY_BANDWIDTH      = 'bandwidth'        # Bandwidth in Hz
@@ -81,6 +81,7 @@ METHOD_SET_DIRECT_SAMPLING  = 'set_direct_sampling' # Set direct sampling mode (
 METHOD_READ_BYTES           = 'read_bytes'          # Read raw bytes from the device
 METHOD_READ_SAMPLES         = 'read_samples'        # Read samples from the device
 METHOD_GET_AUTO_GAIN        = 'get_auto_gain'       # Determine optimal gain setting e.g. 20 dB
+METHOD_SET_AUTO_GAIN        = 'set_auto_gain'       # Automatically set optimal gain setting e.g. 20 dB
 METHOD_GET_GAIN_GAUSSIANITY = 'get_gain_gaussianity' # Run gaussianity test (Shapiro–Wilk) on current gain setting
 
 METHODS = (
@@ -90,6 +91,7 @@ METHODS = (
     METHOD_READ_BYTES,
     METHOD_READ_SAMPLES,
     METHOD_GET_AUTO_GAIN,
+    METHOD_SET_AUTO_GAIN,
     METHOD_GET_GAIN_GAUSSIANITY,
 )
 

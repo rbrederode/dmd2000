@@ -309,6 +309,21 @@ class SDR:
 
         return gauss_gain
 
+    def set_auto_gain(self, sample_rate=None, time_in_secs=1, p_threshold=0.05):
+        """Automatically set the SDR gain to the optimal setting for Gaussianity.
+            :param sample_rate: Sample rate in Hz
+            :param time_in_secs: Duration in seconds to sample for each gain setting
+            :param p_threshold: p-value threshold for Gaussian detection
+            :returns:
+            Return the gain setting that meets the Gaussianity criteria.
+        """
+        gain = self.get_auto_gain(sample_rate=sample_rate, time_in_secs=time_in_secs, p_threshold=p_threshold)
+        if gain is not None:
+            self.set_gain(gain)
+            logger.info(f"SDR auto gain set to {gain} dB for optimal gaussianity.")
+        else:
+            logger.warning("SDR auto gain could not be determined.")
+
     def get_center_freq(self):
         if self.rtlsdr is None:
             logger.warning("SDR device not connected.")

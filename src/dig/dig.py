@@ -61,43 +61,6 @@ class Digitiser(App):
         self.dig_model.scanning = False # Flag indicating if we are currently scanning for samples (from the SDR)
         self.load_relay = None # GPIO output to drive a relay switch to apply a load resistor in the signal path
 
-    def _apply_load_relay_state(self, load_enabled: bool):
-        """Drive the optional GPIO relay to match the current load state."""
-        if self.load_relay is None:
-            return
-
-        if load_enabled:
-            self.load_relay.on()
-        else:
-            self.load_relay.off()
-
-    def set_load_state(self, value):
-        """Configure the load relay GPIO and drive it to the requested load state."""
-        if isinstance(value, LoadState):
-            load_state = value
-        elif isinstance(value, dict) and value.get("_type") == "LoadState":
-            load_state = LoadState.from_dict(value)
-        else:
-            load_state = LoadState(**value)
-
-        pin_changed = (
-            self.load_relay is None
-            or load_state.gpio_pin != self.dig_model.load_state.gpio_pin
-        )
-
-        if pin_changed:
-            if self.load_relay is not None:
-                self.load_relay.close()
-                self.load_relay = None
-            self.load_relay = LED(load_state.gpio_pin)
-
-        self._apply_load_relay_state(load_state.load)
-        self.dig_model.load_state = load_state
-
-    def get_load_state(self):
-        """Return the current load state in API-serialisable form."""
-        return self.dig_model.load_state.to_dict()
-
     def add_args(self, arg_parser):
         """ Specifies the digitiser's command line arguments.
         """
@@ -492,7 +455,7 @@ class Digitiser(App):
             logger.error(f"Digitiser SDR not connected, cannot call method {method}")
             return tm_dig.STATUS_ERROR, f"Digitiser SDR not connected, cannot call method {method}", None, None
 
-        if method == tm_dig.METHOD_GET_AUTO_GAIN:
+        if method in [tm_dig.METHOD_GET_AUTO_GAIN, tm_dig.METHOD_SET_AUTO_GAIN]:
             if self.dig_model.scanning:
                 msg = "Digitiser cannot run auto gain while scanning is active. Stop scanning first."
                 logger.error(msg)
@@ -635,6 +598,50 @@ class Digitiser(App):
 
         tm_rsp.set_api_call(tm_rsp_api_call)       
         return tm_rsp
+
+    def _apply_load_relay_state(self, load_enabled: bool):
+        """Drive the optional GPIO relay to match the current load state."""
+        if self.load_relay is None:
+            return
+
+        if load_enabled:
+            self.load_relay.on()
+        else:
+            self.load_relay.off()
+
+    def set_load_state(self, value):
+        """Configure the optional load relay GPIO and drive it to the requested load state."""
+        if isinstance(value, LoadState):
+            load_state = value
+        elif isinstance(value, dict) and value.get("_type") == "LoadState":
+            load_state = LoadState.from_dict(value)
+        else:
+            load_state = LoadState(**value)
+
+        if load_state.gpio_pin is None:
+            if self.load_relay is not None:
+                self.load_relay.close()
+                self.load_relay = None
+            self.dig_model.load_state = load_state
+            return
+
+        pin_changed = (
+            self.load_relay is None
+            or load_state.gpio_pin != self.dig_model.load_state.gpio_pin
+        )
+
+        if pin_changed:
+            if self.load_relay is not None:
+                self.load_relay.close()
+                self.load_relay = None
+            self.load_relay = LED(load_state.gpio_pin)
+
+        self._apply_load_relay_state(load_state.load)
+        self.dig_model.load_state = load_state
+
+    def get_load_state(self):
+        """Return the current load state in API-serialisable form."""
+        return self.dig_model.load_state.to_dict()
 
 def main():
     digitiser = Digitiser()
