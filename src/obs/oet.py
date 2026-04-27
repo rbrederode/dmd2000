@@ -571,12 +571,11 @@ class ObservationExecutionTool:
                 old_scan_config['scanning'] = sdp_dig.scanning
                 new_scan_config['scanning'] = scanning
 
-            if target_config.feed == Feed.LOAD and sdp_dig.load != True:
-                old_scan_config['load'] = sdp_dig.load
-                new_scan_config['load'] = True
-            elif target_config.feed != Feed.LOAD and sdp_dig.load != False:
-                old_scan_config['load'] = sdp_dig.load
-                new_scan_config['load'] = False
+            desired_load_state = target_config.feed == Feed.LOAD
+            current_load_state = sdp_dig.load_state.load if sdp_dig is not None else None
+            if sdp_dig is not None and current_load_state != desired_load_state:
+                old_scan_config['load'] = current_load_state
+                new_scan_config['load'] = desired_load_state
 
             if len(new_scan_config) > 0:
 

@@ -18,7 +18,7 @@ from ipc.tcp_client import TCPClient
 from ipc.tcp_server import TCPServer
 from models.base import BaseModel
 from models.comms import CommunicationStatus, InterfaceType
-from models.dig import DigitiserModel, DigitiserList
+from models.dig import DigitiserModel, DigitiserList, LoadState
 from models.health import HealthState
 from models.pipeline import StepConfig, StepType, PipelineConfig
 from models.scan import ScanModel, ScanState, ScanType
@@ -227,7 +227,7 @@ class SDP(App):
                 # Discard digitiser samples if the SDP scan configuration does not match the sample metadata
                 # Respond with success to avoid triggering retries from the digitiser, but log a warning and discard the samples
                 if not digitiser.scanning or (odt_initiated and digitiser.scanning != scanning) or center_freq != digitiser.center_freq or \
-                    sample_rate != digitiser.sample_rate or gain != digitiser.gain or load != digitiser.load:
+                    sample_rate != digitiser.sample_rate or gain != digitiser.gain or load != digitiser.load_state.load:
                     
                     diff = self._diff_dig_metadata(digitiser, meta_dict)
                     msg = f"Science Data Processor received samples from {digitiser.dig_id} that do not match the SDP scan configuration."
@@ -526,7 +526,10 @@ class SDP(App):
             if key in ['dig_id', 'obs_id']:
                 continue  # skip these keys as they are identifiers and not attributes
 
-            if hasattr(dig, key):
+            if key == sdp_dig.PROPERTY_LOAD:
+                dig.load_state = LoadState(load=bool(val), gpio_pin=dig.load_state.gpio_pin)
+                logger.info(f"Science Data Processor set digitiser {dig_id} attribute {key} to {val}")
+            elif key in dig.schema.schema:
                 setattr(dig, key, val)
                 logger.info(f"Science Data Processor set digitiser {dig_id} attribute {key} to {val}")
             else:
@@ -696,7 +699,7 @@ class SDP(App):
         if not digitiser.scanning:
             diffs.append(f" - scanning: model={digitiser.scanning} (not scanning)")
         for field in [sdp_dig.PROPERTY_CENTER_FREQ, sdp_dig.PROPERTY_SAMPLE_RATE, sdp_dig.PROPERTY_SDR_GAIN, sdp_dig.PROPERTY_LOAD, sdp_dig.PROPERTY_SCANNING]:
-            model_val = getattr(digitiser, field, None)
+            model_val = digitiser.load_state.load if field == sdp_dig.PROPERTY_LOAD else getattr(digitiser, field, None)
             meta_val = meta_dict.get(field)
             if model_val != meta_val:
                 diffs.append(f" - {field}: model={model_val} metadata={meta_val}")
