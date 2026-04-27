@@ -773,6 +773,9 @@ class TelescopeManager(App):
                     for key in dig_config.keys():
                         if key in dig.schema.schema.keys():
                             setattr(dig, key, dig_config[key])
+                        elif key == "load":
+                            dig.load_state = LoadState.from_dict(dig_config[key]) if isinstance(dig_config[key], dict) else None
+                    dig.last_update = datetime.now(timezone.utc)
                 else:
                     logger.warning(f"Telescope Manager received Science Data Processor SCAN_CONFIG rsp for unknown digitiser {dig_id}\n{api_call}")
 
