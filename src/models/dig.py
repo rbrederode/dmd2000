@@ -13,6 +13,37 @@ from models.health import HealthState
 from models.comms import CommunicationStatus
 from util.xbase import XInvalidTransition, XAPIValidationFailed, XSoftwareFailure
 
+class LoadState(BaseModel):
+    """A class representing the load status of a digitiser. The load state is used to control the load relay switch on the digitiser needed for calibration purposes.
+        The load state can be controlled by the Telescope Manager to switch a relay on/off via a specified GPIO pin to apply a load resister in the signal chain.
+    """
+
+    schema = Schema({
+        "_type": And(str, lambda v: v == "LoadState"),
+        "load": And(bool, lambda v: isinstance(v, bool)),
+        "gpio_pin": And(int, lambda v: 0 <= v <= 27), # GPIO pin number for load control to switch a relay on/off
+        "last_update": And(datetime, lambda v: isinstance(v, datetime)),
+    })
+
+    allowed_transitions = {}
+
+    def __init__(self, **kwargs):
+
+        # Default values
+        defaults = {
+            "_type": "LoadState",
+            "load": False,
+            "gpio_pin": 17,  # Default GPIO pin for load control
+            "last_update": datetime.now(timezone.utc),
+        }
+
+        # Apply defaults if not provided in kwargs
+        for key, value in defaults.items():
+            if key not in kwargs:
+                kwargs.setdefault(key, value)
+
+        super().__init__(**kwargs)
+
 class DigitiserModel(BaseModel):
     """A class representing a digitiser application. The digitiser application is deployed at the telescope to digitise the analog RF signals.
         The digitiser is controlled by the Telescope Manager.    
@@ -23,14 +54,14 @@ class DigitiserModel(BaseModel):
         "_type": And(str, lambda v: v == "DigitiserModel"),
         "dig_id": And(str, lambda v: isinstance(v, str)),
         "app": And(AppModel, lambda v: isinstance(v, AppModel)),
-        "load": And(bool, lambda v: isinstance(v, bool)),
+        "load_state": And(LoadState, lambda v: isinstance(v, LoadState)),
         "gain": And(float, lambda v: 0 <= v <= 100.0),
         "sample_rate": And(float, lambda v: v >= 0.0),
         "bandwidth": And(float, lambda v: v >= 0.0),
         "center_freq": And(float, lambda v: v >= 0.0),
         "freq_correction": And(int, lambda v: -1000 <= v <= 1000),
-        "channels": And(int, lambda v: v >= 0),                     # Digitiser property of interest to the Science Data Processor
-        "scan_duration": And(int, lambda v: v >= 0),                # Digitiser property of interest to the Science Data Processor (in seconds)
+        "channels": And(int, lambda v: v >= 0),                      # Digitiser property of interest to the Science Data Processor
+        "scan_duration": And(int, lambda v: v >= 0),                 # Digitiser property of interest to the Science Data Processor (in seconds)
         "tm_connected": And(CommunicationStatus, lambda v: isinstance(v, CommunicationStatus)),
         "sdp_connected": And(CommunicationStatus, lambda v: isinstance(v, CommunicationStatus)),
         "sdr_connected": And(CommunicationStatus, lambda v: isinstance(v, CommunicationStatus)),
@@ -59,7 +90,11 @@ class DigitiserModel(BaseModel):
                 health=HealthState.UNKNOWN,
                 last_update=datetime.now(timezone.utc),
             ),
-            "load": False,
+            "load_state": LoadState(
+                load=False,
+                gpio_pin=17,
+                last_update=datetime.now(timezone.utc),
+            ),
             "gain": 0.0,
             "sample_rate": 0.0,
             "bandwidth": 0.0,
@@ -143,7 +178,11 @@ if __name__ == "__main__":
             health=HealthState.UNKNOWN,
             last_update=datetime.now()
         ),
-        load=False,
+        load_state=LoadState(
+            load=False,
+            gpio_pin=17,
+            last_update=datetime.now(timezone.utc),
+        ),
         gain=0.0,
         sample_rate=0.0,
         bandwidth=0.0,
@@ -277,6 +316,4 @@ if __name__ == "__main__":
     )
 
     default_diglist.save_to_disk(output_dir="./config/default")
-
-
 

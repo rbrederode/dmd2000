@@ -509,12 +509,12 @@ class ObservationExecutionTool:
             old_dig_config = {}
             new_dig_config = {}
 
-            if target_config.feed == Feed.LOAD and dig_model.load != True:
-                old_dig_config['load'] = dig_model.load
-                new_dig_config['load'] = True
-            elif target_config.feed != Feed.LOAD and dig_model.load != False:
-                old_dig_config['load'] = dig_model.load
-                new_dig_config['load'] = False
+            if target_config.feed == Feed.LOAD and dig_model.load_state.load != True:
+                old_dig_config['load_state'] = dig_model.load_state
+                new_dig_config['load_state'] = {'load': True, 'gpio_pin': dig_model.load_state.gpio_pin}
+            elif target_config.feed != Feed.LOAD and dig_model.load_state.load != False:
+                old_dig_config['load_state'] = dig_model.load_state
+                new_dig_config['load_state'] = {'load': False, 'gpio_pin': dig_model.load_state.gpio_pin}
 
             for dig_attr, source, source_attr in config_params:
                 current = getattr(dig_model, dig_attr)

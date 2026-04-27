@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 # Map Configuration items to attribute names
 _config_to_property = {
-    "load":             tm_dig.PROPERTY_LOAD,
+    "load_state":       tm_dig.PROPERTY_LOAD_STATE,
     "sample_rate":      tm_dig.PROPERTY_SAMPLE_RATE,
     "center_freq":      tm_dig.PROPERTY_CENTER_FREQ,
     "bandwidth":        tm_dig.PROPERTY_BANDWIDTH,
@@ -32,16 +32,12 @@ def get_property_name_value(config_item: str, value) -> (str, Any):
 
     # If property is found, map the value accordingly
     if property:
-        if property == tm_dig.PROPERTY_LOAD:
+        if property == tm_dig.PROPERTY_LOAD_STATE:
 
-            if isinstance(value, bool):
+            if isinstance(value, dict):
                 return property, value
-            elif str(value).upper() in ["TRUE", "1", "YES", "ON"]:
-                return property, True
-            elif str(value).upper() in ["FALSE", "0", "NO", "OFF"]:
-                return property, False
             else:
-                logger.error(f"Telescope Manager map: invalid LOAD value {value} for property {property}")
+                logger.error(f"Telescope Manager map: invalid LOAD_STATE value {value} for property {property}")
                 return property, None
 
         elif property == tm_dig.PROPERTY_GAIN:
@@ -149,7 +145,7 @@ def get_method_name_value(config_item: str, value) -> (str, Any):
 if __name__ == "__main__":
     # Test the mapping
     test_items = [
-        "Load",
+        "Load State",
         "Sample Rate",
         "Center Frequency",
         "Bandwidth",

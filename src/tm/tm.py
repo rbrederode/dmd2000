@@ -28,7 +28,7 @@ from ipc.tcp_server import TCPServer
 from models.app import AppModel
 from models.base import BaseModel
 from models.comms import CommunicationStatus, InterfaceType
-from models.dig import DigitiserModel
+from models.dig import DigitiserModel, LoadState
 from models.dsh import DishManagerModel, Feed, Capability, DishMode, PointingState
 from models.obs import ObsModel, ObsTransition, ObsState
 from models.oda import ODAModel, ObsList, ScanStore
@@ -43,7 +43,7 @@ from models.ws import WeatherStationModel, WeatherSummary
 from obs.oet import ObservationExecutionTool
 from util import log, util
 from util.timer import Timer, TimerManager
-from util.xbase import XBase, XStreamUnableToExtract, XUnknownEntity
+from util.xbase import XBase, XStreamUnableToExtract, XUnknownEntity, XAPIValidationFailed, XSoftwareFailure
 from webhook_handler import WebhookHandler
 
 logger = logging.getLogger(__name__)
@@ -131,21 +131,6 @@ class TelescopeManager(App):
         arg_parser.add_argument("--observation_file", "-o", dest="observation_file", type=str, required=False,
             help="Path to an observation definition JSON file to inject as an ODT config event at startup",
         )
-
-    def _is_startup_odt_event(self, event: ConfigEvent) -> bool:
-        """Return True when the provided ODT config event is the startup -o injection."""
-        return (
-            event is not None
-            and event.category.upper() == "ODT"
-            and self._startup_odt_pending_config is not None
-            and event.new_config == self._startup_odt_pending_config
-        )
-
-    def _disable_startup_odt_protection(self):
-        """Release precedence of the startup -o observation over other ODT sources."""
-        self._startup_odt_protection_enabled = False
-        self._startup_odt_pending_config = None
-        self._startup_odt_protected_obs_ids.clear()
 
     def process_init(self) -> Action:
         """ Processes initialisation event on startup once all app processors are running.
@@ -495,89 +480,6 @@ class TelescopeManager(App):
 
         return action
 
-    def _apply_target_pec_to_scan(self, obs, scan: ScanModel):
-        """Copy the latest target-level PEC from the DM snapshot onto a completed scan."""
-        if obs is None or scan is None:
-            return
-
-        dsh_mgr = self.telmodel.dsh_mgr
-        dsh_model = dsh_mgr.get_dish_by_id(obs.dsh_id) if dsh_mgr is not None and obs.dsh_id is not None else None
-
-        if dsh_model is None:
-            logger.debug(f"Telescope Manager could not find dish {obs.dsh_id} to attach PEC to scan {scan.scan_id}.")
-            return
-
-        tgt_idx = scan.tgt_idx
-        tgt_id = f"{obs.obs_id}-{tgt_idx}" if obs.obs_id is not None and tgt_idx is not None else None
-        tgt_pec = dsh_model.get_pec_by_tgt_id(tgt_id) if tgt_id is not None else None
-
-        if tgt_pec is None:
-            logger.debug(f"Telescope Manager could not find target PEC {tgt_id} for scan {scan.scan_id}.")
-            return
-
-        scan.target_alt_pec_rms = float(tgt_pec.alt_rms)
-        scan.target_az_pec_rms = float(tgt_pec.az_rms)
-        scan.target_pec_last_update = tgt_pec.last_update
-
-    def _select_weather_summary_for_dish(self, dsh_model) -> WeatherSummary:
-        """Select the most appropriate weather summary for a dish."""
-        weather_store = self.telmodel.dsh_mgr.weather_store if self.telmodel.dsh_mgr is not None else None
-        summaries = weather_store.weather_summaries if weather_store is not None else []
-
-        if not summaries:
-            return None
-
-        if dsh_model.ws_id is not None:
-            summary = weather_store.get_summary_by_ws_id(dsh_model.ws_id)
-            if summary is not None:
-                return summary
-
-        if len(summaries) == 1:
-            return summaries[0]
-
-        nearest_summary = None
-        nearest_distance = float("inf")
-
-        for summary in summaries:
-            station = weather_store.get_station(summary.ws_id)
-            if station is None or station.latitude is None or station.longitude is None:
-                continue
-
-            distance = (station.latitude - dsh_model.latitude) ** 2 + (station.longitude - dsh_model.longitude) ** 2
-            if distance < nearest_distance:
-                nearest_distance = distance
-                nearest_summary = summary
-
-        return nearest_summary if nearest_summary is not None else summaries[0]
-
-    def _apply_weather_summary_to_scan(self, obs, scan: ScanModel):
-        """Copy the latest rolling weather summary from the DM snapshot onto a completed scan."""
-        if obs is None or scan is None:
-            return
-
-        dsh_mgr = self.telmodel.dsh_mgr
-        dsh_model = dsh_mgr.get_dish_by_id(obs.dsh_id) if dsh_mgr is not None and obs.dsh_id is not None else None
-
-        if dsh_model is None:
-            logger.debug(f"Telescope Manager could not find dish {obs.dsh_id} to attach weather metadata to scan {scan.scan_id}.")
-            return
-
-        summary = self._select_weather_summary_for_dish(dsh_model)
-        if summary is None:
-            logger.debug(f"Telescope Manager could not find a weather summary for dish {dsh_model.dsh_id} and scan {scan.scan_id}.")
-            return
-        if summary.sample_count == 0 or summary.last_sample_time is None:
-            logger.debug(f"Telescope Manager found no fresh weather samples for dish {dsh_model.dsh_id} and scan {scan.scan_id}.")
-            return
-
-        scan.ws_id = summary.ws_id
-        scan.ws_sec = summary.sample_secs
-        scan.wind_avg = float(summary.wind_avg)
-        scan.wind_rms = float(summary.wind_rms)
-        scan.wind_max = float(summary.wind_max)
-        scan.wind_sample_count = summary.sample_count
-        scan.wind_sample_time = summary.last_sample_time
-
     def process_ws_connected(self, event) -> Action:
         """ Processes Weather Station connected events.
         """
@@ -663,9 +565,21 @@ class TelescopeManager(App):
         logger.info(f"Telescope Manager connected to Digitiser entity on {event.remote_addr}")
         digitiser: DigitiserModel = entity if entity is not None and isinstance(entity, DigitiserModel) else None
 
+        action = Action()
+
         if digitiser is not None:
             digitiser.tm_connected = CommunicationStatus.ESTABLISHED
             digitiser.last_update = datetime.now(timezone.utc)
+
+            # DIG does not load its static hardware config from disk locally, so push
+            # the combined load relay state once on connect.
+            action = self.update_dig_configuration(
+                old_config={"dig_id": digitiser.dig_id},
+                new_config={"dig_id": digitiser.dig_id, "load_state": digitiser.load_state.to_dict()},
+                action=action,
+            )
+
+        return action
 
     def process_dig_entity_disconnected(self, event, entity) -> Action:
         """ Processes Digitiser disconnected events.
@@ -752,8 +666,11 @@ class TelescopeManager(App):
             elif api_call.get('property','') in digitiser.schema.schema:
                 try:
                     logger.info(f"Telescope Manager received Digitiser property update: {api_call['property']} = {api_call['value']}")
-                    setattr(digitiser, api_call.get('property',''), api_call['value'])
-                except XSoftwareFailure as e:
+                    value = api_call['value']
+                    if api_call.get('property') == tm_dig.PROPERTY_LOAD_STATE and isinstance(value, dict):
+                        value = LoadState.from_dict(value) if value.get("_type") == "LoadState" else LoadState(**value)
+                    setattr(digitiser, api_call.get('property',''), value)
+                except (XAPIValidationFailed, XSoftwareFailure) as e:
                     logger.error(f"Telescope Manager error setting attribute {api_call.get('property','')} on Digitiser: {e}")
                     return action
             else:
@@ -1284,6 +1201,104 @@ class TelescopeManager(App):
             self.telmodel.oda.last_update = datetime.now(timezone.utc)
 
         self.telmodel.tel_mgr.last_update = datetime.now(timezone.utc)
+
+    def _is_startup_odt_event(self, event: ConfigEvent) -> bool:
+        """Return True when the provided ODT config event is the startup -o injection."""
+        return (
+            event is not None
+            and event.category.upper() == "ODT"
+            and self._startup_odt_pending_config is not None
+            and event.new_config == self._startup_odt_pending_config
+        )
+
+    def _disable_startup_odt_protection(self):
+        """Release precedence of the startup -o observation over other ODT sources."""
+        self._startup_odt_protection_enabled = False
+        self._startup_odt_pending_config = None
+        self._startup_odt_protected_obs_ids.clear()
+
+    def _apply_target_pec_to_scan(self, obs, scan: ScanModel):
+        """Copy the latest target-level PEC from the DM snapshot onto a completed scan."""
+        if obs is None or scan is None:
+            return
+
+        dsh_mgr = self.telmodel.dsh_mgr
+        dsh_model = dsh_mgr.get_dish_by_id(obs.dsh_id) if dsh_mgr is not None and obs.dsh_id is not None else None
+
+        if dsh_model is None:
+            logger.debug(f"Telescope Manager could not find dish {obs.dsh_id} to attach PEC to scan {scan.scan_id}.")
+            return
+
+        tgt_idx = scan.tgt_idx
+        tgt_id = f"{obs.obs_id}-{tgt_idx}" if obs.obs_id is not None and tgt_idx is not None else None
+        tgt_pec = dsh_model.get_pec_by_tgt_id(tgt_id) if tgt_id is not None else None
+
+        if tgt_pec is None:
+            logger.debug(f"Telescope Manager could not find target PEC {tgt_id} for scan {scan.scan_id}.")
+            return
+
+        scan.target_alt_pec_rms = float(tgt_pec.alt_rms)
+        scan.target_az_pec_rms = float(tgt_pec.az_rms)
+        scan.target_pec_last_update = tgt_pec.last_update
+
+    def _select_weather_summary_for_dish(self, dsh_model) -> WeatherSummary:
+        """Select the most appropriate weather summary for a dish."""
+        weather_store = self.telmodel.dsh_mgr.weather_store if self.telmodel.dsh_mgr is not None else None
+        summaries = weather_store.weather_summaries if weather_store is not None else []
+
+        if not summaries:
+            return None
+
+        if dsh_model.ws_id is not None:
+            summary = weather_store.get_summary_by_ws_id(dsh_model.ws_id)
+            if summary is not None:
+                return summary
+
+        if len(summaries) == 1:
+            return summaries[0]
+
+        nearest_summary = None
+        nearest_distance = float("inf")
+
+        for summary in summaries:
+            station = weather_store.get_station(summary.ws_id)
+            if station is None or station.latitude is None or station.longitude is None:
+                continue
+
+            distance = (station.latitude - dsh_model.latitude) ** 2 + (station.longitude - dsh_model.longitude) ** 2
+            if distance < nearest_distance:
+                nearest_distance = distance
+                nearest_summary = summary
+
+        return nearest_summary if nearest_summary is not None else summaries[0]
+
+    def _apply_weather_summary_to_scan(self, obs, scan: ScanModel):
+        """Copy the latest rolling weather summary from the DM snapshot onto a completed scan."""
+        if obs is None or scan is None:
+            return
+
+        dsh_mgr = self.telmodel.dsh_mgr
+        dsh_model = dsh_mgr.get_dish_by_id(obs.dsh_id) if dsh_mgr is not None and obs.dsh_id is not None else None
+
+        if dsh_model is None:
+            logger.debug(f"Telescope Manager could not find dish {obs.dsh_id} to attach weather metadata to scan {scan.scan_id}.")
+            return
+
+        summary = self._select_weather_summary_for_dish(dsh_model)
+        if summary is None:
+            logger.debug(f"Telescope Manager could not find a weather summary for dish {dsh_model.dsh_id} and scan {scan.scan_id}.")
+            return
+        if summary.sample_count == 0 or summary.last_sample_time is None:
+            logger.debug(f"Telescope Manager found no fresh weather samples for dish {dsh_model.dsh_id} and scan {scan.scan_id}.")
+            return
+
+        scan.ws_id = summary.ws_id
+        scan.ws_sec = summary.sample_secs
+        scan.wind_avg = float(summary.wind_avg)
+        scan.wind_rms = float(summary.wind_rms)
+        scan.wind_max = float(summary.wind_max)
+        scan.wind_sample_count = summary.sample_count
+        scan.wind_sample_time = summary.last_sample_time
 
     def _construct_req_to_dig(self, entity=None, property=None, method=None, value=None, message=None) -> APIMessage:
         """ Constructs a request message to the Digitiser.

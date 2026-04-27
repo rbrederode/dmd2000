@@ -15,7 +15,7 @@ from ipc.tcp_client import TCPClient
 from ipc.tcp_server import TCPServer
 from models.app import AppModel
 from models.comms import CommunicationStatus, InterfaceType
-from models.dig import DigitiserModel
+from models.dig import DigitiserModel, LoadState
 from models.health import HealthState
 from sdr.facade import SDR
 from util import log, util
@@ -59,8 +59,46 @@ class Digitiser(App):
         self.dig_model.sdp_connected = CommunicationStatus.NOT_ESTABLISHED
 
         self.dig_model.scanning = False # Flag indicating if we are currently scanning for samples (from the SDR)
- 
-    def add_args(self, arg_parser): 
+        self.load_relay = None # GPIO output to drive a relay switch to apply a load resistor in the signal path
+
+    def _apply_load_relay_state(self, load_enabled: bool):
+        """Drive the optional GPIO relay to match the current load state."""
+        if self.load_relay is None:
+            return
+
+        if load_enabled:
+            self.load_relay.on()
+        else:
+            self.load_relay.off()
+
+    def set_load_state(self, value):
+        """Configure the load relay GPIO and drive it to the requested load state."""
+        if isinstance(value, LoadState):
+            load_state = value
+        elif isinstance(value, dict) and value.get("_type") == "LoadState":
+            load_state = LoadState.from_dict(value)
+        else:
+            load_state = LoadState(**value)
+
+        pin_changed = (
+            self.load_relay is None
+            or load_state.gpio_pin != self.dig_model.load_state.gpio_pin
+        )
+
+        if pin_changed:
+            if self.load_relay is not None:
+                self.load_relay.close()
+                self.load_relay = None
+            self.load_relay = LED(load_state.gpio_pin)
+
+        self._apply_load_relay_state(load_state.load)
+        self.dig_model.load_state = load_state
+
+    def get_load_state(self):
+        """Return the current load state in API-serialisable form."""
+        return self.dig_model.load_state.to_dict()
+
+    def add_args(self, arg_parser):
         """ Specifies the digitiser's command line arguments.
         """
         super().add_args(arg_parser)
@@ -544,7 +582,7 @@ class Digitiser(App):
         # Construct metadata using the digitiser model and sample read info
         metadata = [   
             {"property": "dig_id", "value": self.dig_model.dig_id},               # Digitiser Id
-            {"property": "load", "value": self.dig_model.load},                   # Bool
+            {"property": "load", "value": self.dig_model.load_state.load},        # Bool
             {"property": "center_freq", "value": self.dig_model.center_freq},     # Hz    
             {"property": "sample_rate", "value": self.dig_model.sample_rate},     # Hz
             {"property": "bandwidth", "value": self.dig_model.bandwidth},         # MHz

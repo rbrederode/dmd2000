@@ -50,7 +50,7 @@ TO = (
 )
 
 # Allowable properties to get or set
-PROPERTY_LOAD           = 'load'             # Load True or False
+PROPERTY_LOAD_STATE     = 'load_state'       # Load status True/False and GPIO pin number in a dictionary e.g. {"load": True, "gpio_pin": 17}
 PROPERTY_CENTER_FREQ    = 'center_freq'      # Center frequency in Hz
 PROPERTY_SAMPLE_RATE    = 'sample_rate'      # Sample rate in samples per second
 PROPERTY_BANDWIDTH      = 'bandwidth'        # Bandwidth in Hz
@@ -62,7 +62,7 @@ PROPERTY_SDP_COMMS      = 'sdp_comms'        # SDP communication status (establi
 PROPERTY_DEBUG          = 'debug'            # Enable/disable debug mode (on/off)
 
 PROPERTIES = (
-    PROPERTY_LOAD,
+    PROPERTY_LOAD_STATE,
     PROPERTY_CENTER_FREQ,
     PROPERTY_SAMPLE_RATE,
     PROPERTY_BANDWIDTH,

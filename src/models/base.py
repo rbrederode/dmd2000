@@ -278,7 +278,7 @@ class BaseModel:
 
         from models.app import AppModel
         from models.comms import CommunicationStatus, InterfaceType
-        from models.dig import DigitiserList, DigitiserModel
+        from models.dig import DigitiserList, DigitiserModel, LoadState
         from models.dsh import DishMode, DishModel, DishList, DishManagerModel, Feed, PointingState, Capability, DriverType, PECModel
         from models.health import HealthState
         from models.launch import LaunchModel, LaunchConfigModel
@@ -392,6 +392,9 @@ class BaseModel:
             elif model_type == "LaunchConfigModel":
                 deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
                 return LaunchConfigModel(**deserialized_fields)
+            elif model_type == "LoadState":
+                deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
+                return LoadState(**deserialized_fields)
             elif model_type == "DriftConfig":
                 # Import lazily to avoid package import errors when optional drivers are not present
                 from dsh.drivers.drift.model import DriftConfig
