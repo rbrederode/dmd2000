@@ -41,7 +41,6 @@ class Digitiser(App):
         self.tm_api = tm_dig.TM_DIG()
         # Telescope Manager TCP Client
         self.tm_endpoint = TCPClient(description=self.tm_system, queue=self.get_queue(), host=self.get_args().tm_host, port=self.get_args().tm_port)
-        self.tm_endpoint.connect()
         # Register Telescope Manager interface with the App
         self.register_interface(self.tm_system, self.tm_api, self.tm_endpoint, InterfaceType.ENTITY)
         # Set initial Telescope Manager connection status
@@ -52,7 +51,6 @@ class Digitiser(App):
         self.sdp_api = sdp_dig.SDP_DIG()
         # Science Data Processor TCP Client
         self.sdp_endpoint = TCPClient(description=self.sdp_system, queue=self.get_queue(), host=self.get_args().sdp_host, port=self.get_args().sdp_port)
-        self.sdp_endpoint.connect()
         # Register Science Data Processor interface with the App
         self.register_interface(self.sdp_system, self.sdp_api, self.sdp_endpoint, InterfaceType.ENTITY)
         # Set initial Science Data Processor connection status
@@ -89,6 +87,10 @@ class Digitiser(App):
         
         # Start timer to periodically retry SDR connection to ensure it connects
         action.set_timer_action(Action.Timer(name=f"sdr_retry", timer_action=5000))
+
+        # Connect client endpoints to interfaces
+        self.tm_endpoint.connect()
+        self.sdp_endpoint.connect()
 
         return action
 
