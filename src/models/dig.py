@@ -33,7 +33,7 @@ class LoadState(BaseModel):
         defaults = {
             "_type": "LoadState",
             "load": False,
-            "gpio_pin": 17,  # Default GPIO pin for load control
+            "gpio_pin": 18,  # Default GPIO pin for load control
             "last_update": datetime.now(timezone.utc),
         }
 
@@ -92,7 +92,7 @@ class DigitiserModel(BaseModel):
             ),
             "load_state": LoadState(
                 load=False,
-                gpio_pin=17,
+                gpio_pin=18,
                 last_update=datetime.now(timezone.utc),
             ),
             "gain": 0.0,

@@ -30,7 +30,7 @@
             "load_state": {
                 "_type": "LoadState",
                 "load": false,
-                "gpio_pin": 17,
+                "gpio_pin": 18,
                 "last_update": { "_type": "datetime", "value": "..." }
             },
             "gain": 0.0,
@@ -90,7 +90,7 @@
             "load_state": {
                 "_type": "LoadState",
                 "load": false,
-                "gpio_pin": 17,
+                "gpio_pin": 18,
                 "last_update": { "_type": "datetime", "value": "..." }
             },
             "gain": 0.0,
