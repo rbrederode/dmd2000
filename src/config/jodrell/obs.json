@@ -32,7 +32,7 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": 28,
+      "gain": "auto",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -48,7 +48,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "auto",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
