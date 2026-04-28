@@ -60,7 +60,7 @@ def observation_to_fits_hdulist(observation):
 		getattr(c, 'feed').name if hasattr(getattr(c, 'feed', None), 'name') else str(getattr(c, 'feed', ''))
 		for c in configs
 	], dtype='S20')
-	gain = np.array([getattr(c, 'gain', 0.0) for c in configs], dtype=np.float64)
+	gain = np.array([0.0 if isinstance(getattr(c, 'gain', 0.0), str) else getattr(c, 'gain', 0.0) for c in configs], dtype=np.float64)
 	center_freq = np.array([getattr(c, 'center_freq', 0.0) for c in configs], dtype=np.float64)
 	bandwidth = np.array([getattr(c, 'bandwidth', 0.0) for c in configs], dtype=np.float64)
 	sample_rate = np.array([getattr(c, 'sample_rate', 0.0) for c in configs], dtype=np.float64)
