@@ -1538,6 +1538,11 @@ def main():
     tm = TelescopeManager()
     tm.start()
 
+    # Start webhook handler before optional UI handling so webhook inputs still work in headless mode.
+    webhook_handler = WebhookHandler(event_queue=tm.get_queue(), host='127.0.0.1', port=5001)
+    webhook_handler.start()
+    logger.info("Webhook handler initialized and running on port 5001")
+
     if tm.is_headless():
         logger.info("Telescope Manager running in headless mode; skipping ui initialization and updates.")
         try:
@@ -1548,11 +1553,6 @@ def main():
         finally:
             tm.stop()
         return
-    
-    # Start webhook handler in background thread
-    webhook_handler = WebhookHandler(event_queue=tm.get_queue(), host='127.0.0.1', port=5001)
-    webhook_handler.start()
-    logger.info("Webhook handler initialized and running on port 5001")
 
     last_odt_config_snapshot = None
 
