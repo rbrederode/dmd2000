@@ -497,6 +497,9 @@ class Digitiser(App):
             logger.error(f"Digitiser method {method} failed with exception: {e}")
             return tm_dig.STATUS_ERROR, f"Digitiser method {method} failed with exception: {e}", None, None
 
+        if method == tm_dig.METHOD_SET_AUTO_GAIN and result is not None:
+            self.dig_model.gain = float(result[0] if isinstance(result, tuple) else result)
+
         # Check whether result is a tuple of (value, payload) or just a value
         if isinstance(result, tuple):
             return tm_dig.STATUS_SUCCESS, f"Digitiser method {call.__name__} invoked on SDR", result[0], result[1]

@@ -321,8 +321,10 @@ class SDR:
         if gain is not None:
             self.set_gain(gain)
             logger.info(f"SDR auto gain set to {gain} dB for optimal gaussianity.")
+            return gain
         else:
             logger.warning("SDR auto gain could not be determined.")
+            return None
 
     def get_center_freq(self):
         if self.rtlsdr is None:
