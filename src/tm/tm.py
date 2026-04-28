@@ -691,8 +691,25 @@ class TelescopeManager(App):
 
                     # Check for remaining mismatches between desired and current configuration properties
                     for config_key, new_value in obs_data.items():
+                        
                         if config_key in digitiser.schema.schema:
                             current_value = getattr(digitiser, config_key, None)
+
+                            if config_key == tm_dig.PROPERTY_LOAD_STATE:
+                                current_load = current_value.load if isinstance(current_value, LoadState) else None
+                                if isinstance(new_value, LoadState):
+                                    desired_load = new_value.load
+                                elif isinstance(new_value, dict):
+                                    desired_load = new_value.get("load")
+                                else:
+                                    desired_load = None
+                                if current_load != desired_load:
+                                    config_mismatched = True
+                                    logger.info(f"Telescope Manager identified mismatch between desired and current load state for observation {obs_id}" +
+                                    f" on digitiser {digitiser.dig_id}.\nCurrent load: {current_load}\nDesired load: {desired_load}")
+                                    break
+                                continue
+
                             if current_value != new_value:
                                 config_mismatched = True
                                 logger.info(f"Telescope Manager identified mismatch between desired and current configuration for observation {obs_id}" + 
@@ -775,12 +792,11 @@ class TelescopeManager(App):
                             setattr(dig, key, dig_config[key])
                         elif key == "load":
                             current_load_state = dig.load_state if isinstance(dig.load_state, LoadState) else LoadState()
+                            load_value = dig_config[key].get("load") if isinstance(dig_config[key], dict) else dig_config[key]
 
-                            if isinstance(dig_config[key], dict):
-                                dig.load_state = LoadState.from_dict(dig_config[key])
-                            elif isinstance(dig_config[key], bool):
+                            if isinstance(load_value, bool):
                                 dig.load_state = LoadState(
-                                    load=dig_config[key],
+                                    load=load_value,
                                     gpio_pin=current_load_state.gpio_pin,
                                     last_update=datetime.now(timezone.utc),
                                 )

@@ -179,9 +179,9 @@ class TargetConfig(BaseModel):
         "_type": And(str, lambda v: v == "TargetConfig"),
         "obs_id": Or(None, And(str, lambda v: isinstance(v, str))),             # Observation identifier (see Observation model)
         "tgt_idx": And(int, lambda v: v >= -1),                                 # Target list index (-1 = not set, 0-based)
-
         "feed": And(Feed, lambda v: isinstance(v, Feed)),                       # Feed enum
-        "gain": Or(And(str, lambda v: v.upper() == "AUTO"), And(Or(int, float), lambda v: v >= 0.0)),  # Gain (dBi) or AUTO
+        "gain": Or(And(str, lambda v: v.upper() == "AUTO"),                     # Gain (dBi) or AUTO
+            And(Or(int, float), lambda v: v >= 0.0)),  
         "center_freq": And(Or(int, float), lambda v: v >= 0.0),                 # Center frequency (Hz) 
         "bandwidth": And(Or(int, float), lambda v: v >= 0.0),                   # Bandwidth (Hz) 
         "sample_rate": And(Or(int, float), lambda v: v >= 0.0),                 # Sample rate (Hz) 
@@ -212,6 +212,9 @@ class TargetConfig(BaseModel):
         for key, value in defaults.items():
             if key not in kwargs:
                 kwargs.setdefault(key, value)
+
+        if isinstance(kwargs.get("gain"), str) and kwargs["gain"].upper() == "AUTO":
+            kwargs["gain"] = "AUTO"
 
         super().__init__(**kwargs)
 
