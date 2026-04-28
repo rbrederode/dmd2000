@@ -529,6 +529,14 @@ class SDP(App):
             if key == sdp_dig.PROPERTY_LOAD:
                 dig.load_state = LoadState(load=bool(val), gpio_pin=dig.load_state.gpio_pin)
                 logger.info(f"Science Data Processor set digitiser {dig_id} attribute {key} to {val}")
+            elif key == sdp_dig.PROPERTY_SDR_GAIN:
+                if isinstance(val, (int, float)):
+                    dig.gain = float(val)
+                    logger.info(f"Science Data Processor set digitiser {dig_id} attribute {key} to {val}")
+                elif str(val).upper() == "AUTO":
+                    logger.info(f"Science Data Processor deferring digitiser {dig_id} gain update until auto gain is resolved.")
+                else:
+                    logger.warning(f"Science Data Processor ignoring invalid scan config gain {val} for digitiser {dig_id}")
             elif key in dig.schema.schema:
                 setattr(dig, key, val)
                 logger.info(f"Science Data Processor set digitiser {dig_id} attribute {key} to {val}")

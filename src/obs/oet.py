@@ -42,6 +42,26 @@ class ObservationExecutionTool:
             self._obs_locks[obs_id] = threading.RLock()
         return self._obs_locks[obs_id]
 
+    def _get_config_timeout_ms(self, obs) -> int:
+        """Return a configuration timeout long enough for AUTO gain and SDP acknowledgement."""
+        timeout_ms = obs.timeout_ms_config
+
+        target_config = obs.get_target_config_by_index(obs.tgt_idx) if obs is not None else None
+        target_scan = obs.get_current_tgt_scan() if obs is not None else None
+        waiting_for_auto_gain = (
+            target_config is not None
+            and target_scan is not None
+            and str(target_config.gain).upper() == "AUTO"
+            and target_scan.gain <= 0.0
+        )
+
+        if waiting_for_auto_gain:
+            auto_gain_timeout_ms = getattr(self.tm, "AUTO_GAIN_TIMEOUT_MS", timeout_ms)
+            msg_timeout_ms = self.telmodel.tel_mgr.app.msg_timeout_ms
+            timeout_ms = max(timeout_ms, (auto_gain_timeout_ms * 2) + (msg_timeout_ms * 2) + 5000)
+
+        return timeout_ms
+
     def process_obs_event(self, event):
         """ Processes a workflow transition on an observation.
             Returns an Action object with actions to be performed.
@@ -103,6 +123,7 @@ class ObservationExecutionTool:
 
                 event.obs.obs_state = ObsState.CONFIGURING
                 timer_name = f"obs_configuring_timer:{event.obs.obs_id}"
+                timeout_ms_config = self._get_config_timeout_ms(event.obs)
 
                 # Determine outstanding configuration actions for this observation
                 # Returns true if all resources are already configured, false if any resource still requires configuration
@@ -116,7 +137,7 @@ class ObservationExecutionTool:
                     
                         action.set_timer_action(Action.Timer(
                             name=timer_name, 
-                            timer_action=event.obs.timeout_ms_config, 
+                            timer_action=timeout_ms_config,
                             echo_data=event.obs))
             
             elif event.transition == ObsTransition.READY:
@@ -519,6 +540,8 @@ class ObservationExecutionTool:
             for dig_attr, source, source_attr in config_params:
                 current = getattr(dig_model, dig_attr)
                 desired = getattr(source, source_attr)
+                if dig_attr == 'gain' and str(desired).upper() == "AUTO" and target_scan.gain > 0.0:
+                    desired = target_scan.gain
                 if current != desired:
                     old_dig_config[dig_attr] = current
                     new_dig_config[dig_attr] = desired
@@ -561,6 +584,14 @@ class ObservationExecutionTool:
             for dig_attr, source, source_attr in config_params:
                 current = getattr(sdp_dig, dig_attr) if sdp_dig is not None else None
                 desired = getattr(source, source_attr)
+                if dig_attr == 'gain' and str(desired).upper() == "AUTO" and target_scan.gain > 0.0:
+                    desired = target_scan.gain
+                if dig_attr == 'gain' and str(desired).upper() == "AUTO":
+                    logger.info(
+                        f"Observation Execution Tool deferring Science Data Processor gain update for observation {obs.obs_id} "
+                        "until Digitiser auto gain is resolved."
+                    )
+                    continue
                 if current != desired:
                     old_scan_config[dig_attr] = current
                     new_scan_config[dig_attr] = desired

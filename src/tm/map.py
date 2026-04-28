@@ -90,6 +90,9 @@ def get_property_name_value(config_item: str, value) -> (str, Any):
                 # Recursively map dictionary keys if needed (e.g., for nested configurations)
                 mapped_dict = {}
                 for k, v in value.items():
+                    if property == tm_sdp.PROPERTY_SCAN_CONFIG and k == tm_dig.PROPERTY_GAIN and str(v).upper() == "AUTO":
+                        logger.info("Telescope Manager map: deferring scan_config gain update until auto gain is resolved.")
+                        continue
                     mapped_key, mapped_value = get_property_name_value(k, v)
                     # Use the mapped key if found, otherwise keep the original key
                     mapped_dict[mapped_key if mapped_key is not None else k] = mapped_value
@@ -138,7 +141,7 @@ def get_method_name_value(config_item: str, value) -> (str, Any):
         return None, None
 
     if config_item == "gain" and str(value).upper() == "AUTO":
-        return tm_dig.METHOD_GET_AUTO_GAIN, {"time_in_secs": 0.5}
+        return tm_dig.METHOD_SET_AUTO_GAIN, {"time_in_secs": 0.5}
     
     return None, None
 

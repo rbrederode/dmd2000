@@ -637,12 +637,14 @@ class TelescopeManager(App):
             obs_data = api_call.get('obs_data', None)
             if obs_data is not None and isinstance(obs_data, dict):
                 obs_data = dict(obs_data)
+            obs_id = obs_data.get('obs_id', None) if obs_data is not None and isinstance(obs_data, dict) else None
+            sdp_config_update_pending = False
 
             # If the api call is a successful method response, handle it separately from property updates
             if api_call.get('action_code') == tm_dig.ACTION_CODE_METHOD:
                 method = api_call.get('method')
 
-                if method == tm_dig.METHOD_GET_AUTO_GAIN:
+                if method in [tm_dig.METHOD_GET_AUTO_GAIN, tm_dig.METHOD_SET_AUTO_GAIN]:
                     gain_value = api_call.get('value')
                     if gain_value is not None:
                         digitiser.gain = float(gain_value)
@@ -650,6 +652,29 @@ class TelescopeManager(App):
 
                         if obs_data is not None and str(obs_data.get('gain', '')).upper() == "AUTO":
                             obs_data['gain'] = digitiser.gain
+                            obs = self.telmodel.oda.obs_store.get_obs_by_id(obs_id) if obs_id is not None else None
+                            self._apply_auto_gain_to_current_scan(obs, digitiser.gain)
+                            if self.telmodel.sdp is not None:
+                                sdp_dig = self.telmodel.sdp.dig_store.get_dig_by_id(digitiser.dig_id)
+                                old_sdp_config = {
+                                    'scan_config': {
+                                        'dig_id': digitiser.dig_id,
+                                        'obs_id': obs_id,
+                                        'gain': sdp_dig.gain if sdp_dig is not None else None,
+                                    }
+                                }
+                                new_sdp_config = {
+                                    'sdp_id': self.telmodel.sdp.sdp_id,
+                                    'obs_id': obs_id,
+                                    'scan_config': {
+                                        'dig_id': digitiser.dig_id,
+                                        'obs_id': obs_id,
+                                        'gain': digitiser.gain,
+                                    },
+                                }
+                                pending_msg_count = len(action.msgs_to_remote)
+                                action = self.update_sdp_configuration(old_sdp_config, new_sdp_config, action)
+                                sdp_config_update_pending = len(action.msgs_to_remote) > pending_msg_count
                     else:
                         logger.warning("Telescope Manager received Digitiser auto gain response without a gain value.")
                 else:
@@ -681,7 +706,6 @@ class TelescopeManager(App):
             if api_call['msg_type'] == tm_dig.MSG_TYPE_RSP:
 
                 # If the status update message contains additional observation data, extract the related observation 
-                obs_id = obs_data.get('obs_id', None) if obs_data is not None and isinstance(obs_data, dict) else None
                 obs = self.telmodel.oda.obs_store.get_obs_by_id(obs_id) if obs_id is not None else None
 
                 # If the observation was identified and is in CONFIGURING state, trigger a review of the configuration updates
@@ -718,14 +742,35 @@ class TelescopeManager(App):
 
                     # If no mismatches remain, the configuration update has been applied successfully
                     if not config_mismatched and obs.obs_state == ObsState.CONFIGURING:
-                        logger.info(f"Telescope Manager configuration update for observation {obs_id} has been applied successfully by Digitiser {digitiser.dig_id}.")
-                        action.set_obs_transition(obs=obs, transition=ObsTransition.CONFIGURE_RESOURCES)
+                        if sdp_config_update_pending:
+                            logger.info(
+                                f"Telescope Manager waiting for Science Data Processor to acknowledge resolved gain "
+                                f"before advancing observation {obs_id}."
+                            )
+                        else:
+                            logger.info(f"Telescope Manager configuration update for observation {obs_id} has been applied successfully by Digitiser {digitiser.dig_id}.")
+                            action.set_obs_transition(obs=obs, transition=ObsTransition.CONFIGURE_RESOURCES)
 
         # Update Telescope Model timestamps based on received Digitiser api_call
         self.telmodel.dig_store.last_update = datetime.fromisoformat(dt) if dt else datetime.now(timezone.utc)
         digitiser.last_update = datetime.fromisoformat(dt) if dt else datetime.now(timezone.utc)
-                        
+
         return action
+
+    def _apply_auto_gain_to_current_scan(self, obs: ObsModel, gain: float):
+        """Store the resolved AUTO gain on the current scan model."""
+        if obs is None or gain is None:
+            return
+
+        scan = obs.get_current_tgt_scan()
+        if scan is None:
+            logger.warning(f"Telescope Manager could not find current scan for observation {obs.obs_id} to apply auto gain {gain}.")
+            return
+
+        scan.gain = float(gain)
+        scan.last_update = datetime.now(timezone.utc)
+        obs.last_update = datetime.now(timezone.utc)
+        logger.info(f"Telescope Manager applied auto gain {scan.gain} dB to scan {scan.scan_id} for observation {obs.obs_id}.")
 
     def process_sdp_connected(self, event) -> Action:
         """ Processes Science Data Processor connected events.
@@ -940,16 +985,23 @@ class TelescopeManager(App):
 
                 req_msg: APIMessage = event.user_ref
                 echo = req_msg.get_echo_data()
+                api_call = req_msg.get_api_call()
+                obs_id = None
 
                 if echo is not None and isinstance(echo, dict):
                     new_config = echo["echo_data"] if "echo_data" in echo else echo
                     obs_id = new_config["obs_id"] if new_config is not None and "obs_id" in new_config else None
 
-                    obs=self.telmodel.oda.obs_store.get_obs_by_id(obs_id)
+                if obs_id is None and api_call is not None and isinstance(api_call, dict):
+                    obs_data = api_call.get("obs_data")
+                    obs_id = obs_data.get("obs_id") if isinstance(obs_data, dict) else None
 
-                    # If the observation is still in CONFIGURING state, ABORT the observation
-                    if obs is not None and obs.obs_state == ObsState.CONFIGURING:
-                        action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
+                obs = self.telmodel.oda.obs_store.get_obs_by_id(obs_id) if obs_id is not None else None
+
+                # If the observation is still in CONFIGURING state, ABORT the observation
+                if obs is not None and obs.obs_state == ObsState.CONFIGURING:
+                    logger.warning(f"Telescope Manager aborting observation {obs_id} after request timeout for {event.name}.")
+                    action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
 
         # Handle observation start timer event
         elif event.name.startswith("obs_start_timer"):
@@ -1334,7 +1386,7 @@ class TelescopeManager(App):
 
         dig_req = APIMessage(api_version=self.dig_api.get_api_version())
 
-        # If property is get_auto_gain or read_samples
+        # If property is auto gain or read_samples
         if method is not None:
             dig_req.set_json_api_header(
                 api_version=self.dig_api.get_api_version(), 
@@ -1373,7 +1425,7 @@ class TelescopeManager(App):
         if (
             isinstance(api_call, dict)
             and api_call.get("action_code") == tm_dig.ACTION_CODE_METHOD
-            and api_call.get("method") == tm_dig.METHOD_GET_AUTO_GAIN
+            and api_call.get("method") in [tm_dig.METHOD_GET_AUTO_GAIN, tm_dig.METHOD_SET_AUTO_GAIN]
         ):
             return max(timeout_ms, self.AUTO_GAIN_TIMEOUT_MS)
 
