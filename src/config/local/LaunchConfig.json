@@ -5,7 +5,7 @@
         {
             "_type": "LaunchModel",
             "app_name": "dig",
-            "entity_id": "dig003",
+            "entity_id": "dig001",
             "env": {
                 "GPIOZERO_PIN_FACTORY": "mock"
             },
@@ -13,7 +13,7 @@
             "args": [
                 "dig/dig.py",
                 "--profile", "local",
-                "--entity_id", "dig003",
+                "--entity_id", "dig001",
                 "--tm_host", "127.0.0.1",
                 "--sdp_host", "127.0.0.1",
                 "--local_host", "127.0.0.1"

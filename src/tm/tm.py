@@ -1566,6 +1566,7 @@ def main():
         return
 
     last_odt_config_snapshot = None
+    disabled_ui_drivers = set()
 
     try:
 
@@ -1578,6 +1579,9 @@ def main():
             now = datetime.now(timezone.utc)
 
             for driver in tm.telmodel.tel_mgr.ui_drivers:
+                driver_key = driver.short_desc or str(driver.type)
+                if driver_key in disabled_ui_drivers:
+                    continue
 
                 # If the driver instance is not yet initialized, initialize it based on its type and config
                 if driver.instance is None:
@@ -1586,9 +1590,16 @@ def main():
                         from ui.drivers.gsheets.gsheets_driver import GoogleSheetsDriver
                         from ui.drivers.gsheets.gsheets_model import GSheetConfig
                         config = GSheetConfig(**driver.config) if isinstance(driver.config, dict) else driver.config
-                        driver.instance = GoogleSheetsDriver(config)
-                        logger.info(f"Telescope Manager initialised Google Sheets driver for UI integration with config:\n" + \
-                            f"{json.dumps(driver.config, indent=2)}")
+                        try:
+                            driver.instance = GoogleSheetsDriver(config)
+                            logger.info(f"Telescope Manager initialised Google Sheets driver for UI integration with config:\n" + \
+                                f"{json.dumps(driver.config, indent=2)}")
+                        except XSoftwareFailure as e:
+                            disabled_ui_drivers.add(driver_key)
+                            logger.error(
+                                f"Telescope Manager disabled UI driver {driver.type.name} {driver.short_desc} "
+                                f"after initialization failed: {e.messages[0] if e.messages else e}"
+                            )
                     else:
                         logger.warning(f"Telescope Manager UI driver {driver.type} not supported, skipping UI integration for this driver")
 

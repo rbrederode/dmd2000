@@ -205,7 +205,7 @@ class AppProcessor(Processor):
 
                         # If no entity match (or entity unknown), respond with an error
                         if not entity_match:
-                            logger.warning(f"AppProcessor {self.name} received API message for unknown Entity {api_msg.get_entity()}. Check configuration!\n{event}")
+                            logger.warning(f"AppProcessor {self.name} received API message for unknown Entity {api_msg.get_entity()}. Expected Entity {entity_id}!\n{event}")
                             rsp_msg = self._construct_rsp_msg(api_msg, 'error', f"Received API message for unknown entity {driver_app_name}:{api_msg.get_entity()}. Check configuration!")
                             self.performActions(Action().set_msg_to_remote(rsp_msg), event.local_sap, event.remote_conn, event.remote_addr)
                             return True

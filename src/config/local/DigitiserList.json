@@ -20,7 +20,7 @@
                 "processors": [],
                 "msg_timeout_ms": 10000,
                 "arguments": {
-                    "local_host": "192.168.0.36"
+                    "local_host": "127.0.0.1"
                 },
                 "last_update": {
                     "_type": "datetime",
@@ -83,7 +83,7 @@
                 "processors": [],
                 "msg_timeout_ms": 10000,
                 "arguments": {
-                    "local_host": "192.168.0.18"
+                    "local_host": "127.0.0.1"
                 },
                 "last_update": {
                     "_type": "datetime",

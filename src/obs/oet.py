@@ -109,6 +109,14 @@ class ObservationExecutionTool:
             # Handle observation event transitions
             if event.transition == ObsTransition.START:
 
+                if event.obs.obs_state != ObsState.EMPTY:
+                    logger.warning(
+                        f"Observation Execution Tool ignoring {event.transition.name} transition for "
+                        f"observation {event.obs.obs_id} in unexpected state "
+                        f"{event.obs.obs_state.name}."
+                    )
+                    return action
+
                 # Transition to IDLE where resources can be assigned or released
                 event.obs.obs_state = ObsState.IDLE
 
@@ -117,6 +125,14 @@ class ObservationExecutionTool:
                 action.set_obs_transition(obs=event.obs, transition=ObsTransition.ASSIGN_RESOURCES)
 
             elif event.transition == ObsTransition.ASSIGN_RESOURCES:
+
+                if event.obs.obs_state != ObsState.IDLE:
+                    logger.warning(
+                        f"Observation Execution Tool ignoring {event.transition.name} transition for "
+                        f"observation {event.obs.obs_id} in unexpected state "
+                        f"{event.obs.obs_state.name}."
+                    )
+                    return action
 
                 event.obs.obs_state = ObsState.IDLE
                 
@@ -130,6 +146,14 @@ class ObservationExecutionTool:
                     logger.info(f"Observation {event.obs.obs_id} blocked waiting for resources.")
 
             elif event.transition == ObsTransition.RELEASE_RESOURCES:
+
+                if event.obs.obs_state != ObsState.IDLE:
+                    logger.warning(
+                        f"Observation Execution Tool ignoring {event.transition.name} transition for "
+                        f"observation {event.obs.obs_id} in unexpected state "
+                        f"{event.obs.obs_state.name}."
+                    )
+                    return action
 
                 event.obs.obs_state = ObsState.IDLE
 
@@ -152,6 +176,14 @@ class ObservationExecutionTool:
 
             elif event.transition == ObsTransition.CONFIGURE_RESOURCES:
 
+                if event.obs.obs_state not in (ObsState.IDLE, ObsState.CONFIGURING, ObsState.READY):
+                    logger.warning(
+                        f"Observation Execution Tool ignoring CONFIGURE_RESOURCES transition for "
+                        f"observation {event.obs.obs_id} in unexpected state "
+                        f"{event.obs.obs_state.name}."
+                    )
+                    return action
+
                 event.obs.obs_state = ObsState.CONFIGURING
                 timer_name = f"obs_configuring_timer:{event.obs.obs_id}"
                 timeout_ms_config = self._get_config_timeout_ms(event.obs)
@@ -172,6 +204,7 @@ class ObservationExecutionTool:
                             echo_data=event.obs))
             
             elif event.transition == ObsTransition.READY:
+                
                 if event.obs.obs_state == ObsState.SCANNING:
                     logger.info(
                         f"Observation Execution Tool ignoring duplicate READY transition for "
@@ -194,6 +227,7 @@ class ObservationExecutionTool:
                     action.set_obs_transition(obs=event.obs, transition=ObsTransition.SCAN_STARTED)
 
             elif event.transition == ObsTransition.SCAN_STARTED:
+                
                 if event.obs.obs_state == ObsState.CONFIGURING:
                     logger.warning(
                         f"Observation Execution Tool received SCAN_STARTED for observation "
@@ -228,6 +262,14 @@ class ObservationExecutionTool:
 
             elif event.transition == ObsTransition.SCAN_COMPLETED:
 
+                if event.obs.obs_state != ObsState.SCANNING:
+                    logger.warning(
+                        f"Observation Execution Tool ignoring {event.transition.name} transition for "
+                        f"observation {event.obs.obs_id} in unexpected state "
+                        f"{event.obs.obs_state.name}."
+                    )
+                    return action
+
                 event.obs.obs_state = ObsState.READY
 
                 # Save current observation state to disk
@@ -242,6 +284,15 @@ class ObservationExecutionTool:
                 # Workflow will transition to SCAN_STARTED or CONFIGURE_RESOURCES as needed within complete_scan()  
 
             elif event.transition == ObsTransition.SCAN_ENDED:
+
+                if event.obs.obs_state != ObsState.SCANNING:
+                    logger.warning(
+                        f"Observation Execution Tool ignoring {event.transition.name} transition for "
+                        f"observation {event.obs.obs_id} in unexpected state "
+                        f"{event.obs.obs_state.name}."
+                    )
+                    return action
+
                 event.obs.obs_state = ObsState.READY
 
                 # If the observation is complete, stop scanning and release resources
@@ -253,6 +304,10 @@ class ObservationExecutionTool:
                 # Workflow will transition to SCAN_STARTED or CONFIGURE_RESOURCES as needed within complete_scan()
 
             elif event.transition == ObsTransition.ABORT:
+
+                action.set_timer_action(Action.Timer(
+                    name=f"obs_configuring_timer:{event.obs.obs_id}",
+                    timer_action=Action.Timer.TIMER_STOP))
 
                 # If resources were assigned and are either configuring, ready or scanning
                 if event.obs.obs_state in [ObsState.CONFIGURING, ObsState.READY, ObsState.SCANNING]:
@@ -277,21 +332,29 @@ class ObservationExecutionTool:
 
             elif event.transition == ObsTransition.RESET:
 
-                # Can only reset observations in ABORTED or FAULT states
+                # Can only reset observations in ABORTED, FAULT or IDLE states
                 if event.obs.obs_state in [ObsState.ABORTED, ObsState.FAULT, ObsState.IDLE]:
                     # Stop abort timer if active
                     timer_name = f"obs_abort_timer:{event.obs.obs_id}"
                     action.set_timer_action(Action.Timer(name=timer_name, timer_action=Action.Timer.TIMER_STOP))
 
-                    # Reset target index and target scan index to start at the beginning if the Obs State was IDLE
-                    if event.obs.obs_state == ObsState.IDLE:
-                        event.obs.tgt_idx = 0
-                        event.obs.tgt_scan = 0
-                        event.obs.determine_scans()
-                        self.reset_sdp_scan(obs=event.obs, action=action)
+                    event.obs.tgt_idx = 0
+                    event.obs.tgt_scan = 0
+                    event.obs.determine_scans()
+                    self.reset_sdp_scan(obs=event.obs, action=action)
 
                     # Reset observation state to IDLE
                     event.obs.obs_state = ObsState.IDLE
+
+                    now = datetime.now(timezone.utc)
+                    if event.obs.scheduling_block_end is not None and event.obs.scheduling_block_end <= now:
+                        logger.warning(
+                            f"Observation Execution Tool reset observation {event.obs.obs_id}, "
+                            f"but its scheduling block ended at {event.obs.scheduling_block_end}. "
+                            "Resources will not be assigned until the observation is rescheduled."
+                        )
+                        return action
+
                     # Try to assign resources for the next scan if possible
                     action.set_obs_transition(obs=event.obs, transition=ObsTransition.ASSIGN_RESOURCES)
                 else:
