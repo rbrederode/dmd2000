@@ -28,7 +28,7 @@ Environment variables:
     WIND_POLL_INTERVAL     seconds, default 1.0
     WIND_TEST_VOLTAGE      used by mock backend, default 1.65
 
-Examples:
+Examples: 
     python ws/wind.py
     WIND_ADC_BACKEND=mock WIND_TEST_VOLTAGE=2.2 python ws/wind.py
 """
