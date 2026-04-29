@@ -13,7 +13,7 @@ from models.health import HealthState
 from models.obs import ObsModel, ObsTransition, ObsState
 from models.oda import ODAModel, ObsList, ScanStore
 from models.scan import ScanModel, ScanState
-from models.target import TargetModel, PointingType
+from models.target import TargetModel, TargetConfig, PointingType
 from models.telescope import TelescopeModel
 from models.tm import ResourceType, AllocationState
 from util import log, util
@@ -48,10 +48,12 @@ class ObservationExecutionTool:
 
         target_config = obs.get_target_config_by_index(obs.tgt_idx) if obs is not None else None
         target_scan = obs.get_current_tgt_scan() if obs is not None else None
+        gain_token = str(target_config.gain).upper() if target_config is not None and TargetConfig.is_auto_gain_token(target_config.gain) else None
         waiting_for_auto_gain = (
             target_config is not None
             and target_scan is not None
-            and str(target_config.gain).upper() == "AUTO"
+            and gain_token is not None
+            and (gain_token == "AUTO" or gain_token not in obs.auto_gain_cache)
             and target_scan.gain <= 0.0
         )
 
@@ -61,6 +63,35 @@ class ObservationExecutionTool:
             timeout_ms = max(timeout_ms, (auto_gain_timeout_ms * 2) + (msg_timeout_ms * 2) + 5000)
 
         return timeout_ms
+
+    def _apply_gain_to_target_scans(self, target_scan_set, gain: float):
+        """Apply a resolved gain to every scan belonging to the current target config."""
+        if target_scan_set is None or gain is None:
+            return
+
+        for scan in target_scan_set.scans:
+            scan.gain = float(gain)
+            scan.last_update = datetime.now(timezone.utc)
+
+    def _resolve_gain_for_config(self, obs, target_config, target_scan_set, target_scan):
+        """Resolve AUTO<n> gain tokens from cache while leaving unresolved tokens intact."""
+        gain = target_config.gain
+        if not TargetConfig.is_auto_gain_token(gain):
+            return gain
+
+        token = gain.upper()
+
+        if target_scan.gain > 0.0:
+            return target_scan.gain
+
+        cached_gain = obs.auto_gain_cache.get(token) if token != "AUTO" else None
+        if cached_gain is not None:
+            self._apply_gain_to_target_scans(target_scan_set, cached_gain)
+            obs.last_update = datetime.now(timezone.utc)
+            logger.info(f"Observation Execution Tool resolved gain token {token} from cache as {cached_gain} dB for observation {obs.obs_id}.")
+            return cached_gain
+
+        return token
 
     def process_obs_event(self, event):
         """ Processes a workflow transition on an observation.
@@ -540,8 +571,8 @@ class ObservationExecutionTool:
             for dig_attr, source, source_attr in config_params:
                 current = getattr(dig_model, dig_attr)
                 desired = getattr(source, source_attr)
-                if dig_attr == 'gain' and str(desired).upper() == "AUTO" and target_scan.gain > 0.0:
-                    desired = target_scan.gain
+                if dig_attr == 'gain':
+                    desired = self._resolve_gain_for_config(obs, target_config, target_scan_set, target_scan)
                 if current != desired:
                     old_dig_config[dig_attr] = current
                     new_dig_config[dig_attr] = desired
@@ -584,14 +615,14 @@ class ObservationExecutionTool:
             for dig_attr, source, source_attr in config_params:
                 current = getattr(sdp_dig, dig_attr) if sdp_dig is not None else None
                 desired = getattr(source, source_attr)
-                if dig_attr == 'gain' and str(desired).upper() == "AUTO" and target_scan.gain > 0.0:
-                    desired = target_scan.gain
-                if dig_attr == 'gain' and str(desired).upper() == "AUTO":
-                    logger.info(
-                        f"Observation Execution Tool deferring Science Data Processor gain update for observation {obs.obs_id} "
-                        "until Digitiser auto gain is resolved."
-                    )
-                    continue
+                if dig_attr == 'gain':
+                    desired = self._resolve_gain_for_config(obs, target_config, target_scan_set, target_scan)
+                    if TargetConfig.is_auto_gain_token(desired):
+                        logger.info(
+                            f"Observation Execution Tool deferring Science Data Processor gain update for observation {obs.obs_id} "
+                            f"until Digitiser auto gain token {desired} is resolved."
+                        )
+                        continue
                 if current != desired:
                     old_scan_config[dig_attr] = current
                     new_scan_config[dig_attr] = desired

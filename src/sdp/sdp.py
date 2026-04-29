@@ -23,6 +23,7 @@ from models.health import HealthState
 from models.pipeline import StepConfig, StepType, PipelineConfig
 from models.scan import ScanModel, ScanState, ScanType
 from models.sdp import ScienceDataProcessorModel
+from models.target import TargetConfig
 from obs.scan import Scan
 from sdp.pipeline.pipeline_factory import ProcessingPipelineFactory
 from sdp.signal_display import SignalDisplay
@@ -533,7 +534,7 @@ class SDP(App):
                 if isinstance(val, (int, float)):
                     dig.gain = float(val)
                     logger.info(f"Science Data Processor set digitiser {dig_id} attribute {key} to {val}")
-                elif str(val).upper() == "AUTO":
+                elif TargetConfig.is_auto_gain_token(val):
                     logger.info(f"Science Data Processor deferring digitiser {dig_id} gain update until auto gain is resolved.")
                 else:
                     logger.warning(f"Science Data Processor ignoring invalid scan config gain {val} for digitiser {dig_id}")

@@ -90,6 +90,7 @@ class ObsModel(BaseModel):
         "targets": And(list, lambda v: isinstance(v, list)),                    # List of targets (TargetModel)
         "target_configs": And(list, lambda v: isinstance(v, list)),             # List of target configurations (TargetConfig)
         "target_scans": And(list, lambda v: isinstance(v, list)),               # List of target scan sets (TargetScanSet)
+        "auto_gain_cache": And(dict, lambda v: isinstance(v, dict)),            # Resolved gain values for AUTO<n> target config tokens
 
         "tgt_idx": And(int, lambda v: isinstance(v, int)),                      # Index of the next target to be observed (0-based)
         "tgt_scan": And(int, lambda v: isinstance(v, int)),                     # Index of the next scan (for the given tgt_idx) to be observed (0-based)
@@ -149,6 +150,7 @@ class ObsModel(BaseModel):
             "targets": [],
             "target_configs": [],
             "target_scans": [],
+            "auto_gain_cache": {},
             "tgt_idx": 0,
             "tgt_scan": 0,
             "dsh_id": None,

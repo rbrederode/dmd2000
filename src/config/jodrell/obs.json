@@ -32,7 +32,7 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": "auto",
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -48,7 +48,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "auto",
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -64,7 +64,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -80,7 +80,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -96,7 +96,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -112,7 +112,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -128,7 +128,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -144,7 +144,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -160,7 +160,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -176,7 +176,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -192,7 +192,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -208,7 +208,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -224,7 +224,7 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -240,7 +240,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -256,7 +256,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -272,7 +272,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -288,7 +288,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -304,7 +304,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -320,7 +320,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -336,7 +336,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -352,7 +352,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -368,7 +368,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -384,7 +384,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -400,7 +400,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -416,7 +416,7 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -432,7 +432,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -448,7 +448,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -464,7 +464,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -480,13 +480,13 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
       "integration_time": 300,
       "spectral_resolution": 2048,
-      "tgt_idx": 28,
+      "tgt_idx": "AUTO1",
       "obs_id": "ODT-2026-04-18T0900Z-dish001"
     },
     {
@@ -496,7 +496,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -512,7 +512,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -528,7 +528,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -544,7 +544,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -560,7 +560,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -576,7 +576,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -592,7 +592,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -608,7 +608,7 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -624,7 +624,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -640,7 +640,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -656,7 +656,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -672,7 +672,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -688,7 +688,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -704,7 +704,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -720,7 +720,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -736,7 +736,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -752,7 +752,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -768,7 +768,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -784,7 +784,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -800,7 +800,7 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -816,7 +816,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -832,7 +832,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -848,7 +848,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -864,7 +864,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -880,7 +880,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -896,7 +896,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -912,7 +912,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -928,7 +928,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -944,7 +944,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -960,7 +960,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -976,7 +976,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -992,7 +992,7 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1008,7 +1008,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1024,7 +1024,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1040,7 +1040,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1056,7 +1056,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1072,7 +1072,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1088,7 +1088,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1104,7 +1104,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1120,7 +1120,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1136,7 +1136,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1152,7 +1152,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1168,7 +1168,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1184,7 +1184,7 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1200,7 +1200,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1216,7 +1216,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1232,7 +1232,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1248,7 +1248,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1264,7 +1264,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1280,7 +1280,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1296,7 +1296,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1312,7 +1312,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1328,7 +1328,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1344,7 +1344,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1360,7 +1360,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1376,7 +1376,7 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1392,7 +1392,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1408,7 +1408,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1424,7 +1424,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1440,7 +1440,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1456,7 +1456,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1472,7 +1472,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1488,7 +1488,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1504,7 +1504,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1520,7 +1520,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1536,7 +1536,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1552,7 +1552,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1568,7 +1568,7 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1584,7 +1584,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1600,7 +1600,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1616,7 +1616,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1632,7 +1632,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1648,7 +1648,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1664,7 +1664,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1680,7 +1680,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1696,7 +1696,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1712,7 +1712,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1728,7 +1728,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1744,7 +1744,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1760,7 +1760,7 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1776,7 +1776,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1792,7 +1792,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1808,7 +1808,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1824,7 +1824,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1840,7 +1840,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1856,7 +1856,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1872,7 +1872,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1888,7 +1888,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1904,7 +1904,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1920,7 +1920,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1936,7 +1936,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1952,7 +1952,7 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1968,7 +1968,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -1984,7 +1984,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2000,7 +2000,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2016,7 +2016,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2032,7 +2032,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2048,7 +2048,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2064,7 +2064,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2080,7 +2080,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2096,7 +2096,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2112,7 +2112,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2128,7 +2128,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2144,7 +2144,7 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2160,7 +2160,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2176,7 +2176,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2192,7 +2192,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2208,7 +2208,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2224,7 +2224,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2240,7 +2240,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2256,7 +2256,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2272,7 +2272,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2288,7 +2288,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2304,7 +2304,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2320,7 +2320,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2336,7 +2336,7 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2352,7 +2352,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2368,7 +2368,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2384,7 +2384,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2400,7 +2400,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2416,7 +2416,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2432,7 +2432,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2448,7 +2448,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2464,7 +2464,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2480,7 +2480,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2496,7 +2496,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2512,7 +2512,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2528,7 +2528,7 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2544,7 +2544,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2560,7 +2560,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2576,7 +2576,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2592,7 +2592,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2608,7 +2608,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2624,7 +2624,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2640,7 +2640,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2656,7 +2656,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2672,7 +2672,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2688,7 +2688,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2704,7 +2704,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2720,7 +2720,7 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2736,7 +2736,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2752,7 +2752,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2768,7 +2768,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2784,7 +2784,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2800,7 +2800,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2816,7 +2816,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2832,7 +2832,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2848,7 +2848,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2864,7 +2864,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2880,7 +2880,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2896,7 +2896,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2912,7 +2912,7 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2928,7 +2928,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2944,7 +2944,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2960,7 +2960,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2976,7 +2976,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -2992,7 +2992,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3008,7 +3008,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3024,7 +3024,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3040,7 +3040,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3056,7 +3056,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3072,7 +3072,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3088,7 +3088,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3104,7 +3104,7 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3120,7 +3120,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3136,7 +3136,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3152,7 +3152,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3168,7 +3168,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3184,7 +3184,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3200,7 +3200,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3216,7 +3216,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3232,7 +3232,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3248,7 +3248,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3264,7 +3264,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3280,7 +3280,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3296,7 +3296,7 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3312,7 +3312,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3328,7 +3328,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3344,7 +3344,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3360,7 +3360,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3376,7 +3376,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3392,7 +3392,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3408,7 +3408,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3424,7 +3424,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3440,7 +3440,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3456,7 +3456,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3472,7 +3472,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3488,7 +3488,7 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3504,7 +3504,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3520,7 +3520,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3536,7 +3536,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3552,7 +3552,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3568,7 +3568,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3584,7 +3584,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3600,7 +3600,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3616,7 +3616,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3632,7 +3632,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3648,7 +3648,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3664,7 +3664,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3680,7 +3680,7 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3696,7 +3696,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3712,7 +3712,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3728,7 +3728,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3744,7 +3744,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3760,7 +3760,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3776,7 +3776,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3792,7 +3792,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3808,7 +3808,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3824,7 +3824,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3840,7 +3840,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3856,7 +3856,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3872,7 +3872,7 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3888,7 +3888,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3904,7 +3904,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3920,7 +3920,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3936,7 +3936,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3952,7 +3952,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3968,7 +3968,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -3984,7 +3984,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4000,7 +4000,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4016,7 +4016,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4032,7 +4032,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4048,7 +4048,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4064,7 +4064,7 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4080,7 +4080,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4096,7 +4096,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4112,7 +4112,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4128,7 +4128,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4144,7 +4144,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4160,7 +4160,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4176,7 +4176,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4192,7 +4192,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4208,7 +4208,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4224,7 +4224,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4240,7 +4240,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4256,7 +4256,7 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4272,7 +4272,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4288,7 +4288,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4304,7 +4304,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4320,7 +4320,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4336,7 +4336,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4352,7 +4352,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4368,7 +4368,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4384,7 +4384,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4400,7 +4400,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4416,7 +4416,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4432,7 +4432,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4448,7 +4448,7 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4464,7 +4464,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4480,7 +4480,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4496,7 +4496,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4512,7 +4512,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4528,7 +4528,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4544,7 +4544,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4560,7 +4560,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4576,7 +4576,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4592,7 +4592,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4608,7 +4608,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -4624,7 +4624,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 28,
+      "gain": "AUTO1",
       "center_freq": 1420400000,
       "bandwidth": 2000000,
       "sample_rate": 2048000,
@@ -5038,7 +5038,7 @@
         "instance": "PointingType",
         "value": "DRIFT_SCAN"
       },
-      "tgt_idx": 28,
+      "tgt_idx": "AUTO1",
       "obs_id": "ODT-2026-04-18T0900Z-dish001"
     },
     {

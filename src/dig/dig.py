@@ -26,8 +26,6 @@ logger = logging.getLogger(__name__)
 
 class Digitiser(App):
 
-    AUTO_GAIN_QUIESCE_SEC = 0.25
-
     def __init__(self, app_name: str = "dig"):
 
         self.dig_model = DigitiserModel()
@@ -456,20 +454,6 @@ class Digitiser(App):
         if hasattr(self.sdr, method) and not self.dig_model.sdr_connected == CommunicationStatus.ESTABLISHED:
             logger.error(f"Digitiser SDR not connected, cannot call method {method}")
             return tm_dig.STATUS_ERROR, f"Digitiser SDR not connected, cannot call method {method}", None, None
-
-        if method in [tm_dig.METHOD_GET_AUTO_GAIN, tm_dig.METHOD_SET_AUTO_GAIN]:
-            if self.dig_model.scanning:
-                msg = "Digitiser cannot run auto gain while scanning is active. Stop scanning first."
-                logger.error(msg)
-                return tm_dig.STATUS_ERROR, msg, None, None
-
-            if Timer.manager is not None:
-                for timer in Timer.manager.get_timers_by_keyword("scan_samples"):
-                    logger.info(f"Digitiser removing stale scan timer {timer.name} before auto gain.")
-                    Timer.manager.remove_timer(timer)
-
-            # Give the SDR a brief settle period after sample streaming has been quiesced.
-            time.sleep(self.AUTO_GAIN_QUIESCE_SEC)
 
         allowed_keys = {"sample_rate", "time_in_secs"}
         args = {k: v for k, v in api_call.get('params', {}).items() if k in allowed_keys}

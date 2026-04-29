@@ -35,7 +35,7 @@ from models.oda import ODAModel, ObsList, ScanStore
 from models.health import HealthState
 from models.scan import ScanModel, ScanState
 from models.sdp import ScienceDataProcessorModel
-from models.target import TargetModel
+from models.target import TargetModel, TargetConfig
 from models.telescope import TelescopeModel
 from models.tm import ResourceType, AllocationState, ResourceAllocations, Allocation
 from models.ui import UIDriver, UIDriverType
@@ -243,9 +243,9 @@ class TelescopeManager(App):
             # If scanning is turned on we need to provide the observation id and tgt_idx and freq_scan
             new_scan_config["scanning"] = {'obs_id': obs_id, 'tgt_idx': 0, 'freq_scan': 0} if scanning else scanning
 
-            # SDP scan_config expects a concrete numeric gain. When gain is AUTO, defer the
+            # SDP scan_config expects a concrete numeric gain. When gain is AUTO/AUTO<n>, defer the
             # gain update until the digitiser returns a resolved gain value.
-            if str(new_scan_config.get("gain", "")).upper() == "AUTO":
+            if TargetConfig.is_auto_gain_token(new_scan_config.get("gain")):
                 logger.info(
                     f"Telescope Manager deferring SDP scan_config gain update for digitiser {dig_id} "
                     "until auto gain is resolved."
@@ -650,10 +650,11 @@ class TelescopeManager(App):
                         digitiser.gain = float(gain_value)
                         logger.info(f"Telescope Manager received Digitiser auto gain result: {digitiser.gain} dB")
 
-                        if obs_data is not None and str(obs_data.get('gain', '')).upper() == "AUTO":
+                        gain_token = obs_data.get('gain') if obs_data is not None else None
+                        if TargetConfig.is_auto_gain_token(gain_token):
                             obs_data['gain'] = digitiser.gain
                             obs = self.telmodel.oda.obs_store.get_obs_by_id(obs_id) if obs_id is not None else None
-                            self._apply_auto_gain_to_current_scan(obs, digitiser.gain)
+                            self._apply_auto_gain_to_current_target(obs, digitiser.gain, gain_token)
                             if self.telmodel.sdp is not None:
                                 sdp_dig = self.telmodel.sdp.dig_store.get_dig_by_id(digitiser.dig_id)
                                 old_sdp_config = {
@@ -757,20 +758,30 @@ class TelescopeManager(App):
 
         return action
 
-    def _apply_auto_gain_to_current_scan(self, obs: ObsModel, gain: float):
-        """Store the resolved AUTO gain on the current scan model."""
+    def _apply_auto_gain_to_current_target(self, obs: ObsModel, gain: float, gain_token=None):
+        """Store the resolved AUTO gain on every scan for the current target config."""
         if obs is None or gain is None:
             return
 
-        scan = obs.get_current_tgt_scan()
-        if scan is None:
-            logger.warning(f"Telescope Manager could not find current scan for observation {obs.obs_id} to apply auto gain {gain}.")
+        target_scan_set = obs.get_current_tgt_scan_set()
+        if target_scan_set is None:
+            logger.warning(f"Telescope Manager could not find current target scan set for observation {obs.obs_id} to apply auto gain {gain}.")
             return
 
-        scan.gain = float(gain)
-        scan.last_update = datetime.now(timezone.utc)
+        token = gain_token.upper() if TargetConfig.is_auto_gain_token(gain_token) else None
+        if token is not None and token != "AUTO":
+            obs.auto_gain_cache[token] = float(gain)
+
+        for scan in target_scan_set.scans:
+            scan.gain = float(gain)
+            scan.last_update = datetime.now(timezone.utc)
+
         obs.last_update = datetime.now(timezone.utc)
-        logger.info(f"Telescope Manager applied auto gain {scan.gain} dB to scan {scan.scan_id} for observation {obs.obs_id}.")
+        cache_msg = f" and cached token {token}" if token is not None and token != "AUTO" else ""
+        logger.info(
+            f"Telescope Manager applied auto gain {float(gain)} dB to target config {obs.tgt_idx} "
+            f"for observation {obs.obs_id}{cache_msg}."
+        )
 
     def process_sdp_connected(self, event) -> Action:
         """ Processes Science Data Processor connected events.
