@@ -22,3 +22,7 @@ scipy
 schema
 setuptools==75.6.0
 witmotion
+adafruit-blinka
+adafruit-circuitpython-ads1x15
+minimalmodbus
+

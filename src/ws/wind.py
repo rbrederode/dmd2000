@@ -71,6 +71,7 @@ class ADS1115VoltageReader(VoltageReader):
             import board
             import busio
             import adafruit_ads1x15.ads1115 as ADS
+            from adafruit_ads1x15.ads1x15 import Pin
             from adafruit_ads1x15.analog_in import AnalogIn
         except ImportError as exc:
             raise ImportError(
@@ -86,10 +87,10 @@ class ADS1115VoltageReader(VoltageReader):
         ads.gain = 1  # +-4.096 V, suitable for a 0-3.3 V converter output
 
         channel_map = {
-            0: ADS.P0,
-            1: ADS.P1,
-            2: ADS.P2,
-            3: ADS.P3,
+            0: getattr(ADS, "P0", Pin.A0),
+            1: getattr(ADS, "P1", Pin.A1),
+            2: getattr(ADS, "P2", Pin.A2),
+            3: getattr(ADS, "P3", Pin.A3),
         }
         self.chan = AnalogIn(ads, channel_map[channel])
 
