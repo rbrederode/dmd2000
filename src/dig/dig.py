@@ -20,7 +20,7 @@ from models.health import HealthState
 from sdr.facade import SDR
 from util import log, util
 from util.timer import Timer, TimerManager
-from util.xbase import XBase, XStreamUnableToExtract, XSoftwareFailure, XHardwareFailure, XAPIValidationFailed
+from util.xbase import XStreamUnableToExtract, XSoftwareFailure, XHardwareFailure, XAPIValidationFailed
 
 logger = logging.getLogger(__name__)
 
@@ -393,10 +393,13 @@ class Digitiser(App):
                 return tm_dig.STATUS_ERROR, f"Digitiser property {prop_name} is not callable", None, None
         
         except Exception as e:
+            details = str(e)
             if isinstance(e, XHardwareFailure):
                 self.dig_model.sdr_connected = CommunicationStatus.NOT_ESTABLISHED
-            logger.exception(f"Digitiser failed to set property {prop_name} to {prop_value}: {e}")
-            return tm_dig.STATUS_ERROR, f"Digitiser failed to set property {prop_name} to {prop_value}: {e}", None, None
+                logger.error(f"Digitiser failed to set property {prop_name} to {prop_value}: {details}")
+            else:
+                logger.exception(f"Digitiser failed to set property {prop_name} to {prop_value}: {details}")
+            return tm_dig.STATUS_ERROR, f"Digitiser failed to set property {prop_name} to {prop_value}: {details}", None, None
 
         logger.info(f"Digitiser set property {prop_name[4:]} to {prop_value}")
         return tm_dig.STATUS_SUCCESS, f"Digitiser set property {prop_name} to {prop_value}", prop_value, None
@@ -437,10 +440,11 @@ class Digitiser(App):
         try:  # Call the getter method
             value = getter() if callable(getter) else getter
         except Exception as e:
+            details = str(e)
             if isinstance(e, XHardwareFailure):
                 self.dig_model.sdr_connected = CommunicationStatus.NOT_ESTABLISHED
-            logger.error(f"Digitiser failed to get property {prop_name}: {e}")
-            return tm_dig.STATUS_ERROR, f"Digitiser failed to get property {prop_name}: {e}", None, None
+            logger.error(f"Digitiser failed to get property {prop_name}: {details}")
+            return tm_dig.STATUS_ERROR, f"Digitiser failed to get property {prop_name}: {details}", None, None
 
         return tm_dig.STATUS_SUCCESS, f"Digitiser get {prop_name} value {value}", value, None
   
@@ -476,10 +480,11 @@ class Digitiser(App):
         try:  # Call the method
             result = call(**args) if args is not None else call() if callable(call) else call
         except (XSoftwareFailure, XHardwareFailure) as e:
+            details = str(e)
             if isinstance(e, XHardwareFailure):
                 self.dig_model.sdr_connected = CommunicationStatus.NOT_ESTABLISHED
-            logger.error(f"Digitiser method {method} failed with exception: {e}")
-            return tm_dig.STATUS_ERROR, f"Digitiser method {method} failed with exception: {e}", None, None
+            logger.error(f"Digitiser method {method} failed with exception: {details}")
+            return tm_dig.STATUS_ERROR, f"Digitiser method {method} failed with exception: {details}", None, None
 
         if method == tm_dig.METHOD_SET_AUTO_GAIN and result is not None:
             self.dig_model.gain = float(result[0] if isinstance(result, tuple) else result)

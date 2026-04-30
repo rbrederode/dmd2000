@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from env.device import DeviceWorker
 from models.comms import CommunicationStatus
+from rtlsdr.rtlsdr import LibUSBError
 from sdr.sdr import SDR as LegacySDR
 from util.xbase import XHardwareFailure
 
@@ -107,6 +108,13 @@ class SDR:
             result = future.result()
         except Exception as exc:
             self.connected = CommunicationStatus.NOT_ESTABLISHED
+            hardware_error = self._hardware_failure_for(name, exc)
+            if hardware_error is not None:
+                self._stop_worker_after_hardware_failure(name, exc)
+                if raise_on_error:
+                    raise hardware_error from exc
+                return None
+
             if raise_on_error:
                 raise exc
             return None
@@ -117,3 +125,25 @@ class SDR:
             self.connected = result
 
         return result
+
+    def _hardware_failure_for(self, name: str, exc: Exception) -> XHardwareFailure | None:
+        if isinstance(exc, XHardwareFailure):
+            return exc
+
+        if isinstance(exc, LibUSBError):
+            return XHardwareFailure(f"SDR device disconnected or unavailable while calling {name}: {exc}")
+
+        return None
+
+    def _stop_worker_after_hardware_failure(self, name: str, exc: Exception) -> None:
+        logger.warning(f"SDR hardware call {name} failed; marking device disconnected: {exc}")
+
+        worker = self._worker
+        self._worker = None
+        self.connected = CommunicationStatus.NOT_ESTABLISHED
+
+        if worker is not None and worker.is_running():
+            try:
+                worker.stop()
+            except Exception as stop_exc:
+                logger.warning(f"SDR worker stop after hardware failure also failed: {stop_exc}")

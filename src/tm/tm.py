@@ -1598,7 +1598,7 @@ def main():
                             disabled_ui_drivers.add(driver_key)
                             logger.error(
                                 f"Telescope Manager disabled UI driver {driver.type.name} {driver.short_desc} "
-                                f"after initialization failed: {e.messages[0] if e.messages else e}"
+                                f"after initialization failed: {e}"
                             )
                     else:
                         logger.warning(f"Telescope Manager UI driver {driver.type} not supported, skipping UI integration for this driver")
