@@ -144,7 +144,10 @@ class DM(App):
         for dish in self.dm_model.dish_store.dish_list:
             driver_ref = None
             if dish.driver_config is not None:
-                driver_ref = getattr(dish.driver_config, "driver", None) or getattr(dish.driver_config, "name", None)
+                try:
+                    driver_ref = getattr(dish.driver_config, "driver", None) or getattr(dish.driver_config, "name", None)
+                except XSoftwareFailure:
+                    driver_ref = None
 
             driver = None
 

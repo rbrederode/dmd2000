@@ -4,7 +4,7 @@ import logging
 logging.basicConfig(level=logging.INFO)
 
 from models.ws import WeatherStationModel
-from ws.drivers.registry import get_registered_driver, load_class_from_path
+from util.registry import WEATHER_STATION_DRIVER_NAMESPACE, get, load_class_from_path
 
 # Import example external driver which registers itself on import
 import ws.drivers.example_external as example  # noqa: F401
@@ -13,7 +13,7 @@ import ws.drivers.example_external as example  # noqa: F401
 def main():
     ws1 = WeatherStationModel(id="ws_test")
 
-    ctor = get_registered_driver("example_external")
+    ctor = get(WEATHER_STATION_DRIVER_NAMESPACE, "example_external")
     if ctor is None:
         raise SystemExit("Registered driver 'example_external' not found")
 

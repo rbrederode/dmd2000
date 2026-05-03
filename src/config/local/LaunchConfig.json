@@ -81,7 +81,7 @@
             "env": {},
             "program": "python",
             "args": [
-                "ws/ws.py",
+                "-m", "ws.ws",
                 "--profile", "local",
                 "--dm_host", "127.0.0.1",
                 "--tm_host", "127.0.0.1",

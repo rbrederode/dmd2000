@@ -17,7 +17,7 @@ from ipc.tcp_client import TCPClient
 from ipc.tcp_server import TCPServer
 from models.app import AppModel, HealthState
 from models.ws import WeatherStationDriverType
-from ws.drivers.driver import create_weather_station_driver
+from ws.drivers.driver import create_ws_driver
 
 logger = logging.getLogger(__name__)
 
