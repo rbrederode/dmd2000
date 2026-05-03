@@ -4,6 +4,7 @@ from queue import Queue
 import time
 
 from models.pipeline import PipelineConfig, StepConfig, StepType
+from util.registry import PIPELINE_STEP_NAMESPACE, get as registry_get, register as registry_register, resolve as registry_resolve
 
 logger = logging.getLogger(__name__)
 
@@ -121,27 +122,41 @@ class ProcessingPipelineFactory:
 
     def get_step_class(self, step_type: StepType):
         """
-        Resolve the ProcessingStep subclass for a given StepType.
+        Resolve the ProcessingStep subclass for a given StepType or custom registry key.
         """
-        # Import step classes here to avoid circular imports
-        from sdp.pipeline.steps.nop      import Nop
-        from sdp.pipeline.steps.dc_spike import DCSpike
-        from sdp.pipeline.steps.load     import LoadCal
-        from sdp.pipeline.steps.gain     import GainCal
-        from sdp.pipeline.steps.tsys     import TsysCal
-        from sdp.pipeline.steps.rfi      import RFIFlag
-        from sdp.pipeline.steps.qa       import QA
+        step_key = step_type.name.lower() if isinstance(step_type, StepType) else str(step_type).strip().lower()
 
-        step_map = {
-            StepType.NOP:      Nop,
-            StepType.DC_SPIKE: DCSpike,
-            StepType.LOAD:     LoadCal,
-            StepType.GAIN_CAL: GainCal,
-            StepType.TSYS_CAL: TsysCal,
-            StepType.RFI_FLAG: RFIFlag,
-            StepType.QA:       QA,
+        ctor = registry_resolve(PIPELINE_STEP_NAMESPACE, step_key)
+        if ctor is not None:
+            return ctor
+
+        # Import step classes here to avoid circular imports, then register built-ins.
+        from sdp.pipeline.steps.nop import Nop
+        from sdp.pipeline.steps.dc_spike import DCSpike
+        from sdp.pipeline.steps.load import LoadCal
+        from sdp.pipeline.steps.gain import GainCal
+        from sdp.pipeline.steps.tsys import TsysCal
+        from sdp.pipeline.steps.rfi import RFIFlag
+        from sdp.pipeline.steps.qa import QA
+
+        builtin_steps = {
+            StepType.NOP.name.lower(): Nop,
+            StepType.DC_SPIKE.name.lower(): DCSpike,
+            StepType.LOAD.name.lower(): LoadCal,
+            StepType.GAIN_CAL.name.lower(): GainCal,
+            StepType.TSYS_CAL.name.lower(): TsysCal,
+            StepType.RFI_FLAG.name.lower(): RFIFlag,
+            StepType.QA.name.lower(): QA,
         }
-        return step_map[step_type]
+        for name, ctor in builtin_steps.items():
+            if registry_get(PIPELINE_STEP_NAMESPACE, name) is None:
+                registry_register(PIPELINE_STEP_NAMESPACE, name, ctor)
+
+        ctor = registry_get(PIPELINE_STEP_NAMESPACE, step_key)
+        if ctor is not None:
+            return ctor
+
+        raise KeyError(f"Unknown pipeline step '{step_key}'")
 
     def describe_step(self, config: StepConfig) -> str:
         """

@@ -32,6 +32,7 @@ from models.target import TargetModel, PointingType
 from models.ws import WeatherData, WeatherStationList
 from util.alarm_rsp_efficiency import get_alarm_rsp_efficiency
 from util import log
+from util.registry import DISH_DRIVER_NAMESPACE, resolve
 from util.xbase import XBase, XStreamUnableToExtract, XSoftwareFailure
 
 logger = logging.getLogger(__name__)
@@ -141,28 +142,41 @@ class DM(App):
 
         # Instantiate drivers for each dish and initiate a polling driver timer for each dish
         for dish in self.dm_model.dish_store.dish_list:
-            driver_type = dish.driver_type.name
-            if driver_type == DriverType.MD01.name:
-                driver = MD01Driver(dsh_model=dish)
+            driver_ref = None
+            if dish.driver_config is not None:
+                driver_ref = getattr(dish.driver_config, "driver", None) or getattr(dish.driver_config, "name", None)
+
+            driver = None
+
+            if driver_ref:
+                ctor = resolve(DISH_DRIVER_NAMESPACE, driver_ref)
+                if ctor is None:
+                    logger.warning("DM could not resolve custom driver '%s' for Dish %s", driver_ref, dish.dsh_id)
+                else:
+                    try:
+                        driver = ctor(dsh_model=dish)
+                    except TypeError:
+                        driver = ctor(dish)
+                    logger.info("DM instantiated custom driver '%s' for Dish %s", driver_ref, dish.dsh_id)
+
+            if driver is None:
+                driver_type = dish.driver_type.name
+                if driver_type == DriverType.MD01.name:
+                    driver = MD01Driver(dsh_model=dish)
+                    logger.info(f"DM instantiated MD01 driver for Dish {dish.dsh_id}")
+                elif driver_type == DriverType.DRIFT.name:
+                    driver = DriftDriver(dsh_model=dish)
+                    logger.info(f"DM instantiated Drift driver for Dish {dish.dsh_id}")
+                else:
+                    logger.warning(f"DM cannot instantiate driver for Dish {dish.dsh_id} with unknown driver type {driver_type}")
+
+            if driver is not None:
                 self.dish_drivers[dish.dsh_id] = driver
 
                 # Start the polling driver timer for this dish
                 action.set_timer_action(Action.Timer(
                     name=f"driver_timer_{dish.dsh_id}_{type(driver).__name__}", 
                     timer_action=driver.get_poll_interval_ms())) 
-
-                logger.info(f"DM instantiated MD01 driver for Dish {dish.dsh_id}")
-            elif driver_type == DriverType.DRIFT.name:
-                driver = DriftDriver(dsh_model=dish)
-                self.dish_drivers[dish.dsh_id] = driver
-
-                action.set_timer_action(Action.Timer(
-                    name=f"driver_timer_{dish.dsh_id}_{type(driver).__name__}",
-                    timer_action=driver.get_poll_interval_ms()))
-
-                logger.info(f"DM instantiated Drift driver for Dish {dish.dsh_id}")
-            else:
-                logger.warning(f"DM cannot instantiate driver for Dish {dish.dsh_id} with unknown driver type {driver_type}")
 
         # Start server endpoints and connect client endpoints to interfaces
         self.tm_endpoint.start()

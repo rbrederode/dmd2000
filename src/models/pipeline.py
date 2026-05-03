@@ -19,7 +19,7 @@ class StepConfig(BaseModel):
 
     schema = Schema({
         "_type": And(str, lambda v: v == "StepConfig"),
-        "step": And(StepType, lambda v: isinstance(v, StepType)),         # Type of processing step, e.g. "RemoveDCSpike"
+        "step": Or(StepType, And(str, lambda v: isinstance(v, str))),     # Built-in StepType or custom registry key / class path
         "params": And(dict, lambda v: isinstance(v, dict)),               # Parameters for the processing step
         "last_update": And(datetime, lambda v: isinstance(v, datetime)),  # Timestamp when the step config was last updated
     })
@@ -43,8 +43,14 @@ class StepConfig(BaseModel):
 
         super().__init__(**kwargs)
 
+    def get_step_key(self) -> str:
+        if isinstance(self.step, StepType):
+            return self.step.name.lower()
+        return str(self.step).strip().lower()
+
     def __str__(self):
-        return f"StepConfig(step={self.step.name}, params={self.params}, last_update={self.last_update.isoformat()})"
+        step_name = self.step.name if isinstance(self.step, StepType) else str(self.step)
+        return f"StepConfig(step={step_name}, params={self.params}, last_update={self.last_update.isoformat()})"
 
     # Make sure there are no object references in the params when serialising steps e.g. into JSON for transmission to Telescope Manager
     # in status updates. Object references are inserted into params for Pipeline processing in order to provide context

@@ -13,14 +13,22 @@ from util.xbase import XSoftwareFailure
 
 logger = logging.getLogger(__name__)
 
+class WeatherStationDriverType(enum.IntEnum):
+    ADS1115 = 1           # Anemometer driver based on the ADS1115 ADC
+    MODBUS = 2            # Weather station driver based on Modbus RTU over RS485/USB
+    UNKNOWN = 3
+
+# Backwards-compatible alias for callers that import DriverType from models.ws.
+DriverType = WeatherStationDriverType
+
 class WeatherData(BaseModel):
     """A class representing weather data at a specific location and time."""
 
     schema = Schema({
         "_type": And(str, lambda v: v == "WeatherData"),
-        "obs_time": And(datetime, lambda v: isinstance(v, datetime)),               # Timestamp when the weather data was measured
         "ws_id": And(str, lambda v: isinstance(v, str)),                            # Weather station ID
 
+        "obs_time": And(datetime, lambda v: isinstance(v, datetime)),               # Timestamp when the weather data was measured
         "temperature": Or(None, And(float, lambda v: -100 <= v <= 100)),            # Temperature in Celsius
         "humidity": Or(None, And(float, lambda v: 0 <= v <= 100)),                  # Humidity in percentage
         "pressure": Or(None, And(float, lambda v: v >= 0)),                         # Pressure in hPa
@@ -485,6 +493,12 @@ class WeatherStationModel(BaseModel):
         "tm_connected": And(CommunicationStatus, lambda v: isinstance(v, CommunicationStatus)),
         "dm_connected": And(CommunicationStatus, lambda v: isinstance(v, CommunicationStatus)),
         "sim_mode": And(str, lambda v: v in ["off", "calm", "windy", "stormy"]),
+        "driver_type": And(WeatherStationDriverType, lambda v: isinstance(v, WeatherStationDriverType)),  # Weather station driver implementation
+        "driver_config": Or(None, lambda v: v is None or isinstance(v, BaseModel)),
+        "driver_poll_period": Or(None, And(int, lambda v: v > 0)),                  # Driver poll period in milliseconds
+        "driver_failures": And(int, lambda v: v >= 0),                              # Count of consecutive driver read failures
+        "last_err_msg": Or(None, And(str, lambda v: isinstance(v, str))),           # Last weather station error message
+        "last_err_dt": Or(None, And(datetime, lambda v: isinstance(v, datetime))),  # Last weather station error datetime
         "last_update": And(datetime, lambda v: isinstance(v, datetime)),
     })
 
@@ -509,6 +523,12 @@ class WeatherStationModel(BaseModel):
             "tm_connected": CommunicationStatus.NOT_ESTABLISHED,
             "dm_connected": CommunicationStatus.NOT_ESTABLISHED,
             "sim_mode": "off",
+            "driver_type": WeatherStationDriverType.UNKNOWN,
+            "driver_config": None,
+            "driver_poll_period": 1000,
+            "driver_failures": 0,
+            "last_err_msg": None,
+            "last_err_dt": None,
             "last_update": datetime.now(timezone.utc)
         }
 
@@ -518,6 +538,23 @@ class WeatherStationModel(BaseModel):
                 kwargs.setdefault(key, value)
 
         super().__init__(**kwargs)
+
+    def increment_failures(self):
+        """Increment the consecutive weather station driver failure count."""
+        self.driver_failures += 1
+        self.last_update = datetime.now(timezone.utc)
+
+    def reset_failures(self):
+        """Reset the consecutive weather station driver failure count."""
+        self.driver_failures = 0
+        self.last_update = datetime.now(timezone.utc)
+
+    def set_last_err(self, err_msg: str, err_dt: datetime = None) -> str:
+        """Record the latest weather station driver error."""
+        self.last_err_msg = err_msg
+        self.last_err_dt = err_dt if err_dt is not None else datetime.now(timezone.utc)
+        self.last_update = self.last_err_dt
+        return err_msg
 
 if __name__ == "__main__":
 
