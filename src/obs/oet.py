@@ -636,6 +636,12 @@ class ObservationExecutionTool:
                 desired = getattr(source, source_attr)
                 if dig_attr == 'gain':
                     desired = self._resolve_gain_for_config(obs, target_config, target_scan_set, target_scan)
+                    if TargetConfig.is_auto_gain_token(desired):
+                        logger.info(
+                            f"Observation Execution Tool deferring Digitiser gain update for observation {obs.obs_id} "
+                            f"until Digitiser auto gain token {desired} is resolved."
+                        )
+                        continue
                 if current != desired:
                     old_dig_config[dig_attr] = current
                     new_dig_config[dig_attr] = desired
