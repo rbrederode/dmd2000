@@ -437,10 +437,11 @@ class TelescopeManager(App):
             elif api_call.get('property','') == tm_dm.PROPERTY_CAPABILITY:
                 dsh_model.capability = Capability(api_call['value']) if api_call['value'] is not None else None
 
-            # If the api call is a capability state set property rsp message, update the Dish Model
+            # If the api call is a target set property rsp message, update the Dish Model
             elif api_call.get('property','') == tm_dm.PROPERTY_TARGET:
                 dsh_model.target = TargetModel.from_dict(api_call['value']) if api_call['value'] is not None and isinstance(api_call['value'], dict) else None
                 dsh_model.tgt_id = dsh_model.target.obs_id + f"-{dsh_model.target.tgt_idx}" if dsh_model.target is not None else None
+                dsh_model.mode = DishMode.OPERATE if dsh_model.target is not None else DishMode.STANDBY_FP
                 
             # If the api call is a status update message, update the Dish Manager model
             elif api_call.get('property','') == tm_dm.PROPERTY_STATUS:
@@ -736,10 +737,15 @@ class TelescopeManager(App):
                                 continue
 
                             if current_value != new_value:
-                                config_mismatched = True
-                                logger.info(f"Telescope Manager identified mismatch between desired and current configuration for observation {obs_id}" + 
-                                f" on digitiser {digitiser.dig_id} for property {config_key}.\nCurrent value: {current_value}\nDesired value: {new_value}")
-                                break
+                                # Special case: if desired gain is an AUTO token and current is numeric, this is success (calibration completed)
+                                if config_key == 'gain' and TargetConfig.is_auto_gain_token(new_value) and isinstance(current_value, (int, float)):
+                                    logger.info(f"Telescope Manager confirmed Digitiser auto-gain calibration completed for observation {obs_id}: " +
+                                    f"Desired token: {new_value}, Measured gain: {current_value} dB")
+                                else:
+                                    config_mismatched = True
+                                    logger.info(f"Telescope Manager identified mismatch between desired and current configuration for observation {obs_id}" + 
+                                    f" on digitiser {digitiser.dig_id} for property {config_key}.\nCurrent value: {current_value}\nDesired value: {new_value}")
+                                    break
 
                     # If no mismatches remain, the configuration update has been applied successfully
                     if not config_mismatched and obs.obs_state == ObsState.CONFIGURING:
