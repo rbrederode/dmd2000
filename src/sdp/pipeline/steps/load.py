@@ -28,12 +28,12 @@ class LoadCal(ProcessingStep):
             raise ValueError(f"LoadCal: scan {self.scan} must be set before initialising LoadCal step.")
 
         self.load_scan = None
-        self._is_default_load = True                  # Track if the current load is the default (all ones) vs real measurement data
+        self._load_is_default = True                  # Track if the current load is the default (all ones) vs real measurement data
         self._last_cal_q_size = len(self.cal_q.queue) # Track the last seen calibration queue size to detect new load scans arriving
         
         # Perform initial matching to equivalent load scan
         self.load_scan = self._resolve_load_scan()
-        self._is_default_load = self._is_default_load(self.load_scan)
+        self._load_is_default = self._is_default_load(self.load_scan)
 
     def _resolve_load_scan(self):
         """Resolve the newest equivalent completed load scan from the calibration queue."""
@@ -56,17 +56,14 @@ class LoadCal(ProcessingStep):
         """Check if load cache should be refreshed based on queue changes
            Do not refresh if current load is real (non-default), only refresh if default or missing."""
         # If we have a real (non-default) load, keep it for the duration of the scan
-        if self.load_scan is not None and not self._is_default_load(self.load_scan):
+        if self.load_scan is not None and not self._load_is_default:
             return False
         
         cal_q_size = len(self.cal_q.queue)
         
         # Refresh if queue size changed (new load arrived)
-        queue_changed = cal_q_size != self._last_cal_q_size
-        
-        if queue_changed:
+        if cal_q_size != self._last_cal_q_size:
             self._last_cal_q_size = cal_q_size
-            self._last_refresh_time = now
             return True
         
         return False
@@ -106,6 +103,7 @@ class LoadCal(ProcessingStep):
             latest_load = self._resolve_load_scan()
             if latest_load is not None and latest_load is not self.load_scan:
                 self.load_scan = latest_load
+                self._load_is_default = self._is_default_load(self.load_scan)
                 logger.info(f"LoadCal pipeline step updated load calibration scan for processing:\n{self.load_scan}")
 
         # Check if the length of the input signal array matches the length of the load scan's spectrum
