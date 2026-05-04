@@ -146,7 +146,7 @@ class Digitiser(App):
             scanning = self.dig_model.scanning
             obs_id = scanning.get('obs_id', None) if isinstance(scanning, dict) else None
 
-            # If we are busy scanning samples for an observation and receive a new unrelated set / method api call, reject it
+            # If we are busy scanning samples for an observation and receive a new unrelated obs set / method api call, reject it
             if obs_id and obs_id !=api_call.get('obs_data', {}).get('obs_id'):
                 if api_call['action_code'] in ["set", "method"]:
                     msg = f"Digitiser busy scanning for observation {obs_id} and cannot process unrelated API call until observation is complete"               
@@ -173,14 +173,14 @@ class Digitiser(App):
 
                     logger.info(f"Digitiser scanning state changed to: {value}")
 
-                    # If scanning was turned on, start reading samples immediately (timer_action=0) 
-                    if not scanning and self.dig_model.scanning:
+                    # If scanning is active, ensure sample reads are running immediately.
+                    if self.dig_model.scanning:
                         # Two timers (1,2) run in parallel, reading samples one after the other, blocking only on the SDR
                         for i in range(1, 3):
                             action.set_timer_action(Action.Timer(name=f"scan_samples_{i}", timer_action=0))
                                 
                     else:    
-                        # Stop all scan_samples timers (not really necesary since they have a zero timeout)
+                        # Stop all scan_samples timers (catches all queued timers too, ensuring we stop scanning immediately)
                         for timer in Timer.manager.get_timers_by_keyword(f"scan_samples"):
                             action.set_timer_action(Action.Timer(name=timer.name, timer_action=Action.Timer.TIMER_STOP))
 

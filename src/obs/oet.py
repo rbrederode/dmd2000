@@ -640,14 +640,16 @@ class ObservationExecutionTool:
                     old_dig_config[dig_attr] = current
                     new_dig_config[dig_attr] = desired
 
+            desired_scanning = {'obs_id': obs.obs_id, 'tgt_idx': obs.tgt_idx, 'freq_scan': target_scan.freq_scan}
+            # Keep active digitiser sample metadata aligned with the target scan,
+            # even when no other digitiser hardware setting changes.
+            if dig_model.scanning is not False and dig_model.scanning != desired_scanning:
+                old_dig_config['scanning'] = dig_model.scanning
+                new_dig_config['scanning'] = desired_scanning
+
             if len(new_dig_config) > 0:
 
                 already_configured = False
-
-                # If digitiser is aready scanning, update the observation and scan parameters
-                if dig_model.scanning is not False:
-                    old_dig_config['scanning'] = dig_model.scanning
-                    new_dig_config['scanning'] = {'obs_id': obs.obs_id, 'tgt_idx': obs.tgt_idx, 'freq_scan': target_scan.freq_scan } 
 
                 # Needed to direct the config to the correct digitiser and 
                 # To transition the appropriate observation state once configuration is applied
