@@ -28,11 +28,12 @@ class LoadCal(ProcessingStep):
             raise ValueError(f"LoadCal: scan {self.scan} must be set before initialising LoadCal step.")
 
         self.load_scan = None
-        self._last_cal_q_size = 0
-        self._last_refresh_time = 0.0
+        self._is_default_load = True                  # Track if the current load is the default (all ones) vs real measurement data
+        self._last_cal_q_size = len(self.cal_q.queue) # Track the last seen calibration queue size to detect new load scans arriving
         
-        # Perform initial resolution
+        # Perform initial matching to equivalent load scan
         self.load_scan = self._resolve_load_scan()
+        self._is_default_load = self._is_default_load(self.load_scan)
 
     def _resolve_load_scan(self):
         """Resolve the newest equivalent completed load scan from the calibration queue."""
@@ -44,7 +45,6 @@ class LoadCal(ProcessingStep):
             if self.scan.equivalent(s)
             and s.get_scan_type() == ScanType.LOAD
             and s.get_status() == ScanState.COMPLETE
-            and getattr(s, "mpr", None) is not None
         ]
 
         if len(load_scans) > 0:
@@ -53,20 +53,34 @@ class LoadCal(ProcessingStep):
         return None
 
     def _should_refresh_load(self) -> bool:
-        """Check if load cache should be refreshed based on queue changes or time elapsed."""
-        now = time.monotonic()
+        """Check if load cache should be refreshed based on queue changes
+           Do not refresh if current load is real (non-default), only refresh if default or missing."""
+        # If we have a real (non-default) load, keep it for the duration of the scan
+        if self.load_scan is not None and not self._is_default_load(self.load_scan):
+            return False
+        
         cal_q_size = len(self.cal_q.queue)
         
-        # Refresh if queue size changed (new load arrived) or periodic interval elapsed
+        # Refresh if queue size changed (new load arrived)
         queue_changed = cal_q_size != self._last_cal_q_size
-        time_elapsed = (now - self._last_refresh_time) >= self.LOAD_REFRESH_INTERVAL_SEC
         
-        if queue_changed or time_elapsed:
+        if queue_changed:
             self._last_cal_q_size = cal_q_size
             self._last_refresh_time = now
             return True
         
         return False
+
+    def _is_default_load(self, load_scan) -> bool:
+        """Check if a load scan is the default (all ones) vs real measurement data."""
+        if load_scan is None:
+            return True
+        
+        # Check if mpr is all ones (default signature)
+        try:
+            return np.allclose(load_scan.mpr, np.ones_like(load_scan.mpr))
+        except Exception:
+            return False
     
     def process(self, context: Any, signal: Any) -> Any:
         """
