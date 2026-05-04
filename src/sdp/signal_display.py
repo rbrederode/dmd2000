@@ -233,6 +233,14 @@ class SignalDisplay:
         """Return the Scan currently associated with this display."""
         return self.scan
 
+    def set_load(self, load: Scan | None):
+        """Update the optional baseline/load scan for the currently displayed sky scan."""
+        if load is not None and load.scan_model.dig_id != self.dig_id:
+            logger.warning(f"Signal display for {self.dig_id} cannot set_load for baseline from different dig_id {load.scan_model.dig_id}")
+            return
+
+        self.load = load
+
     def _update_spectrum_axes(self, l_sec: int):
         """Update the SPR, BSL, and CAL line plots for the latest loaded second.
 

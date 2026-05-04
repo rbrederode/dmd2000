@@ -648,17 +648,46 @@ class Scan:
             )
             and f.endswith('spr.csv')
         ]
+
+        # Fallback search for near-equivalent scans when gain formatting/value differs.
+        if len(equiv_files) == 0:
+            loose_prefix = gen_file_prefix(
+                dt=None,
+                entity_id=self.scan_model.dig_id,
+                gain=None,
+                duration=self.scan_model.duration,
+                sample_rate=self.scan_model.sample_rate,
+                center_freq=self.scan_model.center_freq,
+                channels=self.scan_model.channels,
+                scan_type=scan_type if scan_type != ScanType.UNKNOWN else None,
+            )
+            equiv_files = [
+                f for f in os.listdir(input_dir)
+                if loose_prefix in f
+                and not (
+                    self.scan_model.scan_id is not None
+                    and self.scan_model.scan_id.lower() in f.lower()
+                    and self.scan_model.scan_type is not None
+                    and f"-{self.scan_model.scan_type.name.lower()}-" in f.lower()
+                )
+                and f.endswith('spr.csv')
+            ]
+            logger.info(
+                f"Scan - Gain-agnostic fallback found {len(equiv_files)} candidate files in {input_dir} with prefix {loose_prefix} "
+                f"for digitiser {self.scan_model.dig_id}"
+            )
+
         logger.info(
             f"Scan - Found {len(equiv_files)} equivalent scan files in {input_dir} with prefix {file_prefix} "
             f"for digitiser {self.scan_model.dig_id}"
         )
         equiv_files = sorted(equiv_files, key=lambda f: os.path.getctime(os.path.join(input_dir, f)), reverse=True) if len(equiv_files) > 0 else []
-        equiv_file = equiv_files[0].removesuffix('-spr.csv') if len(equiv_files) > 0 else None
 
-        if equiv_file is not None:
+        for candidate in equiv_files:
+            equiv_file = candidate.removesuffix('-spr.csv')
             equiv_scan = Scan.from_disk(file_prefix=equiv_file, input_dir=input_dir, include_iq=False)
 
-            if equiv_scan is not None:
+            if equiv_scan is not None and self.equivalent(equiv_scan):
                 logger.info(
                     f"Scan {self.scan_model.scan_id} - Found equivalent scan with id {equiv_scan.scan_model.scan_id} "
                     f"for digitiser {self.scan_model.dig_id}"

@@ -1,15 +1,19 @@
 import numpy as np
 import logging
+import time
 from queue import Queue
 from typing import Any, List, Dict
 
 from models.pipeline import StepConfig, StepType
-from models.scan import ScanType
+from models.scan import ScanType, ScanState
 from sdp.pipeline.pipeline_factory import ProcessingStep, ProcessingPipeline
 
 logger = logging.getLogger(__name__)
 
 class LoadCal(ProcessingStep):
+
+    # Cache refresh intervals (seconds) to limit queue lookups during hot path processing
+    LOAD_REFRESH_INTERVAL_SEC = 5.0
 
     def __init__(self, config: StepConfig = None):
         super().__init__(config)
@@ -23,26 +27,51 @@ class LoadCal(ProcessingStep):
         if self.scan is None:
             raise ValueError(f"LoadCal: scan {self.scan} must be set before initialising LoadCal step.")
 
-        # If this is a load scan, we should not apply the load calibration, otherwise we will divide the load scan by itself.
-        # Instead, we will look for an equivalent load scan in the calibration queue to apply to the signal if this is not a load scan. 
-        if self.scan.get_scan_type() != ScanType.LOAD:
+        self.load_scan = None
+        self._last_cal_q_size = 0
+        self._last_refresh_time = 0.0
+        
+        # Perform initial resolution
+        self.load_scan = self._resolve_load_scan()
 
-            # Find the equivalent load scan to apply to the signal if it exists in the calibration queue
-            load_scans = [
-                s for s in list(self.cal_q.queue)
-                if self.scan.equivalent(s) and s.get_scan_type() == ScanType.LOAD
-            ]
-                            
-            if len(load_scans) > 0:
-                self.load_scan = max(load_scans, key=lambda s: s.scan_model.created)  # Remember the newest equivalent load scan to use
-                logger.debug(f"LoadCal pipeline step found load scan to apply in Processing Pipeline\n{self.load_scan}")
-            else:
-                self.load_scan = None
-                logger.warning(f"LoadCal pipeline step did not find load to apply to scan in Processing Pipeline\n{self.scan}")
+    def _resolve_load_scan(self):
+        """Resolve the newest equivalent completed load scan from the calibration queue."""
+        if self.scan is None or self.scan.get_scan_type() == ScanType.LOAD:
+            return None
+
+        load_scans = [
+            s for s in list(self.cal_q.queue)
+            if self.scan.equivalent(s)
+            and s.get_scan_type() == ScanType.LOAD
+            and s.get_status() == ScanState.COMPLETE
+            and getattr(s, "mpr", None) is not None
+        ]
+
+        if len(load_scans) > 0:
+            return max(load_scans, key=lambda s: s.scan_model.created)
+
+        return None
+
+    def _should_refresh_load(self) -> bool:
+        """Check if load cache should be refreshed based on queue changes or time elapsed."""
+        now = time.monotonic()
+        cal_q_size = len(self.cal_q.queue)
+        
+        # Refresh if queue size changed (new load arrived) or periodic interval elapsed
+        queue_changed = cal_q_size != self._last_cal_q_size
+        time_elapsed = (now - self._last_refresh_time) >= self.LOAD_REFRESH_INTERVAL_SEC
+        
+        if queue_changed or time_elapsed:
+            self._last_cal_q_size = cal_q_size
+            self._last_refresh_time = now
+            return True
+        
+        return False
     
     def process(self, context: Any, signal: Any) -> Any:
         """
-        Divid signal by mean load scan power. Uses an equivalent load scan from the calibration queue if one exists
+        Divide signal by mean load scan power. Uses an equivalent load scan from the calibration queue if one exists.
+        Caches resolved load and only refreshes periodically or when queue size changes to avoid hot-path O(n) scans.
         Args:
             context: dict containing static parameters for applying load file
             input_signal: 1D numpy array containing input spectrum (signal)
@@ -57,6 +86,13 @@ class LoadCal(ProcessingStep):
         # with an array of ones, losing the actual load calibration values. Instead, we return the signal unchanged for load scans.
         if self.scan.get_scan_type() == ScanType.LOAD:
             return signal
+
+        # Lazy refresh: only re-scan queue if size changed or refresh interval elapsed (avoids hot-path overhead)
+        if self._should_refresh_load():
+            latest_load = self._resolve_load_scan()
+            if latest_load is not None and latest_load is not self.load_scan:
+                self.load_scan = latest_load
+                logger.info(f"LoadCal pipeline step updated load calibration scan for processing:\n{self.load_scan}")
 
         # Check if the length of the input signal array matches the length of the load scan's spectrum
         if not self.load_scan or signal.shape[0] != self.load_scan.mpr.shape[0]:

@@ -902,6 +902,11 @@ def main():
                     # Set the signal display to the current scan
                     newest_load = max(load_scans, key=lambda s: s.scan_model.created) if len(load_scans) > 0 else None
                     sdp.signal_displays[dig_id].set_scan(scan=scan, load=newest_load)
+                else:
+                    # Keep load calibration in sync while the same sky scan remains active.
+                    load_scans = [s for s in list(sdp.cal_q.queue) if s.equivalent(scan) and s.get_scan_type() == ScanType.LOAD]
+                    newest_load = max(load_scans, key=lambda s: s.scan_model.created) if len(load_scans) > 0 else None
+                    sdp.signal_displays[dig_id].set_load(load=newest_load)
 
             for sig_display in sdp.signal_displays.values():
                 # If the signal display has a scan and is active, display the scan
