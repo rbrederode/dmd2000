@@ -82,6 +82,13 @@ class WeatherDisplay:
         self._init_attribute_axes()
         self._init_plot_axes()
 
+        # Show the GUI window before visibility checks can suppress first refreshes.
+        try:
+            self.fig.show()
+            self.fig.canvas.flush_events()
+        except Exception as exc:
+            logger.debug(f"Weather display for {self.ws.ws_id} could not show figure window: {exc}")
+
     def _init_attribute_axes(self):
         ax = self.attr_ax
         ax.set_title("Weather Attributes")

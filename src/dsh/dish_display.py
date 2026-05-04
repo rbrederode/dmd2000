@@ -133,6 +133,13 @@ class DishDisplay:
         self.init_mode_axis(self.axes[3])
         self.init_pec_axes(self.axes[4])        # Initialise the PEC axes
 
+        # Show the GUI window before visibility checks can suppress first refreshes.
+        try:
+            self.fig.show()
+            self.fig.canvas.flush_events()
+        except Exception as exc:
+            logger.debug(f"Dish display for {self.driver.dsh_model.dsh_id} could not show figure window: {exc}")
+
         self._create_timeline_artists()
 
     def _create_timeline_artists(self):

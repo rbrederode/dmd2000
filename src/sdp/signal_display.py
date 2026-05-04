@@ -85,6 +85,12 @@ class SignalDisplay:
         self.sig[4] = self.fig.add_subplot(self.gs1[1])     # Total power timeline
 
         self.fig.subplots_adjust(top=0.78)
+        # Show the GUI window before visibility checks can suppress first refreshes.
+        try:
+            self.fig.show()
+            self.fig.canvas.flush_events()
+        except Exception as exc:
+            logger.debug(f"Signal display for {self.dig_id} could not show figure window: {exc}")
 
     def _close_figure(self):
         """Close the figure window if it exists."""
