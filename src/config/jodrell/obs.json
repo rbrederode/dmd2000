@@ -33,7 +33,7 @@
         "value": "LOAD"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -49,7 +49,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -65,7 +65,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -81,7 +81,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -97,7 +97,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -113,7 +113,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -129,7 +129,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -145,7 +145,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -161,7 +161,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -177,7 +177,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -193,7 +193,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -209,7 +209,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -225,7 +225,7 @@
         "value": "LOAD"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -241,7 +241,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -257,7 +257,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -273,7 +273,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -289,7 +289,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -305,7 +305,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -321,7 +321,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -337,7 +337,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -353,7 +353,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -369,7 +369,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -385,7 +385,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -401,7 +401,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -417,7 +417,7 @@
         "value": "LOAD"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -433,7 +433,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -449,7 +449,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -465,7 +465,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -481,7 +481,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -497,7 +497,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -513,7 +513,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -529,7 +529,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -545,7 +545,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -561,7 +561,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -577,7 +577,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -593,7 +593,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -609,7 +609,7 @@
         "value": "LOAD"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -625,7 +625,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -641,7 +641,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -657,7 +657,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -673,7 +673,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -689,7 +689,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -705,7 +705,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -721,7 +721,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -737,7 +737,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -753,7 +753,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -769,7 +769,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -785,7 +785,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -801,7 +801,7 @@
         "value": "LOAD"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -817,7 +817,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -833,7 +833,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -849,7 +849,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -865,7 +865,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -881,7 +881,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -897,7 +897,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -913,7 +913,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -929,7 +929,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -945,7 +945,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -961,7 +961,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -977,7 +977,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -993,7 +993,7 @@
         "value": "LOAD"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1009,7 +1009,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1025,7 +1025,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1041,7 +1041,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1057,7 +1057,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1073,7 +1073,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1089,7 +1089,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1105,7 +1105,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1121,7 +1121,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1137,7 +1137,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1153,7 +1153,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1169,7 +1169,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1185,7 +1185,7 @@
         "value": "LOAD"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1201,7 +1201,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1217,7 +1217,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1233,7 +1233,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1249,7 +1249,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1265,7 +1265,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1281,7 +1281,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1297,7 +1297,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1313,7 +1313,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1329,7 +1329,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1345,7 +1345,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1361,7 +1361,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1377,7 +1377,7 @@
         "value": "LOAD"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1393,7 +1393,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1409,7 +1409,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1425,7 +1425,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1441,7 +1441,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1457,7 +1457,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1473,7 +1473,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1489,7 +1489,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1505,7 +1505,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1521,7 +1521,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1537,7 +1537,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1553,7 +1553,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1569,7 +1569,7 @@
         "value": "LOAD"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1585,7 +1585,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1601,7 +1601,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1617,7 +1617,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1633,7 +1633,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1649,7 +1649,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1665,7 +1665,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1681,7 +1681,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1697,7 +1697,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1713,7 +1713,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1729,7 +1729,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1745,7 +1745,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1761,7 +1761,7 @@
         "value": "LOAD"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1777,7 +1777,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1793,7 +1793,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1809,7 +1809,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1825,7 +1825,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1841,7 +1841,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1857,7 +1857,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1873,7 +1873,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1889,7 +1889,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1905,7 +1905,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1921,7 +1921,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1937,7 +1937,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1953,7 +1953,7 @@
         "value": "LOAD"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1969,7 +1969,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -1985,7 +1985,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2001,7 +2001,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2017,7 +2017,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2033,7 +2033,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2049,7 +2049,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2065,7 +2065,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2081,7 +2081,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2097,7 +2097,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2113,7 +2113,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2129,7 +2129,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2145,7 +2145,7 @@
         "value": "LOAD"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2161,7 +2161,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2177,7 +2177,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2193,7 +2193,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2209,7 +2209,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2225,7 +2225,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2241,7 +2241,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2257,7 +2257,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2273,7 +2273,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2289,7 +2289,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2305,7 +2305,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2321,7 +2321,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2337,7 +2337,7 @@
         "value": "LOAD"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2353,7 +2353,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2369,7 +2369,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2385,7 +2385,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2401,7 +2401,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2417,7 +2417,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2433,7 +2433,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2449,7 +2449,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2465,7 +2465,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2481,7 +2481,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2497,7 +2497,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2513,7 +2513,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2529,7 +2529,7 @@
         "value": "LOAD"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2545,7 +2545,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2561,7 +2561,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2577,7 +2577,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2593,7 +2593,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2609,7 +2609,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2625,7 +2625,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2641,7 +2641,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2657,7 +2657,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2673,7 +2673,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2689,7 +2689,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2705,7 +2705,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2721,7 +2721,7 @@
         "value": "LOAD"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2737,7 +2737,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2753,7 +2753,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2769,7 +2769,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2785,7 +2785,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2801,7 +2801,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2817,7 +2817,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2833,7 +2833,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2849,7 +2849,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2865,7 +2865,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2881,7 +2881,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2897,7 +2897,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2913,7 +2913,7 @@
         "value": "LOAD"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2929,7 +2929,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2945,7 +2945,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2961,7 +2961,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2977,7 +2977,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -2993,7 +2993,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3009,7 +3009,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3025,7 +3025,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3041,7 +3041,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3057,7 +3057,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3073,7 +3073,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3089,7 +3089,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3105,7 +3105,7 @@
         "value": "LOAD"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3121,7 +3121,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3137,7 +3137,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3153,7 +3153,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3169,7 +3169,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3185,7 +3185,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3201,7 +3201,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3217,7 +3217,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3233,7 +3233,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3249,7 +3249,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3265,7 +3265,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3281,7 +3281,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3297,7 +3297,7 @@
         "value": "LOAD"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3313,7 +3313,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3329,7 +3329,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3345,7 +3345,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3361,7 +3361,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3377,7 +3377,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3393,7 +3393,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3409,7 +3409,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3425,7 +3425,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3441,7 +3441,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3457,7 +3457,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3473,7 +3473,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3489,7 +3489,7 @@
         "value": "LOAD"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3505,7 +3505,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3521,7 +3521,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3537,7 +3537,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3553,7 +3553,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3569,7 +3569,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3585,7 +3585,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3601,7 +3601,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3617,7 +3617,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3633,7 +3633,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3649,7 +3649,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3665,7 +3665,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3681,7 +3681,7 @@
         "value": "LOAD"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3697,7 +3697,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3713,7 +3713,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3729,7 +3729,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3745,7 +3745,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3761,7 +3761,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3777,7 +3777,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3793,7 +3793,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3809,7 +3809,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3825,7 +3825,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3841,7 +3841,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3857,7 +3857,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3873,7 +3873,7 @@
         "value": "LOAD"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3889,7 +3889,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3905,7 +3905,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3921,7 +3921,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3937,7 +3937,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3953,7 +3953,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3969,7 +3969,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -3985,7 +3985,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4001,7 +4001,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4017,7 +4017,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4033,7 +4033,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4049,7 +4049,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4065,7 +4065,7 @@
         "value": "LOAD"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4081,7 +4081,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4097,7 +4097,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4113,7 +4113,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4129,7 +4129,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4145,7 +4145,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4161,7 +4161,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4177,7 +4177,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4193,7 +4193,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4209,7 +4209,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4225,7 +4225,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4241,7 +4241,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4257,7 +4257,7 @@
         "value": "LOAD"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4273,7 +4273,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4289,7 +4289,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4305,7 +4305,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4321,7 +4321,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4337,7 +4337,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4353,7 +4353,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4369,7 +4369,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4385,7 +4385,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4401,7 +4401,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4417,7 +4417,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4433,7 +4433,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4449,7 +4449,7 @@
         "value": "LOAD"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4465,7 +4465,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4481,7 +4481,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4497,7 +4497,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4513,7 +4513,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4529,7 +4529,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4545,7 +4545,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4561,7 +4561,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4577,7 +4577,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4593,7 +4593,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4609,7 +4609,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
@@ -4625,7 +4625,7 @@
         "value": "H3T_1420"
       },
       "gain": "AUTO1",
-      "center_freq": 1420400000,
+      "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
       "integration_time": 60,
