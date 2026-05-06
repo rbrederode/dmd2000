@@ -119,6 +119,22 @@ class AppProcessor(Processor):
         logger.debug(f"AppProcessor {self.name} started processing event {type(event)} at {st}")
 
         try:
+            overload_handler_method = "process_overload_event"
+            if (
+                hasattr(self.driver, overload_handler_method)
+                and callable(getattr(self.driver, overload_handler_method))
+                and hasattr(self.driver, "is_queue_overloaded")
+                and self.driver.is_queue_overloaded()
+            ):
+                try:
+                    overload_action = getattr(self.driver, overload_handler_method)(event)
+                    if overload_action is not None:
+                        self.performActions(overload_action)
+                        return True
+                except Exception as e:
+                    logger.exception(self.driver.set_last_err(f"AppProcessor {self.name} exception in driver handler {overload_handler_method} while processing overloaded event {event}: {e}"))
+                    return False
+
             if isinstance(event, InitEvent):
 
                 try:
@@ -220,6 +236,21 @@ class AppProcessor(Processor):
 
                         handler_method = "process_" + api_msg.get_from_system() + "_msg"
                         handler_parameters = (event, api_msg.get_json_api_header(), api_msg.get_api_call(), api_msg.get_payload_data())
+
+                    if (
+                        hasattr(self.driver, overload_handler_method)
+                        and callable(getattr(self.driver, overload_handler_method))
+                        and hasattr(self.driver, "is_queue_overloaded")
+                        and self.driver.is_queue_overloaded()
+                    ):
+                        try:
+                            overload_action = getattr(self.driver, overload_handler_method)(*handler_parameters)
+                            if overload_action is not None:
+                                self.performActions(overload_action, event.local_sap, event.remote_conn, event.remote_addr)
+                                return True
+                        except Exception as e:
+                            logger.exception(self.driver.set_last_err(f"AppProcessor {self.name} exception in driver handler {overload_handler_method} while processing overloaded message from {api_msg.get_from_system()}.\n{event}\nException: {e}"))
+                            return False
                     
                     # Invoke the appropriate driver handler with its parameters
                     if hasattr(self.driver, handler_method) and callable(getattr(self.driver, handler_method)):
@@ -351,6 +382,38 @@ class AppProcessor(Processor):
 
         logger.debug(f"AppProcessor {self.name} performing actions: {action}")
 
+        # Perform timer actions before outbound messages so in-flight request
+        # timers are visible to other worker threads before they can enqueue
+        # duplicate requests for the same resource.
+        for timer in action.timer_actions[:]:  # Iterate over a copy [:] of the list to allow removal during iteration
+
+            logger.debug(f"AppProcessor {self.name} performing action: set timer: {timer}")
+
+            if not isinstance(timer, Action.Timer):
+                logger.error(self.driver.set_last_err(f"AppProcessor {self.name} failed to perform timer action {timer} because it is not an Action.Timer instance"))
+                continue
+
+            if Timer.manager is None:
+                logger.error(self.driver.set_last_err(f"AppProcessor {self.name} failed to perform timer action {timer} because Timer.manager is not initialized"))
+                continue
+
+            timers = Timer.manager.get_timers_by_name(timer.name)
+
+            for t in timers:
+                logger.debug(f"AppProcessor {self.name} cancelling existing timer: {t}")
+                t.cancel()
+
+            if timer.get_timer_action() != Action.Timer.TIMER_STOP:
+
+                new_timer = Timer(                      # Create a new timer
+                    name=timer.get_name(), 
+                    event_q=self.get_queue(), 
+                    duration_ms=timer.get_timer_action(), 
+                    user_ref=timer.get_echo_data())  
+
+                action.timer_actions.remove(timer)      # Remove the timer action from the list
+                logger.debug(f"AppProcessor {self.name} started new timer: {new_timer}")
+
         # Perform message actions
         for msg in action.msgs_to_remote[:]:    # Iterate over a copy [:] of the list to allow removal during iteration
 
@@ -402,38 +465,6 @@ class AppProcessor(Processor):
                 endpoint.send(msg_to_send)               # Send the message on the registered endpoint's default connection (socket)
         
             action.msgs_to_remote.remove(msg)  # Remove the msg from the list                
-        
-        # Perform timer actions
-        for timer in action.timer_actions[:]:  # Iterate over a copy [:] of the list to allow removal during iteration
-
-            logger.debug(f"AppProcessor {self.name} performing action: set timer: {timer}")
-
-            if not isinstance(timer, Action.Timer):
-                logger.error(self.driver.set_last_err(f"AppProcessor {self.name} failed to perform timer action {timer} because it is not an Action.Timer instance"))
-                continue
-
-            if Timer.manager is None:
-                logger.error(self.driver.set_last_err(f"AppProcessor {self.name} failed to perform timer action {timer} because Timer.manager is not initialized"))
-                continue
-
-            timers = Timer.manager.get_timers_by_name(timer.name)
-
-            for t in timers:
-                logger.debug(f"AppProcessor {self.name} cancelling existing timer: {t}")
-                t.cancel()
-
-            if timer.get_timer_action() != Action.Timer.TIMER_STOP:
-
-                new_timer = Timer(                      # Create a new timer
-                    name=timer.get_name(), 
-                    event_q=self.get_queue(), 
-                    duration_ms=timer.get_timer_action(), 
-                    user_ref=timer.get_echo_data())  
-
-                Timer.manager.add_timer(new_timer)
-
-                action.timer_actions.remove(timer)      # Remove the timer action from the list
-                logger.debug(f"AppProcessor {self.name} started new timer: {new_timer}")
             
         # Perform connection actions
         for conn_action in action.connection_actions[:]:  # Iterate over a copy [:] of the list to allow removal during iteration

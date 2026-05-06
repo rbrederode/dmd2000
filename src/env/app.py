@@ -18,6 +18,7 @@ from models.proc import ProcessorModel
 from models.health import HealthState
 from util.availability import get_app_reliability, get_app_availability
 from util.format import fmt_bool
+from util import log
 from util.version import get_version_info
 from util.xbase import XBase, XSoftwareFailure
 from util.timer import Timer, TimerManager
@@ -40,6 +41,9 @@ class App:
         if app_name is None or app_name.strip() == "":
             raise XSoftwareFailure("App requires a non-empty app name to initialise itself")
 
+        # Ensure we have an app context for logging during initialisation
+        log.set_current_app(app_name)  
+
         self.app_model = app_model if app_model is not None else AppModel(app_name=app_name)
         self.app_model.app_name = app_name
         
@@ -48,6 +52,8 @@ class App:
         
         self.queue = Queue()                     # Event queue for the application
         self.status_update_event = events.StatusUpdateEvent()  # Reusable status update event
+        self._queue_overload_active = False
+        self._queue_overload_lock = threading.Lock()
         
         self.interfaces = {}                    # Dictionary to hold registered App interfaces
         self.entity_connection_map = {}         # Map of entity IDs to client sockets for entity driving interfaces
@@ -94,6 +100,32 @@ class App:
     def get_queue(self):
         return self.queue
 
+    def get_queue_watermarks(self) -> tuple[int, int]:
+        num_processors = max(1, len(self.processors) if hasattr(self, "processors") else self.app_model.num_processors)
+        args = self.get_args()
+        high = getattr(args, "queue_high_watermark", 0) or max(8, num_processors * 2)
+        low = getattr(args, "queue_low_watermark", 0) or max(2, num_processors // 2)
+        return high, min(low, high)
+
+    def get_queue_overload_reason(self) -> str:
+        high, low = self.get_queue_watermarks()
+        return f"queue={self.queue.qsize()}, high={high}, low={low}"
+
+    def is_queue_overloaded(self) -> bool:
+        high, low = self.get_queue_watermarks()
+        queue_size = self.queue.qsize()
+
+        with self._queue_overload_lock:
+            if self._queue_overload_active:
+                if queue_size <= low:
+                    self._queue_overload_active = False
+                    logger.info(f"App {self.app_model.app_name} event queue overload recovered: queue={queue_size}, high={high}, low={low}")
+            elif queue_size >= high:
+                self._queue_overload_active = True
+                logger.warning(f"App {self.app_model.app_name} event queue overload detected: queue={queue_size}, high={high}, low={low}")
+
+            return self._queue_overload_active
+
     def get_name(self):
         return self.app_model.app_name
 
@@ -127,6 +159,8 @@ class App:
         arg_parser.add_argument("--profile", type=str, required=False, help="Configuration profile to use e.g. default, alston etc. See ./config directory for existing profiles", default="default") 
         arg_parser.add_argument("--entity_id", type=str, required=False, help="Alphanumeric entity ID to uniquely identify a dish or digitiser instance <[A-Z][a-z][0-9]+> e.g. dsh001", default="<undefined>")
         arg_parser.add_argument("--headless",type=fmt_bool,nargs="?",const=True,required=False,default=False,help="Disable displays and UI interactions for apps that support them. Accepts true/false.")
+        arg_parser.add_argument("--queue_high_watermark", type=int, required=False, help="Queue size at which app-specific overload handling starts; 0 derives from processor count", default=0)
+        arg_parser.add_argument("--queue_low_watermark", type=int, required=False, help="Queue size at which app-specific overload handling stops; 0 derives from processor count", default=0)
 
     def start(self):
         """Starts the application."""

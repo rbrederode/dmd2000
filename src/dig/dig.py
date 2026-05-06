@@ -1,6 +1,7 @@
 import logging
 import json
 import numpy as np
+import threading
 import time
 from datetime import datetime, timezone
 from rtlsdr import RtlSdr
@@ -22,7 +23,7 @@ from util import log, util
 from util.timer import Timer, TimerManager
 from util.xbase import XStreamUnableToExtract, XSoftwareFailure, XHardwareFailure, XAPIValidationFailed
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("dig.dig")
 
 class Digitiser(App):
 
@@ -56,6 +57,8 @@ class Digitiser(App):
 
         self.dig_model.scanning = False # Flag indicating if we are currently scanning for samples (from the SDR)
         self.load_relay = None # GPIO output to drive a relay switch to apply a load resistor in the signal path
+        self._scan_samples_generation = 0
+        self._scan_samples_generation_lock = threading.Lock()
 
     def add_args(self, arg_parser):
         """ Specifies the digitiser's command line arguments.
@@ -117,6 +120,7 @@ class Digitiser(App):
         if isinstance(self.dig_model.scanning, dict) and self.dig_model.scanning.get('obs_id', None) is not None:
             logger.warning(f"Digitiser stopping scanning for observation {self.dig_model.scanning.get('obs_id', 'None')} due to Telescope Manager disconnect.")
             self.dig_model.scanning = False
+            self._advance_scan_samples_generation()
 
     def process_tm_msg(self, event, api_msg: dict, api_call: dict, payload: bytearray) -> Action:
         """ Processes api messages received on the Telescope Manager service access point (SAP)
@@ -172,15 +176,18 @@ class Digitiser(App):
                 if api_call['action_code'] == tm_dig.ACTION_CODE_SET and api_call.get('property') == tm_dig.PROPERTY_SCANNING:
 
                     logger.info(f"Digitiser scanning state changed to: {value}")
+                    scan_generation = self._advance_scan_samples_generation()
 
                     # If scanning is active, ensure sample reads are running immediately.
                     if self.dig_model.scanning:
-                        # Two timers (1,2) run in parallel, reading samples one after the other, blocking only on the SDR
+                        # Two timers run in parallel: one can send the previous read
+                        # while the SDR worker services the other read.
                         for i in range(1, 3):
-                            action.set_timer_action(Action.Timer(name=f"scan_samples_{i}", timer_action=0))
+                            action.set_timer_action(Action.Timer(name=f"scan_samples_{i}", timer_action=0, echo_data=scan_generation))
                                 
                     else:    
-                        # Stop all scan_samples timers (catches all queued timers too, ensuring we stop scanning immediately)
+                        # Stop active scan_samples timers. Already queued events are
+                        # invalidated by the generation change above.
                         for timer in Timer.manager.get_timers_by_keyword(f"scan_samples"):
                             action.set_timer_action(Action.Timer(name=timer.name, timer_action=Action.Timer.TIMER_STOP))
 
@@ -238,6 +245,7 @@ class Digitiser(App):
         if isinstance(self.dig_model.scanning, dict) and self.dig_model.scanning.get('obs_id', None) is not None:
             logger.warning(f"Digitiser stopping scanning for observation {self.dig_model.scanning.get('obs_id', 'None')} due to Science Data Processor disconnect.")
             self.dig_model.scanning = False
+            self._advance_scan_samples_generation()
 
         action = Action()
 
@@ -280,17 +288,26 @@ class Digitiser(App):
 
         # If the timer is for scanning samples from the SDR
         if event.name.startswith("scan_samples"):
+
+            scan_generation = event.user_ref
+            if not self._is_current_scan_samples_generation(scan_generation):
+                logger.debug(f"Digitiser ignoring stale {event.name} timer event from generation {scan_generation}; current generation is {self._current_scan_samples_generation()}.")
+                return action
             
             # Invoke the read_samples method to read samples from the SDR
             result = self.handle_method_call({"method": "read_samples", "params": {}})
             status, message, value, payload = util.unpack_result(result)
+
+            if not self._is_current_scan_samples_generation(scan_generation):
+                logger.debug(f"Digitiser dropping stale samples from {event.name} generation {scan_generation}; current generation is {self._current_scan_samples_generation()}.")
+                return action
 
             # If the digitiser is set to scan samples
             if self.dig_model.scanning:
 
                 # Start the same scan_samples timer immediately if it was successful, else wait 1000 milliseconds before retrying
                 wait = 0 if status == tm_dig.STATUS_SUCCESS else 1000 
-                action.set_timer_action(Action.Timer(name=event.name, timer_action=wait)) 
+                action.set_timer_action(Action.Timer(name=event.name, timer_action=wait, echo_data=scan_generation)) 
 
             if self.dig_model.sdp_connected == CommunicationStatus.ESTABLISHED and payload is not None:
                 # Prepare adv msg to send samples to sdp
@@ -325,6 +342,20 @@ class Digitiser(App):
                     logger.info("Digitiser successfully connected to SDR device.")
 
         return action
+
+    def _advance_scan_samples_generation(self) -> int:
+        """Invalidate queued/in-flight scan sample timers and return the new generation."""
+        with self._scan_samples_generation_lock:
+            self._scan_samples_generation += 1
+            return self._scan_samples_generation
+
+    def _current_scan_samples_generation(self) -> int:
+        with self._scan_samples_generation_lock:
+            return self._scan_samples_generation
+
+    def _is_current_scan_samples_generation(self, generation) -> bool:
+        with self._scan_samples_generation_lock:
+            return generation == self._scan_samples_generation
 
     def process_status_event(self, event) -> Action:
         """ Processes status update events.
@@ -491,9 +522,9 @@ class Digitiser(App):
 
         # Check whether result is a tuple of (value, payload) or just a value
         if isinstance(result, tuple):
-            return tm_dig.STATUS_SUCCESS, f"Digitiser method {call.__name__} invoked on SDR", result[0], result[1]
+            return tm_dig.STATUS_SUCCESS, f"Digitiser method {method} invoked on SDR", result[0], result[1]
         else:
-            return tm_dig.STATUS_SUCCESS, f"Digitiser method {call.__name__} invoked on SDR", result, None
+            return tm_dig.STATUS_SUCCESS, f"Digitiser method {method} invoked on SDR", result, None
 
     def _construct_status_adv_to_tm(self) -> APIMessage:
         """ Constructs a status advice message for the Telescope Manager.

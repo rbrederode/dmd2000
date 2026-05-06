@@ -22,7 +22,7 @@ class WeatherStationDriverType(enum.IntEnum):
 DriverType = WeatherStationDriverType
 
 class WeatherData(BaseModel):
-    """A class representing weather data at a specific location and time."""
+    """A class representing weather data at a specific weather station and time."""
 
     schema = Schema({
         "_type": And(str, lambda v: v == "WeatherData"),

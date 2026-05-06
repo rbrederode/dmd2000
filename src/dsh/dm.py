@@ -35,7 +35,7 @@ from util import log
 from util.registry import DISH_DRIVER_NAMESPACE, resolve
 from util.xbase import XBase, XStreamUnableToExtract, XSoftwareFailure
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("dsh.dm")
 
 SIDEREAL_RATE_DEG_PER_SEC = 360.0 / 86164.1  # Sidereal rate in degrees per second (86164.1 seconds in a sidereal day)
 
@@ -330,8 +330,19 @@ class DM(App):
 
                     # Else if a valid target is provided, set the new target and set dish to OPERATE mode (it will initiate slewing if necessary) 
                     elif target is not None and target_id is not None:
-                        dish_driver.set_target_tuple(target_id, target)
-                        dish_driver.set_dish_mode(DishMode.OPERATE)
+                        current_target = dish_driver.dsh_model.target
+                        target_already_configured = (
+                            dish_driver.dsh_model.tgt_id == target_id
+                            and current_target is not None
+                            and current_target.to_dict() == target.to_dict()
+                        )
+
+                        if target_already_configured and dish_driver.dsh_model.mode == DishMode.OPERATE:
+                            logger.info(f"DM received duplicate target set for already configured target {target_id} on Dish {dish_id}.")
+                        else:
+                            dish_driver.set_target_tuple(target_id, target)
+                            dish_driver.set_dish_mode(DishMode.OPERATE)
+
                         # If the dish is already on target, we can indicate that in the response to TM so the OET workflow can be optimized accordingly 
                         target_acquired = dish_driver.get_pointing_state() == PointingState.READY
 
@@ -803,16 +814,17 @@ def main():
 
                 dm.dish_displays[dish_id].display()
 
-            for ws_id in dm.dm_model.weather_store.get_station_ids():
+            if dm.dm_model.weather_store.is_ws_monitoring_enabled():
+                for ws_id in dm.dm_model.weather_store.get_station_ids():
 
-                if ws_id not in dm.weather_displays or dm.weather_displays[ws_id] is None:
-                    logger.info(f"Dish Manager creating new WeatherDisplay for weather station {ws_id}")
-                    dm.weather_displays[ws_id] = WeatherDisplay(weather_store=dm.dm_model.weather_store, ws_id=ws_id)
+                    if ws_id not in dm.weather_displays or dm.weather_displays[ws_id] is None:
+                        logger.info(f"Dish Manager creating new WeatherDisplay for weather station {ws_id}")
+                        dm.weather_displays[ws_id] = WeatherDisplay(weather_store=dm.dm_model.weather_store, ws_id=ws_id)
 
-                if not dm.weather_displays[ws_id].get_is_active():
-                    continue
+                    if not dm.weather_displays[ws_id].get_is_active():
+                        continue
 
-                dm.weather_displays[ws_id].display()
+                    dm.weather_displays[ws_id].display()
 
             # Adjust display period up or down based on processing time
             time_elapsed = time.monotonic() - time_start

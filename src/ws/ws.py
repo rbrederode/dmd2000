@@ -19,7 +19,7 @@ from models.app import AppModel, HealthState
 from models.ws import WeatherStationDriverType
 from ws.drivers.driver import create_ws_driver
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("ws.ws")
 
 class WeatherStation(App):
     """ Weather Station application class.

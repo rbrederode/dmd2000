@@ -46,7 +46,7 @@ from util.timer import Timer, TimerManager
 from util.xbase import XBase, XStreamUnableToExtract, XUnknownEntity, XAPIValidationFailed, XSoftwareFailure
 from webhook_handler import WebhookHandler
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("tm.tm")
 
 class TelescopeManager(App):
 
@@ -103,14 +103,19 @@ class TelescopeManager(App):
 
         # Weather Station interface 
         self.ws_system = "ws"
-        self.ws_api = tm_ws.TM_WS()
-        # Weather Station TCP Client
-        self.ws_endpoint = TCPClient(description=self.ws_system, queue=self.get_queue(), host=self.get_args().ws_host, port=self.get_args().ws_port)
-        # Register Weather Station interface with the App
-        self.register_interface(self.ws_system, self.ws_api, self.ws_endpoint, InterfaceType.APP_APP)
-        # Initialise Weather Station comms status
+        self.ws_api = None
+        self.ws_endpoint = None
         self.telmodel.wtr_stn.tm_connected = CommunicationStatus.NOT_ESTABLISHED
         self.telmodel.tel_mgr.ws_connected = CommunicationStatus.NOT_ESTABLISHED
+
+        if self.get_args().ws_host is not None and str(self.get_args().ws_host).strip() != "":
+            self.ws_api = tm_ws.TM_WS()
+            # Weather Station TCP Client
+            self.ws_endpoint = TCPClient(description=self.ws_system, queue=self.get_queue(), host=self.get_args().ws_host, port=self.get_args().ws_port)
+            # Register Weather Station interface with the App
+            self.register_interface(self.ws_system, self.ws_api, self.ws_endpoint, InterfaceType.APP_APP)
+        else:
+            logger.info("Telescope Manager weather station connection disabled; no --ws_host specified.")
 
     def add_args(self, arg_parser): 
         """ Specifies the digitiser's command line arguments.
@@ -126,8 +131,9 @@ class TelescopeManager(App):
         arg_parser.add_argument("--dm_host", type=str, required=False, help="TCP server host to connect to the Dish Manager", default="localhost")
         arg_parser.add_argument("--dm_port", type=int, required=False, help="TCP server port to connect to the Dish Manager", default=50002) 
 
-        arg_parser.add_argument("--ws_host", type=str, required=False, help="TCP server host to connect to the Weather Station", default="localhost")
+        arg_parser.add_argument("--ws_host", type=str, required=False, help="TCP server host to connect to the Weather Station. Omit to disable TM Weather Station connection.", default=None)
         arg_parser.add_argument("--ws_port", type=int, required=False, help="TCP server port to connect to the Weather Station", default=50003) 
+        
         arg_parser.add_argument("--observation_file", "-o", dest="observation_file", type=str, required=False,
             help="Path to an observation definition JSON file to inject as an ODT config event at startup",
         )
@@ -173,10 +179,11 @@ class TelescopeManager(App):
         action = Action()
 
         # Start server endpoints and connect client endpoints to interfaces
-        self.dm_endpoint.connect()
-        self.dig_endpoint.start()
-        self.sdp_endpoint.connect()
-        self.ws_endpoint.connect()
+        self.dm_endpoint.connect()  # Client endpoint
+        self.dig_endpoint.start()   # Server endpoint
+        self.sdp_endpoint.connect() # Client endpoint
+        if self.ws_endpoint is not None:
+            self.ws_endpoint.connect()  # Client endpoint
 
         # If an observation file was specified on startup, load the obs definition file and inject a config event 
         observation_file = getattr(self.get_args(), "observation_file", None)
