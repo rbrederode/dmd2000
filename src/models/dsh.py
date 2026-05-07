@@ -109,7 +109,8 @@ class DishModel(BaseModel):
         "longitude": And(Or(int, float), lambda v: -180.0 <= v <= 180.0),                         # Dish longitude (degrees)
         "height": And(Or(int, float), lambda v: v >= 0.0),                                        # Dish height (meters) above sea level
         "ws_id": Or(None, And(str, lambda v: isinstance(v, str))),                                # Preferred weather station id for this dish
-        "feed": And(Feed, lambda v: isinstance(v, Feed)),                                         # Current feed installed on the dish
+        "feed_type": And(Feed, lambda v: isinstance(v, Feed)),                                    # Current feed type installed on the dish
+        "feed_config": Or(None, lambda v: v is None or isinstance(v, BaseModel)),                 # Feed configuration instance
         "dig_id": Or(None, And(str, lambda v: isinstance(v, str))),                               # Current digitiser id assigned to the dish
         "mode": And(DishMode, lambda v: isinstance(v, DishMode)),
         "pointing_state": And(PointingState, lambda v: isinstance(v, PointingState)),
@@ -163,6 +164,9 @@ class DishModel(BaseModel):
 
     def __init__(self, **kwargs):
 
+        if "feed" in kwargs and "feed_type" not in kwargs:
+            kwargs["feed_type"] = kwargs["feed"]
+
         # Default values
         defaults = {
             "_type": "DishModel",
@@ -174,7 +178,8 @@ class DishModel(BaseModel):
             "longitude": 0.0,
             "height": 0.0,
             "ws_id": None,
-            "feed": Feed.NONE,
+            "feed_type": Feed.NONE,
+            "feed_config": None,
             "dig_id": None,
             "mode": DishMode.UNKNOWN,
             "pointing_state": PointingState.UNKNOWN,
@@ -374,7 +379,7 @@ if __name__ == "__main__":
         latitude=45.67, longitude=-111.05, height=1500.0,
         mode=DishMode.STARTUP,
         pointing_state=PointingState.UNKNOWN,
-        feed=Feed.NONE,
+        feed_type=Feed.NONE,
         dig_id="dig001",
         capability=Capability.UNKNOWN,
         last_update=datetime.now(timezone.utc)
@@ -399,7 +404,7 @@ if __name__ == "__main__":
 
     # ❌ Schema violation (wrong type)
     try:
-        dish001.feed = "H3T_1420"
+        dish001.feed_type = "H3T_1420"
     except XAPIValidationFailed as e:
         print("Schema check failed:", e)
 
@@ -422,7 +427,7 @@ if __name__ == "__main__":
                     latitude=45.67, longitude=-111.05, height=1500.0,
                     mode=DishMode.STARTUP,
                     pointing_state=PointingState.UNKNOWN,
-                    feed=Feed.NONE,
+                    feed_type=Feed.NONE,
                     capability=Capability.UNKNOWN,
                     last_update=datetime.now(timezone.utc)
                 )
@@ -453,7 +458,7 @@ if __name__ == "__main__":
         latitude=46.00, longitude=-112.00, height=1200.0,
         mode=DishMode.STARTUP,
         pointing_state=PointingState.UNKNOWN,
-        feed=Feed.NONE,
+        feed_type=Feed.NONE,
         dig_id="dig002",
         capability=Capability.UNKNOWN,
         last_update=datetime.now(timezone.utc)
@@ -491,7 +496,7 @@ if __name__ == "__main__":
         latitude=53.187052, longitude=-2.256079, height=94.0,
         mode=DishMode.STANDBY_FP,
         pointing_state=PointingState.UNKNOWN,
-        feed=Feed.H3T_1420,
+        feed_type=Feed.H3T_1420,
         dig_id="dig001",
         capability=Capability.OPERATE_FULL,
         driver_type=DriverType.LOSMANDY_G11,
@@ -522,7 +527,7 @@ if __name__ == "__main__":
         latitude=53.2421, longitude=-2.3067, height=80.0,
         mode=DishMode.STANDBY_FP,
         pointing_state=PointingState.UNKNOWN,
-        feed=Feed.NONE,
+        feed_type=Feed.NONE,
         dig_id="dig002",
         capability=Capability.OPERATE_FULL,
         driver_type=DriverType.MD01,
@@ -538,4 +543,3 @@ if __name__ == "__main__":
     default_dshlist.save_to_disk(output_dir="./config/default")
 
     
-

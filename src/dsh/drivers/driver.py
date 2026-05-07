@@ -1194,7 +1194,7 @@ if __name__ == "__main__":
         latitude=53.187052, longitude=-2.256079, height=94.0,
         mode=DishMode.STANDBY_FP,
         pointing_state=PointingState.UNKNOWN,
-        feed=Feed.H3T_1420,
+        feed_type=Feed.H3T_1420,
         dig_id="dig001",
         capability=Capability.OPERATE_FULL,
         last_update=datetime.now(timezone.utc)

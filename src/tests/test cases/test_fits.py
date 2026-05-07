@@ -58,7 +58,7 @@ primary_hdu = fits.PrimaryHDU(header=primary_hdr)
 # --- TARGET_CONFIG Table ---
 # Example data from your JSON
 tgt_idx = np.array([0, 1], dtype=np.int64)
-feed = np.array(['LOAD', 'H3T_1420'], dtype='S20')
+feed_type = np.array(['LOAD', 'H3T_1420'], dtype='S20')
 gain = np.array([23, 23], dtype=np.int64)
 center_freq = np.array([1420400000, 1420400000], dtype=np.float64)
 bandwidth = np.array([2000000, 2000000], dtype=np.float64)
@@ -68,7 +68,7 @@ spectral_resolution = np.array([2048, 2048], dtype=np.int64)
 
 cols_config = fits.ColDefs([
     fits.Column(name='tgt_idx', format='K', array=tgt_idx),
-    fits.Column(name='feed', format='20A', array=feed),
+    fits.Column(name='feed_type', format='20A', array=feed_type),
     fits.Column(name='gain', format='K', array=gain),
     fits.Column(name='center_freq', format='D', array=center_freq),
     fits.Column(name='bandwidth', format='D', array=bandwidth),

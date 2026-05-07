@@ -11,11 +11,12 @@
             "latitude": 53.187052,
             "longitude": -2.256079,
             "height": 94.0,
-            "feed": {
+            "feed_type": {
                 "_type": "enum.IntEnum",
                 "instance": "Feed",
                 "value": "H3T_1420"
             },
+            "feed_config": null,
             "dig_id": "dig001",
             "mode": {
                 "_type": "enum.IntEnum",
@@ -69,11 +70,12 @@
             "latitude": 53.2421,
             "longitude": -2.3067,
             "height": 80.0,
-            "feed": {
+            "feed_type": {
                 "_type": "enum.IntEnum",
                 "instance": "Feed",
                 "value": "H3T_1420"
             },
+            "feed_config": null,
             "dig_id": "dig002",
             "mode": {
                 "_type": "enum.IntEnum",

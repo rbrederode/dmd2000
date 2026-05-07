@@ -624,10 +624,10 @@ class ObservationExecutionTool:
             old_dig_config = {}
             new_dig_config = {}
 
-            if target_config.feed == Feed.LOAD and dig_model.load_state.load != True:
+            if target_config.feed_type == Feed.LOAD and dig_model.load_state.load != True:
                 old_dig_config['load_state'] = dig_model.load_state
                 new_dig_config['load_state'] = {'load': True, 'gpio_pin': dig_model.load_state.gpio_pin}
-            elif target_config.feed != Feed.LOAD and dig_model.load_state.load != False:
+            elif target_config.feed_type != Feed.LOAD and dig_model.load_state.load != False:
                 old_dig_config['load_state'] = dig_model.load_state
                 new_dig_config['load_state'] = {'load': False, 'gpio_pin': dig_model.load_state.gpio_pin}
 
@@ -698,7 +698,7 @@ class ObservationExecutionTool:
                 old_scan_config['scanning'] = sdp_dig.scanning
                 new_scan_config['scanning'] = scanning
 
-            desired_load_state = target_config.feed == Feed.LOAD
+            desired_load_state = target_config.feed_type == Feed.LOAD
             current_load_state = sdp_dig.load_state.load if sdp_dig is not None else None
             if sdp_dig is not None and current_load_state != desired_load_state:
                 old_scan_config['load'] = current_load_state

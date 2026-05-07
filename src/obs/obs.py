@@ -448,7 +448,7 @@ class Observation:
                     target.id if target is not None and target.id is not None else "",
                     fmt_target_coords(target),
                     target.pointing.name if target is not None and target.pointing is not None else "",
-                    target_config.feed.name if target_config is not None and target_config.feed is not None else "",
+                    target_config.feed_type.name if target_config is not None and target_config.feed_type is not None else "",
                     scan_model.dig_id,
                     fmt_float(scan_model.center_freq, scale=1e6, precision=2, suffix=" MHz"),
                     fmt_float(scan_model.sample_rate, scale=1e6, precision=2, suffix=" MHz"),

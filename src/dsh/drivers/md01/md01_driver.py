@@ -444,7 +444,7 @@ if __name__ == "__main__":
         latitude=53.2421, longitude=-2.3067, height=80.0,
         mode=DishMode.STANDBY_FP,
         pointing_state=PointingState.UNKNOWN,
-        feed=Feed.NONE,
+        feed_type=Feed.NONE,
         dig_id="dig002",
         capability=Capability.OPERATE_FULL,
         driver_type=DriverType.MD01,
@@ -482,7 +482,6 @@ if __name__ == "__main__":
     
     alt, az = md01_driver._get_md01_altaz()
     print(f"After Slew - Current Altitude: {alt} degrees, Azimuth: {az} degrees")
-
 
 
 

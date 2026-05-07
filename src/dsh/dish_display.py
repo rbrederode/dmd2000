@@ -80,7 +80,7 @@ class DishDisplay:
 
         logger.info(
             f"Dish display initialized for dish {self.driver.dsh_model.dsh_id} "
-            f"with feed {self.driver.dsh_model.feed.value} and driver {self.driver.dsh_model.driver_type.name}"
+            f"with feed type {self.driver.dsh_model.feed_type.value} and driver {self.driver.dsh_model.driver_type.name}"
         )
 
         self.fig = None         # Figure for the dish display
@@ -237,7 +237,7 @@ class DishDisplay:
         )
         self.attr_texts["Lat/Long"].set_text(f"{model.latitude:.1f}°,{model.longitude:.1f}°")
         self.attr_texts["Driver Type"].set_text(model.driver_type.name)
-        self.attr_texts["Feed"].set_text(model.feed.name)
+        self.attr_texts["Feed"].set_text(model.feed_type.name)
         self.attr_texts["Digitiser"].set_text(model.dig_id or "—")
 
         self.attr_texts["Health"].set_text(model.health.name)

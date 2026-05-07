@@ -1042,7 +1042,8 @@ function generateJSON(sheet, cellRanges, returnObject = false, log = false, type
       Logger.log("Row rawKey=%s normalizedKey=%s value=%s", rawKey, key, value);
 
       // Convert Feed key/value pairs to enum objects
-      if (key === "feed") {
+      if (key === "feed" || key === "feed_type") {
+        key = "feed_type";
         value = {
           "_type": "enum.IntEnum",
           "instance": "Feed",

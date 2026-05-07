@@ -16,6 +16,7 @@ from util.xbase import XInvalidTransition, XAPIValidationFailed, XSoftwareFailur
 class LoadState(BaseModel):
     """A class representing the load status of a digitiser. The load state is used to control the load relay switch on the digitiser needed for calibration purposes.
         The load state can be controlled by the Telescope Manager to switch a relay on/off via a specified GPIO pin to apply a load resister in the signal chain.
+        If the digitiser does not have a load relay or the load relay is not controlled by the Telescope Manager, the gpio_pin can be set to None to disable GPIO load relay control.
     """
 
     schema = Schema({

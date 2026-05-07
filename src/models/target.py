@@ -181,7 +181,7 @@ class TargetConfig(BaseModel):
         "_type": And(str, lambda v: v == "TargetConfig"),
         "obs_id": Or(None, And(str, lambda v: isinstance(v, str))),             # Observation identifier (see Observation model)
         "tgt_idx": And(int, lambda v: v >= -1),                                 # Target list index (-1 = not set, 0-based)
-        "feed": And(Feed, lambda v: isinstance(v, Feed)),                       # Feed enum
+        "feed_type": And(Feed, lambda v: isinstance(v, Feed)),                  # Feed enum
         "gain": Or(And(str, lambda v: TargetConfig.is_auto_gain_token(v)),      # Gain (dBi), AUTO, or AUTO<n>
             And(Or(int, float), lambda v: v >= 0.0)),                           # AUTO always run set_auto_gain for this target config. No caching.
                                                                                 # AUTO<n> named cached auto-gain groups, first encountered group will be used for caching and subsequent AUTO<n> 
@@ -196,13 +196,16 @@ class TargetConfig(BaseModel):
 
     def __init__(self, **kwargs):
 
+        if "feed" in kwargs and "feed_type" not in kwargs:
+            kwargs["feed_type"] = kwargs["feed"]
+
         # Default values
         defaults = {
             "_type": "TargetConfig",
             "obs_id": None,                 # Observation identifier (see Observation model)
             "tgt_idx": -1,                  # Target list index (-1 = not set, 0-based)
 
-            "feed": Feed.NONE,              # Default to None feed
+            "feed_type": Feed.NONE,         # Default to None feed
             "gain": 0.0,                    # Gain (dBi)
             "center_freq": 0.0,             # Center frequency (Hz) 
             "bandwidth": 0.0,               # Bandwidth (Hz) 
@@ -457,7 +460,7 @@ if __name__ == "__main__":
     target_config001 = TargetConfig(
         obs_id="obs001",
         tgt_idx=1,
-        feed=Feed.H3T_1420,
+        feed_type=Feed.H3T_1420,
         gain=12.0,
         center_freq=1.42e9,
         bandwidth=2e6,
