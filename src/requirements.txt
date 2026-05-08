@@ -25,4 +25,5 @@ witmotion
 adafruit-blinka
 adafruit-circuitpython-ads1x15
 minimalmodbus
+git+https://github.com/FRBs/sigpyproc3.git
 

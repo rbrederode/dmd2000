@@ -278,7 +278,7 @@ class BaseModel:
 
         from models.app import AppModel
         from models.comms import CommunicationStatus, InterfaceType
-        from models.dig import DigitiserList, DigitiserModel, LoadState
+        from models.dig import BandpassFilterType, DigitiserList, DigitiserModel
         from models.dsh import DishMode, DishModel, DishList, DishManagerModel, Feed, PointingState, Capability, DriverType as DishDriverType, PECModel
         from models.health import HealthState
         from models.launch import LaunchModel, LaunchConfigModel
@@ -354,6 +354,7 @@ class BaseModel:
                 # Map class name to actual enum class
                 enum_class = {
                     "AllocationState": AllocationState,
+                    "BandpassFilterType": BandpassFilterType,
                     "Capability": Capability,
                     "CommunicationStatus": CommunicationStatus,
                     "DishMode": DishMode,
@@ -407,9 +408,6 @@ class BaseModel:
             elif model_type == "LaunchConfigModel":
                 deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
                 return LaunchConfigModel(**deserialized_fields)
-            elif model_type == "LoadState":
-                deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
-                return LoadState(**deserialized_fields)
             elif model_type == "DriftConfig":
                 # Import lazily to avoid package import errors when optional drivers are not present
                 from dsh.drivers.drift.model import DriftConfig
@@ -457,6 +455,10 @@ class BaseModel:
             elif model_type == "ScanStore":
                 deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
                 return ScanStore(**deserialized_fields)
+            elif model_type == "SAWbirdH1_BareBones":
+                from dig.filters.sawbird import SAWbirdH1_BareBones
+                deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
+                return SAWbirdH1_BareBones(**deserialized_fields)
             elif model_type == "ScienceDataProcessorModel":
                 deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
                 return ScienceDataProcessorModel(**deserialized_fields)

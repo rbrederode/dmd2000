@@ -1,6 +1,6 @@
 import logging
 import json
-import map
+from . import map
 import os
 import re
 from pathlib import Path
@@ -28,7 +28,7 @@ from ipc.tcp_server import TCPServer
 from models.app import AppModel
 from models.base import BaseModel
 from models.comms import CommunicationStatus, InterfaceType
-from models.dig import DigitiserModel, LoadState
+from models.dig import DigitiserModel
 from models.dsh import DishManagerModel, Feed, Capability, DishMode, PointingState
 from models.obs import ObsModel, ObsTransition, ObsState
 from models.oda import ODAModel, ObsList, ScanStore
@@ -44,7 +44,7 @@ from obs.oet import ObservationExecutionTool
 from util import log, util
 from util.timer import Timer, TimerManager
 from util.xbase import XBase, XStreamUnableToExtract, XUnknownEntity, XAPIValidationFailed, XSoftwareFailure
-from webhook_handler import WebhookHandler
+from .webhook_handler import WebhookHandler
 
 logger = logging.getLogger("tm.tm")
 
@@ -579,14 +579,6 @@ class TelescopeManager(App):
             digitiser.tm_connected = CommunicationStatus.ESTABLISHED
             digitiser.last_update = datetime.now(timezone.utc)
 
-            # DIG does not load its static hardware config from disk locally, so push
-            # the combined load relay state once on connect.
-            action = self.update_dig_configuration(
-                old_config={"dig_id": digitiser.dig_id},
-                new_config={"dig_id": digitiser.dig_id, "load_state": digitiser.load_state.to_dict()},
-                action=action,
-            )
-
         return action
 
     def process_dig_entity_disconnected(self, event, entity) -> Action:
@@ -700,10 +692,10 @@ class TelescopeManager(App):
             elif api_call.get('property','') in digitiser.schema.schema:
                 try:
                     logger.info(f"Telescope Manager received Digitiser property update: {api_call['property']} = {api_call['value']}")
+                    
+                    property_name = api_call.get('property','')
                     value = api_call['value']
-                    if api_call.get('property') == tm_dig.PROPERTY_LOAD_STATE and isinstance(value, dict):
-                        value = LoadState.from_dict(value) if value.get("_type") == "LoadState" else LoadState(**value)
-                    setattr(digitiser, api_call.get('property',''), value)
+                    setattr(digitiser, property_name, value)
                 except (XAPIValidationFailed, XSoftwareFailure) as e:
                     logger.error(f"Telescope Manager error setting attribute {api_call.get('property','')} on Digitiser: {e}")
                     return action
@@ -727,21 +719,6 @@ class TelescopeManager(App):
                         
                         if config_key in digitiser.schema.schema:
                             current_value = getattr(digitiser, config_key, None)
-
-                            if config_key == tm_dig.PROPERTY_LOAD_STATE:
-                                current_load = current_value.load if isinstance(current_value, LoadState) else None
-                                if isinstance(new_value, LoadState):
-                                    desired_load = new_value.load
-                                elif isinstance(new_value, dict):
-                                    desired_load = new_value.get("load")
-                                else:
-                                    desired_load = None
-                                if current_load != desired_load:
-                                    config_mismatched = True
-                                    logger.info(f"Telescope Manager identified mismatch between desired and current load state for observation {obs_id}" +
-                                    f" on digitiser {digitiser.dig_id}.\nCurrent load: {current_load}\nDesired load: {desired_load}")
-                                    break
-                                continue
 
                             if current_value != new_value:
                                 # Special case: if desired gain is an AUTO token and current is numeric, this is success (calibration completed)
@@ -860,15 +837,10 @@ class TelescopeManager(App):
                         if key in dig.schema.schema.keys():
                             setattr(dig, key, dig_config[key])
                         elif key == "load":
-                            current_load_state = dig.load_state if isinstance(dig.load_state, LoadState) else LoadState()
                             load_value = dig_config[key].get("load") if isinstance(dig_config[key], dict) else dig_config[key]
 
                             if isinstance(load_value, bool):
-                                dig.load_state = LoadState(
-                                    load=load_value,
-                                    gpio_pin=current_load_state.gpio_pin,
-                                    last_update=datetime.now(timezone.utc),
-                                )
+                                dig.load_active = load_value
                     dig.last_update = datetime.now(timezone.utc)
                 else:
                     logger.warning(f"Telescope Manager received Science Data Processor SCAN_CONFIG rsp for unknown digitiser {dig_id}\n{api_call}")
@@ -1169,12 +1141,16 @@ class TelescopeManager(App):
                 if config_key not in ["obs_id", "dig_id"]: # obs_id and dig_id are used for internal tracking
                     logger.warning(f"Telescope Manager ignoring digitiser configuration item: {config_key}")
                 continue
+
+            if method is None and property is not None and value is None:
+                logger.warning(f"Telescope Manager ignoring digitiser configuration item with invalid value: {config_key}={config_value}")
+                continue
         
             dig_req = self._construct_req_to_dig(entity=dig_id, property=property, method=method, value=value, message="")
 
             # Attach all new configuration to the request for tracking
             api_call = dig_req.get_api_call()
-            api_call['obs_data'] = new_config.copy() # Shallow copy
+            api_call['obs_data'] = BaseModel._serialise(new_config.copy()) # Shallow copy
 
             action.set_msg_to_remote(dig_req)
             action.set_timer_action(Action.Timer(

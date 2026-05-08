@@ -1,15 +1,18 @@
 import logging
+import enum
 from typing import Any
 
 from api import tm_dig, tm_sdp, tm_dm
 from models import dsh
+from models.base import BaseModel
+from models.dig import BandpassFilterType
 from models.target import TargetConfig
 
 logger = logging.getLogger(__name__)
 
 # Map Configuration items to attribute names
 _config_to_property = {
-    "load_state":       tm_dig.PROPERTY_LOAD_STATE,
+    "load_active":      tm_dig.PROPERTY_LOAD_ACTIVE,
     "sample_rate":      tm_dig.PROPERTY_SAMPLE_RATE,
     "center_freq":      tm_dig.PROPERTY_CENTER_FREQ,
     "bandwidth":        tm_dig.PROPERTY_BANDWIDTH,
@@ -33,12 +36,16 @@ def get_property_name_value(config_item: str, value) -> (str, Any):
 
     # If property is found, map the value accordingly
     if property:
-        if property == tm_dig.PROPERTY_LOAD_STATE:
+        if property == tm_dig.PROPERTY_LOAD_ACTIVE:
 
-            if isinstance(value, dict):
+            if isinstance(value, bool):
                 return property, value
+            elif isinstance(value, str) and value.upper() in ["TRUE", "1", "YES", "ON"]:
+                return property, True
+            elif isinstance(value, str) and value.upper() in ["FALSE", "0", "NO", "OFF"]:
+                return property, False
             else:
-                logger.error(f"Telescope Manager map: invalid LOAD_STATE value {value} for property {property}")
+                logger.error(f"Telescope Manager map: invalid LOAD_ACTIVE value {value} for property {property}")
                 return property, None
 
         elif property == tm_dig.PROPERTY_GAIN:

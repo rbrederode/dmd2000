@@ -7,11 +7,11 @@
             "app_name": "dig",
             "entity_id": "dig001",
             "env": {
-                "_GPIOZERO_PIN_FACTORY": "mock"
+                "GPIOZERO_PIN_FACTORY": "mock"
             },
             "program": "python",
             "args": [
-                "dig/dig.py",
+                "-m", "dig.dig",
                 "--profile", "jodrell",
                 "--entity_id", "dig001",
                 "--tm_host", "127.0.0.1",
@@ -26,7 +26,7 @@
             "env": {},
             "program": "python",
             "args": [
-                "dsh/dm.py",
+                "-m", "dsh.dm",
                 "--profile", "jodrell",
                 "--entity_id", "dm001",
                 "--tm_host", "127.0.0.1",
@@ -55,7 +55,7 @@
             "env": {},
             "program": "python",
             "args": [
-                "tm/tm.py",
+                "-m", "tm.tm",
                 "--profile", "jodrell",
                 "--entity_id", "tm001",
                 "--dig_host", "127.0.0.1",

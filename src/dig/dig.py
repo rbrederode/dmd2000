@@ -15,11 +15,13 @@ from ipc.action import Action
 from ipc.tcp_client import TCPClient
 from ipc.tcp_server import TCPServer
 from models.app import AppModel
+from models.base import BaseModel
 from models.comms import CommunicationStatus, InterfaceType
-from models.dig import DigitiserModel, LoadState
+from models.dig import BandpassFilterType, DigitiserList, DigitiserModel
 from models.health import HealthState
 from sdr.facade import SDR
 from util import log, util
+from util.format import fmt_bool
 from util.timer import Timer, TimerManager
 from util.xbase import XStreamUnableToExtract, XSoftwareFailure, XHardwareFailure, XAPIValidationFailed
 
@@ -56,9 +58,19 @@ class Digitiser(App):
         self.dig_model.sdp_connected = CommunicationStatus.NOT_ESTABLISHED
 
         self.dig_model.scanning = False # Flag indicating if we are currently scanning for samples (from the SDR)
-        self.load_relay = None # GPIO output to drive a relay switch to apply a load resistor in the signal path
+
+        self.load_relay = None          # Optional GPIO output to drive a relay switch to apply a load resistor in the signal path
+        self.power_relay = None         # Optional GPIO output to drive a relay switch to power on/off an optional bandpass filter in the signal path
+        self._bpf_control_state = {"load": None, "power": None}
+        self._bpf_control_lock = threading.Lock()
+
         self._scan_samples_generation = 0
         self._scan_samples_generation_lock = threading.Lock()
+        self._idle_poweroff_seconds = 300
+        self._last_active_dt = datetime.now(timezone.utc)
+
+    def _touch_activity(self):
+        self._last_active_dt = datetime.now(timezone.utc)
 
     def add_args(self, arg_parser):
         """ Specifies the digitiser's command line arguments.
@@ -81,13 +93,36 @@ class Digitiser(App):
 
         action = Action()
 
+        # Config files located in ./config/<profile>/<model>.json
+        input_dir = f"./config/{self.get_args().profile}"
+        filename = "DigitiserList.json"
+
+        try:
+            dig_store = DigitiserList.load_from_disk(input_dir=input_dir, filename=filename)
+        except FileNotFoundError:
+            dig_store = None
+
+        if dig_store is not None:
+            dig_config = dig_store.get_dig_by_id(self.dig_model.dig_id)
+            if dig_config is not None:
+                for key in self.dig_model.schema.schema.keys():
+                    if key == "app":
+                        continue
+                    setattr(self.dig_model, key, getattr(dig_config, key))
+                self.dig_model.dig_id = self.get_args().entity_id
+                logger.info(f"Digitiser loaded configuration for {self.dig_model.dig_id} from directory {input_dir} file {filename}")
+            else:
+                logger.warning(f"Digitiser configuration for {self.dig_model.dig_id} not found in directory {input_dir} file {filename}")
+        else:
+            logger.warning(f"Digitiser could not load Digitiser configuration from directory {input_dir} file {filename}")
+
         # Initialise the Software Defined Radio (internal) interface
         self.sdr = SDR()
         self.dig_model.sdr_eeprom = self.sdr.get_eeprom_info()
         self.dig_model.sdr_connected = self.sdr.get_comms_status()
         
-        # Start timer to periodically retry SDR connection to ensure it connects
-        action.set_timer_action(Action.Timer(name=f"sdr_retry", timer_action=5000))
+        # Start timer to periodically checks comms e.g. SDR, Bandpass filter relays, etc
+        action.set_timer_action(Action.Timer(name=f"comms_retry", timer_action=5000))
 
         # Connect client endpoints to interfaces
         self.tm_endpoint.connect()
@@ -121,6 +156,7 @@ class Digitiser(App):
             logger.warning(f"Digitiser stopping scanning for observation {self.dig_model.scanning.get('obs_id', 'None')} due to Telescope Manager disconnect.")
             self.dig_model.scanning = False
             self._advance_scan_samples_generation()
+            self.set_bpf_power_state(False)  # Switch bandpass filter powered off when stopping scanning:
 
     def process_tm_msg(self, event, api_msg: dict, api_call: dict, payload: bytearray) -> Action:
         """ Processes api messages received on the Telescope Manager service access point (SAP)
@@ -147,6 +183,8 @@ class Digitiser(App):
         # Else if api call is a req or adv msg from the TM
         elif api_call['msg_type'] in ['req', 'adv']:
 
+            self._touch_activity()
+
             scanning = self.dig_model.scanning
             obs_id = scanning.get('obs_id', None) if isinstance(scanning, dict) else None
 
@@ -158,6 +196,8 @@ class Digitiser(App):
                     action.set_msg_to_remote(self._construct_rsp_to_tm(tm_dig.STATUS_ERROR, msg, None, api_msg, api_call))
                     return action
             
+            self.set_bpf_power_state(True)  # Ensure bandpass filter is powered on before handing calls to handlers
+
             # Dispatch the API Call to a handler method
             dispatch = {
                 "set": self.handle_field_set,
@@ -180,6 +220,7 @@ class Digitiser(App):
 
                     # If scanning is active, ensure sample reads are running immediately.
                     if self.dig_model.scanning:
+
                         # Two timers run in parallel: one can send the previous read
                         # while the SDR worker services the other read.
                         for i in range(1, 3):
@@ -246,6 +287,7 @@ class Digitiser(App):
             logger.warning(f"Digitiser stopping scanning for observation {self.dig_model.scanning.get('obs_id', 'None')} due to Science Data Processor disconnect.")
             self.dig_model.scanning = False
             self._advance_scan_samples_generation()
+            self.set_bpf_power_state(False)  # Switch bandpass filter powered off when stopping scanning:
 
         action = Action()
 
@@ -325,21 +367,25 @@ class Digitiser(App):
             # Simply log a warning that the SDP did not acknowledge the samples advice
             logger.warning(f"Digitiser timed out waiting for acknowledgement from SDP for samples advice {event}")
 
-        # Else if the timer is for handling comms to the SDR
-        elif event.name.startswith("sdr_retry"):
+        # Else if the timer is for handling comms retries such as SDR connection retries
+        elif event.name.startswith("comms_retry"):
 
             # Restart the timer to keep retrying periodically
-            action.set_timer_action(Action.Timer(name=f"sdr_retry", timer_action=5000))
+            action.set_timer_action(Action.Timer(name=f"comms_retry", timer_action=5000))
 
-            if self.sdr is not None:
-                self.dig_model.sdr_connected = self.sdr.get_comms_status()
-
-            if self.dig_model.sdr_connected == CommunicationStatus.NOT_ESTABLISHED:
+            if self.sdr is None or self.sdr.get_comms_status() != CommunicationStatus.ESTABLISHED:
                 self.sdr = SDR()  # Retry connecting to the SDR
                 self.dig_model.sdr_connected = self.sdr.get_comms_status()
 
                 if self.dig_model.sdr_connected == CommunicationStatus.ESTABLISHED:
                     logger.info("Digitiser successfully connected to SDR device.")
+            else:
+                self.dig_model.sdr_connected = self.sdr.get_comms_status()
+
+            if not self.dig_model.scanning:
+                idle_seconds = (datetime.now(timezone.utc) - self._last_active_dt).total_seconds()
+                if idle_seconds >= self._idle_poweroff_seconds:
+                    self.set_bpf_power_state(False)  # Switch bandpass filter power off when idle
 
         return action
 
@@ -570,7 +616,7 @@ class Digitiser(App):
         # Construct metadata using the digitiser model and sample read info
         metadata = [   
             {"property": "dig_id", "value": self.dig_model.dig_id},               # Digitiser Id
-            {"property": "load", "value": self.dig_model.load_state.load},        # Bool
+            {"property": "load", "value": self.dig_model.load_active},            # Bool
             {"property": "center_freq", "value": self.dig_model.center_freq},     # Hz    
             {"property": "sample_rate", "value": self.dig_model.sample_rate},     # Hz
             {"property": "bandwidth", "value": self.dig_model.bandwidth},         # MHz
@@ -624,49 +670,75 @@ class Digitiser(App):
         tm_rsp.set_api_call(tm_rsp_api_call)       
         return tm_rsp
 
-    def _apply_load_relay_state(self, load_enabled: bool):
-        """Drive the optional GPIO relay to match the current load state."""
-        if self.load_relay is None:
+    def _configure_bpf_control_relay(self, control_type: str):
+        """Configures the optional relay GPIO based on the current BPF config and type."""
+
+        if control_type == "load":
+            relay_attr = "load_relay"
+        elif control_type == "power":
+            relay_attr = "power_relay"
+        else:
+            raise ValueError(f"Unsupported control_type: {control_type}")
+
+        gpio_pin = self.dig_model.get_bpf_control_pin(control_type)
+        relay = getattr(self, relay_attr)
+
+        if gpio_pin is None:
+            if relay is not None:
+                relay.close()
+                setattr(self, relay_attr, None)
+            self._bpf_control_state[control_type] = None
             return
 
-        if load_enabled:
-            self.load_relay.on()
-        else:
-            self.load_relay.off()
-
-    def set_load_state(self, value):
-        """Configure the optional load relay GPIO and drive it to the requested load state."""
-        if isinstance(value, LoadState):
-            load_state = value
-        elif isinstance(value, dict) and value.get("_type") == "LoadState":
-            load_state = LoadState.from_dict(value)
-        else:
-            load_state = LoadState(**value)
-
-        if load_state.gpio_pin is None:
-            if self.load_relay is not None:
-                self.load_relay.close()
-                self.load_relay = None
-            self.dig_model.load_state = load_state
-            return
-
-        pin_changed = (
-            self.load_relay is None
-            or load_state.gpio_pin != self.dig_model.load_state.gpio_pin
-        )
+        relay_pin = getattr(relay.pin, "number", None) if relay is not None and getattr(relay, "pin", None) is not None else None
+        pin_changed = relay is None or (relay_pin is not None and relay_pin != gpio_pin)
 
         if pin_changed:
-            if self.load_relay is not None:
-                self.load_relay.close()
-                self.load_relay = None
-            self.load_relay = LED(load_state.gpio_pin)
+            if relay is not None:
+                relay.close()
+            setattr(self, relay_attr, LED(gpio_pin))
+            self._bpf_control_state[control_type] = None
 
-        self._apply_load_relay_state(load_state.load)
-        self.dig_model.load_state = load_state
+    def _switch_bpf_control_relay(self, control_type: str, control_state: bool):
+        """Drive optional GPIO control relays to match the current control state."""
 
-    def get_load_state(self):
-        """Return the current load state in API-serialisable form."""
-        return self.dig_model.load_state.to_dict()
+        if control_type == "load":
+            relay = self.load_relay
+        elif control_type == "power":
+            relay = self.power_relay
+        else:
+            raise ValueError(f"Unsupported control_type: {control_type}")
+
+        if relay is None:
+            return
+
+        current_state = self._bpf_control_state.get(control_type)
+        if current_state is not None and current_state == control_state:
+            return
+
+        logger.info(f"Digitiser switching BPF control relay for {control_type} to {'ON' if control_state else 'OFF'}")
+        relay.on() if control_state else relay.off()
+        self._bpf_control_state[control_type] = control_state
+
+    def set_load_active(self, value):
+        """Set the load active state, driving controllable relays if necessary."""
+        load_active = fmt_bool(value)
+
+        if self.dig_model.is_bpf_controllable("load") and load_active != self.dig_model.load_active:
+            with self._bpf_control_lock:
+                self._configure_bpf_control_relay("load")
+                self._switch_bpf_control_relay("load", load_active)
+
+        self.dig_model.load_active = load_active
+
+    def set_bpf_power_state(self, value):
+        """Set the bandpass filter power to on/off by driving controllable relays if necessary."""
+        power_active = fmt_bool(value)
+
+        if self.dig_model.is_bpf_controllable("power"):
+            with self._bpf_control_lock:
+                self._configure_bpf_control_relay("power")
+                self._switch_bpf_control_relay("power", power_active)
 
 def main():
     digitiser = Digitiser()

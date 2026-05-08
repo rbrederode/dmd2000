@@ -27,15 +27,13 @@
                     "value": "2026-01-11T13:13:18.466610+00:00"
                 }
             },
-            "load_state": {
-                "_type": "LoadState",
-                "load": false,
-                "gpio_pin": 18,
-                "last_update": {
-                    "_type": "datetime",
-                    "value": "2026-01-11T13:13:18.466610+00:00"
-                }
+            "load_active": false,
+            "bpf_type": {
+                "_type": "enum.IntEnum",
+                "instance": "BandpassFilterType",
+                "value": "UNKNOWN"
             },
+            "bpf_config": null,
             "gain": 0.0,
             "sample_rate": 0.0,
             "bandwidth": 0.0,
@@ -90,15 +88,13 @@
                     "value": "2026-01-11T13:13:18.467579+00:00"
                 }
             },
-            "load_state": {
-                "_type": "LoadState",
-                "load": false,
-                "gpio_pin": 18,
-                "last_update": {
-                    "_type": "datetime",
-                    "value": "2026-01-11T13:13:18.467579+00:00"
-                }
+            "load_active": false,
+            "bpf_type": {
+                "_type": "enum.IntEnum",
+                "instance": "BandpassFilterType",
+                "value": "UNKNOWN"
             },
+            "bpf_config": null,
             "gain": 0.0,
             "sample_rate": 0.0,
             "bandwidth": 0.0,
@@ -153,15 +149,13 @@
                     "value": "2026-01-11T13:13:18.466610+00:00"
                 }
             },
-            "load_state": {
-                "_type": "LoadState",
-                "load": false,
-                "gpio_pin": 18,
-                "last_update": {
-                    "_type": "datetime",
-                    "value": "2026-01-11T13:13:18.466610+00:00"
-                }
+            "load_active": false,
+            "bpf_type": {
+                "_type": "enum.IntEnum",
+                "instance": "BandpassFilterType",
+                "value": "UNKNOWN"
             },
+            "bpf_config": null,
             "gain": 0.0,
             "sample_rate": 0.0,
             "bandwidth": 0.0,
