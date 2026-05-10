@@ -8672,5 +8672,6 @@
   "created": {
     "_type": "datetime",
     "value": "2026-04-18T07:13:47.688Z"
-  }
+  },
+  "timeout_ms_scan": 180000
 }
