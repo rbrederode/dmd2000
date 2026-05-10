@@ -230,7 +230,20 @@ class ObsModel(BaseModel):
             freq_scan = int(scan_id.split("-")[-2])
             scan_iter = int(scan_id.split("-")[-1])
 
-            return self.get_target_scan_by_index(tgt_idx, freq_scan, scan_iter)
+            scan = self.get_target_scan_by_index(tgt_idx, freq_scan, scan_iter)
+            if scan is not None:
+                return scan
+
+            # A retried physical scan can have a scan_iter that is beyond the
+            # planned observation scan set. If it completes while this target
+            # is still current, let it satisfy the current planned scan.
+            current_scan = self.get_current_tgt_scan()
+            if (
+                current_scan is not None
+                and current_scan.tgt_idx == tgt_idx
+                and current_scan.freq_scan == freq_scan
+            ):
+                return current_scan
         except Exception as e:
             # Use brute force method if parsing scan_id fails
             for tgt_idx in range(len(self.target_scans)):
