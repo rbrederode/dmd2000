@@ -30,7 +30,7 @@
       "feed_type": {
         "_type": "enum.IntEnum",
         "instance": "Feed",
-        "value": "H3T_1420"
+        "value": "LOAD"
       },
       "gain": "AUTO1",
       "center_freq": 1420000000,
@@ -46,7 +46,7 @@
       "feed_type": {
         "_type": "enum.IntEnum",
         "instance": "Feed",
-        "value": "LOAD"
+        "value": "H3T_1420"
       },
       "gain": "AUTO1",
       "center_freq": 1420000000,
@@ -222,7 +222,7 @@
       "feed_type": {
         "_type": "enum.IntEnum",
         "instance": "Feed",
-        "value": "H3T_1420"
+        "value": "LOAD"
       },
       "gain": "AUTO1",
       "center_freq": 1420000000,
@@ -238,7 +238,7 @@
       "feed_type": {
         "_type": "enum.IntEnum",
         "instance": "Feed",
-        "value": "LOAD"
+        "value": "H3T_1420"
       },
       "gain": "AUTO1",
       "center_freq": 1420000000,
@@ -414,7 +414,7 @@
       "feed_type": {
         "_type": "enum.IntEnum",
         "instance": "Feed",
-        "value": "H3T_1420"
+        "value": "LOAD"
       },
       "gain": "AUTO1",
       "center_freq": 1420000000,
@@ -430,7 +430,7 @@
       "feed_type": {
         "_type": "enum.IntEnum",
         "instance": "Feed",
-        "value": "LOAD"
+        "value": "H3T_1420"
       },
       "gain": "AUTO1",
       "center_freq": 1420000000,
@@ -606,7 +606,7 @@
       "feed_type": {
         "_type": "enum.IntEnum",
         "instance": "Feed",
-        "value": "H3T_1420"
+        "value": "LOAD"
       },
       "gain": "AUTO1",
       "center_freq": 1420000000,
@@ -622,7 +622,7 @@
       "feed_type": {
         "_type": "enum.IntEnum",
         "instance": "Feed",
-        "value": "LOAD"
+        "value": "H3T_1420"
       },
       "gain": "AUTO1",
       "center_freq": 1420000000,
@@ -798,7 +798,7 @@
       "feed_type": {
         "_type": "enum.IntEnum",
         "instance": "Feed",
-        "value": "H3T_1420"
+        "value": "LOAD"
       },
       "gain": "AUTO1",
       "center_freq": 1420000000,
@@ -814,7 +814,7 @@
       "feed_type": {
         "_type": "enum.IntEnum",
         "instance": "Feed",
-        "value": "LOAD"
+        "value": "H3T_1420"
       },
       "gain": "AUTO1",
       "center_freq": 1420000000,
@@ -990,7 +990,7 @@
       "feed_type": {
         "_type": "enum.IntEnum",
         "instance": "Feed",
-        "value": "H3T_1420"
+        "value": "LOAD"
       },
       "gain": "AUTO1",
       "center_freq": 1420000000,
@@ -1006,7 +1006,7 @@
       "feed_type": {
         "_type": "enum.IntEnum",
         "instance": "Feed",
-        "value": "LOAD"
+        "value": "H3T_1420"
       },
       "gain": "AUTO1",
       "center_freq": 1420000000,
@@ -1182,7 +1182,7 @@
       "feed_type": {
         "_type": "enum.IntEnum",
         "instance": "Feed",
-        "value": "H3T_1420"
+        "value": "LOAD"
       },
       "gain": "AUTO1",
       "center_freq": 1420000000,
@@ -1198,7 +1198,7 @@
       "feed_type": {
         "_type": "enum.IntEnum",
         "instance": "Feed",
-        "value": "LOAD"
+        "value": "H3T_1420"
       },
       "gain": "AUTO1",
       "center_freq": 1420000000,
@@ -1374,7 +1374,7 @@
       "feed_type": {
         "_type": "enum.IntEnum",
         "instance": "Feed",
-        "value": "H3T_1420"
+        "value": "LOAD"
       },
       "gain": "AUTO1",
       "center_freq": 1420000000,
@@ -1390,7 +1390,7 @@
       "feed_type": {
         "_type": "enum.IntEnum",
         "instance": "Feed",
-        "value": "LOAD"
+        "value": "H3T_1420"
       },
       "gain": "AUTO1",
       "center_freq": 1420000000,
@@ -1566,7 +1566,7 @@
       "feed_type": {
         "_type": "enum.IntEnum",
         "instance": "Feed",
-        "value": "H3T_1420"
+        "value": "LOAD"
       },
       "gain": "AUTO1",
       "center_freq": 1420000000,
@@ -1582,7 +1582,7 @@
       "feed_type": {
         "_type": "enum.IntEnum",
         "instance": "Feed",
-        "value": "LOAD"
+        "value": "H3T_1420"
       },
       "gain": "AUTO1",
       "center_freq": 1420000000,
@@ -1758,7 +1758,7 @@
       "feed_type": {
         "_type": "enum.IntEnum",
         "instance": "Feed",
-        "value": "H3T_1420"
+        "value": "LOAD"
       },
       "gain": "AUTO1",
       "center_freq": 1420000000,
@@ -1774,7 +1774,7 @@
       "feed_type": {
         "_type": "enum.IntEnum",
         "instance": "Feed",
-        "value": "LOAD"
+        "value": "H3T_1420"
       },
       "gain": "AUTO1",
       "center_freq": 1420000000,
@@ -1950,7 +1950,7 @@
       "feed_type": {
         "_type": "enum.IntEnum",
         "instance": "Feed",
-        "value": "H3T_1420"
+        "value": "LOAD"
       },
       "gain": "AUTO1",
       "center_freq": 1420000000,
@@ -1966,7 +1966,7 @@
       "feed_type": {
         "_type": "enum.IntEnum",
         "instance": "Feed",
-        "value": "LOAD"
+        "value": "H3T_1420"
       },
       "gain": "AUTO1",
       "center_freq": 1420000000,
@@ -2142,7 +2142,7 @@
       "feed_type": {
         "_type": "enum.IntEnum",
         "instance": "Feed",
-        "value": "H3T_1420"
+        "value": "LOAD"
       },
       "gain": "AUTO1",
       "center_freq": 1420000000,
@@ -2158,7 +2158,7 @@
       "feed_type": {
         "_type": "enum.IntEnum",
         "instance": "Feed",
-        "value": "LOAD"
+        "value": "H3T_1420"
       },
       "gain": "AUTO1",
       "center_freq": 1420000000,
@@ -2334,7 +2334,7 @@
       "feed_type": {
         "_type": "enum.IntEnum",
         "instance": "Feed",
-        "value": "H3T_1420"
+        "value": "LOAD"
       },
       "gain": "AUTO1",
       "center_freq": 1420000000,
@@ -2350,7 +2350,7 @@
       "feed_type": {
         "_type": "enum.IntEnum",
         "instance": "Feed",
-        "value": "LOAD"
+        "value": "H3T_1420"
       },
       "gain": "AUTO1",
       "center_freq": 1420000000,
@@ -2526,7 +2526,7 @@
       "feed_type": {
         "_type": "enum.IntEnum",
         "instance": "Feed",
-        "value": "H3T_1420"
+        "value": "LOAD"
       },
       "gain": "AUTO1",
       "center_freq": 1420000000,
@@ -2542,7 +2542,7 @@
       "feed_type": {
         "_type": "enum.IntEnum",
         "instance": "Feed",
-        "value": "LOAD"
+        "value": "H3T_1420"
       },
       "gain": "AUTO1",
       "center_freq": 1420000000,
@@ -2718,7 +2718,7 @@
       "feed_type": {
         "_type": "enum.IntEnum",
         "instance": "Feed",
-        "value": "H3T_1420"
+        "value": "LOAD"
       },
       "gain": "AUTO1",
       "center_freq": 1420000000,
@@ -2734,7 +2734,7 @@
       "feed_type": {
         "_type": "enum.IntEnum",
         "instance": "Feed",
-        "value": "LOAD"
+        "value": "H3T_1420"
       },
       "gain": "AUTO1",
       "center_freq": 1420000000,
@@ -2887,22 +2887,6 @@
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 178,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
-    },
-    {
-      "_type": "TargetConfig",
-      "feed_type": {
-        "_type": "enum.IntEnum",
-        "instance": "Feed",
-        "value": "H3T_1420"
-      },
-      "gain": "AUTO1",
-      "center_freq": 1420000000,
-      "bandwidth": 1000000,
-      "sample_rate": 2048000,
-      "integration_time": 60,
-      "spectral_resolution": 2048,
-      "tgt_idx": 179,
       "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
     }
   ],
@@ -5411,20 +5395,6 @@
         "value": "DRIFT_SCAN"
       },
       "tgt_idx": 178,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
-    },
-    {
-      "_type": "TargetModel",
-      "altaz": {
-        "alt": 90.0,
-        "az": 0.0
-      },
-      "pointing": {
-        "_type": "enum.IntEnum",
-        "instance": "PointingType",
-        "value": "DRIFT_SCAN"
-      },
-      "tgt_idx": 179,
       "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
     }
   ],
