@@ -555,7 +555,10 @@ class Digitiser(App):
             return tm_dig.STATUS_ERROR, f"Digitiser method {method} not found", None, None
 
         try:  # Call the method
-            result = call(**args) if args is not None else call() if callable(call) else call
+            if method in (tm_dig.METHOD_GET_AUTO_GAIN, tm_dig.METHOD_SET_AUTO_GAIN):
+                result = self._call_auto_gain_with_load_disabled(call, args)
+            else:
+                result = call(**args) if args is not None else call() if callable(call) else call
         except (XSoftwareFailure, XHardwareFailure) as e:
             details = str(e)
             if isinstance(e, XHardwareFailure):
@@ -571,6 +574,22 @@ class Digitiser(App):
             return tm_dig.STATUS_SUCCESS, f"Digitiser method {method} invoked on SDR", result[0], result[1]
         else:
             return tm_dig.STATUS_SUCCESS, f"Digitiser method {method} invoked on SDR", result, None
+
+    def _call_auto_gain_with_load_disabled(self, call, args):
+        """Run auto-gain against the sky/input path, restoring the prior load state."""
+        args = args if args is not None else {}
+        restore_load = bool(self.dig_model.load_active)
+
+        if restore_load:
+            logger.info("Digitiser temporarily disabling LOAD relay for auto gain measurement.")
+            self.set_load_active(False)
+
+        try:
+            return call(**args)
+        finally:
+            if restore_load:
+                logger.info("Digitiser restoring LOAD relay state after auto gain measurement.")
+                self.set_load_active(True)
 
     def _construct_status_adv_to_tm(self) -> APIMessage:
         """ Constructs a status advice message for the Telescope Manager.
