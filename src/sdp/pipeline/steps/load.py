@@ -28,12 +28,10 @@ class LoadCal(ProcessingStep):
             raise ValueError(f"LoadCal: scan {self.scan} must be set before initialising LoadCal step.")
 
         self.load_scan = None
-        self._load_is_default = True                  # Track if the current load is the default (all ones) vs real measurement data
         self._last_cal_q_size = len(self.cal_q.queue) # Track the last seen calibration queue size to detect new load scans arriving
         
         # Perform initial matching to equivalent load scan
-        self.load_scan = self._resolve_load_scan()
-        self._load_is_default = self._is_default_load(self.load_scan)
+        self._set_load_scan(self._resolve_load_scan())
 
     def _resolve_load_scan(self):
         """Resolve the newest equivalent completed load scan from the calibration queue."""
@@ -47,17 +45,38 @@ class LoadCal(ProcessingStep):
             and s.get_status() == ScanState.COMPLETE
         ]
 
-        if len(load_scans) > 0:
+        # Prefer real load scans over synthetic ones, use the newest load scan (ideally real)
+        real_load_scans = [s for s in load_scans if not s.scan_model.synthesised]
+        if real_load_scans:
+            return max(real_load_scans, key=lambda s: s.scan_model.created)
+
+        if load_scans:
             return max(load_scans, key=lambda s: s.scan_model.created)
 
         return None
 
+    def _set_load_scan(self, load_scan):
+        """Cache a load scan and keep the scan metadata in step with it."""
+        self.load_scan = load_scan
+
+        if self.load_scan is not None:
+            try:
+                self.scan.set_load_scan(self.load_scan)
+            except Exception as exc:
+                logger.warning(f"LoadCal: could not associate load scan metadata: {exc}")
+
     def _should_refresh_load(self) -> bool:
         """Check if load cache should be refreshed based on queue changes
            Do not refresh if current load is real (non-default), only refresh if default or missing."""
-        # If we have a real (non-default) load, keep it for the duration of the scan
-        if self.load_scan is not None and not self._load_is_default:
+        # If we have a real load, keep it for the duration of the scan
+        if self.load_scan is not None and not self.load_scan.scan_model.synthesised:
             return False
+
+        # While using the synthetic load, keep checking. A real load can
+        # replace the synthetic queue entry without changing the queue length.
+        if self.load_scan is None or self.load_scan.scan_model.synthesised:
+            self._last_cal_q_size = len(self.cal_q.queue)
+            return True
         
         cal_q_size = len(self.cal_q.queue)
         
@@ -67,17 +86,6 @@ class LoadCal(ProcessingStep):
             return True
         
         return False
-
-    def _is_default_load(self, load_scan) -> bool:
-        """Check if a load scan is the default (all ones) vs real measurement data."""
-        if load_scan is None:
-            return True
-        
-        # Check if mpr is all ones (default signature)
-        try:
-            return np.allclose(load_scan.mpr, np.ones_like(load_scan.mpr))
-        except Exception:
-            return False
     
     def process(self, context: Any, signal: Any) -> Any:
         """
@@ -102,8 +110,7 @@ class LoadCal(ProcessingStep):
         if self._should_refresh_load():
             latest_load = self._resolve_load_scan()
             if latest_load is not None and latest_load is not self.load_scan:
-                self.load_scan = latest_load
-                self._load_is_default = self._is_default_load(self.load_scan)
+                self._set_load_scan(latest_load)
                 logger.info(f"LoadCal pipeline step updated load calibration scan for processing:\n{self.load_scan}")
 
         # Check if the length of the input signal array matches the length of the load scan's spectrum

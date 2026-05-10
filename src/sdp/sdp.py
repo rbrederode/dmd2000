@@ -837,6 +837,22 @@ class SDP(App):
         tm_rsp.set_api_call(tm_rsp_api_call)       
         return tm_rsp
 
+    @staticmethod
+    def _newest_equivalent_load_scan(scan: Scan, cal_q: Queue) -> Scan | None:
+        """Return the newest completed real load scan for a scan, falling back to synthetic."""
+        load_scans = [
+            s for s in list(cal_q.queue)
+            if s.equivalent(scan)
+            and s.get_scan_type() == ScanType.LOAD
+            and s.get_status() == ScanState.COMPLETE
+        ]
+        real_load_scans = [s for s in load_scans if not s.scan_model.synthesised]
+        if real_load_scans:
+            return max(real_load_scans, key=lambda s: s.scan_model.created)
+        if load_scans:
+            return max(load_scans, key=lambda s: s.scan_model.created)
+        return None
+
     def _abort_scan(self, scan: Scan):
         """ Aborts a scan and performs necessary cleanup.
         """
@@ -948,17 +964,19 @@ def main():
                         sdp.signal_displays[dig_id].save_scan_figure(output_dir=sdp.get_args().scan_store_dir)
 
                     # Find the equivalent load scan for this scan if it exists in the calibration queue
-                    load_scans = [s for s in list(sdp.cal_q.queue) if s.equivalent(scan) and s.get_scan_type() == ScanType.LOAD]
-                    logger.debug(f"Science Data Processor found {len(load_scans)} equivalent load scans in calibration queue for digitiser {dig_id} and observation {scan.get_obs_id()} to apply to signal display")
+                    newest_load = sdp._newest_equivalent_load_scan(scan, sdp.cal_q)
+                    logger.debug(
+                        f"Science Data Processor found {'an' if newest_load else 'no'} equivalent load scan "
+                        f"in calibration queue for digitiser {dig_id} and observation {scan.get_obs_id()} "
+                        "to apply to signal display"
+                    )
 
                     # Set the signal display to the current scan and newest equivalent load scan 
-                    newest_load = max(load_scans, key=lambda s: s.scan_model.created) if len(load_scans) > 0 else None
                     scan.set_load_scan(newest_load) if newest_load else None
                     sdp.signal_displays[dig_id].set_scan(scan=scan, load=newest_load)
                 else:
                     # Keep load calibration in sync while the same sky scan remains active.
-                    load_scans = [s for s in list(sdp.cal_q.queue) if s.equivalent(scan) and s.get_scan_type() == ScanType.LOAD]
-                    newest_load = max(load_scans, key=lambda s: s.scan_model.created) if len(load_scans) > 0 else None
+                    newest_load = sdp._newest_equivalent_load_scan(scan, sdp.cal_q)
                     scan.set_load_scan(newest_load) if newest_load else None
                     sdp.signal_displays[dig_id].set_load(load=newest_load)
 
