@@ -161,7 +161,10 @@ class DishDisplay:
             None.
         """
         if self.fig is not None:
-            plt.close(num=f"Dish {self.driver.dsh_model.dsh_id}")
+            try:
+                plt.close(num=f"Dish {self.driver.dsh_model.dsh_id}")
+            except Exception as exc:
+                logger.debug(f"Dish display for {self.driver.dsh_model.dsh_id} failed to close figure: {exc}")
 
     def is_visible_figure(self) -> Optional[bool]:
         """Return whether this display figure is the active visible window, or None if unknown.
@@ -196,31 +199,36 @@ class DishDisplay:
         Returns:
             None.
         """
-        # If the dish display is not active
-        if not self.is_active:
-            self._close_figure()  # Close the figure if it exists
-            return
+        try:
+            # If the dish display is not active
+            if not self.is_active:
+                self._close_figure()  # Close the figure if it exists
+                return
 
-        # If no figure, then log warning and return
-        if self.fig is None:
-            logger.warning(f"Dish display for {self.driver.dsh_model.dsh_id} cannot display when figure is None")
-            return
+            # If no figure, then log warning and return
+            if self.fig is None:
+                logger.warning(f"Dish display for {self.driver.dsh_model.dsh_id} cannot display when figure is None")
+                return
 
-        # Check if the dish display figure is still visible
-        is_visible_fig = self.is_visible_figure()
-        if is_visible_fig is False:
-            return
+            # Check if the dish display figure is still visible
+            is_visible_fig = self.is_visible_figure()
+            if is_visible_fig is False:
+                return
 
-        logger.debug(f"Dish display updating for dish {self.driver.dsh_model.dsh_id}")
+            logger.debug(f"Dish display updating for dish {self.driver.dsh_model.dsh_id}")
 
-        if self.driver.dsh_model is not None:
-            self._update_attribute_axis(self.driver.dsh_model)
-            self._update_mode_timeline(self.driver.dsh_model)
+            if self.driver.dsh_model is not None:
+                self._update_attribute_axis(self.driver.dsh_model)
+                self._update_mode_timeline(self.driver.dsh_model)
 
-        self._update_pointing_axis()
-        self._update_desired_axis()
-        self._update_pec_axis()
-        self._draw(is_visible_fig)
+            self._update_pointing_axis()
+            self._update_desired_axis()
+            self._update_pec_axis()
+            self._draw(is_visible_fig)
+        except Exception as exc:
+            logger.exception(f"Dish display for {self.driver.dsh_model.dsh_id} failed to refresh: {exc}")
+            self.is_active = False
+            self._close_figure()
 
     def _update_attribute_axis(self, model: DishModel):
         """Update the static attribute panel with the latest dish-model values.
@@ -453,15 +461,23 @@ class DishDisplay:
         Returns:
             None.
         """
-        if is_visible_fig is None:
-            plt.draw()
-            plt.pause(0.0001)
-        elif is_visible_fig is True:
-            self.fig.canvas.draw()
-            self.fig.canvas.flush_events()
-        else:
-            self.fig.canvas.draw_idle()
-            self.fig.canvas.flush_events()
+        if self.fig is None or getattr(self.fig, "canvas", None) is None:
+            logger.debug(f"Dish display for {self.driver.dsh_model.dsh_id} has no canvas to draw")
+            return
+
+        try:
+            if is_visible_fig is None:
+                plt.draw()
+                plt.pause(0.0001)
+            elif is_visible_fig is True:
+                self.fig.canvas.draw()
+                self.fig.canvas.flush_events()
+            else:
+                self.fig.canvas.draw_idle()
+                self.fig.canvas.flush_events()
+        except Exception as exc:
+            logger.exception(f"Dish display for {self.driver.dsh_model.dsh_id} draw failed: {exc}")
+            raise
 
     def save_dsh_figure(self, output_dir: str) -> bool:
         """Save the current dish figure to disk.

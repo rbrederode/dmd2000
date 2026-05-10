@@ -233,29 +233,41 @@ class WeatherDisplay:
 
     def _close_figure(self):
         if self.fig is not None:
-            plt.close(num=f"Weather {self.ws.ws_id}")
+            try:
+                plt.close(num=f"Weather {self.ws.ws_id}")
+            except Exception as exc:
+                logger.debug(f"Weather display for {self.ws.ws_id} failed to close figure: {exc}")
 
     def is_visible_figure(self) -> Optional[bool]:
         return get_figure_visibility(self.fig)
 
     def display(self):
-        if not self.is_active:
+        try:
+            if not self.is_active:
+                self._close_figure()
+                return
+
+            if self.fig is None:
+                return
+
+            is_visible_fig = self.is_visible_figure()
+            if is_visible_fig is False:
+                return
+
+            self._update_attributes()
+            self._update_plot()
+
+            if getattr(self.fig, "canvas", None) is None:
+                logger.debug(f"Weather display for {self.ws.ws_id} has no canvas to draw")
+                return
+
+            self.fig.canvas.draw_idle()
+            self.fig.canvas.flush_events()
+            plt.pause(0.001)
+        except Exception as exc:
+            logger.exception(f"Weather display for {self.ws.ws_id} failed to refresh: {exc}")
+            self.is_active = False
             self._close_figure()
-            return
-
-        if self.fig is None:
-            return
-
-        is_visible_fig = self.is_visible_figure()
-        if is_visible_fig is False:
-            return
-
-        self._update_attributes()
-        self._update_plot()
-
-        self.fig.canvas.draw_idle()
-        self.fig.canvas.flush_events()
-        plt.pause(0.001)
 
     def _set_field(self, label: str, kind: str, text: str, alarm: bool = False, color: str = None):
         if (label, kind) not in self.attr_texts or (label, kind) not in self.attr_rects:
