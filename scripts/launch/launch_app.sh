@@ -82,12 +82,18 @@ build_run_cmd() {
     local env_var
     local title_quoted
     local session_dir_quoted
+    local venv_activate
 
     cmd="$(quote_shell_words "$@")"
     title_quoted="$(printf '%q' "$WINDOW_TITLE")"
     session_dir_quoted="$(printf '%q' "$SESSION_DIR")"
 
     printf '%s' "printf \"\\033]0;%s\\007\" $title_quoted; cd $session_dir_quoted"
+
+    venv_activate="$REPO_ROOT/venv/bin/activate"
+    if [ -f "$venv_activate" ]; then
+        printf ' && source %q' "$venv_activate"
+    fi
 
     if [ "${#EXPORT_ENVS[@]}" -gt 0 ]; then
         printf ' && export'

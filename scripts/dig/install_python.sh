@@ -5,6 +5,8 @@
 
 set -euo pipefail
 
+BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 echo "=== 1. Fix broken packages and held libraries ==="
 sudo apt --fix-broken install -y || true
 sudo dpkg --configure -a || true
@@ -17,10 +19,14 @@ for pkg in libssl-dev libssl3t64; do
     fi
 done
 
-echo "=== 2. Clean apt lists ==="
-sudo apt clean
-sudo rm -rf /var/lib/apt/lists/*
-sudo apt update
+if [ "${SKIP_APT_UPDATE:-0}" != "1" ]; then
+    echo "=== 2. Clean apt lists ==="
+    sudo apt clean
+    sudo rm -rf /var/lib/apt/lists/*
+    bash "$BASE_DIR/update_apt.sh"
+else
+    echo "=== 2. Skipping apt list refresh (SKIP_APT_UPDATE=1) ==="
+fi
 
 echo "=== 3. Force install matching libssl versions ==="
 sudo apt install -y \

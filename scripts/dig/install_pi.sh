@@ -10,6 +10,8 @@ BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo "Running system update..."
 bash "$BASE_DIR/scripts/dig/system_update.sh"
 
+export SKIP_APT_UPDATE=1
+
 echo "Installing packages..."
 bash "$BASE_DIR/scripts/dig/install_packages.sh"
 
