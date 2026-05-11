@@ -7,7 +7,7 @@
             "app_name": "dig",
             "entity_id": "dig001",
             "env": {
-                "GPIOZERO_PIN_FACTORY": "mock"
+                "_GPIOZERO_PIN_FACTORY": "mock"
             },
             "program": "python",
             "args": [
