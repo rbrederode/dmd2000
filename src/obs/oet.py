@@ -10,10 +10,10 @@ from ipc.action import Action
 from models.comms import CommunicationStatus
 from models.dsh import DishManagerModel, Feed, Capability, DishMode, PointingState
 from models.health import HealthState
-from models.obs import Observation, ObsTransition, ObsState
+from models.obs import ObsModel, ObsTransition, ObsState
 from models.oda import ODAModel, ObsList, ScanStore
 from models.scan import ScanModel, ScanState
-from models.target import TargetModel, PointingType
+from models.target import TargetModel, TargetConfig, PointingType
 from models.telescope import TelescopeModel
 from models.tm import ResourceType, AllocationState
 from util import log, util
@@ -42,6 +42,57 @@ class ObservationExecutionTool:
             self._obs_locks[obs_id] = threading.RLock()
         return self._obs_locks[obs_id]
 
+    def _get_config_timeout_ms(self, obs) -> int:
+        """Return a configuration timeout long enough for AUTO gain and SDP acknowledgement."""
+        timeout_ms = obs.timeout_ms_config
+
+        target_config = obs.get_target_config_by_index(obs.tgt_idx) if obs is not None else None
+        target_scan = obs.get_current_tgt_scan() if obs is not None else None
+        gain_token = str(target_config.gain).upper() if target_config is not None and TargetConfig.is_auto_gain_token(target_config.gain) else None
+        waiting_for_auto_gain = (
+            target_config is not None
+            and target_scan is not None
+            and gain_token is not None
+            and (gain_token == "AUTO" or gain_token not in obs.auto_gain_cache)
+            and target_scan.gain <= 0.0
+        )
+
+        if waiting_for_auto_gain:
+            auto_gain_timeout_ms = getattr(self.tm, "AUTO_GAIN_TIMEOUT_MS", timeout_ms)
+            msg_timeout_ms = self.telmodel.tel_mgr.app.msg_timeout_ms
+            timeout_ms = max(timeout_ms, (auto_gain_timeout_ms * 2) + (msg_timeout_ms * 2) + 5000)
+
+        return timeout_ms
+
+    def _apply_gain_to_target_scans(self, target_scan_set, gain: float):
+        """Apply a resolved gain to every scan belonging to the current target config."""
+        if target_scan_set is None or gain is None:
+            return
+
+        for scan in target_scan_set.scans:
+            scan.gain = float(gain)
+            scan.last_update = datetime.now(timezone.utc)
+
+    def _resolve_gain_for_config(self, obs, target_config, target_scan_set, target_scan):
+        """Resolve AUTO<n> gain tokens from cache while leaving unresolved tokens intact."""
+        gain = target_config.gain
+        if not TargetConfig.is_auto_gain_token(gain):
+            return gain
+
+        token = gain.upper()
+
+        if target_scan.gain > 0.0:
+            return target_scan.gain
+
+        cached_gain = obs.auto_gain_cache.get(token) if token != "AUTO" else None
+        if cached_gain is not None:
+            self._apply_gain_to_target_scans(target_scan_set, cached_gain)
+            obs.last_update = datetime.now(timezone.utc)
+            logger.info(f"Observation Execution Tool resolved gain token {token} from cache as {cached_gain} dB for observation {obs.obs_id}.")
+            return cached_gain
+
+        return token
+
     def process_obs_event(self, event):
         """ Processes a workflow transition on an observation.
             Returns an Action object with actions to be performed.
@@ -58,6 +109,14 @@ class ObservationExecutionTool:
             # Handle observation event transitions
             if event.transition == ObsTransition.START:
 
+                if event.obs.obs_state != ObsState.EMPTY:
+                    logger.warning(
+                        f"Observation Execution Tool ignoring {event.transition.name} transition for "
+                        f"observation {event.obs.obs_id} in unexpected state "
+                        f"{event.obs.obs_state.name}."
+                    )
+                    return action
+
                 # Transition to IDLE where resources can be assigned or released
                 event.obs.obs_state = ObsState.IDLE
 
@@ -66,6 +125,14 @@ class ObservationExecutionTool:
                 action.set_obs_transition(obs=event.obs, transition=ObsTransition.ASSIGN_RESOURCES)
 
             elif event.transition == ObsTransition.ASSIGN_RESOURCES:
+
+                if event.obs.obs_state != ObsState.IDLE:
+                    logger.warning(
+                        f"Observation Execution Tool ignoring {event.transition.name} transition for "
+                        f"observation {event.obs.obs_id} in unexpected state "
+                        f"{event.obs.obs_state.name}."
+                    )
+                    return action
 
                 event.obs.obs_state = ObsState.IDLE
                 
@@ -80,6 +147,14 @@ class ObservationExecutionTool:
 
             elif event.transition == ObsTransition.RELEASE_RESOURCES:
 
+                if event.obs.obs_state != ObsState.IDLE:
+                    logger.warning(
+                        f"Observation Execution Tool ignoring {event.transition.name} transition for "
+                        f"observation {event.obs.obs_id} in unexpected state "
+                        f"{event.obs.obs_state.name}."
+                    )
+                    return action
+
                 event.obs.obs_state = ObsState.IDLE
 
                 # Release resources for this observation
@@ -92,7 +167,7 @@ class ObservationExecutionTool:
 
                     # Check if there are other observations waiting for the same resources just released so that they can be assigned
                     for obs in waiting_obs:
-                        if obs.obs_id != event.obs.obs_id and obs.dsh_id == event.obs.dsh_id and obs.dig_id == event.obs.dig_id:
+                        if obs.obs_id != event.obs.obs_id and obs.dsh_id == event.obs.dsh_id:
                             action.set_obs_transition(obs=obs, transition=ObsTransition.ASSIGN_RESOURCES)
 
                 # Save current observation state to disk
@@ -101,8 +176,17 @@ class ObservationExecutionTool:
 
             elif event.transition == ObsTransition.CONFIGURE_RESOURCES:
 
+                if event.obs.obs_state not in (ObsState.IDLE, ObsState.CONFIGURING, ObsState.READY):
+                    logger.warning(
+                        f"Observation Execution Tool ignoring CONFIGURE_RESOURCES transition for "
+                        f"observation {event.obs.obs_id} in unexpected state "
+                        f"{event.obs.obs_state.name}."
+                    )
+                    return action
+
                 event.obs.obs_state = ObsState.CONFIGURING
                 timer_name = f"obs_configuring_timer:{event.obs.obs_id}"
+                timeout_ms_config = self._get_config_timeout_ms(event.obs)
 
                 # Determine outstanding configuration actions for this observation
                 # Returns true if all resources are already configured, false if any resource still requires configuration
@@ -116,10 +200,26 @@ class ObservationExecutionTool:
                     
                         action.set_timer_action(Action.Timer(
                             name=timer_name, 
-                            timer_action=event.obs.timeout_ms_config, 
+                            timer_action=timeout_ms_config,
                             echo_data=event.obs))
             
             elif event.transition == ObsTransition.READY:
+                
+                if event.obs.obs_state == ObsState.SCANNING:
+                    logger.info(
+                        f"Observation Execution Tool ignoring duplicate READY transition for "
+                        f"observation {event.obs.obs_id} because it is already SCANNING."
+                    )
+                    return action
+
+                if event.obs.obs_state not in (ObsState.CONFIGURING, ObsState.READY):
+                    logger.warning(
+                        f"Observation Execution Tool ignoring READY transition for "
+                        f"observation {event.obs.obs_id} in unexpected state "
+                        f"{event.obs.obs_state.name}."
+                    )
+                    return action
+
                 event.obs.obs_state = ObsState.READY
 
                 # Attempt to start scanning, returns true if scanning successfully requested, false otherwise
@@ -127,6 +227,29 @@ class ObservationExecutionTool:
                     action.set_obs_transition(obs=event.obs, transition=ObsTransition.SCAN_STARTED)
 
             elif event.transition == ObsTransition.SCAN_STARTED:
+                
+                if event.obs.obs_state == ObsState.CONFIGURING:
+                    logger.warning(
+                        f"Observation Execution Tool received SCAN_STARTED for observation "
+                        f"{event.obs.obs_id} while it was still CONFIGURING. "
+                        "Promoting to READY to absorb a stale configuration event."
+                    )
+                    event.obs.obs_state = ObsState.READY
+
+                elif event.obs.obs_state == ObsState.SCANNING:
+                    logger.info(
+                        f"Observation Execution Tool ignoring duplicate SCAN_STARTED transition "
+                        f"for observation {event.obs.obs_id} because it is already SCANNING."
+                    )
+                    return action
+
+                elif event.obs.obs_state != ObsState.READY:
+                    logger.warning(
+                        f"Observation Execution Tool ignoring SCAN_STARTED transition for "
+                        f"observation {event.obs.obs_id} in unexpected state "
+                        f"{event.obs.obs_state.name}."
+                    )
+                    return action
 
                 event.obs.obs_state = ObsState.SCANNING
                 timer_name = f"obs_scanning_timer:{event.obs.obs_id}"
@@ -138,6 +261,14 @@ class ObservationExecutionTool:
                     echo_data=event.obs))
 
             elif event.transition == ObsTransition.SCAN_COMPLETED:
+
+                if event.obs.obs_state != ObsState.SCANNING:
+                    logger.warning(
+                        f"Observation Execution Tool ignoring {event.transition.name} transition for "
+                        f"observation {event.obs.obs_id} in unexpected state "
+                        f"{event.obs.obs_state.name}."
+                    )
+                    return action
 
                 event.obs.obs_state = ObsState.READY
 
@@ -153,6 +284,15 @@ class ObservationExecutionTool:
                 # Workflow will transition to SCAN_STARTED or CONFIGURE_RESOURCES as needed within complete_scan()  
 
             elif event.transition == ObsTransition.SCAN_ENDED:
+
+                if event.obs.obs_state != ObsState.SCANNING:
+                    logger.warning(
+                        f"Observation Execution Tool ignoring {event.transition.name} transition for "
+                        f"observation {event.obs.obs_id} in unexpected state "
+                        f"{event.obs.obs_state.name}."
+                    )
+                    return action
+
                 event.obs.obs_state = ObsState.READY
 
                 # If the observation is complete, stop scanning and release resources
@@ -164,6 +304,10 @@ class ObservationExecutionTool:
                 # Workflow will transition to SCAN_STARTED or CONFIGURE_RESOURCES as needed within complete_scan()
 
             elif event.transition == ObsTransition.ABORT:
+
+                action.set_timer_action(Action.Timer(
+                    name=f"obs_configuring_timer:{event.obs.obs_id}",
+                    timer_action=Action.Timer.TIMER_STOP))
 
                 # If resources were assigned and are either configuring, ready or scanning
                 if event.obs.obs_state in [ObsState.CONFIGURING, ObsState.READY, ObsState.SCANNING]:
@@ -188,21 +332,29 @@ class ObservationExecutionTool:
 
             elif event.transition == ObsTransition.RESET:
 
-                # Can only reset observations in ABORTED or FAULT states
+                # Can only reset observations in ABORTED, FAULT or IDLE states
                 if event.obs.obs_state in [ObsState.ABORTED, ObsState.FAULT, ObsState.IDLE]:
                     # Stop abort timer if active
                     timer_name = f"obs_abort_timer:{event.obs.obs_id}"
                     action.set_timer_action(Action.Timer(name=timer_name, timer_action=Action.Timer.TIMER_STOP))
 
-                    # Reset target index and target scan index to start at the beginning if the Obs State was IDLE
-                    if event.obs.obs_state == ObsState.IDLE:
-                        event.obs.tgt_idx = 0
-                        event.obs.tgt_scan = 0
-                        event.obs.determine_scans()
-                        self.reset_sdp_scan(obs=event.obs, action=action)
+                    event.obs.tgt_idx = 0
+                    event.obs.tgt_scan = 0
+                    event.obs.determine_scans()
+                    self.reset_sdp_scan(obs=event.obs, action=action)
 
                     # Reset observation state to IDLE
                     event.obs.obs_state = ObsState.IDLE
+
+                    now = datetime.now(timezone.utc)
+                    if event.obs.scheduling_block_end is not None and event.obs.scheduling_block_end <= now:
+                        logger.warning(
+                            f"Observation Execution Tool reset observation {event.obs.obs_id}, "
+                            f"but its scheduling block ended at {event.obs.scheduling_block_end}. "
+                            "Resources will not be assigned until the observation is rescheduled."
+                        )
+                        return action
+
                     # Try to assign resources for the next scan if possible
                     action.set_obs_transition(obs=event.obs, transition=ObsTransition.ASSIGN_RESOURCES)
                 else:
@@ -361,7 +513,7 @@ class ObservationExecutionTool:
 
             return granted_all_resources
 
-    def release_resources(self, obs: Observation, action: Action) -> bool:
+    def release_resources(self, obs: ObsModel, action: Action) -> bool:
         """ Process an observation resource release request.
             Returns true if at least one active resource was released, false otherwise.
         """
@@ -436,7 +588,7 @@ class ObservationExecutionTool:
 
             else:
                 logger.info(f"Observation Execution Tool found Dish already configured for correct target for observation {obs.obs_id} with index {obs.tgt_idx}-{obs.tgt_scan}. " +
-                    f"Dish target ID {dsh_model.tgt_id} matches expected target ID {obs.obs_id}_{obs.tgt_idx}. On Target {on_target}")
+                    f"Dish target ID {dsh_model.tgt_id} matches expected target ID {obs.obs_id}-{obs.tgt_idx}. On Target {on_target}")
   
             if len(new_dsh_config) > 0:
 
@@ -472,28 +624,30 @@ class ObservationExecutionTool:
             old_dig_config = {}
             new_dig_config = {}
 
-            if target_config.feed == Feed.LOAD and dig_model.load != True:
-                old_dig_config['load'] = dig_model.load
-                new_dig_config['load'] = True
-            elif target_config.feed != Feed.LOAD and dig_model.load != False:
-                old_dig_config['load'] = dig_model.load
-                new_dig_config['load'] = False
+            desired_load_active = target_config.feed_type == Feed.LOAD
+            if dig_model.load_active != desired_load_active:
+                old_dig_config['load_active'] = dig_model.load_active
+                new_dig_config['load_active'] = desired_load_active
 
             for dig_attr, source, source_attr in config_params:
                 current = getattr(dig_model, dig_attr)
                 desired = getattr(source, source_attr)
+                if dig_attr == 'gain':
+                    desired = self._resolve_gain_for_config(obs, target_config, target_scan_set, target_scan)
                 if current != desired:
                     old_dig_config[dig_attr] = current
                     new_dig_config[dig_attr] = desired
 
+            desired_scanning = {'obs_id': obs.obs_id, 'tgt_idx': obs.tgt_idx, 'freq_scan': target_scan.freq_scan}
+            # Keep active digitiser sample metadata aligned with the target scan,
+            # even when no other digitiser hardware setting changes.
+            if dig_model.scanning is not False and dig_model.scanning != desired_scanning:
+                old_dig_config['scanning'] = dig_model.scanning
+                new_dig_config['scanning'] = desired_scanning
+
             if len(new_dig_config) > 0:
 
                 already_configured = False
-
-                # If digitiser is aready scanning, update the observation and scan parameters
-                if dig_model.scanning is not False:
-                    old_dig_config['scanning'] = dig_model.scanning
-                    new_dig_config['scanning'] = {'obs_id': obs.obs_id, 'tgt_idx': obs.tgt_idx, 'freq_scan': target_scan.freq_scan } 
 
                 # Needed to direct the config to the correct digitiser and 
                 # To transition the appropriate observation state once configuration is applied
@@ -524,6 +678,14 @@ class ObservationExecutionTool:
             for dig_attr, source, source_attr in config_params:
                 current = getattr(sdp_dig, dig_attr) if sdp_dig is not None else None
                 desired = getattr(source, source_attr)
+                if dig_attr == 'gain':
+                    desired = self._resolve_gain_for_config(obs, target_config, target_scan_set, target_scan)
+                    if TargetConfig.is_auto_gain_token(desired):
+                        logger.info(
+                            f"Observation Execution Tool deferring Science Data Processor gain update for observation {obs.obs_id} "
+                            f"until Digitiser auto gain token {desired} is resolved."
+                        )
+                        continue
                 if current != desired:
                     old_scan_config[dig_attr] = current
                     new_scan_config[dig_attr] = desired
@@ -534,12 +696,11 @@ class ObservationExecutionTool:
                 old_scan_config['scanning'] = sdp_dig.scanning
                 new_scan_config['scanning'] = scanning
 
-            if target_config.feed == Feed.LOAD and sdp_dig.load != True:
-                old_scan_config['load'] = sdp_dig.load
-                new_scan_config['load'] = True
-            elif target_config.feed != Feed.LOAD and sdp_dig.load != False:
-                old_scan_config['load'] = sdp_dig.load
-                new_scan_config['load'] = False
+            desired_load_active = target_config.feed_type == Feed.LOAD
+            current_load_active = sdp_dig.load_active if sdp_dig is not None else None
+            if sdp_dig is not None and current_load_active != desired_load_active:
+                old_scan_config['load'] = current_load_active
+                new_scan_config['load'] = desired_load_active
 
             if len(new_scan_config) > 0:
 
@@ -764,7 +925,7 @@ class ObservationExecutionTool:
         if obs is None or target is None or dish is None:
             raise XSoftwareFailure(f"Observation Execution Tool could not determine if dish is on target due to missing observation, dish or target.")
 
-        target_id = obs.obs_id + f"_{obs.tgt_idx}" # Unique target identifier within the observation (see DishModel.tgt_id)
+        target_id = obs.obs_id + f"-{obs.tgt_idx}" # Unique target identifier within the observation (see DishModel.tgt_id)
         if dish.tgt_id != target_id:
             logger.info(f"Observation Execution Tool found Dish {dish.dsh_id} is NOT configured to point to correct target {target_id} for observation {obs.obs_id} " +
                 f"Dish target ID {dish.tgt_id} does not match expected target ID {target_id}.")
@@ -783,4 +944,3 @@ class ObservationExecutionTool:
 
         return on_target
         
-

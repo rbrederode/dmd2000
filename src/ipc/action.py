@@ -1,5 +1,5 @@
 from ipc.message import APIMessage
-from models.obs import Observation
+from models.obs import ObsModel
 from util.timer import Timer
 from util.xbase import XSoftwareFailure
 
@@ -68,7 +68,7 @@ class Action:
 
     class Transition:
 
-        def __init__(self, obs: Observation=None, transition=None, echo_data=None):
+        def __init__(self, obs: ObsModel=None, transition=None, echo_data=None):
 
             if transition is None:
                 raise XSoftwareFailure("Action.Transition transition cannot be None")
@@ -124,7 +124,7 @@ class Action:
             self.timer_actions.append(timer_action)
         return self
 
-    def set_obs_transition(self, transition=None, obs: Observation=None, echo_data=None):
+    def set_obs_transition(self, transition=None, obs: ObsModel=None, echo_data=None):
         transition = Action.Transition(transition=transition, obs=obs, echo_data=echo_data)
         self.obs_transitions.append(transition)
         return self

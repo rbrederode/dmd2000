@@ -12,6 +12,7 @@ class AppModel(BaseModel):
         "_type": And(str, lambda v: v == "AppModel"),
         "app_name": And(str, lambda v: isinstance(v, str)),                             # Name of the application e.g. "sdp", "tm", "dsh_mgr"
         "app_running": And(bool, lambda v: isinstance(v, bool)),                        # Is the application currently running
+        "version": And(str, lambda v: isinstance(v, str)),                              # Display version string e.g. "v1.2.3-45"
         "health": And(HealthState, lambda v: isinstance(v, HealthState)),               # Health state of the application (see HealthState enum)
         "num_processors": And(int, lambda v: v >= 0),                                   # Number of processor instances (threads) used by the application
         "queue_size": And(int, lambda v: v >= 0),                                       # Size of the event queue for the application
@@ -35,6 +36,7 @@ class AppModel(BaseModel):
             "_type": "AppModel",
             "app_name": "app",
             "app_running": False,
+            "version": "",
             "health": HealthState.UNKNOWN,
             "num_processors": 0,
             "queue_size": 0,

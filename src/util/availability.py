@@ -1,11 +1,38 @@
 import csv
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 import os
 import re
 from typing import List, Tuple
 
 Event = Tuple[datetime, str]  # (timestamp, state)
+logger = logging.getLogger(__name__)
+
+
+def _parse_log_timestamp(ts_str: str, end_tz) -> datetime | None:
+    """Parse a log timestamp, supporting explicit UTC and legacy local-time lines."""
+    if ts_str.endswith(" UTC"):
+        try:
+            ts = datetime.strptime(ts_str.removesuffix(" UTC"), "%Y-%m-%d %H:%M:%S,%f")
+            ts = ts.replace(tzinfo=timezone.utc)
+            return ts.astimezone(end_tz) if end_tz is not None else ts.replace(tzinfo=None)
+        except ValueError:
+            return None
+
+    try:
+        ts = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S,%f")
+    except ValueError:
+        return None
+
+    local_tz = datetime.now().astimezone().tzinfo
+    ts = ts.replace(tzinfo=local_tz)
+    return ts.astimezone(end_tz) if end_tz is not None else ts.replace(tzinfo=None)
+
+def _validate_percent(value: float) -> float:
+    """Clamp a percentage-like value into the schema-safe range [0.0, 100.0]."""
+    if value is None:
+        return 0.0
+    return max(0.0, min(100.0, float(value)))
 
 def _day_iter(start: datetime, end: datetime):
     """Generate days between start and end datetimes."""
@@ -42,6 +69,28 @@ def _collect_log_files(log_dir: str, app_name: str, start: datetime, end: dateti
 
     return files
 
+
+def _iter_sanitized_log_lines(logfile: str):
+    """Yield decoded log lines while tolerating embedded NUL bytes.
+
+    NUL bytes usually indicate the file was truncated or externally rotated while a
+    process still had it open. We strip them so parsing can continue and emit a
+    warning to the standard logs for observability.
+    """
+    data = open(logfile, "rb").read()
+    nul_count = data.count(b"\x00")
+    if nul_count:
+        logger.warning(
+            "Availability log %s contains %d NUL byte(s). This often indicates external truncation or rotation while the app still had the file open.",
+            logfile,
+            nul_count,
+        )
+        data = data.replace(b"\x00", b"")
+
+    for line in data.decode("utf-8", errors="replace").splitlines():
+        if line:
+            yield line
+
 def _parse_logs(log_files: List[str], app_name: str, heartbeat_timeout_sec: int, end_period: datetime) -> List[Event]:
 
     """ Parse log files to extract state transitions and heartbeat timeouts.
@@ -53,7 +102,7 @@ def _parse_logs(log_files: List[str], app_name: str, heartbeat_timeout_sec: int,
         List[Event]: List of events (timestamp, state).
     """
     state_pattern = re.compile(rf"App {re.escape(app_name)} health state transition .* -> (\w+)")
-    heartbeat_pattern = re.compile(r"Heartbeat")
+    heartbeat_pattern = re.compile(r"Heartbeat(?:\s+state=(\w+))?")
 
     transitions = []
     heartbeats = []
@@ -61,25 +110,20 @@ def _parse_logs(log_files: List[str], app_name: str, heartbeat_timeout_sec: int,
     end_tz = end_period.tzinfo
 
     for logfile in log_files:
-        with open(logfile, "r", encoding="utf-8") as f:
-            for line in f:
-                ts_str = line.split("|")[0].strip()
-                try:
-                    ts = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S,%f")
-                except ValueError:
-                    logging.warning(f"Bad timestamp in {logfile}: {line.strip()}")
-                    continue
+        for line in _iter_sanitized_log_lines(logfile):
+            ts_str = line.split("|")[0].strip()
+            ts = _parse_log_timestamp(ts_str, end_tz)
+            if ts is None:
+                logger.warning("Bad timestamp in %s: %s", logfile, line.strip())
+                continue
 
-                # Normalize timezone to match end_period to avoid naive/aware mixing
-                if end_tz is not None and ts.tzinfo is None:
-                    ts = ts.replace(tzinfo=end_tz)
-                elif end_tz is None and ts.tzinfo is not None:
-                    ts = ts.replace(tzinfo=None)
-
-                if m := state_pattern.search(line):
-                    transitions.append((ts, m.group(1)))
-                elif heartbeat_pattern.search(line):
-                    heartbeats.append(ts)
+            if m := state_pattern.search(line):
+                transitions.append((ts, m.group(1)))
+            elif m := heartbeat_pattern.search(line):
+                heartbeats.append(ts)
+                heartbeat_state = m.group(1)
+                if heartbeat_state is not None:
+                    transitions.append((ts, heartbeat_state))
 
     transitions.sort()
     heartbeats.sort()
@@ -166,7 +210,7 @@ def get_app_availability(log_dir: str, app_name: str, start_period: datetime, en
     )
 
     total = (end_period - start_period).total_seconds()
-    return (weighted_up / total) * 100 if total > 0 else 0.0
+    return _validate_percent((weighted_up / total) * 100 if total > 0 else 0.0)
 
 def get_app_reliability(log_dir: str, app_name: str, start_period: datetime, end_period: datetime, heartbeat_timeout_sec: int = 60) -> dict:
     """ Calculate the reliability metrics (MTBF, MTTR, Availability) of an application over a specified period.
@@ -191,7 +235,7 @@ def get_app_reliability(log_dir: str, app_name: str, start_period: datetime, end
     mtbf = sum(up_durations) / len(up_durations) if up_durations else 0.0
     mttr = sum(down_durations) / len(down_durations) if down_durations else 0.0
 
-    reliability = (mtbf / (mtbf + mttr) * 100) if (mtbf + mttr) > 0 else 100.0
+    reliability = _validate_percent((mtbf / (mtbf + mttr) * 100) if (mtbf + mttr) > 0 else 100.0)
 
     return {
         "mtbf_sec": mtbf,

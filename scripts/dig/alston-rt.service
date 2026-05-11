@@ -5,7 +5,7 @@ After=network.target
 [Service]
 User=pi
 WorkingDirectory=/home/pi/alston-rt
-ExecStart=/home/pi/alston-rt/venv/bin/python main.py
+ExecStart=/home/pi/.pyenv/versions/venv/bin/python main.py
 Restart=always
 
 [Install]

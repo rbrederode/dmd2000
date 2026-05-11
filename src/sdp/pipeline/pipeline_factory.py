@@ -4,14 +4,45 @@ from queue import Queue
 import time
 
 from models.pipeline import PipelineConfig, StepConfig, StepType
+from util.registry import PIPELINE_STEP_NAMESPACE, get as registry_get, register as registry_register, resolve as registry_resolve
 
 logger = logging.getLogger(__name__)
+
+# Mutable context metadata registry.
+# Callers may add, remove, or edit entries at runtime if they need to extend
+# or tailor the available pipeline-context descriptions.
+CONTEXT_INFO: Dict[str, Dict[str, str]] = {
+    "spr": {
+        "context": "spr",
+        "name": "Summed Power Spectrum",
+        "input": "Raw power summed over seconds",
+        "usage": "Apply minimal pipeline steps to preserve the original spectrum for later processing.",
+        "output": "spr⁎",
+    },
+    "cal": {
+        "context": "cal",
+        "name": "Calibrated Spectrum",
+        "input": "spr⁎",
+        "usage": "Apply calibration steps such as bandpass correction, gain calibration, and rfi exclusion.",
+        "output": "cal⁎",
+    },
+    "mpr": {
+        "context": "mpr",
+        "name": "Mean Power Spectrum",
+        "input": "cal⁎",
+        "usage": "Apply QA steps such as SNR calculation, FWHM estimation, and dynamic range calculation.",
+        "output": "mpr⁎",
+    },
+}
+
+CONTEXT_ORDER = ["spr", "cal", "mpr"]
 
 class ProcessingStep:
     """
     Base class for all processing steps in a processing pipeline.
     Each step should implement the process method.
     """
+
     def __init__(self, config: StepConfig = None):
 
         if config is None or not isinstance(config, StepConfig):
@@ -25,6 +56,14 @@ class ProcessingStep:
         Override this method in subclasses.
         """
         raise NotImplementedError("process() must be implemented by subclasses.")
+
+    @classmethod
+    def describe(cls) -> str:
+        """
+        Return a high-level description of what the processing step does.
+        Subclasses should override this with a user-facing summary.
+        """
+        return f"{cls.__name__}: No description available."
 
 class ProcessingPipeline:
     """
@@ -43,19 +82,20 @@ class ProcessingPipeline:
         # Time each step and log a warning if it takes longer than a certain threshold (e.g. 100ms)
         for step in self.steps:
             
-            step_pipeline = step.config.params.get("pipeline", "unknown")  # Get the pipeline name from the step config for logging
-            context_pipeline = context.get("pipeline", "unknown") if isinstance(context, dict) else "unknown"
+            step_context = step.config.params.get("context", "unknown step context")  
+            pipeline_context = context.get("pipeline", "unknown pipeline context") if isinstance(context, dict) else "non-dict context"
             
-            if step_pipeline == context_pipeline:
+            # Apply the step only if its context matches the pipeline context. 
+            if step_context == pipeline_context:
 
                 start_time = time.time()
                 signal = step.process(context=context, signal=signal)
                 elapsed = time.time() - start_time
 
                 if elapsed >= 0.1:  # Log a warning if processing takes longer than 100ms
-                    logger.warning(f"Processing step {step.__class__.__name__} in pipeline '{step_pipeline}' took {elapsed*1000:.2f} milliseconds!")
+                    logger.warning(f"Processing step {step.__class__.__name__} in pipeline '{pipeline_context}' took {elapsed*1000:.2f} milliseconds!")
                 else:
-                    logger.debug(f"Processing step {step.__class__.__name__} in pipeline '{step_pipeline}' took {elapsed*1000:.2f} milliseconds.")
+                    logger.debug(f"Processing step {step.__class__.__name__} in pipeline '{pipeline_context}' took {elapsed*1000:.2f} milliseconds.")
 
         return signal
 
@@ -66,7 +106,7 @@ class ProcessingPipelineFactory:
     def __init__(self, pipeline_config: PipelineConfig):
         self.pipeline_config = pipeline_config
 
-    def get_steps_for_dig(self, scan: "Scan" = None, scan_q: Queue = None, cal_q: Queue = None) -> List[ProcessingStep]:
+    def get_steps_for_dig(self, scan: "Scan" = None, sky_q: Queue = None, cal_q: Queue = None) -> List[ProcessingStep]:
         """ 
         Get the list of ProcessingStep instances for the given digitiser ID based on the pipeline configuration.
         If there are no specific steps for the dig_id, it will fall back to the 'default' steps.
@@ -74,41 +114,106 @@ class ProcessingPipelineFactory:
         step_configs = self.pipeline_config.get_steps(scan.scan_model.dig_id)
 
         for config in step_configs:
-            config.params['scan']   = scan      # The scan that the pipeline will process
-            config.params['scan_q'] = scan_q    # Pipeline steps are provided access to the scan queue if needed
-            config.params['cal_q']  = cal_q     # Pipeline steps are provided access to the calibration queue if needed
+            config.params['scan']   = scan    # The scan that the pipeline will process
+            config.params['sky_q'] = sky_q    # Pipeline steps are provided access to the sky queue if needed
+            config.params['cal_q']  = cal_q   # Pipeline steps are provided access to the calibration queue if needed
 
         return [self.instantiate_step(config) for config in step_configs]
+
+    def get_step_class(self, step_type: StepType):
+        """
+        Resolve the ProcessingStep subclass for a given StepType or custom registry key.
+        """
+        step_key = step_type.name.lower() if isinstance(step_type, StepType) else str(step_type).strip().lower()
+
+        ctor = registry_resolve(PIPELINE_STEP_NAMESPACE, step_key)
+        if ctor is not None:
+            return ctor
+
+        # Import step classes here to avoid circular imports, then register built-ins.
+        from sdp.pipeline.steps.nop import Nop
+        from sdp.pipeline.steps.dc_spike import DCSpike
+        from sdp.pipeline.steps.load import LoadCal
+        from sdp.pipeline.steps.gain import GainCal
+        from sdp.pipeline.steps.tsys import TsysCal
+        from sdp.pipeline.steps.rfi import RFIFlag
+        from sdp.pipeline.steps.qa import QA
+
+        builtin_steps = {
+            StepType.NOP.name.lower(): Nop,
+            StepType.DC_SPIKE.name.lower(): DCSpike,
+            StepType.LOAD.name.lower(): LoadCal,
+            StepType.GAIN_CAL.name.lower(): GainCal,
+            StepType.TSYS_CAL.name.lower(): TsysCal,
+            StepType.RFI_FLAG.name.lower(): RFIFlag,
+            StepType.QA.name.lower(): QA,
+        }
+        for name, ctor in builtin_steps.items():
+            if registry_get(PIPELINE_STEP_NAMESPACE, name) is None:
+                registry_register(PIPELINE_STEP_NAMESPACE, name, ctor)
+
+        ctor = registry_get(PIPELINE_STEP_NAMESPACE, step_key)
+        if ctor is not None:
+            return ctor
+
+        raise KeyError(f"Unknown pipeline step '{step_key}'")
+
+    def describe_step(self, config: StepConfig) -> str:
+        """
+        Return the high-level description for a configured processing step.
+        """
+        return self.get_step_class(config.step).describe()
+
+    def describe_steps_for_dig(self, dig_id: str) -> List[dict]:
+        """
+        Return the configured steps and descriptions for a digitiser ID.
+        """
+        return [
+            {
+                "step": config.step,
+                "params": config.params,
+                "description": self.describe_step(config),
+            }
+            for config in self.pipeline_config.get_steps(dig_id)
+        ]
+
+    def describe_contexts(self) -> List[dict]:
+        """
+        Return the unique contexts used across all steps in the pipeline configuration
+        along with the configured context metadata.
+        """
+        contexts = set()
+        for step_configs in self.pipeline_config.steps_map.values():
+            for config in step_configs:
+                context = config.params.get("context")
+                if context:
+                    contexts.add(context)
+        ordered_contexts = [context for context in CONTEXT_ORDER if context in contexts]
+        ordered_contexts.extend(sorted(context for context in contexts if context not in CONTEXT_ORDER))
+
+        described_contexts = []
+        for context in ordered_contexts:
+            context_info = CONTEXT_INFO.get(context, {})
+            described_contexts.append({
+                "context": context,
+                "name": context_info.get("name", ""),
+                "input": context_info.get("input", ""),
+                "usage": context_info.get("usage", ""),
+                "output": context_info.get("output", ""),
+            })
+        return described_contexts
 
     def instantiate_step(self, config: StepConfig) -> ProcessingStep:
         """
         Instantiate a processing step based on its StepConfig.
         cfg is a StepConfig instance.
         """
-        # Import step classes here to avoid circular imports
-        from sdp.pipeline.steps.nop      import Nop
-        from sdp.pipeline.steps.dc_spike import DCSpike
-        from sdp.pipeline.steps.load     import LoadCal
-        from sdp.pipeline.steps.gain     import GainCal
-        from sdp.pipeline.steps.tsys     import TsysCal
-        from sdp.pipeline.steps.rfi      import RFIFlag
-        from sdp.pipeline.steps.qa       import QA
-        # Add more step imports as needed
-
-        step_map = {
-            StepType.NOP.value:      Nop,
-            StepType.DC_SPIKE.value: DCSpike,
-            StepType.LOAD.value:     LoadCal,
-            StepType.GAIN_CAL.value: GainCal,
-            StepType.TSYS_CAL.value: TsysCal,
-            StepType.RFI_FLAG.value: RFIFlag,
-            StepType.QA.value:       QA,
-            # Add more step types as needed
-        }
-
         # Return an instance of the step class (passing config to the constructor)
-        return step_map[config.step.value](config)
+        return self.get_step_class(config.step)(config)
 
-    def create_pipeline(self, scan: "Scan", scan_q: Queue, cal_q: Queue):
-        steps = self.get_steps_for_dig(scan, scan_q, cal_q)
+    def create_pipeline(self, scan: "Scan", sky_q: Queue, cal_q: Queue):
+        steps = self.get_steps_for_dig(scan, sky_q, cal_q)
         return ProcessingPipeline(steps)
+
+    def __str__(self):
+        return f"ProcessingPipelineFactory(pipeline_config={self.pipeline_config})"

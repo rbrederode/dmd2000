@@ -810,6 +810,19 @@ class DishDriver:
 
         # Update the desired AltAz in the dish model
         self.set_desired_altaz(altaz)
+
+        # If the dish is already at the desired AltAz within resolution, avoid entering SLEW.
+        current_alt = self.dsh_model.pointing_altaz.get("alt", None) if self.dsh_model.pointing_altaz else None
+        current_az = self.dsh_model.pointing_altaz.get("az", None) if self.dsh_model.pointing_altaz else None
+        if current_alt is not None and current_az is not None:
+            if abs(current_alt - altaz.alt.degree) <= self.get_resolution() and abs(current_az - altaz.az.degree) <= self.get_resolution():
+                logger.info(
+                    f"DishDriver {self.dsh_model.dsh_id} already on target at AltAz "
+                    f"(Alt: {current_alt}, Az: {current_az}); slew command not required."
+                )
+                self.dsh_model.pointing_state = PointingState.READY
+                self.dsh_model.last_update = datetime.now(timezone.utc)
+                return
   
         # Delegate to subclass implementation
         try:
@@ -851,8 +864,8 @@ class DishDriver:
             # Drift scan target
             alt = target.altaz.get("alt")
             az = target.altaz.get("az")
-            alt_q = alt if hasattr(alt, 'unit') else alt * u.deg
-            az_q = az if hasattr(az, 'unit') else az * u.deg
+            alt_q = alt if hasattr(alt, 'unit') else float(alt) * u.deg
+            az_q = az if hasattr(az, 'unit') else float(az) * u.deg
             desired_altaz = AltAz(obstime=time, location=self.location, alt=alt_q, az=az_q)
 
         elif target.pointing == PointingType.OFFSET_SCAN:
@@ -1181,9 +1194,8 @@ if __name__ == "__main__":
         latitude=53.187052, longitude=-2.256079, height=94.0,
         mode=DishMode.STANDBY_FP,
         pointing_state=PointingState.UNKNOWN,
-        feed=Feed.H3T_1420,
+        feed_type=Feed.H3T_1420,
         dig_id="dig001",
         capability=Capability.OPERATE_FULL,
         last_update=datetime.now(timezone.utc)
     )
-

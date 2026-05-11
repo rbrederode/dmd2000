@@ -32,6 +32,10 @@ class Nop(ProcessingStep):
         # ... apply load file logic using context parameters ...
         return signal
 
+    @classmethod
+    def describe(cls) -> str:
+        return "Pass the signal through unchanged without applying any processing."
+
 def main():
 
     # Example StepConfig for gain calibration

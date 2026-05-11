@@ -11,11 +11,12 @@
             "latitude": 53.187052,
             "longitude": -2.256079,
             "height": 94.0,
-            "feed": {
+            "feed_type": {
                 "_type": "enum.IntEnum",
                 "instance": "Feed",
                 "value": "H3T_1420"
             },
+            "feed_config": null,
             "dig_id": "dig001",
             "mode": {
                 "_type": "enum.IntEnum",
@@ -41,7 +42,7 @@
             },
             "driver_config": {
                 "_type": "MD01Config",
-                "host": "192.168.0.36",
+                "host": "192.168.0.35",
                 "port": 65000,
                 "stow_alt": 80.0,
                 "stow_az": 10.0,
@@ -69,11 +70,12 @@
             "latitude": 53.2421,
             "longitude": -2.3067,
             "height": 80.0,
-            "feed": {
+            "feed_type": {
                 "_type": "enum.IntEnum",
                 "instance": "Feed",
                 "value": "H3T_1420"
             },
+            "feed_config": null,
             "dig_id": "dig002",
             "mode": {
                 "_type": "enum.IntEnum",
@@ -106,7 +108,7 @@
                 "offset_alt": 0.0,
                 "offset_az": 0.0,
                 "min_alt": 1.0,
-                "max_alt": 89.0,
+                "max_alt": 90.0,
                 "close_enough": 0.1,
                 "last_update": {
                     "_type": "datetime",

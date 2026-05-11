@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import socket
+import time
 
 # Import google api tools
 from google.auth.transport.requests import Request
@@ -20,6 +21,7 @@ from models.comms import CommunicationStatus
 from models.ui import UIDriverType
 from ui.drivers.driver import UIDriver
 from ui.drivers.gsheets.gsheets_model import GSheetConfig
+from util.xbase import XSoftwareFailure
 from util.util import dict_flatten, dict_unflatten
 
 logger = logging.getLogger(__name__)
@@ -84,7 +86,17 @@ class GoogleSheetsDriver(UIDriver):
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
             else:
-                flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
+                credentials_file = "credentials.json"
+                try:
+                    flow = InstalledAppFlow.from_client_secrets_file(credentials_file, SCOPES)
+                except FileNotFoundError as e:
+                    cwd = os.getcwd()
+                    raise XSoftwareFailure(
+                        "Google Sheets Driver could not start because OAuth client credentials were not found. "
+                        f"Expected '{credentials_file}' in the current working directory: {cwd}. "
+                        "Place the Google API OAuth client secrets file there as 'credentials.json', "
+                        "or run Telescope Manager with '--headless true' to disable UI driver startup."
+                    ) from e
                 creds = flow.run_local_server(port=0)
             # Save the credentials for the next run
             with open("token.json", "w") as token:

@@ -18,12 +18,13 @@ from ipc import message
 from env import events
 from env.app_processor import AppProcessor
 from util.timer import Timer, TimerManager
+from util.util import resolve_default_host
 from util.xbase import XSoftwareFailure
 
 import logging
 logger = logging.getLogger(__name__)
 
-DEST_IP = socket.gethostbyname(socket.gethostname())
+DEFAULT_DEST_IP = "127.0.0.1"
 DEST_PORT = 50000
 
 MAX_BLOCK_SIZE = 65535   # Define a maximum block size for sending data (65,535 bytes to fit in 64KB packet)
@@ -50,7 +51,7 @@ class TCPClient:
         Events (connected, disconnected, data received) are added to a queue
         for further processing by the calling process. """
 
-    def __init__(self, description="TCP Client", queue=None, host=DEST_IP, port=DEST_PORT, max_block_size=MAX_BLOCK_SIZE):
+    def __init__(self, description="TCP Client", queue=None, host=None, port=DEST_PORT, max_block_size=MAX_BLOCK_SIZE):
         """Initialize the TCP client with the given host and port.
 
             Parameters
@@ -60,7 +61,7 @@ class TCPClient:
                 port: Port number """
     
         self.description = description
-        self.host = host
+        self.host = host if host is not None else resolve_default_host("TCP Client", fallback_host=DEFAULT_DEST_IP)
         self.port = port
         self.sel = selectors.DefaultSelector()
         

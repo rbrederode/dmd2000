@@ -2,6 +2,7 @@ import enum
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any
+import math
 from schema import Schema, And, Or, Use, SchemaError
 
 from models.app import AppModel
@@ -12,14 +13,22 @@ from util.xbase import XSoftwareFailure
 
 logger = logging.getLogger(__name__)
 
+class WeatherStationDriverType(enum.IntEnum):
+    ADS1115 = 1           # Anemometer driver based on the ADS1115 ADC
+    MODBUS = 2            # Weather station driver based on Modbus RTU over RS485/USB
+    UNKNOWN = 3
+
+# Backwards-compatible alias for callers that import DriverType from models.ws.
+DriverType = WeatherStationDriverType
+
 class WeatherData(BaseModel):
-    """A class representing weather data at a specific location and time."""
+    """A class representing weather data at a specific weather station (and location) and time."""
 
     schema = Schema({
         "_type": And(str, lambda v: v == "WeatherData"),
-        "obs_time": And(datetime, lambda v: isinstance(v, datetime)),               # Timestamp when the weather data was measured
         "ws_id": And(str, lambda v: isinstance(v, str)),                            # Weather station ID
 
+        "obs_time": And(datetime, lambda v: isinstance(v, datetime)),               # Timestamp when the weather data was measured
         "temperature": Or(None, And(float, lambda v: -100 <= v <= 100)),            # Temperature in Celsius
         "humidity": Or(None, And(float, lambda v: 0 <= v <= 100)),                  # Humidity in percentage
         "pressure": Or(None, And(float, lambda v: v >= 0)),                         # Pressure in hPa
@@ -68,6 +77,51 @@ class WeatherData(BaseModel):
             f"  wind_direction={self.wind_direction},\n  precipitation={self.precipitation},\n  dew_point={self.dew_point},\n  air_quality={self.air_quality},\n  uv_index={self.uv_index},\n" + \
             f"  cloud_cover={self.cloud_cover},\n  obs_time={self.obs_time.isoformat() if self.obs_time else None},\n  last_update={self.last_update.isoformat() if self.last_update else None})"
 
+class WeatherSummary(BaseModel):
+    """A compact rolling weather summary for a single station."""
+
+    schema = Schema({
+        "_type": And(str, lambda v: v == "WeatherSummary"),
+        "ws_id": And(str, lambda v: isinstance(v, str)),
+        "sample_secs": And(int, lambda v: v >= 0),
+        "sample_count": And(int, lambda v: v >= 0),
+        "wind_avg": And(float, lambda v: v >= 0.0),
+        "wind_rms": And(float, lambda v: v >= 0.0),
+        "wind_max": And(float, lambda v: v >= 0.0),
+        "last_sample_time": Or(None, And(datetime, lambda v: isinstance(v, datetime))),
+        "last_update": And(datetime, lambda v: isinstance(v, datetime)),
+    })
+
+    allowed_transitions = {}
+
+    def __init__(self, **kwargs):
+
+        defaults = {
+            "_type": "WeatherSummary",
+            "ws_id": "<undefined>",
+            "sample_secs": 0,
+            "sample_count": 0,
+            "wind_avg": 0.0,
+            "wind_rms": 0.0,
+            "wind_max": 0.0,
+            "last_sample_time": None,
+            "last_update": datetime.now(timezone.utc),
+        }
+
+        for key, value in defaults.items():
+            if key not in kwargs:
+                kwargs.setdefault(key, value)
+
+        super().__init__(**kwargs)
+
+    def __str__(self):
+        return (
+            f"WeatherSummary(ws_id={self.ws_id}, sample_secs={self.sample_secs}, sample_count={self.sample_count}, "
+            f"wind_avg={self.wind_avg:.3f}, wind_rms={self.wind_rms:.3f}, wind_max={self.wind_max:.3f}, "
+            f"last_sample_time={self.last_sample_time.isoformat() if self.last_sample_time else None}, "
+            f"last_update={self.last_update.isoformat()})"
+        )
+
 class WeatherStation(BaseModel):
     """A class representing a weather station."""
 
@@ -112,12 +166,20 @@ class WeatherStationList(BaseModel):
         "weather_enabled": And(bool, lambda v: isinstance(v, bool)),       # Flag to enable or disable weather monitoring and alarm processing for the dishes
         "weather_stations": And(list, lambda v: isinstance(v, list)),      # List of WeatherStation objects
         "weather_data": And(list, lambda v: isinstance(v, list)),          # List of WeatherData objects
+        "weather_summaries": And(list, lambda v: isinstance(v, list)),     # Compact rolling weather summaries, one per weather station
         "threshold_timeout": And(int, lambda v: v >= 0),                   # Maximum age of weather data in seconds to keep in the list
+        "retention_period": And(int, lambda v: v >= 0),                    # Maximum age of weather data in seconds to retain locally
+        "summary_window": And(int, lambda v: v >= 0),                      # Rolling window in seconds for compact weather summaries
         "threshold_wind_avg": And(float, lambda v: v >= 0),                # Threshold for high wind avg in m/s to trigger an alarm
         "threshold_wind_gust": And(float, lambda v: v >= 0),               # Threshold for high wind gust in m/s to trigger an alarm
         "threshold_wind_count": And(int, lambda v: v >= 0),                # Number of wind gust samples above threshold to trigger an alarm
         "threshold_precipitation": And(float, lambda v: v >= 0),           # Threshold for heavy precipitation in mm to trigger an alarm
         "trigger_dt": Or(None, And(datetime, lambda v: isinstance(v, datetime))),  # Timestamp when the last alarm was triggered
+        "last_mth_alarm_count": And(int, lambda v: v >= 0),                # Number of alarm activations over the trailing month
+        "last_mth_alarm_activated": And(float, lambda v: v >= 0),          # Minutes alarm was active over the trailing month
+        "last_mth_alarm_deactivated": And(float, lambda v: v >= 0),        # Minutes alarm was clear over the trailing month
+        "last_mth_alarm_mtta": And(float, lambda v: v >= 0),               # Mean minutes between alarm activations over the trailing month
+        "last_mth_alarm_mttr": And(float, lambda v: v >= 0),               # Mean minutes to recovery over the trailing month
         "created_dt": And(datetime, lambda v: isinstance(v, datetime)),    # Timestamp when the weather station list was created
         "last_update": And(datetime, lambda v: isinstance(v, datetime)),
     })
@@ -133,12 +195,20 @@ class WeatherStationList(BaseModel):
             "weather_enabled": True,                    # Default to True to enable weather monitoring and alarm processing
             "weather_stations": [],  
             "weather_data": [],
+            "weather_summaries": [],
             "threshold_timeout": 30,                    # Maximum age of weather data in seconds to keep in the list
+            "retention_period": 300,                   # Retain 5 minutes of weather data locally for summaries and displays
+            "summary_window": 60,                      # Summaries cover the last 60 seconds by default
             "threshold_wind_gust": 30.0,                # Threshold for high wind gust in m/s to trigger an alarm
             "threshold_wind_avg": 20.0,                 # Threshold for high wind avg in m/s to trigger an alarm
             "threshold_precipitation": 10.0,            # Threshold for heavy precipitation in mm to trigger an alarm
             "threshold_wind_count": 3,                  # Number of wind samples above threshold to trigger an alarm
             "trigger_dt": None,                         # Timestamp when the last alarm was triggered
+            "last_mth_alarm_count": 0,
+            "last_mth_alarm_activated": 0.0,
+            "last_mth_alarm_deactivated": 0.0,
+            "last_mth_alarm_mtta": 0.0,
+            "last_mth_alarm_mttr": 0.0,
             "created_dt": datetime.now(timezone.utc),
             "last_update": datetime.now(timezone.utc),
         }
@@ -151,8 +221,18 @@ class WeatherStationList(BaseModel):
         super().__init__(**kwargs)
 
     def __str__(self):
-        weather_str = ",\n\n  ".join(str(wd) for wd in self.weather_data)
-        return f"WeatherStationList (list_id={self.list_id}, len={len(self.weather_data)}, threshold_timeout={self.threshold_timeout}, threshold_wind_gust={self.threshold_wind_gust}, threshold_wind_avg={self.threshold_wind_avg}, threshold_precipitation={self.threshold_precipitation}, threshold_wind_count={self.threshold_wind_count}, last_update={self.last_update.isoformat()}, trigger_dt={self.trigger_dt.isoformat() if self.trigger_dt else None}): [\n  {weather_str}\n]"
+        summary_str = ",\n\n  ".join(str(ws) for ws in self.weather_summaries)
+        return (
+            f"WeatherStationList (list_id={self.list_id}, len={len(self.weather_data)}, "
+            f"summaries={len(self.weather_summaries)}, threshold_timeout={self.threshold_timeout}, "
+            f"retention_period={self.retention_period}, summary_window={self.summary_window}, "
+            f"threshold_wind_gust={self.threshold_wind_gust}, threshold_wind_avg={self.threshold_wind_avg}, "
+            f"threshold_precipitation={self.threshold_precipitation}, threshold_wind_count={self.threshold_wind_count}, "
+            f"last_mth_alarm_count={self.last_mth_alarm_count}, last_mth_alarm_activated={self.last_mth_alarm_activated}, "
+            f"last_mth_alarm_deactivated={self.last_mth_alarm_deactivated}, last_mth_alarm_mtta={self.last_mth_alarm_mtta}, "
+            f"last_mth_alarm_mttr={self.last_mth_alarm_mttr}, last_update={self.last_update.isoformat()}, "
+            f"trigger_dt={self.trigger_dt.isoformat() if self.trigger_dt else None}): [\n  {summary_str}\n]"
+        )
 
     def is_ws_monitoring_enabled(self) -> bool:
         """
@@ -169,15 +249,18 @@ class WeatherStationList(BaseModel):
 
     def get_station_ids(self) -> List[str]:
         """Return sorted weather-station ids currently present in the rolling weather list."""
-        return sorted({wd.ws_id for wd in self.weather_data if getattr(wd, "ws_id", None) is not None})
+        station_ids = {wd.ws_id for wd in self.weather_data if getattr(wd, "ws_id", None) is not None}
+        station_ids.update({ws.ws_id for ws in self.weather_stations if getattr(ws, "ws_id", None) is not None})
+        return sorted(station_ids)
 
-    def get_station_weather(self, ws_id: str, now: datetime = None) -> List[WeatherData]:
-        """Return recent samples for a single weather station within the timeout window."""
+    def get_station_weather(self, ws_id: str, now: datetime = None, window_sec: int = None) -> List[WeatherData]:
+        """Return recent samples for a single weather station within the requested window."""
         if ws_id is None:
             return []
 
         now = datetime.now(timezone.utc) if now is None else now
-        cutoff = now - timedelta(seconds=self.threshold_timeout)
+        window_sec = self.threshold_timeout if window_sec is None else window_sec
+        cutoff = now - timedelta(seconds=window_sec)
 
         return sorted(
             [
@@ -232,7 +315,6 @@ class WeatherStationList(BaseModel):
         alarm_triggered = any([
             timeout_triggered,
             wind_avg_triggered,
-            gust_triggered,
             gust_count_triggered,
             precipitation_triggered,
         ])
@@ -252,6 +334,74 @@ class WeatherStationList(BaseModel):
             "precipitation_triggered": precipitation_triggered,
             "alarm_triggered": alarm_triggered,
         }
+
+    def get_weather_summary(self, ws_id: str, sample_secs: int = None, now: datetime = None) -> WeatherSummary:
+        """Return a compact rolling weather summary for a single station."""
+        now = datetime.now(timezone.utc) if now is None else now
+        sample_secs = self.summary_window if sample_secs is None else sample_secs
+        station_samples = self.get_station_weather(ws_id=ws_id, now=now, window_sec=sample_secs)
+
+        wind_speeds = [wd.wind_speed for wd in station_samples if wd.wind_speed is not None]
+        latest_sample = station_samples[-1] if station_samples else None
+
+        wind_avg = (sum(wind_speeds) / len(wind_speeds)) if wind_speeds else 0.0
+        wind_rms = math.sqrt(sum(speed * speed for speed in wind_speeds) / len(wind_speeds)) if wind_speeds else 0.0
+        wind_max = max(wind_speeds) if wind_speeds else 0.0
+
+        return WeatherSummary(
+            ws_id=ws_id,
+            sample_secs=sample_secs,
+            sample_count=len(wind_speeds),
+            wind_avg=float(wind_avg),
+            wind_rms=float(wind_rms),
+            wind_max=float(wind_max),
+            last_sample_time=latest_sample.obs_time if latest_sample is not None else None,
+            last_update=now,
+        )
+
+    def get_weather_summaries(self, sample_secs: int = None, now: datetime = None) -> List[WeatherSummary]:
+        """Return compact rolling weather summaries for all known stations."""
+        now = datetime.now(timezone.utc) if now is None else now
+        sample_secs = self.summary_window if sample_secs is None else sample_secs
+        return [self.get_weather_summary(ws_id=ws_id, sample_secs=sample_secs, now=now) for ws_id in self.get_station_ids()]
+
+    def get_summary_by_ws_id(self, ws_id: str) -> WeatherSummary:
+        """Retrieve a compact weather summary by station id."""
+        for summary in self.weather_summaries:
+            if summary.ws_id == ws_id:
+                return summary
+        return None
+
+    def format_alarm_metrics(self, ws_id: str = None, now: datetime = None) -> str:
+        """Return alarm metrics as a stable key=value string for logging."""
+        metrics = self.get_alarm_metrics(ws_id=ws_id, now=now)
+        latest_sample = metrics.get("latest_sample")
+        latest_ws_id = getattr(latest_sample, "ws_id", None) if latest_sample is not None else None
+        latest_obs_time = latest_sample.obs_time.isoformat() if latest_sample is not None and latest_sample.obs_time is not None else None
+
+        parts = [
+            f"ws_id={ws_id if ws_id is not None else 'all'}",
+            f"sample_count={metrics.get('sample_count', 0)}",
+            f"latest_ws_id={latest_ws_id}",
+            f"latest_obs_time={latest_obs_time}",
+            f"latest_age_sec={metrics.get('latest_age_sec')}",
+            f"avg_wind={metrics.get('avg_wind', 0.0):.3f}",
+            f"max_wind={metrics.get('max_wind', 0.0):.3f}",
+            f"gust_count={metrics.get('gust_count', 0)}",
+            f"avg_precipitation={metrics.get('avg_precipitation', 0.0):.3f}",
+            f"threshold_timeout={self.threshold_timeout}",
+            f"threshold_wind_avg={self.threshold_wind_avg:.3f}",
+            f"threshold_wind_gust={self.threshold_wind_gust:.3f}",
+            f"threshold_wind_count={self.threshold_wind_count}",
+            f"threshold_precipitation={self.threshold_precipitation:.3f}",
+            f"timeout_triggered={metrics.get('timeout_triggered', False)}",
+            f"wind_avg_triggered={metrics.get('wind_avg_triggered', False)}",
+            f"gust_triggered={metrics.get('gust_triggered', False)}",
+            f"gust_count_triggered={metrics.get('gust_count_triggered', False)}",
+            f"precipitation_triggered={metrics.get('precipitation_triggered', False)}",
+            f"alarm_triggered={metrics.get('alarm_triggered', False)}",
+        ]
+        return "\n".join(f"  {part}" for part in parts)
     
     def alarm(self) -> bool:
         """
@@ -270,8 +420,6 @@ class WeatherStationList(BaseModel):
             self.created_dt = datetime.now(timezone.utc) 
 
         metrics = self.get_alarm_metrics()
-
-        self.trigger_dt = datetime.now(timezone.utc) if metrics["alarm_triggered"] else self.trigger_dt    
 
         logger.debug(
             f"WeatherStationList with {metrics['sample_count']} samples: "
@@ -306,7 +454,7 @@ class WeatherStationList(BaseModel):
         elif metrics["gust_triggered"]:
             logger.warning(
                 f"WeatherStationList registered {metrics['gust_count']} wind gust samples exceeding gust threshold of "
-                f"{self.threshold_wind_gust:.2f} m/s, but below count threshold of {self.threshold_wind_count} samples to trigger alarm."
+                f"{self.threshold_wind_gust:.2f} m/s, but not exceeding count threshold of {self.threshold_wind_count} samples to trigger alarm."
             )
         
         if metrics["precipitation_triggered"]:
@@ -329,10 +477,11 @@ class WeatherStationList(BaseModel):
         self.weather_data.append(weather_data)
         
         now = datetime.now(timezone.utc)
-        cutoff = now - timedelta(seconds=self.threshold_timeout)
+        cutoff = now - timedelta(seconds=self.retention_period)
         self.weather_data = [wd for wd in self.weather_data if wd.obs_time >= cutoff]
+        self.weather_summaries = self.get_weather_summaries(now=now)
 
-        self.last_update = datetime.now(timezone.utc)
+        self.last_update = now
 
 class WeatherStationModel(BaseModel):
     """A class representing the weather station model."""
@@ -344,6 +493,12 @@ class WeatherStationModel(BaseModel):
         "tm_connected": And(CommunicationStatus, lambda v: isinstance(v, CommunicationStatus)),
         "dm_connected": And(CommunicationStatus, lambda v: isinstance(v, CommunicationStatus)),
         "sim_mode": And(str, lambda v: v in ["off", "calm", "windy", "stormy"]),
+        "driver_type": And(WeatherStationDriverType, lambda v: isinstance(v, WeatherStationDriverType)),  # Weather station driver implementation
+        "driver_config": Or(None, lambda v: v is None or isinstance(v, BaseModel)),
+        "driver_poll_period": Or(None, And(int, lambda v: v > 0)),                  # Driver poll period in milliseconds
+        "driver_failures": And(int, lambda v: v >= 0),                              # Count of consecutive driver read failures
+        "last_err_msg": Or(None, And(str, lambda v: isinstance(v, str))),           # Last weather station error message
+        "last_err_dt": Or(None, And(datetime, lambda v: isinstance(v, datetime))),  # Last weather station error datetime
         "last_update": And(datetime, lambda v: isinstance(v, datetime)),
     })
 
@@ -368,6 +523,12 @@ class WeatherStationModel(BaseModel):
             "tm_connected": CommunicationStatus.NOT_ESTABLISHED,
             "dm_connected": CommunicationStatus.NOT_ESTABLISHED,
             "sim_mode": "off",
+            "driver_type": WeatherStationDriverType.UNKNOWN,
+            "driver_config": None,
+            "driver_poll_period": 1000,
+            "driver_failures": 0,
+            "last_err_msg": None,
+            "last_err_dt": None,
             "last_update": datetime.now(timezone.utc)
         }
 
@@ -377,6 +538,23 @@ class WeatherStationModel(BaseModel):
                 kwargs.setdefault(key, value)
 
         super().__init__(**kwargs)
+
+    def increment_failures(self):
+        """Increment the consecutive weather station driver failure count."""
+        self.driver_failures += 1
+        self.last_update = datetime.now(timezone.utc)
+
+    def reset_failures(self):
+        """Reset the consecutive weather station driver failure count."""
+        self.driver_failures = 0
+        self.last_update = datetime.now(timezone.utc)
+
+    def set_last_err(self, err_msg: str, err_dt: datetime = None) -> str:
+        """Record the latest weather station driver error."""
+        self.last_err_msg = err_msg
+        self.last_err_dt = err_dt if err_dt is not None else datetime.now(timezone.utc)
+        self.last_update = self.last_err_dt
+        return err_msg
 
 if __name__ == "__main__":
 

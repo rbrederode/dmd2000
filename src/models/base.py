@@ -199,7 +199,15 @@ class BaseModel:
         from astropy.time import Time
         from astroplan import Observer
         import astropy.units as u
+        import numpy as np
 
+        # NumPy scalar -> native Python scalar for JSON compatibility
+        if isinstance(v, np.integer):
+            return int(v)
+        if isinstance(v, np.floating):
+            return float(v)
+        if isinstance(v, np.bool_):
+            return bool(v)
         # enum.IntEnum -> name and enum class
         if isinstance(v, enum.IntEnum):
             return {"_type": "enum.IntEnum", "instance": type(v).__name__, "value": v.name}
@@ -224,6 +232,8 @@ class BaseModel:
             return [BaseModel._serialise(x) for x in v]
         if isinstance(v, tuple):
             return tuple(BaseModel._serialise(x) for x in v)
+        if isinstance(v, np.ndarray):
+            return [BaseModel._serialise(x) for x in v.tolist()]
         if isinstance(v, SkyCoord):
             # Check the frame type to determine which attributes to serialize
             if hasattr(v, 'ra') and hasattr(v, 'dec'):
@@ -264,13 +274,15 @@ class BaseModel:
         from astropy.time import Time
         from astroplan import Observer
         import astropy.units as u
+        import numpy as np
 
         from models.app import AppModel
         from models.comms import CommunicationStatus, InterfaceType
-        from models.dig import DigitiserList, DigitiserModel
-        from models.dsh import DishMode, DishModel, DishList, DishManagerModel, Feed, PointingState, Capability, DriverType, PECModel
+        from models.dig import BandpassFilterType, DigitiserList, DigitiserModel
+        from models.dsh import DishMode, DishModel, DishList, DishManagerModel, Feed, PointingState, Capability, DriverType as DishDriverType, PECModel
         from models.health import HealthState
-        from models.obs import ObsState, Observation
+        from models.launch import LaunchModel, LaunchConfigModel
+        from models.obs import ObsState, ObsModel
         from models.oda import ObsList, ScanStore, ODAModel
         from models.oet import OETModel
         from models.pipeline import StepConfig, StepType, PipelineConfig
@@ -281,8 +293,17 @@ class BaseModel:
         from models.target import TargetModel, PointingType, OffsetScan, FivePointScan, TargetConfig, TargetScanSet
         from models.tm import TelescopeManagerModel, ResourceAllocations, Allocation, AllocationState
         from models.ui import UIDriverType, UIDriver
-        from models.ws import WeatherData, WeatherStation, WeatherStationList, WeatherStationModel
+        from models.ws import WeatherData, WeatherStation, WeatherSummary, WeatherStationList, WeatherStationModel, WeatherStationDriverType
+        from ws.drivers.ads1115 import ADS1115Config
+        from ws.drivers.modbus import ModbusConfig
         
+        if isinstance(v, np.integer):
+            return int(v)
+        if isinstance(v, np.floating):
+            return float(v)
+        if isinstance(v, np.bool_):
+            return bool(v)
+
         if isinstance(v, dict) and "_type" in v:
 
             model_type = v["_type"]
@@ -297,6 +318,9 @@ class BaseModel:
             elif model_type == "AppModel":
                 deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
                 return AppModel(**deserialized_fields)
+            elif model_type == "ADS1115Config":
+                deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
+                return ADS1115Config(**deserialized_fields)
             elif model_type == "datetime":
                 if isinstance(v["value"], str):
                     return datetime.fromisoformat(v["value"])  
@@ -321,13 +345,20 @@ class BaseModel:
                 enum_class_name = v["instance"]
                 enum_value_name = v["value"]
 
+                if enum_class_name == "DriverType":
+                    if enum_value_name in DishDriverType.__members__:
+                        return DishDriverType[enum_value_name]
+                    if enum_value_name in WeatherStationDriverType.__members__:
+                        return WeatherStationDriverType[enum_value_name]
+
                 # Map class name to actual enum class
                 enum_class = {
                     "AllocationState": AllocationState,
+                    "BandpassFilterType": BandpassFilterType,
                     "Capability": Capability,
                     "CommunicationStatus": CommunicationStatus,
                     "DishMode": DishMode,
-                    "DriverType": DriverType,
+                    "DriverType": DishDriverType,
                     "Feed": Feed,
                     "HealthState": HealthState,
                     "InterfaceType": InterfaceType,
@@ -338,6 +369,7 @@ class BaseModel:
                     "ScanType": ScanType,
                     "StepType": StepType,
                     "UIDriverType": UIDriverType,
+                    "WeatherStationDriverType": WeatherStationDriverType,
                 }.get(enum_class_name)
                 if enum_class is not None:
                     return enum_class[enum_value_name]
@@ -367,12 +399,26 @@ class BaseModel:
                 from dsh.drivers.md01.md01_model import MD01Config
                 deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
                 return MD01Config(**deserialized_fields)
+            elif model_type == "ModbusConfig":
+                deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
+                return ModbusConfig(**deserialized_fields)
+            elif model_type == "LaunchModel":
+                deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
+                return LaunchModel(**deserialized_fields)
+            elif model_type == "LaunchConfigModel":
+                deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
+                return LaunchConfigModel(**deserialized_fields)
+            elif model_type == "DriftConfig":
+                # Import lazily to avoid package import errors when optional drivers are not present
+                from dsh.drivers.drift.model import DriftConfig
+                deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
+                return DriftConfig(**deserialized_fields)
             elif model_type == "Observer":
                 location = BaseModel._deserialise(v["location"])
                 return Observer(name=v["name"], location=location)
-            elif model_type == "Observation":
+            elif model_type == "Observation" or model_type == "ObsModel":
                 deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
-                return Observation(**deserialized_fields)
+                return ObsModel(**deserialized_fields)
             elif model_type == "ObsList":
                 deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
                 return ObsList(**deserialized_fields)
@@ -409,6 +455,10 @@ class BaseModel:
             elif model_type == "ScanStore":
                 deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
                 return ScanStore(**deserialized_fields)
+            elif model_type == "SAWbirdH1_BareBones":
+                from dig.filters.sawbird import SAWbirdH1_BareBones
+                deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
+                return SAWbirdH1_BareBones(**deserialized_fields)
             elif model_type == "ScienceDataProcessorModel":
                 deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
                 return ScienceDataProcessorModel(**deserialized_fields)
@@ -463,6 +513,9 @@ class BaseModel:
             elif model_type == "WeatherStation":
                 deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
                 return WeatherStation(**deserialized_fields)
+            elif model_type == "WeatherSummary":
+                deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
+                return WeatherSummary(**deserialized_fields)
             elif model_type == "WeatherStationModel":
                 deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
                 return WeatherStationModel(**deserialized_fields)

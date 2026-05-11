@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from sdp.scan import Scan
@@ -12,19 +12,13 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.gridspec import GridSpec
+from matplotlib.ticker import MaxNLocator
 
 from util import gen_file_prefix
+from util.matplotlib_window import get_figure_visibility
 
 # Disable automatic window raising (backend-specific)
 mpl.rcParams["figure.raise_window"] = False
-
-try:
-    from AppKit import NSApplication
-
-    HAS_APPKIT = True
-except ImportError:
-    HAS_APPKIT = False
-    print("AppKit not available. Install pyobjc: pip install pyobjc")
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +85,12 @@ class SignalDisplay:
         self.sig[4] = self.fig.add_subplot(self.gs1[1])     # Total power timeline
 
         self.fig.subplots_adjust(top=0.78)
+        # Show the GUI window before visibility checks can suppress first refreshes.
+        try:
+            self.fig.show()
+            self.fig.canvas.flush_events()
+        except Exception as exc:
+            logger.debug(f"Signal display for {self.dig_id} could not show figure window: {exc}")
 
     def _close_figure(self):
         """Close the figure window if it exists."""
@@ -108,25 +108,12 @@ class SignalDisplay:
 
         self._reset_artist_refs()
 
-    def is_visible_figure(self) -> bool:
+    def is_visible_figure(self) -> Optional[bool]:
         """ Return whether this signal display figure is visible or hidden. 
             A figure can be active but not visible if another figure window is in focus.
             The signal display is considered visible if its figure window is the key window in the OS
         """
-        if not HAS_APPKIT or self.fig is None:
-            logger.warning(
-                f"Signal display checking whether figure for {self.dig_id} is visible but "
-                + ("AppKit not available" if not HAS_APPKIT else "figure is None")
-            )
-            return None
-
-        key_window = NSApplication.sharedApplication().keyWindow()
-        if key_window is None:
-            return None
-
-        key_window_title = key_window.title()
-        fig_title = self.fig.canvas.manager.get_window_title()
-        return fig_title == key_window_title
+        return get_figure_visibility(self.fig)
 
     def get_is_active(self) -> bool:
         """Return whether this signal display is active and eligible to update."""
@@ -151,6 +138,14 @@ class SignalDisplay:
         self.init_waterfall_axes(self.sig[2])
         self.init_saturation_axes(self.sig[3])
         self.init_total_power_axes(self.sig[4], self.scan.scan_model.duration)
+
+    def _is_integrated_scan(self) -> bool:
+        """Return whether the current scan is a manufactured integrated scan."""
+        return (
+            self.scan is not None
+            and self.scan.scan_model is not None
+            and bool(getattr(self.scan.scan_model, "synthesised", False))
+        )
 
     def _create_scan_artists(self):
         """Create persistent artists for the current scan so later updates can mutate them in place."""
@@ -185,23 +180,27 @@ class SignalDisplay:
         self.mean_tpwr_line.set_ydata([np.nan, np.nan])
         self.sig[4].legend(loc="lower right")
 
-    def set_scan(self, scan: Scan, load: Scan):
-        """Bind a sky scan and matching load scan to this display and initialise all plot artists.
+    def set_scan(self, scan: Scan, load: Scan | None):
+        """Bind a scan and optional matching load scan to this display and initialise all plot artists.
 
         Parameters:
-            scan: The sky Scan instance to display.
-            load: The equivalent load/baseline Scan to overlay on the plots.
+            scan: The Scan instance to display.
+            load: Optional equivalent load/baseline Scan to overlay on the plots.
         """
         if not self.is_active:
             self._close_figure()    # Close the figure if it exists
             return
 
-        if scan is None or load is None:
-            logger.warning(f"Signal display for {self.dig_id} cannot set_scan when {'scan' if scan is None else 'baseline'} is None")
+        if scan is None:
+            logger.warning(f"Signal display for {self.dig_id} cannot set_scan when scan is None")
             return
 
-        if scan.scan_model.dig_id != self.dig_id or load.scan_model.dig_id != self.dig_id:
-            logger.warning(f"Signal display for {self.dig_id} cannot set_scan for scan or baseline from different dig_id {scan.scan_model.dig_id}")
+        if scan.scan_model.dig_id != self.dig_id:
+            logger.warning(f"Signal display for {self.dig_id} cannot set_scan for scan from different dig_id {scan.scan_model.dig_id}")
+            return
+
+        if load is not None and load.scan_model.dig_id != self.dig_id:
+            logger.warning(f"Signal display for {self.dig_id} cannot set_scan for baseline from different dig_id {load.scan_model.dig_id}")
             return
 
         self.scan = scan
@@ -234,17 +233,29 @@ class SignalDisplay:
         """Return the Scan currently associated with this display."""
         return self.scan
 
+    def set_load(self, load: Scan | None):
+        """Update the optional baseline/load scan for the currently displayed sky scan."""
+        if load is not None and load.scan_model.dig_id != self.dig_id:
+            logger.warning(f"Signal display for {self.dig_id} cannot set_load for baseline from different dig_id {load.scan_model.dig_id}")
+            return
+
+        self.load = load
+
     def _update_spectrum_axes(self, l_sec: int):
         """Update the SPR, BSL, and CAL line plots for the latest loaded second.
 
         Parameters:
             l_sec: The latest loaded second number for the current scan, starting at 1.
         """
-        label = "Load (BSL)"
-
         self.spr_line.set_data(self.freq_axis, self.scan.spr[l_sec - 1, :])
-        self.load_line.set_data(self.freq_axis, self.load.mpr)
-        self.load_line.set_label(label)
+        if self.load is not None and self.load.mpr is not None:
+            self.load_line.set_data(self.freq_axis, self.load.mpr)
+            self.load_line.set_label("Load (BSL)")
+            self.load_line.set_visible(True)
+        else:
+            self.load_line.set_data([], [])
+            self.load_line.set_label("_nolegend_")
+            self.load_line.set_visible(False)
         self.cal_line.set_data(self.freq_axis, self.scan.cal[l_sec - 1, :])
         self.mpr_line.set_data(self.freq_axis, self.scan.mpr)
 
@@ -278,6 +289,10 @@ class SignalDisplay:
         Parameters:
             l_sec: The latest loaded second number for the current scan, starting at 1.
         """
+        show_qa_legend = self.scan.scan_qa is not None
+        self.baseline_line.set_label("Noise Baseline (MPR)" if show_qa_legend else "_nolegend_")
+        self.qa_signal_start_line.set_label("Signal Start (MPR)" if show_qa_legend else "_nolegend_")
+        self.qa_signal_end_line.set_label("Signal End (MPR)" if show_qa_legend else "_nolegend_")
 
         if self.scan.scan_qa is not None:
             cal_qa = self.scan.scan_qa.getQA("cal", l_sec - 1)
@@ -304,22 +319,27 @@ class SignalDisplay:
                     self.baseline_line.set_data([], [])
 
                 qa_lines = [
-                    f"RFI Frac: {cal_qa.rfi_fraction:.2%}" if cal_qa is not None and cal_qa.rfi_fraction is not None else "RFI Frac: N/A",
-                    f"Baseline: {mpr_qa.baseline:.2f}" if mpr_qa.baseline is not None else "Baseline: N/A",
-                    f"Noise: {mpr_qa.noise_db:.2f} dB" if mpr_qa.noise_db is not None else "Noise: N/A dB",
-                    f"Signal (sum): {mpr_qa.signal_pwr_db:.2f} dB" if mpr_qa.signal_pwr_db is not None else "Signal (sum): N/A dB",
-                    f"Signal (peak): {mpr_qa.signal_db:.2f} dB" if mpr_qa.signal_db is not None else "Signal (peak): N/A dB",
-                    f"SNR: {mpr_qa.snr_db:.2f} dB" if mpr_qa.snr_db is not None else "SNR: N/A dB",
-                    f"FWHM: {mpr_qa.fwhm:.2f} bins" if mpr_qa.fwhm is not None else "FWHM: N/A bins",
-                    f"DR: {mpr_qa.dynamic_range_db:.2f} dB" if mpr_qa.dynamic_range_db is not None else "DR: N/A dB",
+                    f"RFI Frac: {cal_qa.rfi_fraction:.2%}" if cal_qa is not None and cal_qa.rfi_fraction is not None else "",
+                    f"Baseline: {mpr_qa.baseline:.2f}" if mpr_qa.baseline is not None else "",
+                    f"Noise: {mpr_qa.noise_db:.2f} dB" if mpr_qa.noise_db is not None else "",
+                    f"Signal (sum): {mpr_qa.signal_pwr_db:.2f} dB" if mpr_qa.signal_pwr_db is not None else "",
+                    f"Signal (peak): {mpr_qa.signal_db:.2f} dB" if mpr_qa.signal_db is not None else "",
+                    f"SNR: {mpr_qa.snr_db:.2f} dB" if mpr_qa.snr_db is not None else "",
+                    f"FWHM: {mpr_qa.fwhm:.2f} bins" if mpr_qa.fwhm is not None else "",
+                    f"DR: {mpr_qa.dynamic_range_db:.2f} dB" if mpr_qa.dynamic_range_db is not None else "",
                 ]
                 self.qa_text.set_text("\n".join(qa_lines))
         else:
-            self.qa_text.set_text("QA not available")
+            self.qa_text.set_text("QA metrics not configured")
             self.baseline_line.set_visible(False)
             self.baseline_line.set_data([], [])
             self.qa_signal_start_line.set_visible(False)
             self.qa_signal_end_line.set_visible(False)
+
+        legend1 = self.sig[1].get_legend()
+        if legend1 is not None:
+            legend1.remove()
+        self.sig[1].legend(loc="lower right")
 
     def _update_waterfall(self):
         """Update the waterfall image contents from the current calibrated scan data."""
@@ -382,6 +402,16 @@ class SignalDisplay:
             self.fig.canvas.draw_idle()
             self.fig.canvas.flush_events()
 
+    def _refresh_to_second(self, l_sec: int):
+        """Update all artists so the figure reflects the provided loaded second."""
+        self._refresh_mean_power_spectrum()
+        self._update_waterfall()
+        self._update_spectrum_axes(l_sec)
+        self._update_qa_overlay(l_sec)
+        self._update_saturation_axis()
+        self._update_total_power_axis(l_sec)
+        self.sec = l_sec
+
     def display(self):
         """Refresh all plots for the current scan if new seconds have arrived since the last update."""
 
@@ -406,8 +436,6 @@ class SignalDisplay:
         if l_sec <= 0:
             return
 
-        self._refresh_mean_power_spectrum()
-
         # If the current displayed scan second needs to be updated
         if self.sec != l_sec:
     
@@ -416,14 +444,9 @@ class SignalDisplay:
             if self.sec is None:
                 self.sec = 0
 
-            # Update the plot lines, overlays, images, bars, and timelines for the new loaded second, then draw the figure
-            self._update_waterfall()
-            self._update_spectrum_axes(l_sec)
-            self._update_qa_overlay(l_sec)
-            self._update_saturation_axis()
-            self._update_total_power_axis(l_sec)
-        
-            self.sec = l_sec
+            self._refresh_to_second(l_sec)
+        else:
+            self._refresh_mean_power_spectrum()
         
         self._draw(is_visible_fig)
 
@@ -438,6 +461,19 @@ class SignalDisplay:
         """
         if self.scan is None or self.fig is None:
             return False
+
+        l_sec = self.scan.get_loaded_seconds()
+        if l_sec <= 0:
+            return False
+
+        if self.sec != l_sec:
+            logger.debug(
+                f"Signal display forcing final refresh for scan {self.scan.scan_model.scan_id} "
+                f"from second {self.sec} to {l_sec} before saving figure"
+            )
+            self._refresh_to_second(l_sec)
+        else:
+            self._refresh_mean_power_spectrum()
 
         scan_id = self.scan.scan_model.scan_id
         if scan_id in self.saved_scan_ids:
@@ -464,6 +500,7 @@ class SignalDisplay:
         filepath = Path(filename).expanduser()
         filepath.parent.mkdir(parents=True, exist_ok=True)
 
+        self.fig.canvas.draw()
         self.fig.savefig(str(filepath))
         self.saved_scan_ids.add(scan_id)
         logger.info(f"Signal display scan {self.scan.scan_model.scan_id} figure saved to {filepath}")
@@ -492,10 +529,11 @@ class SignalDisplay:
         """
         axes.set_title("Waterfall Plot of Spectrum")
         axes.set_xlabel("Frequency [MHz]")
-        axes.set_ylabel("Time [sec]")
+        axes.set_ylabel("Integrated Scans" if self._is_integrated_scan() else "Time [sec]")
         axes.set_aspect("auto")
         axes.set_facecolor("black")
         axes.grid(False)
+        axes.yaxis.set_major_locator(MaxNLocator(integer=True))
 
     def init_saturation_axes(self, axes):
         """Initialise the SDR saturation subplot axis.
@@ -518,8 +556,9 @@ class SignalDisplay:
             duration: Scan duration in seconds, used to set x limits.
         """
         axes.set_title("Total Power Timeline")
-        axes.set_xlabel("Time [sec]")
+        axes.set_xlabel("Integrated Scans" if self._is_integrated_scan() else "Time [sec]")
         axes.set_ylabel("Total Power [a.u.]")
         axes.set_facecolor("white")
         axes.set_xlim(1, duration)
         axes.grid(True)
+        axes.xaxis.set_major_locator(MaxNLocator(integer=True))

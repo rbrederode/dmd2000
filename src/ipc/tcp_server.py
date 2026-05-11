@@ -13,11 +13,12 @@ from datetime import datetime
 from ipc import message
 from env import events
 from util.timer import TimerManager, Timer
+from util.util import resolve_default_host
 
 import logging
 logger = logging.getLogger(__name__)
 
-HOST_IP = socket.gethostbyname(socket.gethostname())
+DEFAULT_HOST_IP = "127.0.0.1"
 HOST_PORT = 60000
 
 MAX_BLOCK_SIZE = 65535   # Define a maximum block size for sending data (65,535 bytes to fit in 64KB packet)
@@ -52,7 +53,7 @@ class TCPServer:
         Events (connected, disconnected, data received) are added to a queue
         for further processing by the calling process. """
 
-    def __init__(self, description="TCP Server", queue=None, host=HOST_IP, port=HOST_PORT, max_block_size=MAX_BLOCK_SIZE):
+    def __init__(self, description="TCP Server", queue=None, host=None, port=HOST_PORT, max_block_size=MAX_BLOCK_SIZE):
         """Initialize the TCP server with the given host and port.
 
             Parameters
@@ -62,7 +63,7 @@ class TCPServer:
                 port: Port number """
     
         self.description = description
-        self.host = host
+        self.host = host if host is not None else resolve_default_host("TCP Server", fallback_host=DEFAULT_HOST_IP)
         self.port = port
         self.sel = selectors.DefaultSelector()
 

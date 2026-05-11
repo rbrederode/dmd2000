@@ -8,10 +8,15 @@ from schema import Schema, And, Or, Use, SchemaError
 
 from models.app import AppModel
 from models.base import BaseModel
-from models.dsh import Feed
 from models.health import HealthState
 from models.comms import CommunicationStatus
 from util.xbase import XInvalidTransition, XAPIValidationFailed, XSoftwareFailure
+
+class BandpassFilterType(enum.IntEnum):
+    SAWBIRD_H1 = 1              # Nooelec Sawbird HI Bandpass Filter https://www.nooelec.com/store/sdr/sdr-addons/sawbird/sawbird-h1.html
+    SAWBIRD_H1_BAREBONES = 2    # Nooelec Sawbird HI Barebones Bandpass Filter with GPIO control https://www.nooelec.com/store/sdr/sdr-addons/sawbird/sawbird-h1-barebones.html
+    ZCBP6_416R5_S = 3           # Mini-Circuits ZCBP6-416R5-S (403-430 MHz) Bandpass Filter https://www.minicircuits.com/WebStore/dashboard.html?model=ZCBP6-416R5-S%2B&srsltid=AfmBOoqe6HpqsNzRYzFW7AzYbPCDqWreldHDhWa5lC3qryReXPPTu3mn
+    UNKNOWN = 4
 
 class DigitiserModel(BaseModel):
     """A class representing a digitiser application. The digitiser application is deployed at the telescope to digitise the analog RF signals.
@@ -23,14 +28,16 @@ class DigitiserModel(BaseModel):
         "_type": And(str, lambda v: v == "DigitiserModel"),
         "dig_id": And(str, lambda v: isinstance(v, str)),
         "app": And(AppModel, lambda v: isinstance(v, AppModel)),
-        "load": And(bool, lambda v: isinstance(v, bool)),
+        "load_active": And(bool, lambda v: isinstance(v, bool)),
+        "bpf_type": And(BandpassFilterType, lambda v: isinstance(v, BandpassFilterType)),   # Type of bandpass filter installed. None if no bandpass filter.
+        "bpf_config": Or(None, lambda v: v is None or isinstance(v, BaseModel)),            # Bandpass filter configuration instance. None if no bandpass filter
         "gain": And(float, lambda v: 0 <= v <= 100.0),
         "sample_rate": And(float, lambda v: v >= 0.0),
         "bandwidth": And(float, lambda v: v >= 0.0),
         "center_freq": And(float, lambda v: v >= 0.0),
         "freq_correction": And(int, lambda v: -1000 <= v <= 1000),
-        "channels": And(int, lambda v: v >= 0),                     # Digitiser property of interest to the Science Data Processor
-        "scan_duration": And(int, lambda v: v >= 0),                # Digitiser property of interest to the Science Data Processor (in seconds)
+        "channels": And(int, lambda v: v >= 0),
+        "scan_duration": And(int, lambda v: v >= 0),
         "tm_connected": And(CommunicationStatus, lambda v: isinstance(v, CommunicationStatus)),
         "sdp_connected": And(CommunicationStatus, lambda v: isinstance(v, CommunicationStatus)),
         "sdr_connected": And(CommunicationStatus, lambda v: isinstance(v, CommunicationStatus)),
@@ -59,7 +66,9 @@ class DigitiserModel(BaseModel):
                 health=HealthState.UNKNOWN,
                 last_update=datetime.now(timezone.utc),
             ),
-            "load": False,
+            "load_active": False,
+            "bpf_type": BandpassFilterType.UNKNOWN,
+            "bpf_config": None,
             "gain": 0.0,
             "sample_rate": 0.0,
             "bandwidth": 0.0,
@@ -83,6 +92,33 @@ class DigitiserModel(BaseModel):
                 kwargs.setdefault(key, value)
 
         super().__init__(**kwargs)
+
+    def is_bpf_controllable(self, control_type: str) -> bool:
+        """Helper method to determine if a control type is controllable based on the current bandpass filter type and configuration."""
+        
+        if control_type not in {"load", "power"}:
+            raise ValueError(f"Unsupported control_type: {control_type}")
+
+        if self.bpf_config is not None and isinstance(self.bpf_config, BaseModel):
+            gpio_pin = self.bpf_config._data.get(f"gpio_pin_{control_type}", None)
+            return gpio_pin is not None
+        
+        return False
+
+    def get_bpf_control_pin(self, control_type: str) -> int | None:
+        """Helper method to retrieve the GPIO pin number for the specified bandpass filter control type (e.g. "power" or "load") if configured, otherwise returns None."""
+        
+        if control_type not in {"load", "power"}:
+            raise ValueError(f"Unsupported control_type: {control_type}")
+
+        if (
+            self.bpf_config is None
+            or not isinstance(self.bpf_config, BaseModel)
+            or not hasattr(self.bpf_config, f"gpio_pin_{control_type}")
+        ):
+            return None
+
+        return self.bpf_config._data.get(f"gpio_pin_{control_type}", None)
 
 class DigitiserList(BaseModel):
     """A class representing a list of digitisers."""
@@ -130,6 +166,8 @@ class DigitiserList(BaseModel):
         return None
 
 if __name__ == "__main__":
+
+    from dig.filters.sawbird import SAWbirdH1_BareBones
     
     dig001 = DigitiserModel(
         dig_id="dig001",
@@ -143,7 +181,13 @@ if __name__ == "__main__":
             health=HealthState.UNKNOWN,
             last_update=datetime.now()
         ),
-        load=False,
+        load_active=False,
+        bpf_type=BandpassFilterType.SAWBIRD_H1_BAREBONES,
+        bpf_config=SAWbirdH1_BareBones(
+            gpio_pin_power=17,
+            gpio_pin_load=18,
+            last_update=datetime.now(timezone.utc),
+        ),
         gain=0.0,
         sample_rate=0.0,
         bandwidth=0.0,
@@ -193,6 +237,15 @@ if __name__ == "__main__":
                     'num_processors': 2,
                     'processors': [],
                     'queue_size': 0},
+            'load_active': False,
+            'bpf_type': {'_type': 'enum.IntEnum',
+                        'instance': 'BandpassFilterType',
+                        'value': 'SAWBIRD_H1_BAREBONES'},
+            'bpf_config': {'_type': 'SAWbirdH1_BareBones',
+                            'gpio_pin_load': 18,
+                            'gpio_pin_power': 17,
+                            'last_update': {'_type': 'datetime',
+                                            'value': '2025-12-16T15:10:34.004551'}},
             'bandwidth': 200000.0,
             'center_freq': 1420000000.0,
             'freq_correction': 0,
@@ -277,6 +330,3 @@ if __name__ == "__main__":
     )
 
     default_diglist.save_to_disk(output_dir="./config/default")
-
-
-

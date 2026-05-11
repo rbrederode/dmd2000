@@ -11,15 +11,9 @@ import numpy as np
 from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
 
 from models.ws import WeatherStationList
+from util.matplotlib_window import get_figure_visibility
 
 mpl.rcParams["figure.raise_window"] = False
-
-try:
-    from AppKit import NSApplication
-
-    HAS_APPKIT = True
-except ImportError:
-    HAS_APPKIT = False
 
 logger = logging.getLogger(__name__)
 
@@ -39,13 +33,18 @@ class WeatherDisplay:
         ("Last Update", "Samples"),
     ]
 
+    SUMMARY_ITEMS = [
+        ("Last Mth Count", "Alarm Count"),
+        ("Last Mth Active", "Activated"),
+        ("Last Mth Clear", "Deactivated"),
+        ("Mean Recovery", "MTTR"),
+    ]
+
     RECT_LEFT_X, RECT_RIGHT_X = 2.5, 7.5
-    RECT_W, RECT_H = 2.5, 0.5
+    RECT_W, RECT_H = 2.5, 0.35
     LABEL_GAP = 0.1
     GROUP_LEFT_X = 0.25
     GROUP_RIGHT_X = 10.36
-    GROUP_TOP_Y = 7.68
-    GROUP_BOTTOM_Y = 2.73
 
     def __init__(self, weather_store: WeatherStationList, ws_id: str):
         self.weather_store = weather_store
@@ -83,6 +82,13 @@ class WeatherDisplay:
         self._init_attribute_axes()
         self._init_plot_axes()
 
+        # Show the GUI window before visibility checks can suppress first refreshes.
+        try:
+            self.fig.show()
+            self.fig.canvas.flush_events()
+        except Exception as exc:
+            logger.debug(f"Weather display for {self.ws.ws_id} could not show figure window: {exc}")
+
     def _init_attribute_axes(self):
         ax = self.attr_ax
         ax.set_title("Weather Attributes")
@@ -93,10 +99,12 @@ class WeatherDisplay:
         ax.text(self.RECT_LEFT_X + self.RECT_W / 2, 7.45, "Thresholds", ha="center", va="center", fontsize=10, fontweight="bold")
         ax.text(self.RECT_RIGHT_X + self.RECT_W / 2, 7.45, "Actuals", ha="center", va="center", fontsize=10, fontweight="bold")
 
+        y_positions = np.linspace(6.85, 2.05, len(self.ATTR_ROWS))
+
         group_rect = plt.Rectangle(
-            (self.GROUP_LEFT_X, self.GROUP_BOTTOM_Y),
+            (self.GROUP_LEFT_X, y_positions[4] - 0.38),
             self.GROUP_RIGHT_X - self.GROUP_LEFT_X,
-            self.GROUP_TOP_Y - self.GROUP_BOTTOM_Y,
+            (y_positions[0] + 0.38) - (y_positions[4] - 0.38),
             fill=False,
             edgecolor="tab:gray",
             linewidth=1.0,
@@ -106,12 +114,11 @@ class WeatherDisplay:
         self.attr_rects = {}
         self.attr_texts = {}
 
-        y_positions = np.linspace(6.9, 1.1, len(self.ATTR_ROWS))
         for y, (left_label, right_label) in zip(y_positions, self.ATTR_ROWS):
             if left_label:
-                ax.text(self.RECT_LEFT_X - self.LABEL_GAP, y, left_label, ha="right", va="center", fontsize=9)
+                ax.text(self.RECT_LEFT_X - self.LABEL_GAP, y, left_label, ha="right", va="center", fontsize=8)
                 left_rect = plt.Rectangle(
-                    (self.RECT_LEFT_X, y - 0.2),
+                    (self.RECT_LEFT_X, y - self.RECT_H / 2),
                     self.RECT_W,
                     self.RECT_H,
                     color="tab:gray",
@@ -124,9 +131,9 @@ class WeatherDisplay:
                 )
 
             if right_label:
-                ax.text(self.RECT_RIGHT_X - self.LABEL_GAP, y, right_label, ha="right", va="center", fontsize=9)
+                ax.text(self.RECT_RIGHT_X - self.LABEL_GAP, y, right_label, ha="right", va="center", fontsize=8)
                 right_rect = plt.Rectangle(
-                    (self.RECT_RIGHT_X, y - 0.2),
+                    (self.RECT_RIGHT_X, y - self.RECT_H / 2),
                     self.RECT_W,
                     self.RECT_H,
                     color="tab:gray",
@@ -137,6 +144,49 @@ class WeatherDisplay:
                 self.attr_texts[(right_label, "value")] = ax.text(
                     self.RECT_RIGHT_X + self.RECT_W / 2, y, "", ha="center", va="center", fontsize=8
                 )
+
+        summary_positions = [
+            (0, 1.15),
+            (1, 1.15),
+            (1, 0.45),
+            (0, 0.45),
+        ]
+        summary_rect_x = [self.RECT_LEFT_X, self.RECT_RIGHT_X]
+
+        for (label, value_key), (col_idx, y) in zip(self.SUMMARY_ITEMS, summary_positions):
+            rect_x = summary_rect_x[col_idx]
+            ax.text(rect_x - self.LABEL_GAP, y, label, ha="right", va="center", fontsize=8)
+            rect = plt.Rectangle(
+                (rect_x, y - self.RECT_H / 2),
+                self.RECT_W,
+                self.RECT_H,
+                color="tab:gray",
+                alpha=0.5,
+            )
+            ax.add_patch(rect)
+            self.attr_rects[(value_key, "summary")] = rect
+            self.attr_texts[(value_key, "summary")] = ax.text(
+                rect_x + self.RECT_W / 2, y, "", ha="center", va="center", fontsize=8
+            )
+
+        ax.text(
+            self.RECT_LEFT_X,
+            -0.04,
+            "Last mth format: DD:HH:MM:SS",
+            ha="left",
+            va="bottom",
+            fontsize=8,
+            color="tab:gray",
+        )
+        ax.text(
+            self.RECT_LEFT_X,
+            -0.24,
+            "Last mth data updated hourly",
+            ha="left",
+            va="bottom",
+            fontsize=8,
+            color="tab:gray",
+        )
 
     def _init_plot_axes(self):
         self.wind_ax.set_title("Wind Speed")
@@ -153,7 +203,7 @@ class WeatherDisplay:
         self.wind_line, = self.wind_ax.plot([], [], color="tab:blue", linewidth=2, label="Wind Speed")
         self.wind_avg_line = self.wind_ax.axhline(
             y=self.weather_store.threshold_wind_avg,
-            color="tab:green",
+            color="tab:orange",
             linestyle="dashed",
             linewidth=1.5,
             label="Avg Threshold",
@@ -166,7 +216,7 @@ class WeatherDisplay:
             label="Gust Threshold",
         )
 
-        self.precip_line, = self.precip_ax.plot([], [], color="tab:orange", linewidth=2, label="Precipitation")
+        self.precip_line, = self.precip_ax.plot([], [], color="tab:purple", linewidth=2, label="Precipitation")
         self.precip_thresh_line = self.precip_ax.axhline(
             y=self.weather_store.threshold_precipitation,
             color="tab:red",
@@ -183,36 +233,41 @@ class WeatherDisplay:
 
     def _close_figure(self):
         if self.fig is not None:
-            plt.close(num=f"Weather {self.ws.ws_id}")
+            try:
+                plt.close(num=f"Weather {self.ws.ws_id}")
+            except Exception as exc:
+                logger.debug(f"Weather display for {self.ws.ws_id} failed to close figure: {exc}")
 
     def is_visible_figure(self) -> Optional[bool]:
-        if not HAS_APPKIT or self.fig is None:
-            return None
-
-        key_window = NSApplication.sharedApplication().keyWindow()
-        if key_window is None:
-            return None
-
-        return self.fig.canvas.manager.get_window_title() == key_window.title()
+        return get_figure_visibility(self.fig)
 
     def display(self):
-        if not self.is_active:
+        try:
+            if not self.is_active:
+                self._close_figure()
+                return
+
+            if self.fig is None:
+                return
+
+            is_visible_fig = self.is_visible_figure()
+            if is_visible_fig is False:
+                return
+
+            self._update_attributes()
+            self._update_plot()
+
+            if getattr(self.fig, "canvas", None) is None:
+                logger.debug(f"Weather display for {self.ws.ws_id} has no canvas to draw")
+                return
+
+            self.fig.canvas.draw_idle()
+            self.fig.canvas.flush_events()
+            plt.pause(0.001)
+        except Exception as exc:
+            logger.exception(f"Weather display for {self.ws.ws_id} failed to refresh: {exc}")
+            self.is_active = False
             self._close_figure()
-            return
-
-        if self.fig is None:
-            return
-
-        is_visible_fig = self.is_visible_figure()
-        if is_visible_fig is False:
-            return
-
-        self._update_attributes()
-        self._update_plot()
-
-        self.fig.canvas.draw_idle()
-        self.fig.canvas.flush_events()
-        plt.pause(0.001)
 
     def _set_field(self, label: str, kind: str, text: str, alarm: bool = False, color: str = None):
         if (label, kind) not in self.attr_texts or (label, kind) not in self.attr_rects:
@@ -220,8 +275,18 @@ class WeatherDisplay:
         self.attr_texts[(label, kind)].set_text(text)
         if kind == "threshold":
             self.attr_rects[(label, kind)].set_color("tab:gray")
+        elif kind == "summary":
+            self.attr_rects[(label, kind)].set_color(color if color is not None else "tab:gray")
         else:
             self.attr_rects[(label, kind)].set_color(color if color is not None else ("tab:red" if alarm else "tab:green"))
+
+    @staticmethod
+    def _format_duration(minutes: float) -> str:
+        total_seconds = max(0, int(round((minutes or 0.0) * 60.0)))
+        days, remainder = divmod(total_seconds, 86400)
+        hours, remainder = divmod(remainder, 3600)
+        mins, secs = divmod(remainder, 60)
+        return f"{days:02d}:{hours:02d}:{mins:02d}:{secs:02d}"
 
     def _update_attributes(self):
         metrics = self.weather_store.get_alarm_metrics(ws_id=self.ws.ws_id)
@@ -253,8 +318,16 @@ class WeatherDisplay:
         self._set_field("Last Update", "threshold", latest_update + " UTC", False)
         self._set_field("Samples", "value", f"{metrics['sample_count']:d}", False)
 
+        self._set_field("Alarm Count", "summary", f"{self.weather_store.last_mth_alarm_count:d}", False)
+        self._set_field("Activated", "summary", self._format_duration(self.weather_store.last_mth_alarm_activated), False, color="tab:red")
+        self._set_field("Deactivated", "summary", self._format_duration(self.weather_store.last_mth_alarm_deactivated), False, color="tab:green")
+        self._set_field("MTTR", "summary", self._format_duration(self.weather_store.last_mth_alarm_mttr), False)
+
     def _update_plot(self):
-        samples = self.weather_store.get_station_weather(ws_id=self.ws.ws_id)
+        samples = self.weather_store.get_station_weather(
+            ws_id=self.ws.ws_id,
+            window_sec=self.weather_store.retention_period,
+        )
         if not samples:
             self.wind_line.set_data([], [])
             self.precip_line.set_data([], [])
@@ -280,7 +353,7 @@ class WeatherDisplay:
         self.precip_thresh_line.set_ydata([self.weather_store.threshold_precipitation, self.weather_store.threshold_precipitation])
         self.precip_thresh_line.set_label(f"Precip Threshold {self.weather_store.threshold_precipitation:.2f} mm")
 
-        self.wind_ax.set_xlim(0.0, max(self.weather_store.threshold_timeout + 1.0, times[-1]))
+        self.wind_ax.set_xlim(0.0, max(self.weather_store.retention_period + 1.0, times[-1]))
 
         self.wind_ax.relim()
         self.wind_ax.autoscale_view(scalex=False, scaley=True)

@@ -1,6 +1,6 @@
 import logging
 import json
-import map
+from . import map
 import os
 import re
 from pathlib import Path
@@ -30,37 +30,27 @@ from models.base import BaseModel
 from models.comms import CommunicationStatus, InterfaceType
 from models.dig import DigitiserModel
 from models.dsh import DishManagerModel, Feed, Capability, DishMode, PointingState
-from models.obs import Observation, ObsTransition, ObsState
+from models.obs import ObsModel, ObsTransition, ObsState
 from models.oda import ODAModel, ObsList, ScanStore
 from models.health import HealthState
 from models.scan import ScanModel, ScanState
 from models.sdp import ScienceDataProcessorModel
-from models.target import TargetModel
+from models.target import TargetModel, TargetConfig
 from models.telescope import TelescopeModel
 from models.tm import ResourceType, AllocationState, ResourceAllocations, Allocation
 from models.ui import UIDriver, UIDriverType
-from models.ws import WeatherStationModel
+from models.ws import WeatherStationModel, WeatherSummary
 from obs.oet import ObservationExecutionTool
 from util import log, util
 from util.timer import Timer, TimerManager
-from util.xbase import XBase, XStreamUnableToExtract, XUnknownEntity
-from webhook_handler import WebhookHandler
+from util.xbase import XBase, XStreamUnableToExtract, XUnknownEntity, XAPIValidationFailed, XSoftwareFailure
+from .webhook_handler import WebhookHandler
 
-logger = logging.getLogger(__name__)
-
-# If modifying these scopes, delete the file token.json.
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
-
-# The SHEET ID for the ALSTON RADIO TELESCOPE google sheet
-ALSTON_RADIO_TELESCOPE = "1r73N0VZHSQC6RjRv94gzY50pTgRvaQWfctGGOMZVpzc"
-
-TM_UI_API = "TM_UI_API!"            # Range for UI-TM API data
-TM_UI_UPDATE_INTERVAL_S = 45        # Update interval in seconds
-
-ODT_OBS_LIST = TM_UI_API + "D2"     # Range for Observation Design Tool
-DIG001_CONFIG = TM_UI_API + "B3"    # Range for Digitiser 001 configuration
+logger = logging.getLogger("tm.tm")
 
 class TelescopeManager(App):
+
+    AUTO_GAIN_TIMEOUT_MS = 30000
 
     telmodel = TelescopeModel()
 
@@ -70,6 +60,12 @@ class TelescopeManager(App):
 
         # Lock for thread-safe allocation of shared resources
         self._rlock = threading.RLock()  
+
+        # When TM is started with -o/--observation_file we temporarily treat that
+        # observation definition as the authoritative ODT source until it completes.
+        self._startup_odt_protection_enabled = False
+        self._startup_odt_pending_config = None
+        self._startup_odt_protected_obs_ids = set()
 
         # Observation Execution Tool is an internal component of the TM used to manage observation workflows
         self.oet = ObservationExecutionTool(telmodel=self.telmodel, tm=self)
@@ -107,14 +103,19 @@ class TelescopeManager(App):
 
         # Weather Station interface 
         self.ws_system = "ws"
-        self.ws_api = tm_ws.TM_WS()
-        # Weather Station TCP Client
-        self.ws_endpoint = TCPClient(description=self.ws_system, queue=self.get_queue(), host=self.get_args().ws_host, port=self.get_args().ws_port)
-        # Register Weather Station interface with the App
-        self.register_interface(self.ws_system, self.ws_api, self.ws_endpoint, InterfaceType.APP_APP)
-        # Initialise Weather Station comms status
+        self.ws_api = None
+        self.ws_endpoint = None
         self.telmodel.wtr_stn.tm_connected = CommunicationStatus.NOT_ESTABLISHED
         self.telmodel.tel_mgr.ws_connected = CommunicationStatus.NOT_ESTABLISHED
+
+        if self.get_args().ws_host is not None and str(self.get_args().ws_host).strip() != "":
+            self.ws_api = tm_ws.TM_WS()
+            # Weather Station TCP Client
+            self.ws_endpoint = TCPClient(description=self.ws_system, queue=self.get_queue(), host=self.get_args().ws_host, port=self.get_args().ws_port)
+            # Register Weather Station interface with the App
+            self.register_interface(self.ws_system, self.ws_api, self.ws_endpoint, InterfaceType.APP_APP)
+        else:
+            logger.info("Telescope Manager weather station connection disabled; no --ws_host specified.")
 
     def add_args(self, arg_parser): 
         """ Specifies the digitiser's command line arguments.
@@ -130,8 +131,12 @@ class TelescopeManager(App):
         arg_parser.add_argument("--dm_host", type=str, required=False, help="TCP server host to connect to the Dish Manager", default="localhost")
         arg_parser.add_argument("--dm_port", type=int, required=False, help="TCP server port to connect to the Dish Manager", default=50002) 
 
-        arg_parser.add_argument("--ws_host", type=str, required=False, help="TCP server host to connect to the Weather Station", default="localhost")
+        arg_parser.add_argument("--ws_host", type=str, required=False, help="TCP server host to connect to the Weather Station. Omit to disable TM Weather Station connection.", default=None)
         arg_parser.add_argument("--ws_port", type=int, required=False, help="TCP server port to connect to the Weather Station", default=50003) 
+        
+        arg_parser.add_argument("--observation_file", "-o", dest="observation_file", type=str, required=False,
+            help="Path to an observation definition JSON file to inject as an ODT config event at startup",
+        )
 
     def process_init(self) -> Action:
         """ Processes initialisation event on startup once all app processors are running.
@@ -174,10 +179,30 @@ class TelescopeManager(App):
         action = Action()
 
         # Start server endpoints and connect client endpoints to interfaces
-        self.dm_endpoint.connect()
-        self.dig_endpoint.start()
-        self.sdp_endpoint.connect()
-        self.ws_endpoint.connect()
+        self.dm_endpoint.connect()  # Client endpoint
+        self.dig_endpoint.start()   # Server endpoint
+        self.sdp_endpoint.connect() # Client endpoint
+        if self.ws_endpoint is not None:
+            self.ws_endpoint.connect()  # Client endpoint
+
+        # If an observation file was specified on startup, load the obs definition file and inject a config event 
+        observation_file = getattr(self.get_args(), "observation_file", None)
+        if observation_file:
+            odt_config = ObsList.from_disk(observation_file).to_dict()
+            self._startup_odt_protection_enabled = True
+            self._startup_odt_pending_config = odt_config
+            self._startup_odt_protected_obs_ids.clear()
+            config_event = ConfigEvent(
+                category="ODT",
+                old_config=None,
+                new_config=odt_config,
+                timestamp=datetime.now(timezone.utc),
+            )
+            self.get_queue().put(config_event)
+            logger.info(
+                f"Telescope Manager injected startup ODT config event from observation file "
+                f"{Path(observation_file).expanduser()}"
+            )
 
         return action
 
@@ -224,6 +249,15 @@ class TelescopeManager(App):
 
             # If scanning is turned on we need to provide the observation id and tgt_idx and freq_scan
             new_scan_config["scanning"] = {'obs_id': obs_id, 'tgt_idx': 0, 'freq_scan': 0} if scanning else scanning
+
+            # SDP scan_config expects a concrete numeric gain. When gain is AUTO/AUTO<n>, defer the
+            # gain update until the digitiser returns a resolved gain value.
+            if TargetConfig.is_auto_gain_token(new_scan_config.get("gain")):
+                logger.info(
+                    f"Telescope Manager deferring SDP scan_config gain update for digitiser {dig_id} "
+                    "until auto gain is resolved."
+                )
+                new_scan_config.pop("gain", None)
             
             old_sdp_config = {}
             new_sdp_config = {}
@@ -241,9 +275,18 @@ class TelescopeManager(App):
             # Observation Design Tool (ODT) is the source of truth for new (ObsState = EMPTY) observations
             # Observation Data Archive (ODA) is the source of truth for in progress (ObsState != EMPTY) observations
 
+            is_startup_odt_event = self._is_startup_odt_event(event)
+            if self._startup_odt_protection_enabled and not is_startup_odt_event:
+                logger.info(
+                    "Ignoring external ODT configuration update because the startup "
+                    "-o observation still has precedence."
+                )
+                return action
+
             # Extract a list of ObsState = EMPTY observations from the incoming ODT configuration event (JSON)
             odt = ObsList.from_dict(event.new_config)
             odt_empty_obs = [obs for obs in odt.obs_list if obs.obs_state == ObsState.EMPTY]
+            startup_protected_obs_ids = set()
             
             # Create dictionary of EMPTY ODT observation ids for quick lookup
             odt_empty_obs_dict = {obs.obs_id: obs for obs in odt_empty_obs}
@@ -260,6 +303,8 @@ class TelescopeManager(App):
                         # Update existing EMPTY observations in the ODA with new data from ODT
                         logger.info(f"Updating existing EMPTY observation {existing_obs.obs_id} with new data from ODT")
                         self.telmodel.oda.obs_store.obs_list[i] = odt_empty_obs_dict[existing_obs.obs_id]
+                        if is_startup_odt_event:
+                            startup_protected_obs_ids.add(odt_empty_obs_dict[existing_obs.obs_id].obs_id)
                     else: 
                         # Remove EMPTY observations from ODA that are no longer in ODT
                         logger.info(f"Removing existing EMPTY observation {existing_obs.obs_id} as it is no longer present in ODT")
@@ -283,6 +328,12 @@ class TelescopeManager(App):
                     # END DEBUG CODE, REMOVE LATER
 
                     self.telmodel.oda.obs_store.obs_list.append(odt_obs)
+                    if is_startup_odt_event:
+                        startup_protected_obs_ids.add(odt_obs.obs_id)
+
+            if is_startup_odt_event:
+                self._startup_odt_protected_obs_ids = startup_protected_obs_ids
+                self._startup_odt_pending_config = None
 
             # Start timer to initiate the next scheduled observation if applicable
             self.oet.start_next_obs_timer(action)
@@ -307,7 +358,22 @@ class TelescopeManager(App):
         """ Defer workflow transitions on observations to the Observation Execution Tool (OET).
             Returns an Action object with actions to be performed.
         """
-        return self.oet.process_obs_event(event)
+        action = self.oet.process_obs_event(event)
+
+        if (
+            event.transition == ObsTransition.RELEASE_RESOURCES
+            and event.obs is not None
+            and event.obs.obs_id in self._startup_odt_protected_obs_ids
+        ):
+            self._startup_odt_protected_obs_ids.discard(event.obs.obs_id)
+            logger.info(
+                f"Startup -o observation {event.obs.obs_id} released resources; "
+                "removing its ODT protection."
+            )
+            if not self._startup_odt_protected_obs_ids:
+                self._disable_startup_odt_protection()
+
+        return action
 
     def process_dm_connected(self, event) -> Action:
         """ Processes Dish Manager connected events.
@@ -378,10 +444,11 @@ class TelescopeManager(App):
             elif api_call.get('property','') == tm_dm.PROPERTY_CAPABILITY:
                 dsh_model.capability = Capability(api_call['value']) if api_call['value'] is not None else None
 
-            # If the api call is a capability state set property rsp message, update the Dish Model
+            # If the api call is a target set property rsp message, update the Dish Model
             elif api_call.get('property','') == tm_dm.PROPERTY_TARGET:
                 dsh_model.target = TargetModel.from_dict(api_call['value']) if api_call['value'] is not None and isinstance(api_call['value'], dict) else None
-                dsh_model.tgt_id = dsh_model.target.obs_id + f"_{dsh_model.target.tgt_idx}" if dsh_model.target is not None else None
+                dsh_model.tgt_id = dsh_model.target.obs_id + f"-{dsh_model.target.tgt_idx}" if dsh_model.target is not None else None
+                dsh_model.mode = DishMode.OPERATE if dsh_model.target is not None else DishMode.STANDBY_FP
                 
             # If the api call is a status update message, update the Dish Manager model
             elif api_call.get('property','') == tm_dm.PROPERTY_STATUS:
@@ -506,9 +573,13 @@ class TelescopeManager(App):
         logger.info(f"Telescope Manager connected to Digitiser entity on {event.remote_addr}")
         digitiser: DigitiserModel = entity if entity is not None and isinstance(entity, DigitiserModel) else None
 
+        action = Action()
+
         if digitiser is not None:
             digitiser.tm_connected = CommunicationStatus.ESTABLISHED
             digitiser.last_update = datetime.now(timezone.utc)
+
+        return action
 
     def process_dig_entity_disconnected(self, event, entity) -> Action:
         """ Processes Digitiser disconnected events.
@@ -563,8 +634,55 @@ class TelescopeManager(App):
         # If the api call does not indicate that an error occured
         elif api_call.get('status','') != tm_dig.STATUS_ERROR:
 
-            # If the api call is a status update message, update the Digitiser model
-            if api_call.get('property','') == tm_dig.PROPERTY_STATUS:
+            obs_data = api_call.get('obs_data', None)
+            if obs_data is not None and isinstance(obs_data, dict):
+                obs_data = dict(obs_data)
+            obs_id = obs_data.get('obs_id', None) if obs_data is not None and isinstance(obs_data, dict) else None
+            sdp_config_update_pending = False
+
+            # If the api call is a successful method response, handle it separately from property updates
+            if api_call.get('action_code') == tm_dig.ACTION_CODE_METHOD:
+                method = api_call.get('method')
+
+                if method in [tm_dig.METHOD_GET_AUTO_GAIN, tm_dig.METHOD_SET_AUTO_GAIN]:
+                    gain_value = api_call.get('value')
+                    if gain_value is not None:
+                        digitiser.gain = float(gain_value)
+                        logger.info(f"Telescope Manager received Digitiser auto gain result: {digitiser.gain} dB")
+
+                        gain_token = obs_data.get('gain') if obs_data is not None else None
+                        if TargetConfig.is_auto_gain_token(gain_token):
+                            obs_data['gain'] = digitiser.gain
+                            obs = self.telmodel.oda.obs_store.get_obs_by_id(obs_id) if obs_id is not None else None
+                            self._apply_auto_gain_to_current_target(obs, digitiser.gain, gain_token)
+                            if self.telmodel.sdp is not None:
+                                sdp_dig = self.telmodel.sdp.dig_store.get_dig_by_id(digitiser.dig_id)
+                                old_sdp_config = {
+                                    'scan_config': {
+                                        'dig_id': digitiser.dig_id,
+                                        'obs_id': obs_id,
+                                        'gain': sdp_dig.gain if sdp_dig is not None else None,
+                                    }
+                                }
+                                new_sdp_config = {
+                                    'sdp_id': self.telmodel.sdp.sdp_id,
+                                    'obs_id': obs_id,
+                                    'scan_config': {
+                                        'dig_id': digitiser.dig_id,
+                                        'obs_id': obs_id,
+                                        'gain': digitiser.gain,
+                                    },
+                                }
+                                pending_msg_count = len(action.msgs_to_remote)
+                                action = self.update_sdp_configuration(old_sdp_config, new_sdp_config, action)
+                                sdp_config_update_pending = len(action.msgs_to_remote) > pending_msg_count
+                    else:
+                        logger.warning("Telescope Manager received Digitiser auto gain response without a gain value.")
+                else:
+                    logger.info(f"Telescope Manager received Digitiser method response: {method} = {api_call.get('value')}")
+
+            # Else if the api call is a status update message, update the Digitiser model
+            elif api_call.get('property','') == tm_dig.PROPERTY_STATUS:
                 logger.debug(f"Telescope Manager received Digitiser STATUS update: {api_call['value']}")
                 digitiser.update_from_model(DigitiserModel.from_dict(api_call['value']))
 
@@ -574,20 +692,21 @@ class TelescopeManager(App):
             elif api_call.get('property','') in digitiser.schema.schema:
                 try:
                     logger.info(f"Telescope Manager received Digitiser property update: {api_call['property']} = {api_call['value']}")
-                    setattr(digitiser, api_call.get('property',''), api_call['value'])
-                except XSoftwareFailure as e:
+                    
+                    property_name = api_call.get('property','')
+                    value = api_call['value']
+                    setattr(digitiser, property_name, value)
+                except (XAPIValidationFailed, XSoftwareFailure) as e:
                     logger.error(f"Telescope Manager error setting attribute {api_call.get('property','')} on Digitiser: {e}")
                     return action
             else:
-                logger.warning(f"Telescope Manager received unknown Digitiser property update: {api_call['property']}")
+                logger.warning(f"Telescope Manager received unknown Digitiser property update: {api_call.get('property')}")
                 return action
 
             # If the api call is a rsp message
             if api_call['msg_type'] == tm_dig.MSG_TYPE_RSP:
 
                 # If the status update message contains additional observation data, extract the related observation 
-                obs_data = api_call.get('obs_data', None)
-                obs_id = obs_data.get('obs_id', None) if obs_data is not None and isinstance(obs_data, dict) else None
                 obs = self.telmodel.oda.obs_store.get_obs_by_id(obs_id) if obs_id is not None else None
 
                 # If the observation was identified and is in CONFIGURING state, trigger a review of the configuration updates
@@ -597,24 +716,62 @@ class TelescopeManager(App):
 
                     # Check for remaining mismatches between desired and current configuration properties
                     for config_key, new_value in obs_data.items():
+                        
                         if config_key in digitiser.schema.schema:
                             current_value = getattr(digitiser, config_key, None)
+
                             if current_value != new_value:
-                                config_mismatched = True
-                                logger.info(f"Telescope Manager identified mismatch between desired and current configuration for observation {obs_id}" + 
-                                f" on digitiser {digitiser.dig_id} for property {config_key}.\nCurrent value: {current_value}\nDesired value: {new_value}")
-                                break
+                                # Special case: if desired gain is an AUTO token and current is numeric, this is success (calibration completed)
+                                if config_key == 'gain' and TargetConfig.is_auto_gain_token(new_value) and isinstance(current_value, (int, float)):
+                                    logger.info(f"Telescope Manager confirmed Digitiser auto-gain calibration completed for observation {obs_id}: " +
+                                    f"Desired token: {new_value}, Measured gain: {current_value} dB")
+                                else:
+                                    config_mismatched = True
+                                    logger.info(f"Telescope Manager identified mismatch between desired and current configuration for observation {obs_id}" + 
+                                    f" on digitiser {digitiser.dig_id} for property {config_key}.\nCurrent value: {current_value}\nDesired value: {new_value}")
+                                    break
 
                     # If no mismatches remain, the configuration update has been applied successfully
                     if not config_mismatched and obs.obs_state == ObsState.CONFIGURING:
-                        logger.info(f"Telescope Manager configuration update for observation {obs_id} has been applied successfully by Digitiser {digitiser.dig_id}.")
-                        action.set_obs_transition(obs=obs, transition=ObsTransition.CONFIGURE_RESOURCES)
+                        if sdp_config_update_pending:
+                            logger.info(
+                                f"Telescope Manager waiting for Science Data Processor to acknowledge resolved gain "
+                                f"before advancing observation {obs_id}."
+                            )
+                        else:
+                            logger.info(f"Telescope Manager configuration update for observation {obs_id} has been applied successfully by Digitiser {digitiser.dig_id}.")
+                            action.set_obs_transition(obs=obs, transition=ObsTransition.CONFIGURE_RESOURCES)
 
         # Update Telescope Model timestamps based on received Digitiser api_call
         self.telmodel.dig_store.last_update = datetime.fromisoformat(dt) if dt else datetime.now(timezone.utc)
         digitiser.last_update = datetime.fromisoformat(dt) if dt else datetime.now(timezone.utc)
-                        
+
         return action
+
+    def _apply_auto_gain_to_current_target(self, obs: ObsModel, gain: float, gain_token=None):
+        """Store the resolved AUTO gain on every scan for the current target config."""
+        if obs is None or gain is None:
+            return
+
+        target_scan_set = obs.get_current_tgt_scan_set()
+        if target_scan_set is None:
+            logger.warning(f"Telescope Manager could not find current target scan set for observation {obs.obs_id} to apply auto gain {gain}.")
+            return
+
+        token = gain_token.upper() if TargetConfig.is_auto_gain_token(gain_token) else None
+        if token is not None and token != "AUTO":
+            obs.auto_gain_cache[token] = float(gain)
+
+        for scan in target_scan_set.scans:
+            scan.gain = float(gain)
+            scan.last_update = datetime.now(timezone.utc)
+
+        obs.last_update = datetime.now(timezone.utc)
+        cache_msg = f" and cached token {token}" if token is not None and token != "AUTO" else ""
+        logger.info(
+            f"Telescope Manager applied auto gain {float(gain)} dB to target config {obs.tgt_idx} "
+            f"for observation {obs.obs_id}{cache_msg}."
+        )
 
     def process_sdp_connected(self, event) -> Action:
         """ Processes Science Data Processor connected events.
@@ -679,6 +836,12 @@ class TelescopeManager(App):
                     for key in dig_config.keys():
                         if key in dig.schema.schema.keys():
                             setattr(dig, key, dig_config[key])
+                        elif key == "load":
+                            load_value = dig_config[key].get("load") if isinstance(dig_config[key], dict) else dig_config[key]
+
+                            if isinstance(load_value, bool):
+                                dig.load_active = load_value
+                    dig.last_update = datetime.now(timezone.utc)
                 else:
                     logger.warning(f"Telescope Manager received Science Data Processor SCAN_CONFIG rsp for unknown digitiser {dig_id}\n{api_call}")
 
@@ -716,6 +879,8 @@ class TelescopeManager(App):
                     # If we identified the scan within the observation, update its metadata on disk
                     if scan is not None:
                         scan.update_from_model(completed_scan)
+                        self._apply_target_pec_to_scan(obs, scan)
+                        self._apply_weather_summary_to_scan(obs, scan)
 
                         filename = util.gen_file_prefix(
                             dt=completed_scan.read_start,
@@ -804,7 +969,7 @@ class TelescopeManager(App):
                 action.set_msg_to_remote(req_msg)
                 action.set_timer_action(Action.Timer(
                     name=final_timer, 
-                    timer_action=self.telmodel.tel_mgr.app.msg_timeout_ms,
+                    timer_action=self._get_request_timeout_ms(req_msg),
                     echo_data=req_msg))
 
         # Handle a final request msg timer e.g. dig002_req_timer_final:<timestamp> or sdp002_req_timer_final:<timestamp>
@@ -816,16 +981,23 @@ class TelescopeManager(App):
 
                 req_msg: APIMessage = event.user_ref
                 echo = req_msg.get_echo_data()
+                api_call = req_msg.get_api_call()
+                obs_id = None
 
                 if echo is not None and isinstance(echo, dict):
                     new_config = echo["echo_data"] if "echo_data" in echo else echo
                     obs_id = new_config["obs_id"] if new_config is not None and "obs_id" in new_config else None
 
-                    obs=self.telmodel.oda.obs_store.get_obs_by_id(obs_id)
+                if obs_id is None and api_call is not None and isinstance(api_call, dict):
+                    obs_data = api_call.get("obs_data")
+                    obs_id = obs_data.get("obs_id") if isinstance(obs_data, dict) else None
 
-                    # If the observation is still in CONFIGURING state, ABORT the observation
-                    if obs is not None and obs.obs_state == ObsState.CONFIGURING:
-                        action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
+                obs = self.telmodel.oda.obs_store.get_obs_by_id(obs_id) if obs_id is not None else None
+
+                # If the observation is still in CONFIGURING state, ABORT the observation
+                if obs is not None and obs.obs_state == ObsState.CONFIGURING:
+                    logger.warning(f"Telescope Manager aborting observation {obs_id} after request timeout for {event.name}.")
+                    action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
 
         # Handle observation start timer event
         elif event.name.startswith("obs_start_timer"):
@@ -853,7 +1025,7 @@ class TelescopeManager(App):
         elif event.name.startswith("obs_configuring_timer"):
             logger.info(f"Telescope Manager observation configuring timer event: {event}")
 
-            obs: Observation = event.user_ref if isinstance(event.user_ref, Observation) else None
+            obs: ObsModel = event.user_ref if isinstance(event.user_ref, ObsModel) else None
 
             if obs is not None and obs.obs_state == ObsState.CONFIGURING:
                 logger.warning(f"Telescope Manager observation {obs.obs_id} configuration timeout occurred, aborting observation")
@@ -863,7 +1035,7 @@ class TelescopeManager(App):
         elif event.name.startswith("obs_scanning_timer"):
             logger.info(f"Telescope Manager observation scanning timer event: {event}")
 
-            obs: Observation = event.user_ref if isinstance(event.user_ref, Observation) else None
+            obs: ObsModel = event.user_ref if isinstance(event.user_ref, ObsModel) else None
 
             if obs is not None and obs.obs_state == ObsState.SCANNING:
                 logger.warning(f"Telescope Manager observation {obs.obs_id} scanning timeout occurred, ending scan")
@@ -873,7 +1045,7 @@ class TelescopeManager(App):
         elif event.name.startswith("obs_abort_timer"):
             logger.info(f"Telescope Manager observation abort timer fired: {event.name}")
 
-            obs: Observation = event.user_ref if isinstance(event.user_ref, Observation) else None
+            obs: ObsModel = event.user_ref if isinstance(event.user_ref, ObsModel) else None
 
             if obs is not None and obs.obs_state == ObsState.ABORTED:
                 logger.warning(f"Telescope Manager observation {obs.obs_id} abort timeout occurred, releasing resources")
@@ -958,24 +1130,32 @@ class TelescopeManager(App):
 
             property = method = value = None
 
-            (method, value) = map.get_method_name_value(config_key, config_value)
-            (property, value) = map.get_property_name_value(config_key, config_value) if method is None else (None, config_value)
+            method, method_value = map.get_method_name_value(config_key, config_value)
+
+            if method is None:
+                property, value = map.get_property_name_value(config_key, config_value)
+            else:
+                property, value = None, method_value
 
             if method is None and property is None:
                 if config_key not in ["obs_id", "dig_id"]: # obs_id and dig_id are used for internal tracking
                     logger.warning(f"Telescope Manager ignoring digitiser configuration item: {config_key}")
+                continue
+
+            if method is None and property is not None and value is None:
+                logger.warning(f"Telescope Manager ignoring digitiser configuration item with invalid value: {config_key}={config_value}")
                 continue
         
             dig_req = self._construct_req_to_dig(entity=dig_id, property=property, method=method, value=value, message="")
 
             # Attach all new configuration to the request for tracking
             api_call = dig_req.get_api_call()
-            api_call['obs_data'] = new_config.copy() # Shallow copy
+            api_call['obs_data'] = BaseModel._serialise(new_config.copy()) # Shallow copy
 
             action.set_msg_to_remote(dig_req)
             action.set_timer_action(Action.Timer(
                 name=f"{dig_id}_req_timer_retry:{dig_req.get_timestamp()}", 
-                timer_action=self.telmodel.tel_mgr.app.msg_timeout_ms, 
+                timer_action=self._get_request_timeout_ms(dig_req), 
                 echo_data=dig_req))
                 
         return action
@@ -1102,13 +1282,111 @@ class TelescopeManager(App):
 
         self.telmodel.tel_mgr.last_update = datetime.now(timezone.utc)
 
+    def _is_startup_odt_event(self, event: ConfigEvent) -> bool:
+        """Return True when the provided ODT config event is the startup -o injection."""
+        return (
+            event is not None
+            and event.category.upper() == "ODT"
+            and self._startup_odt_pending_config is not None
+            and event.new_config == self._startup_odt_pending_config
+        )
+
+    def _disable_startup_odt_protection(self):
+        """Release precedence of the startup -o observation over other ODT sources."""
+        self._startup_odt_protection_enabled = False
+        self._startup_odt_pending_config = None
+        self._startup_odt_protected_obs_ids.clear()
+
+    def _apply_target_pec_to_scan(self, obs, scan: ScanModel):
+        """Copy the latest target-level PEC from the DM snapshot onto a completed scan."""
+        if obs is None or scan is None:
+            return
+
+        dsh_mgr = self.telmodel.dsh_mgr
+        dsh_model = dsh_mgr.get_dish_by_id(obs.dsh_id) if dsh_mgr is not None and obs.dsh_id is not None else None
+
+        if dsh_model is None:
+            logger.debug(f"Telescope Manager could not find dish {obs.dsh_id} to attach PEC to scan {scan.scan_id}.")
+            return
+
+        tgt_idx = scan.tgt_idx
+        tgt_id = f"{obs.obs_id}-{tgt_idx}" if obs.obs_id is not None and tgt_idx is not None else None
+        tgt_pec = dsh_model.get_pec_by_tgt_id(tgt_id) if tgt_id is not None else None
+
+        if tgt_pec is None:
+            logger.debug(f"Telescope Manager could not find target PEC {tgt_id} for scan {scan.scan_id}.")
+            return
+
+        scan.target_alt_pec_rms = float(tgt_pec.alt_rms)
+        scan.target_az_pec_rms = float(tgt_pec.az_rms)
+        scan.target_pec_last_update = tgt_pec.last_update
+
+    def _select_weather_summary_for_dish(self, dsh_model) -> WeatherSummary:
+        """Select the most appropriate weather summary for a dish."""
+        weather_store = self.telmodel.dsh_mgr.weather_store if self.telmodel.dsh_mgr is not None else None
+        summaries = weather_store.weather_summaries if weather_store is not None else []
+
+        if not summaries:
+            return None
+
+        if dsh_model.ws_id is not None:
+            summary = weather_store.get_summary_by_ws_id(dsh_model.ws_id)
+            if summary is not None:
+                return summary
+
+        if len(summaries) == 1:
+            return summaries[0]
+
+        nearest_summary = None
+        nearest_distance = float("inf")
+
+        for summary in summaries:
+            station = weather_store.get_station(summary.ws_id)
+            if station is None or station.latitude is None or station.longitude is None:
+                continue
+
+            distance = (station.latitude - dsh_model.latitude) ** 2 + (station.longitude - dsh_model.longitude) ** 2
+            if distance < nearest_distance:
+                nearest_distance = distance
+                nearest_summary = summary
+
+        return nearest_summary if nearest_summary is not None else summaries[0]
+
+    def _apply_weather_summary_to_scan(self, obs, scan: ScanModel):
+        """Copy the latest rolling weather summary from the DM snapshot onto a completed scan."""
+        if obs is None or scan is None:
+            return
+
+        dsh_mgr = self.telmodel.dsh_mgr
+        dsh_model = dsh_mgr.get_dish_by_id(obs.dsh_id) if dsh_mgr is not None and obs.dsh_id is not None else None
+
+        if dsh_model is None:
+            logger.debug(f"Telescope Manager could not find dish {obs.dsh_id} to attach weather metadata to scan {scan.scan_id}.")
+            return
+
+        summary = self._select_weather_summary_for_dish(dsh_model)
+        if summary is None:
+            logger.debug(f"Telescope Manager could not find a weather summary for dish {dsh_model.dsh_id} and scan {scan.scan_id}.")
+            return
+        if summary.sample_count == 0 or summary.last_sample_time is None:
+            logger.debug(f"Telescope Manager found no fresh weather samples for dish {dsh_model.dsh_id} and scan {scan.scan_id}.")
+            return
+
+        scan.ws_id = summary.ws_id
+        scan.ws_sec = summary.sample_secs
+        scan.wind_avg = float(summary.wind_avg)
+        scan.wind_rms = float(summary.wind_rms)
+        scan.wind_max = float(summary.wind_max)
+        scan.wind_sample_count = summary.sample_count
+        scan.wind_sample_time = summary.last_sample_time
+
     def _construct_req_to_dig(self, entity=None, property=None, method=None, value=None, message=None) -> APIMessage:
         """ Constructs a request message to the Digitiser.
         """
 
         dig_req = APIMessage(api_version=self.dig_api.get_api_version())
 
-        # If property is get_auto_gain or read_samples
+        # If property is auto gain or read_samples
         if method is not None:
             dig_req.set_json_api_header(
                 api_version=self.dig_api.get_api_version(), 
@@ -1138,6 +1416,20 @@ class TelescopeManager(App):
             })
 
         return dig_req
+
+    def _get_request_timeout_ms(self, req_msg: APIMessage) -> int:
+        """Return a request timeout tailored to the API call being sent."""
+        timeout_ms = self.telmodel.tel_mgr.app.msg_timeout_ms
+        api_call = req_msg.get_api_call() if req_msg is not None else {}
+
+        if (
+            isinstance(api_call, dict)
+            and api_call.get("action_code") == tm_dig.ACTION_CODE_METHOD
+            and api_call.get("method") in [tm_dig.METHOD_GET_AUTO_GAIN, tm_dig.METHOD_SET_AUTO_GAIN]
+        ):
+            return max(timeout_ms, self.AUTO_GAIN_TIMEOUT_MS)
+
+        return timeout_ms
 
     def _construct_req_to_sdp(self, property=None, value=None, message=None) -> APIMessage:
         """ Constructs a request message to the Science Data Processor.
@@ -1245,13 +1537,25 @@ def main():
   
     tm = TelescopeManager()
     tm.start()
-    
-    # Start webhook handler in background thread
+
+    # Start webhook handler before optional UI handling so webhook inputs still work in headless mode.
     webhook_handler = WebhookHandler(event_queue=tm.get_queue(), host='127.0.0.1', port=5001)
     webhook_handler.start()
     logger.info("Webhook handler initialized and running on port 5001")
 
+    if tm.is_headless():
+        logger.info("Telescope Manager running in headless mode; skipping ui initialization and updates.")
+        try:
+            while True:
+                time.sleep(1.0)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            tm.stop()
+        return
+
     last_odt_config_snapshot = None
+    disabled_ui_drivers = set()
 
     try:
 
@@ -1264,6 +1568,9 @@ def main():
             now = datetime.now(timezone.utc)
 
             for driver in tm.telmodel.tel_mgr.ui_drivers:
+                driver_key = driver.short_desc or str(driver.type)
+                if driver_key in disabled_ui_drivers:
+                    continue
 
                 # If the driver instance is not yet initialized, initialize it based on its type and config
                 if driver.instance is None:
@@ -1272,9 +1579,16 @@ def main():
                         from ui.drivers.gsheets.gsheets_driver import GoogleSheetsDriver
                         from ui.drivers.gsheets.gsheets_model import GSheetConfig
                         config = GSheetConfig(**driver.config) if isinstance(driver.config, dict) else driver.config
-                        driver.instance = GoogleSheetsDriver(config)
-                        logger.info(f"Telescope Manager initialised Google Sheets driver for UI integration with config:\n" + \
-                            f"{json.dumps(driver.config, indent=2)}")
+                        try:
+                            driver.instance = GoogleSheetsDriver(config)
+                            logger.info(f"Telescope Manager initialised Google Sheets driver for UI integration with config:\n" + \
+                                f"{json.dumps(driver.config, indent=2)}")
+                        except XSoftwareFailure as e:
+                            disabled_ui_drivers.add(driver_key)
+                            logger.error(
+                                f"Telescope Manager disabled UI driver {driver.type.name} {driver.short_desc} "
+                                f"after initialization failed: {e}"
+                            )
                     else:
                         logger.warning(f"Telescope Manager UI driver {driver.type} not supported, skipping UI integration for this driver")
 

@@ -187,6 +187,15 @@ class ResourceAllocations(BaseModel):
             Returns:
                 Allocation: The created allocation object.
         """
+        now = datetime.now(timezone.utc)
+
+        if expires is not None and expires <= now:
+            logger.warning(
+                f"Resource Allocation for {resource_type}:{resource_id} cannot be requested by "
+                f"{allocated_type} {allocated_id} because it expired at {expires}"
+            )
+            return None
+
         # Check if there are existing allocations for this resource type and id
         existing_allocs = self.get_allocations(resource_type=resource_type, resource_id=resource_id, include_expired=False)
         
@@ -225,7 +234,7 @@ class ResourceAllocations(BaseModel):
         """
         if allocation.state != AllocationState.REQUESTED:
             raise XInvalidTransition(
-                f"Resource Allocation cannot grant allocation in state {allocation.state} for resource {allocation.resource_type}:{allocation.resource_id}"
+                f"Resource Allocation cannot grant allocation in state {allocation.state.name} for resource {allocation.resource_type}:{allocation.resource_id}"
             )
 
         # Enforce exclusivity
@@ -474,7 +483,6 @@ if __name__ == "__main__":
 
     tm002.ui_drivers = [gsheets_driver]
     tm002.save_to_disk("./config/test", filename=tm002._type + ".json")
-
 
 
 

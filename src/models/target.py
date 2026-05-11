@@ -2,6 +2,7 @@ import enum
 import logging
 import math
 import numpy as np
+import re
 from datetime import datetime, timezone
 from schema import Schema, And, Or, Use, SchemaError
 
@@ -17,8 +18,9 @@ from util import log
 
 logger = logging.getLogger(__name__)
 
-USABLE_BANDWIDTH = 0.65     # Percentage of usable bandwidth for a scan
-MAX_SCAN_DURATION_SEC = 60  # Maximum duration of a single scan in seconds
+USABLE_BANDWIDTH = 0.65                         # Percentage of usable bandwidth for a scan
+MAX_SCAN_DURATION_SEC = 60                      # Maximum duration of a single scan in seconds
+AUTO_GAIN_TOKEN_RE = re.compile(r"^AUTO\d*$")   # Regular expression to match AUTO gain tokens (e.g. "AUTO", "AUTO1", "AUTO2", etc.)
 
 #=======================================
 # Models comprising a Target (TARGET)
@@ -142,6 +144,18 @@ class TargetModel(BaseModel):
             if key not in kwargs:
                 kwargs.setdefault(key, value)
 
+        altaz = kwargs.get("altaz")
+        if isinstance(altaz, dict):
+            normalised_altaz = dict(altaz)
+            for axis in ("alt", "az"):
+                value = normalised_altaz.get(axis)
+                if isinstance(value, str):
+                    try:
+                        normalised_altaz[axis] = float(value)
+                    except ValueError:
+                        pass
+            kwargs["altaz"] = normalised_altaz
+
         super().__init__(**kwargs)
 
     def __str__(self):
@@ -167,9 +181,10 @@ class TargetConfig(BaseModel):
         "_type": And(str, lambda v: v == "TargetConfig"),
         "obs_id": Or(None, And(str, lambda v: isinstance(v, str))),             # Observation identifier (see Observation model)
         "tgt_idx": And(int, lambda v: v >= -1),                                 # Target list index (-1 = not set, 0-based)
-
-        "feed": And(Feed, lambda v: isinstance(v, Feed)),                       # Feed enum
-        "gain": And(Or(int, float), lambda v: v >= 0.0),                        # Gain (dBi)
+        "feed_type": And(Feed, lambda v: isinstance(v, Feed)),                  # Feed enum
+        "gain": Or(And(str, lambda v: TargetConfig.is_auto_gain_token(v)),      # Gain (dBi), AUTO, or AUTO<n>
+            And(Or(int, float), lambda v: v >= 0.0)),                           # AUTO always run set_auto_gain for this target config. No caching.
+                                                                                # AUTO<n> named cached auto-gain groups, first encountered group will be used for caching and subsequent AUTO<n> 
         "center_freq": And(Or(int, float), lambda v: v >= 0.0),                 # Center frequency (Hz) 
         "bandwidth": And(Or(int, float), lambda v: v >= 0.0),                   # Bandwidth (Hz) 
         "sample_rate": And(Or(int, float), lambda v: v >= 0.0),                 # Sample rate (Hz) 
@@ -181,13 +196,16 @@ class TargetConfig(BaseModel):
 
     def __init__(self, **kwargs):
 
+        if "feed" in kwargs and "feed_type" not in kwargs:
+            kwargs["feed_type"] = kwargs["feed"]
+
         # Default values
         defaults = {
             "_type": "TargetConfig",
             "obs_id": None,                 # Observation identifier (see Observation model)
             "tgt_idx": -1,                  # Target list index (-1 = not set, 0-based)
 
-            "feed": Feed.NONE,              # Default to None feed
+            "feed_type": Feed.NONE,         # Default to None feed
             "gain": 0.0,                    # Gain (dBi)
             "center_freq": 0.0,             # Center frequency (Hz) 
             "bandwidth": 0.0,               # Bandwidth (Hz) 
@@ -201,7 +219,14 @@ class TargetConfig(BaseModel):
             if key not in kwargs:
                 kwargs.setdefault(key, value)
 
+        gain = kwargs.get("gain")
+        kwargs["gain"] = gain.upper() if self.is_auto_gain_token(gain) else gain
+
         super().__init__(**kwargs)
+
+    @classmethod
+    def is_auto_gain_token(cls, value) -> bool:
+        return isinstance(value, str) and AUTO_GAIN_TOKEN_RE.fullmatch(value.upper()) is not None
 
 class TargetScanSet(BaseModel):
     """A class representing a set of scans for a particular target."""
@@ -346,7 +371,7 @@ class TargetScanSet(BaseModel):
                 start_freq=scan_start_freq,
                 center_freq=scan_center_freq,
                 end_freq=scan_end_freq,
-                gain=tgt_config.gain,
+                gain=0.0 if TargetConfig.is_auto_gain_token(tgt_config.gain) else tgt_config.gain,
                 status=ScanState.EMPTY,
                 last_update=datetime.now(timezone.utc)
             )
@@ -435,7 +460,7 @@ if __name__ == "__main__":
     target_config001 = TargetConfig(
         obs_id="obs001",
         tgt_idx=1,
-        feed=Feed.H3T_1420,
+        feed_type=Feed.H3T_1420,
         gain=12.0,
         center_freq=1.42e9,
         bandwidth=2e6,

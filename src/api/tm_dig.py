@@ -50,19 +50,19 @@ TO = (
 )
 
 # Allowable properties to get or set
-PROPERTY_LOAD           = 'load'             # Load True or False
-PROPERTY_CENTER_FREQ    = 'center_freq'      # Center frequency in Hz
-PROPERTY_SAMPLE_RATE    = 'sample_rate'      # Sample rate in samples per second
-PROPERTY_BANDWIDTH      = 'bandwidth'        # Bandwidth in Hz
-PROPERTY_GAIN           = 'gain'             # Gain in dB
-PROPERTY_FREQ_CORRECTION= 'freq_correction'  # Frequency correction in ppm
-PROPERTY_SCANNING       = 'scanning'         # Scanning status True/False or Observation Id (same as True)
-PROPERTY_STATUS         = 'status'           # Status update interval in seconds
-PROPERTY_SDP_COMMS      = 'sdp_comms'        # SDP communication status (established/not established)
-PROPERTY_DEBUG          = 'debug'            # Enable/disable debug mode (on/off)
+PROPERTY_LOAD_ACTIVE     = 'load_active'      # Load state flag; optional GPIO control is configured by the bandpass filter config
+PROPERTY_CENTER_FREQ     = 'center_freq'      # Center frequency in Hz
+PROPERTY_SAMPLE_RATE     = 'sample_rate'      # Sample rate in samples per second
+PROPERTY_BANDWIDTH       = 'bandwidth'        # Bandwidth in Hz
+PROPERTY_GAIN            = 'gain'             # Gain in dB
+PROPERTY_FREQ_CORRECTION = 'freq_correction'  # Frequency correction in ppm
+PROPERTY_SCANNING        = 'scanning'         # Scanning status True/False or Observation Id (same as True)
+PROPERTY_STATUS          = 'status'           # Status update interval in seconds
+PROPERTY_SDP_COMMS       = 'sdp_comms'        # SDP communication status (established/not established)
+PROPERTY_DEBUG           = 'debug'            # Enable/disable debug mode (on/off)
 
 PROPERTIES = (
-    PROPERTY_LOAD,
+    PROPERTY_LOAD_ACTIVE,
     PROPERTY_CENTER_FREQ,
     PROPERTY_SAMPLE_RATE,
     PROPERTY_BANDWIDTH,
@@ -81,6 +81,7 @@ METHOD_SET_DIRECT_SAMPLING  = 'set_direct_sampling' # Set direct sampling mode (
 METHOD_READ_BYTES           = 'read_bytes'          # Read raw bytes from the device
 METHOD_READ_SAMPLES         = 'read_samples'        # Read samples from the device
 METHOD_GET_AUTO_GAIN        = 'get_auto_gain'       # Determine optimal gain setting e.g. 20 dB
+METHOD_SET_AUTO_GAIN        = 'set_auto_gain'       # Automatically set optimal gain setting e.g. 20 dB
 METHOD_GET_GAIN_GAUSSIANITY = 'get_gain_gaussianity' # Run gaussianity test (Shapiro–Wilk) on current gain setting
 
 METHODS = (
@@ -90,6 +91,7 @@ METHODS = (
     METHOD_READ_BYTES,
     METHOD_READ_SAMPLES,
     METHOD_GET_AUTO_GAIN,
+    METHOD_SET_AUTO_GAIN,
     METHOD_GET_GAIN_GAUSSIANITY,
 )
 

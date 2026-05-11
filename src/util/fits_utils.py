@@ -56,11 +56,11 @@ def observation_to_fits_hdulist(observation):
 	# --- TARGET_CONFIG Table ---
 	configs = observation.target_configs
 	tgt_idx_cfg = np.array([getattr(c, 'tgt_idx', -1) for c in configs], dtype=np.int64)
-	feed = np.array([
-		getattr(c, 'feed').name if hasattr(getattr(c, 'feed', None), 'name') else str(getattr(c, 'feed', ''))
+	feed_type = np.array([
+		getattr(c, 'feed_type').name if hasattr(getattr(c, 'feed_type', None), 'name') else str(getattr(c, 'feed_type', ''))
 		for c in configs
 	], dtype='S20')
-	gain = np.array([getattr(c, 'gain', 0.0) for c in configs], dtype=np.float64)
+	gain = np.array([0.0 if isinstance(getattr(c, 'gain', 0.0), str) else getattr(c, 'gain', 0.0) for c in configs], dtype=np.float64)
 	center_freq = np.array([getattr(c, 'center_freq', 0.0) for c in configs], dtype=np.float64)
 	bandwidth = np.array([getattr(c, 'bandwidth', 0.0) for c in configs], dtype=np.float64)
 	sample_rate = np.array([getattr(c, 'sample_rate', 0.0) for c in configs], dtype=np.float64)
@@ -69,7 +69,7 @@ def observation_to_fits_hdulist(observation):
 
 	cols_config = fits.ColDefs([
 		fits.Column(name='tgt_idx', format='K', array=tgt_idx_cfg),
-		fits.Column(name='feed', format='20A', array=feed),
+		fits.Column(name='feed_type', format='20A', array=feed_type),
 		fits.Column(name='gain', format='D', array=gain),
 		fits.Column(name='center_freq', format='D', array=center_freq),
 		fits.Column(name='bandwidth', format='D', array=bandwidth),

@@ -27,13 +27,21 @@ class XBase(Exception):
         self.data = []
         if data is not None:
             self.data.append(data)
-            
+
+    @property
+    def message(self) -> str:
+        if self.messages:
+            return "; ".join(str(message) for message in self.messages)
+        return ""
+
     def __str__(self):
         # Provide a concise string representation. Avoid including the
         # traceback here because Python already prints tracebacks when
         # exceptions are unhandled; embedding the traceback in __str__ can
         # lead to duplicated / confusing output.
-        return f"XBase(id={self.id}, messages={self.messages}, data={[len(d) for d in self.data]})"
+        if self.message:
+            return self.message
+        return f"XBase(id={self.id}, data={[len(d) for d in self.data]})"
 
 class XStreamUnableToExtract(XBase):
 

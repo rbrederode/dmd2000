@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 import datetime
 import logging
@@ -14,6 +14,7 @@ import numpy as np
 from matplotlib.gridspec import GridSpec
 
 from models.dsh import Capability, DishMode, PointingState
+from util.matplotlib_window import get_figure_visibility
 
 if TYPE_CHECKING:
     from dsh.drivers.driver import DishDriver
@@ -21,14 +22,6 @@ if TYPE_CHECKING:
 
 # Disable automatic window raising (backend-specific)
 mpl.rcParams["figure.raise_window"] = False
-
-try:
-    from AppKit import NSApplication
-
-    HAS_APPKIT = True
-except ImportError:
-    HAS_APPKIT = False
-    print("AppKit not available. Install pyobjc: pip install pyobjc")
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +80,7 @@ class DishDisplay:
 
         logger.info(
             f"Dish display initialized for dish {self.driver.dsh_model.dsh_id} "
-            f"with feed {self.driver.dsh_model.feed.value} and driver {self.driver.dsh_model.driver_type.name}"
+            f"with feed type {self.driver.dsh_model.feed_type.value} and driver {self.driver.dsh_model.driver_type.name}"
         )
 
         self.fig = None         # Figure for the dish display
@@ -140,6 +133,13 @@ class DishDisplay:
         self.init_mode_axis(self.axes[3])
         self.init_pec_axes(self.axes[4])        # Initialise the PEC axes
 
+        # Show the GUI window before visibility checks can suppress first refreshes.
+        try:
+            self.fig.show()
+            self.fig.canvas.flush_events()
+        except Exception as exc:
+            logger.debug(f"Dish display for {self.driver.dsh_model.dsh_id} could not show figure window: {exc}")
+
         self._create_timeline_artists()
 
     def _create_timeline_artists(self):
@@ -161,28 +161,18 @@ class DishDisplay:
             None.
         """
         if self.fig is not None:
-            plt.close(num=f"Dish {self.driver.dsh_model.dsh_id}")
+            try:
+                plt.close(num=f"Dish {self.driver.dsh_model.dsh_id}")
+            except Exception as exc:
+                logger.debug(f"Dish display for {self.driver.dsh_model.dsh_id} failed to close figure: {exc}")
 
-    def is_visible_figure(self) -> bool:
+    def is_visible_figure(self) -> Optional[bool]:
         """Return whether this display figure is the active visible window, or None if unknown.
 
         Returns:
             True if visible, False if not visible, or None when visibility cannot be determined.
         """
-        if not HAS_APPKIT or self.fig is None:
-            logger.warning(
-                f"Dish display checking whether figure for {self.driver.dsh_model.dsh_id} is visible but "
-                + ("AppKit not available" if not HAS_APPKIT else "figure is None")
-            )
-            return None
-
-        key_window = NSApplication.sharedApplication().keyWindow()
-        if key_window is None:
-            return None
-
-        key_window_title = key_window.title()
-        fig_title = self.fig.canvas.manager.get_window_title()
-        return fig_title == key_window_title
+        return get_figure_visibility(self.fig)
 
     def get_is_active(self) -> bool:
         """Return whether this dish display is active.
@@ -209,31 +199,36 @@ class DishDisplay:
         Returns:
             None.
         """
-        # If the dish display is not active
-        if not self.is_active:
-            self._close_figure()  # Close the figure if it exists
-            return
+        try:
+            # If the dish display is not active
+            if not self.is_active:
+                self._close_figure()  # Close the figure if it exists
+                return
 
-        # If no figure, then log warning and return
-        if self.fig is None:
-            logger.warning(f"Dish display for {self.driver.dsh_model.dsh_id} cannot display when figure is None")
-            return
+            # If no figure, then log warning and return
+            if self.fig is None:
+                logger.warning(f"Dish display for {self.driver.dsh_model.dsh_id} cannot display when figure is None")
+                return
 
-        # Check if the dish display figure is still visible
-        is_visible_fig = self.is_visible_figure()
-        if is_visible_fig is False:
-            return
+            # Check if the dish display figure is still visible
+            is_visible_fig = self.is_visible_figure()
+            if is_visible_fig is False:
+                return
 
-        logger.debug(f"Dish display updating for dish {self.driver.dsh_model.dsh_id}")
+            logger.debug(f"Dish display updating for dish {self.driver.dsh_model.dsh_id}")
 
-        if self.driver.dsh_model is not None:
-            self._update_attribute_axis(self.driver.dsh_model)
-            self._update_mode_timeline(self.driver.dsh_model)
+            if self.driver.dsh_model is not None:
+                self._update_attribute_axis(self.driver.dsh_model)
+                self._update_mode_timeline(self.driver.dsh_model)
 
-        self._update_pointing_axis()
-        self._update_desired_axis()
-        self._update_pec_axis()
-        self._draw(is_visible_fig)
+            self._update_pointing_axis()
+            self._update_desired_axis()
+            self._update_pec_axis()
+            self._draw(is_visible_fig)
+        except Exception as exc:
+            logger.exception(f"Dish display for {self.driver.dsh_model.dsh_id} failed to refresh: {exc}")
+            self.is_active = False
+            self._close_figure()
 
     def _update_attribute_axis(self, model: DishModel):
         """Update the static attribute panel with the latest dish-model values.
@@ -250,7 +245,7 @@ class DishDisplay:
         )
         self.attr_texts["Lat/Long"].set_text(f"{model.latitude:.1f}°,{model.longitude:.1f}°")
         self.attr_texts["Driver Type"].set_text(model.driver_type.name)
-        self.attr_texts["Feed"].set_text(model.feed.name)
+        self.attr_texts["Feed"].set_text(model.feed_type.name)
         self.attr_texts["Digitiser"].set_text(model.dig_id or "—")
 
         self.attr_texts["Health"].set_text(model.health.name)
@@ -466,15 +461,23 @@ class DishDisplay:
         Returns:
             None.
         """
-        if is_visible_fig is None:
-            plt.draw()
-            plt.pause(0.0001)
-        elif is_visible_fig is True:
-            self.fig.canvas.draw()
-            self.fig.canvas.flush_events()
-        else:
-            self.fig.canvas.draw_idle()
-            self.fig.canvas.flush_events()
+        if self.fig is None or getattr(self.fig, "canvas", None) is None:
+            logger.debug(f"Dish display for {self.driver.dsh_model.dsh_id} has no canvas to draw")
+            return
+
+        try:
+            if is_visible_fig is None:
+                plt.draw()
+                plt.pause(0.0001)
+            elif is_visible_fig is True:
+                self.fig.canvas.draw()
+                self.fig.canvas.flush_events()
+            else:
+                self.fig.canvas.draw_idle()
+                self.fig.canvas.flush_events()
+        except Exception as exc:
+            logger.exception(f"Dish display for {self.driver.dsh_model.dsh_id} draw failed: {exc}")
+            raise
 
     def save_dsh_figure(self, output_dir: str) -> bool:
         """Save the current dish figure to disk.

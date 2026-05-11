@@ -23,6 +23,7 @@ from models.health import HealthState
 from models.pipeline import StepConfig, StepType, PipelineConfig
 from models.scan import ScanModel, ScanState, ScanType
 from models.sdp import ScienceDataProcessorModel
+from models.target import TargetConfig
 from obs.scan import Scan
 from sdp.pipeline.pipeline_factory import ProcessingPipelineFactory
 from sdp.signal_display import SignalDisplay
@@ -32,7 +33,7 @@ from util.xbase import XBase, XStreamUnableToExtract, XSoftwareFailure
 #SAMPLES_DIR = '/Volumes/DATA SDD/Alston Radio Telescope/Samples/Home'  # Directory to store samples
 SAMPLES_DIR = '/Users/r.brederode/samples'  # Directory to store samples
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("sdp.sdp")
 
 class SDP(App):
 
@@ -62,12 +63,14 @@ class SDP(App):
         self.register_interface(self.dig_system, self.dig_api, self.dig_endpoint, InterfaceType.ENTITY_DRIVER)
         # Entity drivers maintain comms status per entity, so no need to initialise comms status here
 
-        self.scan_q = Queue()            # Queue of sky scans being processed and displayed
+        self.sky_q = Queue()             # Queue of sky scans being processed and displayed
         self.cal_q = Queue()             # Queue of calibration scans to apply to sky scans
         self.signal_displays = {}        # Dictionary to hold SignalDisplay objects for each digitiser
 
         self._rlock = threading.RLock()  # Lock for thread-safe access to shared resources
         self._dig_locks = {}             # Dictionary of threading locks, one per digitiser ID
+        self._overload_sample_drop_count = 0
+        self._overload_sample_drop_last_log = 0.0
 
     def add_args(self, arg_parser): 
         """ Specifies the science data processors command line arguments.
@@ -227,7 +230,7 @@ class SDP(App):
                 # Discard digitiser samples if the SDP scan configuration does not match the sample metadata
                 # Respond with success to avoid triggering retries from the digitiser, but log a warning and discard the samples
                 if not digitiser.scanning or (odt_initiated and digitiser.scanning != scanning) or center_freq != digitiser.center_freq or \
-                    sample_rate != digitiser.sample_rate or gain != digitiser.gain or load != digitiser.load:
+                    sample_rate != digitiser.sample_rate or gain != digitiser.gain or load != digitiser.load_active:
                     
                     diff = self._diff_dig_metadata(digitiser, meta_dict)
                     msg = f"Science Data Processor received samples from {digitiser.dig_id} that do not match the SDP scan configuration."
@@ -243,7 +246,7 @@ class SDP(App):
                 match = None
 
                 # Find pending scans for this digitiser
-                pending_scans = [s for s in list(self.scan_q.queue) if s.get_status() in [ScanState.EMPTY, ScanState.WIP] and s.get_dig_id() == dig_id]
+                pending_scans = [s for s in list(self.sky_q.queue) if s.get_status() in [ScanState.EMPTY, ScanState.WIP] and s.get_dig_id() == dig_id]
                 abort_scans = []
 
                 self.sdp_model.scans_wip = len(pending_scans)
@@ -298,10 +301,10 @@ class SDP(App):
                     scan = Scan(scan_model=scan_model)
 
                     # Create a signal processing pipeline using the pipeline factory and associate it with the scan
-                    pipeline = SDP.pipeline_factory.create_pipeline(scan, self.scan_q, self.cal_q) if SDP.pipeline_factory else None
+                    pipeline = SDP.pipeline_factory.create_pipeline(scan, self.sky_q, self.cal_q) if SDP.pipeline_factory else None
                     scan.set_pipeline(pipeline)
 
-                    self.scan_q.put(scan)
+                    self.sky_q.put(scan)
                     self.sdp_model.scans_created += 1
                     match = scan
 
@@ -453,6 +456,25 @@ class SDP(App):
 
         return action
 
+    def process_overload_event(self, event, api_msg: dict = None, api_call: dict = None, payload: bytearray = None, entity: BaseModel = None) -> Action | None:
+        """Optionally shortcut work while the generic app event queue overload is active."""
+        if (
+            entity is not None
+            and api_call is not None
+            and api_call.get('msg_type') == sdp_dig.MSG_TYPE_ADV
+            and api_call.get('action_code') == sdp_dig.ACTION_CODE_SAMPLES
+        ):
+            msg = (
+                f"Science Data Processor is overloaded; acknowledging and dropping samples from "
+                f"{entity.dig_id} to recover. {self.get_queue_overload_reason()}"
+            )
+            self._log_overload_sample_drop(msg)
+            action = Action()
+            action.set_msg_to_remote(self._construct_rsp_to_dig(sdp_dig.STATUS_SUCCESS, msg, api_msg, api_call))
+            return action
+
+        return None
+
     def get_health_state(self) -> HealthState:
         """ Returns the current health state of this application.
         """
@@ -475,6 +497,13 @@ class SDP(App):
         if dig_id is None:
             logger.error(f"Science Data Processor signal display request missing dig_id in value: {value}")
             return False
+
+        if self.is_headless():
+            logger.info(
+                f"Science Data Processor running headless; ignoring signal display request for "
+                f"digitiser {dig_id} active={active}"
+            )
+            return True
 
         if dig_id not in self.signal_displays:
             self.signal_displays[dig_id] = SignalDisplay(dig_id=dig_id)
@@ -519,85 +548,101 @@ class SDP(App):
             if key in ['dig_id', 'obs_id']:
                 continue  # skip these keys as they are identifiers and not attributes
 
-            if hasattr(dig, key):
+            if key == sdp_dig.PROPERTY_LOAD:
+                if isinstance(val, str):
+                    load = val.strip().lower() in ["true", "1", "yes", "on"]
+                else:
+                    load = bool(val)
+                dig.load_active = load
+                logger.info(f"Science Data Processor set digitiser {dig_id} attribute {key} to {val}")
+            elif key == sdp_dig.PROPERTY_SDR_GAIN:
+                if isinstance(val, (int, float)):
+                    dig.gain = float(val)
+                    logger.info(f"Science Data Processor set digitiser {dig_id} attribute {key} to {val}")
+                elif TargetConfig.is_auto_gain_token(val):
+                    logger.info(f"Science Data Processor deferring digitiser {dig_id} gain update until auto gain is resolved.")
+                else:
+                    logger.warning(f"Science Data Processor ignoring invalid scan config gain {val} for digitiser {dig_id}")
+            elif key in dig.schema.schema:
                 setattr(dig, key, val)
                 logger.info(f"Science Data Processor set digitiser {dig_id} attribute {key} to {val}")
             else:
                 logger.warning(f"Science Data Processor received unknown scan config key {key} for digitiser {dig_id} in value: {value}")
 
+        scanning = value.get(sdp_dig.PROPERTY_SCANNING) if value is not None and isinstance(value, dict) else None
+        if scanning is None and isinstance(dig.scanning, dict):
+            scanning = dig.scanning
+        tgt_idx = scanning.get('tgt_idx') if isinstance(scanning, dict) else value.get('tgt_idx')
+        freq_scan = scanning.get('freq_scan') if isinstance(scanning, dict) else value.get('freq_scan')
+
+        load_model = ScanModel(
+            dig_id=dig.dig_id,
+            obs_id=obs_id,
+            tgt_idx=tgt_idx,
+            freq_scan=freq_scan,
+            scan_type=ScanType.LOAD,
+            start_idx=0,                    
+            duration=dig.scan_duration,
+            sample_rate=dig.sample_rate,
+            channels=dig.channels,
+            center_freq=dig.center_freq,
+            gain=dig.gain,
+            load=True,
+            status=ScanState.COMPLETE,
+            synthesised=True)                 # synthetic flag indicates this is a synthetic load scan created by the SDP to apply to sky scans until the first real load scan samples are received from the digitiser
+        load_scan = None
         load_found = False
 
-        # Check if we already have an equivalent completed load scan in the load queue for this digitiser
-        cal_scans = [s for s in list(self.cal_q.queue) if s.get_dig_id() == dig_id and s.get_scan_type() == ScanType.LOAD]
-        purge = True if len(cal_scans) > 5 else False  # Purge load scans from the load queue if there are more than 5 in the queue
+        # Check if we already have calibration scans in the cal queue for this digitiser
+        cal_scans = [s for s in list(self.cal_q.queue) if s.get_dig_id() == dig_id and s.scan_model.scan_type != ScanType.SKY]
+        
+        # Find the set of equivalent LOAD scans from the cal queue that match the load model parameters
+        equiv_load_scans = [cal for cal in cal_scans
+            if cal.scan_model.equivalent(load_model) and 
+                cal.get_status() == ScanState.COMPLETE and 
+                cal.get_scan_type() == ScanType.LOAD]
 
-        for cal in cal_scans:
+        # Exclude synthesised scans from the equivalent load scans to prioritise real load scans 
+        equiv_real_load_scans = [cal for cal in equiv_load_scans if not cal.scan_model.synthesised]
 
-            if cal.scan_model.center_freq == dig.center_freq and cal.scan_model.sample_rate == dig.sample_rate and cal.scan_model.gain == dig.gain and \
-               cal.scan_model.channels == dig.channels and cal.scan_model.duration == dig.scan_duration and cal.scan_model.status == ScanState.COMPLETE:
-                load_found = True
-                logger.info(f"Science Data Processor found equivalent load scan in load queue for digitiser {dig_id} and observation {obs_id}:\n{cal}")
-                break  # we already have an equivalent load scan in the load queue, so we can keep it and skip preparing a new one
-            else:
-                if purge:
-                    self.cal_q.queue.remove(cal)  # remove non-equivalent load scans from the load queue to prevent build up of stale load scans
-                    self.cal_q.task_done()
-                    logger.info(f"Science Data Processor purged non-equivalent load scan from load queue for digitiser {dig_id} and observation {obs_id}:\n{cal}")
+        # Get the most recently created equivalent load scan (non-synthetic)
+        load_scan = max(equiv_real_load_scans, key=lambda s: s.scan_model.created) if equiv_real_load_scans else None  
+        load_found = load_scan is not None
 
+        # If we could not find an appropriate load scan in the cal queue, check the scans stored on disk in the scan store directory
         if not load_found:
-            # Check whether a previous load scan is available in the sample store that matches the digitiser's scan parameters
             scan_store_dir = os.path.expanduser(self.get_args().scan_store_dir)
+            synthetic_scan = Scan(scan_model=load_model)
+            load_scan = synthetic_scan.find_equiv_scan(input_dir=scan_store_dir, scan_type=ScanType.LOAD)
 
-            file_prefix = util.gen_file_prefix(
-                dt=None,
-                entity_id=dig_id,
-                gain=dig.gain,
-                duration=dig.scan_duration,
-                sample_rate=dig.sample_rate,
-                center_freq=dig.center_freq,
-                channels=dig.channels, 
-                scan_type=ScanType.LOAD)
+            # If we found an equivalent load scan on disk, add it to the cal queue
+            if load_scan is not None:
+                load_found = True
+                self._merge_into_queue(load_scan, self.cal_q)
+                logger.info(f"Science Data Processor found equivalent load scan in {self.get_args().scan_store_dir} for digitiser {dig_id} and observation {obs_id}:\n{load_scan}")
+            else:
 
-            load_files = [f for f in os.listdir(scan_store_dir) if file_prefix in f and f.endswith('spr.csv')]
-            logger.info(f"Science Data Processor found {len(load_files)} load scan files in sample store matching prefix {file_prefix} for digitiser {dig_id} and observation {obs_id}")
-            load_files = sorted(load_files, key=lambda f: os.path.getctime(os.path.join(scan_store_dir, f)), reverse=True) if len(load_files) > 0 else []
-            load_file = load_files[0].removesuffix('spr.csv') if len(load_files) > 0 else None
+                load_scan = max(equiv_load_scans, key=lambda s: s.scan_model.created) if equiv_load_scans else None
 
-            if load_file is not None:
-                load_scan = Scan.from_disk(file_prefix=load_file, input_dir=scan_store_dir, include_iq=False)
-                
-                if load_scan is not None and load_scan.is_load_scan():
-                    load_found = True
-                    self.cal_q.put(load_scan)
-                    logger.info(f"Science Data Processor found equivalent load scan in {self.get_args().scan_store_dir} for digitiser {dig_id} and observation {obs_id}:\n{load_scan}")
+                # As a last option add the synthetic load scan to the cal queue to ensure we have a load scan to apply to the sky scans
+                if not load_scan:
+                    load_model.duration = 1
+                    load_scan = Scan(scan_model=load_model)
+                    
+                load_found = True
+                self._merge_into_queue(load_scan, self.cal_q)
+                logger.info(f"Science Data Processor using synthetic load scan for digitiser {dig_id} and observation {obs_id}:\n{load_scan}")
 
-        if not load_found:
-            # Extract target index and frequency scan index from the digitiser scanning metadata if available, else default to -1 for both
-            tgt_idx = dig.scanning.get("tgt_idx", -1) if dig.scanning is not None and isinstance(dig.scanning, dict) else -1
-            freq_scan = dig.scanning.get("freq_scan", -1) if dig.scanning is not None and isinstance(dig.scanning, dict) else -1
+        purge = True if len(cal_scans) > 5 else False  # Purge cal scans from the cal queue if there are more than 5 in the queue
 
-            # Create a default load scan model based on the digitiser metadata and the observation parameters 
-            # This load scan will default to a baseline of ones so will not affect the sky scan when applied
-            load_model = ScanModel(
-                dig_id=dig.dig_id,
-                obs_id=obs_id,             
-                tgt_idx=tgt_idx,           
-                freq_scan=freq_scan,
-                scan_type=ScanType.LOAD,
-                start_idx=0,                 # default load scans start at index 0
-                duration=dig.scan_duration,
-                sample_rate=dig.sample_rate,
-                channels=dig.channels,
-                center_freq=dig.center_freq,
-                gain=dig.gain,
-                load=True,
-                status=ScanState.COMPLETE)
-
-            load_scan = Scan(scan_model=load_model)
-            Scan.reset_scan_iter_counter(obs_id, tgt_idx, freq_scan)  # reset the scan iteration counter for this observation, target, and frequency scan so that the load scan is applied to the correct sky scan iteration
-            self.cal_q.put(load_scan)
-            load_found = True
-            logger.info(f"Science Data Processor created default load scan for digitiser {dig_id} and observation {obs_id}:\n{load_scan}")
+        if purge:
+            # Remove non-equivalent scans from the cal queue to prevent the queue from growing indefinitely 
+            for cal in cal_scans:
+                if cal == load_scan:
+                    continue  # skip the load scan we are using
+                self.cal_q.queue.remove(cal)
+                self.cal_q.task_done()
+                logger.info(f"Science Data Processor purged calibration scan from cal queue for digitiser {dig_id} and observation {obs_id}:\n{cal}")
 
         return load_found
 
@@ -611,7 +656,7 @@ class SDP(App):
         # Reset the scan iteration counter for this observation, so that we can start from scan_iter=0 again
         obs_id = value if value is not None and isinstance(value, str) else None
         # Find pending scans for this observation and abort them
-        pending_scans = [s for s in list(self.scan_q.queue) if s.get_status() in [ScanState.EMPTY, ScanState.WIP] and s.get_obs_id() == obs_id]
+        pending_scans = [s for s in list(self.sky_q.queue) if s.get_status() in [ScanState.EMPTY, ScanState.WIP] and s.get_obs_id() == obs_id]
         for scan in pending_scans:
             self._abort_scan(scan)
         
@@ -709,7 +754,7 @@ class SDP(App):
         if not digitiser.scanning:
             diffs.append(f" - scanning: model={digitiser.scanning} (not scanning)")
         for field in [sdp_dig.PROPERTY_CENTER_FREQ, sdp_dig.PROPERTY_SAMPLE_RATE, sdp_dig.PROPERTY_SDR_GAIN, sdp_dig.PROPERTY_LOAD, sdp_dig.PROPERTY_SCANNING]:
-            model_val = getattr(digitiser, field, None)
+            model_val = digitiser.load_active if field == sdp_dig.PROPERTY_LOAD else getattr(digitiser, field, None)
             meta_val = meta_dict.get(field)
             if model_val != meta_val:
                 diffs.append(f" - {field}: model={model_val} metadata={meta_val}")
@@ -792,6 +837,22 @@ class SDP(App):
         tm_rsp.set_api_call(tm_rsp_api_call)       
         return tm_rsp
 
+    @staticmethod
+    def _newest_equivalent_load_scan(scan: Scan, cal_q: Queue) -> Scan | None:
+        """Return the newest completed real load scan for a scan, falling back to synthetic."""
+        load_scans = [
+            s for s in list(cal_q.queue)
+            if s.equivalent(scan)
+            and s.get_scan_type() == ScanType.LOAD
+            and s.get_status() == ScanState.COMPLETE
+        ]
+        real_load_scans = [s for s in load_scans if not s.scan_model.synthesised]
+        if real_load_scans:
+            return max(real_load_scans, key=lambda s: s.scan_model.created)
+        if load_scans:
+            return max(load_scans, key=lambda s: s.scan_model.created)
+        return None
+
     def _abort_scan(self, scan: Scan):
         """ Aborts a scan and performs necessary cleanup.
         """
@@ -799,44 +860,44 @@ class SDP(App):
         scan.del_iq()
 
         self.sdp_model.scans_aborted += 1
-        self._remove_from_queue(scan=scan, queue=self.scan_q)  # Remove the aborted scan from the scan processing queue
+        self._remove_from_queue(scan=scan, queue=self.sky_q)  # Remove the aborted scan from the sky processing queue
 
     def _complete_scan(self, scan: Scan):
         """ Completes a scan and performs necessary cleanup.
         """
-        scan.save_to_disk(output_dir=self.get_args().scan_store_dir, include_iq=False)
-
         self.sdp_model.scans_completed += 1
         self.sdp_model.scans_wip -= 1
 
-        self._remove_from_queue(scan=scan, queue=self.scan_q) # Remove older completed scans from the scan processing queue
+        self._remove_from_queue(scan=scan, queue=self.sky_q) # Remove older completed scans from the sky processing queue
         
-        # Add load scan to the load queue and replace equivalent items (not needed anymore)
-        if scan.is_load_scan():
+        # Add load scan to the cal queue and replace equivalent items (not needed anymore)
+        if scan.get_scan_type() != ScanType.SKY:
             self._merge_into_queue(scan, self.cal_q) 
+
+        scan.save_to_disk(output_dir=self.get_args().scan_store_dir, include_iq=False)
 
         return
 
     def _merge_into_queue(self, scan: Scan, queue: Queue = None):
-        """ Adds a scan t o the specified queue, replacing any equivalent scans that are already in the queue.
+        """ Adds a scan to the specified queue, replacing any equivalent scans that are already in the queue.
             :params scan: the scan to add to the queue
-            :params queue: the queue to add the scan to, defaults to the load (baseline) queue if not specified
+            :params queue: the queue to add the scan to, defaults to the calibration queue if not specified
         """
         queue = queue if queue is not None else self.cal_q
         queue.put(scan)  # Add this scan to the queue
         
-        equivalent_items = [s for s in list(queue.queue) if s != scan and s.equivalent(scan)]
+        equivalent_items = [s for s in list(queue.queue) if s is not scan and s.equivalent(scan)]
 
         for item in equivalent_items:  
             self._remove_from_queue(item, queue=queue)
-            logger.info(f"Science Data Processor removed equivalent {'load' if item.is_load_scan() else 'sky'} scan {item} from queue " + \
+            logger.info(f"Science Data Processor removed equivalent {'load' if item.get_scan_type() == ScanType.LOAD else 'sky'} scan {item} from queue " + \
                 f"for digitiser {item.get_dig_id()} with same parameters as {scan}")
 
     def _remove_from_queue(self, scan: Scan, queue: Queue = None):
         """ Removes a scan from the queue without marking it as aborted or completed.
             Used for cleanup of pending scans on startup or observation reset.
         """
-        queue = queue if queue is not None else self.scan_q
+        queue = queue if queue is not None else self.sky_q
 
         try:
             queue.queue.remove(scan) # Remove this scan from the underlying queue
@@ -844,9 +905,28 @@ class SDP(App):
         except ValueError:
             logger.warning(f"Science Data Processor could not find scan while attempting to remove scan {scan} from queue. It may have already been removed.")
 
+    def _log_overload_sample_drop(self, message: str):
+        now = time.monotonic()
+        with self._rlock:
+            self._overload_sample_drop_count += 1
+            if now - self._overload_sample_drop_last_log >= 5.0:
+                logger.warning(message + f" dropped_count={self._overload_sample_drop_count}")
+                self._overload_sample_drop_last_log = now
+
 def main():
     sdp = SDP()
     sdp.start()
+
+    if sdp.is_headless():
+        logger.info("Science Data Processor running in headless mode; skipping signal displays.")
+        try:
+            while True:
+                time.sleep(1.0)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            sdp.stop()
+        return
 
     display_period_sec = 1.0  # Initial display period in seconds
 
@@ -854,12 +934,12 @@ def main():
         while True:
             time_start = time.monotonic()
           
-            # For each processing scan in the scan queue, allocate it to a signal display
-            # We are expecting one processing scan per digitiser to be in the scan queue
-            for i in range(sdp.scan_q.qsize()):
+            # For each processing scan in the sky queue, allocate it to a signal display
+            # We are expecting one processing scan per digitiser to be in the sky queue
+            for i in range(sdp.sky_q.qsize()):
 
                 try:
-                    scan = sdp.scan_q.queue[i]
+                    scan = sdp.sky_q.queue[i]
                 except IndexError:
                     continue  # Scan index not valid, continue to next scan
 
@@ -882,15 +962,23 @@ def main():
                     if sig_display_scan and sig_display_scan.get_status() == ScanState.COMPLETE:    
                         sdp.signal_displays[dig_id].display()
                         sdp.signal_displays[dig_id].save_scan_figure(output_dir=sdp.get_args().scan_store_dir)
-                        
-                    #sig_display_scan.del_iq()
 
-                    # Find the equivalent load scan for this scan if it exists in the load queue
-                    load_scans = [s for s in list(sdp.cal_q.queue) if s.equivalent(scan) and s.is_load_scan() == True]
-                    logger.debug(f"Science Data Processor found {len(load_scans)} equivalent load scans in load queue for digitiser {dig_id} and observation {scan.get_obs_id()} to apply to signal display")
+                    # Find the equivalent load scan for this scan if it exists in the calibration queue
+                    newest_load = sdp._newest_equivalent_load_scan(scan, sdp.cal_q)
+                    logger.debug(
+                        f"Science Data Processor found {'an' if newest_load else 'no'} equivalent load scan "
+                        f"in calibration queue for digitiser {dig_id} and observation {scan.get_obs_id()} "
+                        "to apply to signal display"
+                    )
 
-                    # Set the signal display to the current scan
-                    sdp.signal_displays[dig_id].set_scan(scan=scan, load=load_scans[0] if len(load_scans) > 0 else None)
+                    # Set the signal display to the current scan and newest equivalent load scan 
+                    scan.set_load_scan(newest_load) if newest_load else None
+                    sdp.signal_displays[dig_id].set_scan(scan=scan, load=newest_load)
+                else:
+                    # Keep load calibration in sync while the same sky scan remains active.
+                    newest_load = sdp._newest_equivalent_load_scan(scan, sdp.cal_q)
+                    scan.set_load_scan(newest_load) if newest_load else None
+                    sdp.signal_displays[dig_id].set_load(load=newest_load)
 
             for sig_display in sdp.signal_displays.values():
                 # If the signal display has a scan and is active, display the scan

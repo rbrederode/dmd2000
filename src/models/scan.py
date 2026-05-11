@@ -14,16 +14,18 @@ from util.xbase import XInvalidTransition, XAPIValidationFailed, XSoftwareFailur
 logger = logging.getLogger(__name__)
 
 class ScanType(enum.IntEnum):
-    UNKNOWN = 0    # Unknown scan type (default)
+    UNKNOWN = 0     # Unknown scan type (default)
     SKY = 1         # Scan of the sky (i.e. target observation)
     LOAD = 2        # Scan of the load (terminated signal chain)
     TSYS = 3        # System Temperature calibration scan
     GAIN = 4        # Gain calibration scan
 
+
+# ScanDataSource tracks whether a Scan was populated from raw IQ or from precomputed spectrum data
 class ScanDataSource(enum.IntEnum):
-    NONE = 0
-    RAW = 1
-    SPR = 2
+    NONE = 0        # A scan starts as NONE
+    RAW = 1         # Once RAW (IQ) data from the digitiser is loaded (e.g. time-domain voltage samples or raw FFTs)
+    SPR = 2         # Summed Power Spectrum (SPR) data loaded from disk or synthesised by integrating other scans
 
 class ScanState(enum.IntEnum):
     EMPTY = 0       # Scan has been created but no data loaded
@@ -60,6 +62,17 @@ class ScanModel(BaseModel):
         "load_failures": And(int, lambda v: v >= 0),                                # Number of times loading this scan has failed (used for retry logic)
         "files_prefix": Or(None, And(str, lambda v: isinstance(v, str))),           # Prefix of filenames containing scan data (e.g. "ODT-2026-03-11T2100Z-dish002-7-0-0-dig002-g23.0-du60-bw2.05-cf1420.07-ch2048")
         "files_directory": Or(None, And(str, lambda v: isinstance(v, str))),        # Directory where the scan data is stored (e.g. "~/samples")
+        "target_alt_pec_rms": Or(None, And(Or(int, float), lambda v: v >= 0.0)),   # Target-level RMS periodic error correction in altitude (degrees)
+        "target_az_pec_rms": Or(None, And(Or(int, float), lambda v: v >= 0.0)),     # Target-level RMS periodic error correction in azimuth (degrees)
+        "target_pec_last_update": Or(None, And(datetime, lambda v: isinstance(v, datetime))),  # Timestamp of the PEC value copied from the Dish Manager
+        "ws_id": Or(None, And(str, lambda v: isinstance(v, str))),                  # Weather station id used to contextualise this scan
+        "ws_sec": Or(None, And(int, lambda v: v >= 0)),                             # Rolling weather summary window in seconds
+        "wind_avg": Or(None, And(Or(int, float), lambda v: v >= 0.0)),              # Rolling average wind speed in m/s
+        "wind_rms": Or(None, And(Or(int, float), lambda v: v >= 0.0)),              # Rolling RMS wind speed in m/s
+        "wind_max": Or(None, And(Or(int, float), lambda v: v >= 0.0)),              # Rolling maximum wind speed in m/s
+        "wind_sample_count": Or(None, And(int, lambda v: v >= 0)),                  # Number of wind samples used for the rolling summary
+        "wind_sample_time": Or(None, And(datetime, lambda v: isinstance(v, datetime))),  # Timestamp of the latest weather sample used
+        "synthesised": And(bool, lambda v: isinstance(v, bool)),                    # Flag indicating whether this scan was synthesised from other scans (e.g. for a load scan synthesised from a sky scan)
         "last_update": And(datetime, lambda v: isinstance(v, datetime)),            # Timestamp when the scan model was last updated
     })
 
@@ -93,6 +106,17 @@ class ScanModel(BaseModel):
         "loaded_secs": [],
         "files_prefix": None,
         "files_directory": None,
+        "target_alt_pec_rms": None,
+        "target_az_pec_rms": None,
+        "target_pec_last_update": None,
+        "ws_id": None,
+        "ws_sec": None,
+        "wind_avg": None,
+        "wind_rms": None,
+        "wind_max": None,
+        "wind_sample_count": None,
+        "wind_sample_time": None,
+        "synthesised": False,
         "last_update": datetime.now(timezone.utc)
     }
 
@@ -106,6 +130,8 @@ class ScanModel(BaseModel):
 
     @property
     def scan_id(self):
+        if self.synthesised:
+            return f"{self.obs_id}-{self.tgt_idx}-{self.freq_scan}"
         return f"{self.obs_id}-{self.tgt_idx}-{self.freq_scan}-{self.scan_iter}"
 
     def update_from_model(self, other_scan_model):
@@ -141,7 +167,6 @@ class ScanModel(BaseModel):
                      float(self.center_freq) == float(other.center_freq) and \
                      float(self.sample_rate) == float(other.sample_rate) and \
                      int(self.channels) == int(other.channels) and \
-                     int(self.duration) == int(other.duration) and \
                      float(self.gain) == float(other.gain)
 
         logger.debug(f"Scan equivalence is {equivalent} between:\n{self}\nand\n{other}\n")

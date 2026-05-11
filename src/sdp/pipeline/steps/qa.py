@@ -13,12 +13,13 @@ class QA(ProcessingStep):
         super().__init__(config)
 
         self.scan = config.params["scan"] if "scan" in config.params else None
-        self.scan_qa = self.scan.get_qa() if self.scan else None
 
-        logger.debug("QA pipeline step initialisation with scan qa:\n%s", str(self.scan_qa))
+        if self.scan is None:
+            raise ValueError("QA step requires 'scan' in config.params. It is currently None.")
 
-        if self.scan_qa is None:
-            raise ValueError(f"QA: scan_qa {self.scan_qa} must be set before initialising QA step.")
+        self.scan_qa = self.scan.get_qa()
+
+        logger.debug("QA pipeline step initialised with scan:\n%s", str(self.scan))
     
     def process(self, context: Any, signal: Any) -> Any:
         """
@@ -44,6 +45,10 @@ class QA(ProcessingStep):
 
         if not isinstance(context, dict):
             raise ValueError("QA: context must be a dictionary.")
+
+        if self.scan_qa is None:
+            self.scan_qa = self.scan.get_qa()
+            self.scan_qa = self.scan.init_qa() if self.scan_qa is None else self.scan_qa  # Ensure the scan QA is initialised
 
         pipeline = context.get("pipeline", "unknown")  # Get the pipeline name from the context 
         window_frac = context.get("window_frac", 0.2)  # Fraction of channels to consider around the peak for signal region
@@ -140,6 +145,10 @@ class QA(ProcessingStep):
         # No modifications to the signal !
         return signal
 
+    @classmethod
+    def describe(cls) -> str:
+        return "Measure high-level quality metrics such as baseline, SNR, linewidth, and dynamic range and store them on the scan."
+
 def main():
 
     import logging
@@ -147,7 +156,7 @@ def main():
 
     from queue import Queue
  
-    scan_q = Queue()  # Set the calibration queue in the pipeline factory to None
+    sky_q = Queue()   # Set the sky queue in the pipeline factory to None
     cal_q = Queue()   # Set the calibration queue in the pipeline factory to None
 
     from models.scan import ScanModel, ScanState
@@ -177,7 +186,7 @@ def main():
     from obs.scan import Scan
 
     scan = Scan(scan_model=scan001)
-    scan_q.put(scan)  # Put the scan in the scan queue for processing
+    sky_q.put(scan)  # Put the scan in the sky queue for processing
 
     load001 = scan001.copy()
     load001.load = True
@@ -186,8 +195,8 @@ def main():
     cal_q.put(load_scan)  # Put the load scan in the cal queue for processing
 
     params={}
-    params['scan'] = scan     # The scan that the pipeline will process
-    params['scan_q'] = scan_q    # Pipeline steps are provided access to the scan queue if needed
+    params['scan'] = scan      # The scan that the pipeline will process
+    params['sky_q'] = sky_q    # Pipeline steps are provided access to the sky queue if needed
     params['cal_q'] = cal_q      # Pipeline steps are provided access to the calibration queue if needed
 
     # Example StepConfig for QA calculations

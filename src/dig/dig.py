@@ -1,6 +1,7 @@
 import logging
 import json
 import numpy as np
+import threading
 import time
 from datetime import datetime, timezone
 from rtlsdr import RtlSdr
@@ -14,15 +15,17 @@ from ipc.action import Action
 from ipc.tcp_client import TCPClient
 from ipc.tcp_server import TCPServer
 from models.app import AppModel
+from models.base import BaseModel
 from models.comms import CommunicationStatus, InterfaceType
-from models.dig import DigitiserModel
+from models.dig import BandpassFilterType, DigitiserList, DigitiserModel
 from models.health import HealthState
-from sdr.sdr import SDR
+from sdr.facade import SDR
 from util import log, util
+from util.format import fmt_bool
 from util.timer import Timer, TimerManager
-from util.xbase import XBase, XStreamUnableToExtract, XSoftwareFailure, XHardwareFailure, XAPIValidationFailed
+from util.xbase import XStreamUnableToExtract, XSoftwareFailure, XHardwareFailure, XAPIValidationFailed
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("dig.dig")
 
 class Digitiser(App):
 
@@ -39,7 +42,6 @@ class Digitiser(App):
         self.tm_api = tm_dig.TM_DIG()
         # Telescope Manager TCP Client
         self.tm_endpoint = TCPClient(description=self.tm_system, queue=self.get_queue(), host=self.get_args().tm_host, port=self.get_args().tm_port)
-        self.tm_endpoint.connect()
         # Register Telescope Manager interface with the App
         self.register_interface(self.tm_system, self.tm_api, self.tm_endpoint, InterfaceType.ENTITY)
         # Set initial Telescope Manager connection status
@@ -50,15 +52,27 @@ class Digitiser(App):
         self.sdp_api = sdp_dig.SDP_DIG()
         # Science Data Processor TCP Client
         self.sdp_endpoint = TCPClient(description=self.sdp_system, queue=self.get_queue(), host=self.get_args().sdp_host, port=self.get_args().sdp_port)
-        self.sdp_endpoint.connect()
         # Register Science Data Processor interface with the App
         self.register_interface(self.sdp_system, self.sdp_api, self.sdp_endpoint, InterfaceType.ENTITY)
         # Set initial Science Data Processor connection status
         self.dig_model.sdp_connected = CommunicationStatus.NOT_ESTABLISHED
 
         self.dig_model.scanning = False # Flag indicating if we are currently scanning for samples (from the SDR)
- 
-    def add_args(self, arg_parser): 
+
+        self.load_relay = None          # Optional GPIO output to drive a relay switch to apply a load resistor in the signal path
+        self.power_relay = None         # Optional GPIO output to drive a relay switch to power on/off an optional bandpass filter in the signal path
+        self._bpf_control_state = {"load": None, "power": None}
+        self._bpf_control_lock = threading.Lock()
+
+        self._scan_samples_generation = 0
+        self._scan_samples_generation_lock = threading.Lock()
+        self._idle_poweroff_seconds = 300
+        self._last_active_dt = datetime.now(timezone.utc)
+
+    def _touch_activity(self):
+        self._last_active_dt = datetime.now(timezone.utc)
+
+    def add_args(self, arg_parser):
         """ Specifies the digitiser's command line arguments.
         """
         super().add_args(arg_parser)
@@ -79,13 +93,40 @@ class Digitiser(App):
 
         action = Action()
 
+        # Config files located in ./config/<profile>/<model>.json
+        input_dir = f"./config/{self.get_args().profile}"
+        filename = "DigitiserList.json"
+
+        try:
+            dig_store = DigitiserList.load_from_disk(input_dir=input_dir, filename=filename)
+        except FileNotFoundError:
+            dig_store = None
+
+        if dig_store is not None:
+            dig_config = dig_store.get_dig_by_id(self.dig_model.dig_id)
+            if dig_config is not None:
+                for key in self.dig_model.schema.schema.keys():
+                    if key == "app":
+                        continue
+                    setattr(self.dig_model, key, getattr(dig_config, key))
+                self.dig_model.dig_id = self.get_args().entity_id
+                logger.info(f"Digitiser loaded configuration for {self.dig_model.dig_id} from directory {input_dir} file {filename}")
+            else:
+                logger.warning(f"Digitiser configuration for {self.dig_model.dig_id} not found in directory {input_dir} file {filename}")
+        else:
+            logger.warning(f"Digitiser could not load Digitiser configuration from directory {input_dir} file {filename}")
+
         # Initialise the Software Defined Radio (internal) interface
         self.sdr = SDR()
         self.dig_model.sdr_eeprom = self.sdr.get_eeprom_info()
         self.dig_model.sdr_connected = self.sdr.get_comms_status()
         
-        # Start timer to periodically retry SDR connection to ensure it connects
-        action.set_timer_action(Action.Timer(name=f"sdr_retry", timer_action=5000))
+        # Start timer to periodically checks comms e.g. SDR, Bandpass filter relays, etc
+        action.set_timer_action(Action.Timer(name=f"comms_retry", timer_action=5000))
+
+        # Connect client endpoints to interfaces
+        self.tm_endpoint.connect()
+        self.sdp_endpoint.connect()
 
         return action
 
@@ -114,6 +155,8 @@ class Digitiser(App):
         if isinstance(self.dig_model.scanning, dict) and self.dig_model.scanning.get('obs_id', None) is not None:
             logger.warning(f"Digitiser stopping scanning for observation {self.dig_model.scanning.get('obs_id', 'None')} due to Telescope Manager disconnect.")
             self.dig_model.scanning = False
+            self._advance_scan_samples_generation()
+            self.set_bpf_power_state(False)  # Switch bandpass filter powered off when stopping scanning:
 
     def process_tm_msg(self, event, api_msg: dict, api_call: dict, payload: bytearray) -> Action:
         """ Processes api messages received on the Telescope Manager service access point (SAP)
@@ -140,10 +183,12 @@ class Digitiser(App):
         # Else if api call is a req or adv msg from the TM
         elif api_call['msg_type'] in ['req', 'adv']:
 
+            self._touch_activity()
+
             scanning = self.dig_model.scanning
             obs_id = scanning.get('obs_id', None) if isinstance(scanning, dict) else None
 
-            # If we are busy scanning samples for an observation and receive a new unrelated set / method api call, reject it
+            # If we are busy scanning samples for an observation and receive a new unrelated obs set / method api call, reject it
             if obs_id and obs_id !=api_call.get('obs_data', {}).get('obs_id'):
                 if api_call['action_code'] in ["set", "method"]:
                     msg = f"Digitiser busy scanning for observation {obs_id} and cannot process unrelated API call until observation is complete"               
@@ -151,6 +196,8 @@ class Digitiser(App):
                     action.set_msg_to_remote(self._construct_rsp_to_tm(tm_dig.STATUS_ERROR, msg, None, api_msg, api_call))
                     return action
             
+            self.set_bpf_power_state(True)  # Ensure bandpass filter is powered on before handing calls to handlers
+
             # Dispatch the API Call to a handler method
             dispatch = {
                 "set": self.handle_field_set,
@@ -169,15 +216,19 @@ class Digitiser(App):
                 if api_call['action_code'] == tm_dig.ACTION_CODE_SET and api_call.get('property') == tm_dig.PROPERTY_SCANNING:
 
                     logger.info(f"Digitiser scanning state changed to: {value}")
+                    scan_generation = self._advance_scan_samples_generation()
 
-                    # If scanning was turned on, start reading samples immediately (timer_action=0) 
-                    if not scanning and self.dig_model.scanning:
-                        # Two timers (1,2) run in parallel, reading samples one after the other, blocking only on the SDR
+                    # If scanning is active, ensure sample reads are running immediately.
+                    if self.dig_model.scanning:
+
+                        # Two timers run in parallel: one can send the previous read
+                        # while the SDR worker services the other read.
                         for i in range(1, 3):
-                            action.set_timer_action(Action.Timer(name=f"scan_samples_{i}", timer_action=0))
+                            action.set_timer_action(Action.Timer(name=f"scan_samples_{i}", timer_action=0, echo_data=scan_generation))
                                 
                     else:    
-                        # Stop all scan_samples timers (not really necesary since they have a zero timeout)
+                        # Stop active scan_samples timers. Already queued events are
+                        # invalidated by the generation change above.
                         for timer in Timer.manager.get_timers_by_keyword(f"scan_samples"):
                             action.set_timer_action(Action.Timer(name=timer.name, timer_action=Action.Timer.TIMER_STOP))
 
@@ -235,6 +286,8 @@ class Digitiser(App):
         if isinstance(self.dig_model.scanning, dict) and self.dig_model.scanning.get('obs_id', None) is not None:
             logger.warning(f"Digitiser stopping scanning for observation {self.dig_model.scanning.get('obs_id', 'None')} due to Science Data Processor disconnect.")
             self.dig_model.scanning = False
+            self._advance_scan_samples_generation()
+            self.set_bpf_power_state(False)  # Switch bandpass filter powered off when stopping scanning:
 
         action = Action()
 
@@ -277,17 +330,26 @@ class Digitiser(App):
 
         # If the timer is for scanning samples from the SDR
         if event.name.startswith("scan_samples"):
+
+            scan_generation = event.user_ref
+            if not self._is_current_scan_samples_generation(scan_generation):
+                logger.debug(f"Digitiser ignoring stale {event.name} timer event from generation {scan_generation}; current generation is {self._current_scan_samples_generation()}.")
+                return action
             
             # Invoke the read_samples method to read samples from the SDR
             result = self.handle_method_call({"method": "read_samples", "params": {}})
             status, message, value, payload = util.unpack_result(result)
+
+            if not self._is_current_scan_samples_generation(scan_generation):
+                logger.debug(f"Digitiser dropping stale samples from {event.name} generation {scan_generation}; current generation is {self._current_scan_samples_generation()}.")
+                return action
 
             # If the digitiser is set to scan samples
             if self.dig_model.scanning:
 
                 # Start the same scan_samples timer immediately if it was successful, else wait 1000 milliseconds before retrying
                 wait = 0 if status == tm_dig.STATUS_SUCCESS else 1000 
-                action.set_timer_action(Action.Timer(name=event.name, timer_action=wait)) 
+                action.set_timer_action(Action.Timer(name=event.name, timer_action=wait, echo_data=scan_generation)) 
 
             if self.dig_model.sdp_connected == CommunicationStatus.ESTABLISHED and payload is not None:
                 # Prepare adv msg to send samples to sdp
@@ -305,20 +367,41 @@ class Digitiser(App):
             # Simply log a warning that the SDP did not acknowledge the samples advice
             logger.warning(f"Digitiser timed out waiting for acknowledgement from SDP for samples advice {event}")
 
-        # Else if the timer is for handling comms to the SDR
-        elif event.name.startswith("sdr_retry"):
+        # Else if the timer is for handling comms retries such as SDR connection retries
+        elif event.name.startswith("comms_retry"):
 
             # Restart the timer to keep retrying periodically
-            action.set_timer_action(Action.Timer(name=f"sdr_retry", timer_action=5000))
+            action.set_timer_action(Action.Timer(name=f"comms_retry", timer_action=5000))
 
-            if self.dig_model.sdr_connected == CommunicationStatus.NOT_ESTABLISHED:
+            if self.sdr is None or self.sdr.get_comms_status() != CommunicationStatus.ESTABLISHED:
                 self.sdr = SDR()  # Retry connecting to the SDR
                 self.dig_model.sdr_connected = self.sdr.get_comms_status()
 
                 if self.dig_model.sdr_connected == CommunicationStatus.ESTABLISHED:
                     logger.info("Digitiser successfully connected to SDR device.")
+            else:
+                self.dig_model.sdr_connected = self.sdr.get_comms_status()
+
+            if not self.dig_model.scanning:
+                idle_seconds = (datetime.now(timezone.utc) - self._last_active_dt).total_seconds()
+                if idle_seconds >= self._idle_poweroff_seconds:
+                    self.set_bpf_power_state(False)  # Switch bandpass filter power off when idle
 
         return action
+
+    def _advance_scan_samples_generation(self) -> int:
+        """Invalidate queued/in-flight scan sample timers and return the new generation."""
+        with self._scan_samples_generation_lock:
+            self._scan_samples_generation += 1
+            return self._scan_samples_generation
+
+    def _current_scan_samples_generation(self) -> int:
+        with self._scan_samples_generation_lock:
+            return self._scan_samples_generation
+
+    def _is_current_scan_samples_generation(self, generation) -> bool:
+        with self._scan_samples_generation_lock:
+            return generation == self._scan_samples_generation
 
     def process_status_event(self, event) -> Action:
         """ Processes status update events.
@@ -387,8 +470,13 @@ class Digitiser(App):
                 return tm_dig.STATUS_ERROR, f"Digitiser property {prop_name} is not callable", None, None
         
         except Exception as e:
-            logger.exception(f"Digitiser failed to set property {prop_name} to {prop_value}: {e}")
-            return tm_dig.STATUS_ERROR, f"Digitiser failed to set property {prop_name} to {prop_value}: {e}", None, None
+            details = str(e)
+            if isinstance(e, XHardwareFailure):
+                self.dig_model.sdr_connected = CommunicationStatus.NOT_ESTABLISHED
+                logger.error(f"Digitiser failed to set property {prop_name} to {prop_value}: {details}")
+            else:
+                logger.exception(f"Digitiser failed to set property {prop_name} to {prop_value}: {details}")
+            return tm_dig.STATUS_ERROR, f"Digitiser failed to set property {prop_name} to {prop_value}: {details}", None, None
 
         logger.info(f"Digitiser set property {prop_name[4:]} to {prop_value}")
         return tm_dig.STATUS_SUCCESS, f"Digitiser set property {prop_name} to {prop_value}", prop_value, None
@@ -429,8 +517,11 @@ class Digitiser(App):
         try:  # Call the getter method
             value = getter() if callable(getter) else getter
         except Exception as e:
-            logger.error(f"Digitiser failed to get property {prop_name}: {e}")
-            return tm_dig.STATUS_ERROR, f"Digitiser failed to get property {prop_name}: {e}", None, None
+            details = str(e)
+            if isinstance(e, XHardwareFailure):
+                self.dig_model.sdr_connected = CommunicationStatus.NOT_ESTABLISHED
+            logger.error(f"Digitiser failed to get property {prop_name}: {details}")
+            return tm_dig.STATUS_ERROR, f"Digitiser failed to get property {prop_name}: {details}", None, None
 
         return tm_dig.STATUS_SUCCESS, f"Digitiser get {prop_name} value {value}", value, None
   
@@ -464,16 +555,41 @@ class Digitiser(App):
             return tm_dig.STATUS_ERROR, f"Digitiser method {method} not found", None, None
 
         try:  # Call the method
-            result = call(**args) if args is not None else call() if callable(call) else call
+            if method in (tm_dig.METHOD_GET_AUTO_GAIN, tm_dig.METHOD_SET_AUTO_GAIN):
+                result = self._call_auto_gain_with_load_disabled(call, args)
+            else:
+                result = call(**args) if args is not None else call() if callable(call) else call
         except (XSoftwareFailure, XHardwareFailure) as e:
-            logger.error(f"Digitiser method {method} failed with exception: {e}")
-            return tm_dig.STATUS_ERROR, f"Digitiser method {method} failed with exception: {e}", None, None
+            details = str(e)
+            if isinstance(e, XHardwareFailure):
+                self.dig_model.sdr_connected = CommunicationStatus.NOT_ESTABLISHED
+            logger.error(f"Digitiser method {method} failed with exception: {details}")
+            return tm_dig.STATUS_ERROR, f"Digitiser method {method} failed with exception: {details}", None, None
+
+        if method == tm_dig.METHOD_SET_AUTO_GAIN and result is not None:
+            self.dig_model.gain = float(result[0] if isinstance(result, tuple) else result)
 
         # Check whether result is a tuple of (value, payload) or just a value
         if isinstance(result, tuple):
-            return tm_dig.STATUS_SUCCESS, f"Digitiser method {call.__name__} invoked on SDR", result[0], result[1]
+            return tm_dig.STATUS_SUCCESS, f"Digitiser method {method} invoked on SDR", result[0], result[1]
         else:
-            return tm_dig.STATUS_SUCCESS, f"Digitiser method {call.__name__} invoked on SDR", result, None
+            return tm_dig.STATUS_SUCCESS, f"Digitiser method {method} invoked on SDR", result, None
+
+    def _call_auto_gain_with_load_disabled(self, call, args):
+        """Run auto-gain against the sky/input path, restoring the prior load state."""
+        args = args if args is not None else {}
+        restore_load = bool(self.dig_model.load_active)
+
+        if restore_load:
+            logger.info("Digitiser temporarily disabling LOAD relay for auto gain measurement.")
+            self.set_load_active(False)
+
+        try:
+            return call(**args)
+        finally:
+            if restore_load:
+                logger.info("Digitiser restoring LOAD relay state after auto gain measurement.")
+                self.set_load_active(True)
 
     def _construct_status_adv_to_tm(self) -> APIMessage:
         """ Constructs a status advice message for the Telescope Manager.
@@ -519,7 +635,7 @@ class Digitiser(App):
         # Construct metadata using the digitiser model and sample read info
         metadata = [   
             {"property": "dig_id", "value": self.dig_model.dig_id},               # Digitiser Id
-            {"property": "load", "value": self.dig_model.load},                   # Bool
+            {"property": "load", "value": self.dig_model.load_active},            # Bool
             {"property": "center_freq", "value": self.dig_model.center_freq},     # Hz    
             {"property": "sample_rate", "value": self.dig_model.sample_rate},     # Hz
             {"property": "bandwidth", "value": self.dig_model.bandwidth},         # MHz
@@ -555,6 +671,12 @@ class Digitiser(App):
         if api_call.get('property') is not None:
             tm_rsp_api_call["property"] = api_call['property']
 
+        if api_call.get('method') is not None:
+            tm_rsp_api_call["method"] = api_call['method']
+
+        if api_call.get('params') is not None:
+            tm_rsp_api_call["params"] = api_call['params']
+
         if value is not None:
             tm_rsp_api_call["value"] = value
         
@@ -566,6 +688,76 @@ class Digitiser(App):
 
         tm_rsp.set_api_call(tm_rsp_api_call)       
         return tm_rsp
+
+    def _configure_bpf_control_relay(self, control_type: str):
+        """Configures the optional relay GPIO based on the current BPF config and type."""
+
+        if control_type == "load":
+            relay_attr = "load_relay"
+        elif control_type == "power":
+            relay_attr = "power_relay"
+        else:
+            raise ValueError(f"Unsupported control_type: {control_type}")
+
+        gpio_pin = self.dig_model.get_bpf_control_pin(control_type)
+        relay = getattr(self, relay_attr)
+
+        if gpio_pin is None:
+            if relay is not None:
+                relay.close()
+                setattr(self, relay_attr, None)
+            self._bpf_control_state[control_type] = None
+            return
+
+        relay_pin = getattr(relay.pin, "number", None) if relay is not None and getattr(relay, "pin", None) is not None else None
+        pin_changed = relay is None or (relay_pin is not None and relay_pin != gpio_pin)
+
+        if pin_changed:
+            if relay is not None:
+                relay.close()
+            setattr(self, relay_attr, LED(gpio_pin))
+            self._bpf_control_state[control_type] = None
+
+    def _switch_bpf_control_relay(self, control_type: str, control_state: bool):
+        """Drive optional GPIO control relays to match the current control state."""
+
+        if control_type == "load":
+            relay = self.load_relay
+        elif control_type == "power":
+            relay = self.power_relay
+        else:
+            raise ValueError(f"Unsupported control_type: {control_type}")
+
+        if relay is None:
+            return
+
+        current_state = self._bpf_control_state.get(control_type)
+        if current_state is not None and current_state == control_state:
+            return
+
+        logger.info(f"Digitiser switching BPF control relay for {control_type} to {'ON' if control_state else 'OFF'}")
+        relay.on() if control_state else relay.off()
+        self._bpf_control_state[control_type] = control_state
+
+    def set_load_active(self, value):
+        """Set the load active state, driving controllable relays if necessary."""
+        load_active = fmt_bool(value)
+
+        if self.dig_model.is_bpf_controllable("load") and load_active != self.dig_model.load_active:
+            with self._bpf_control_lock:
+                self._configure_bpf_control_relay("load")
+                self._switch_bpf_control_relay("load", load_active)
+
+        self.dig_model.load_active = load_active
+
+    def set_bpf_power_state(self, value):
+        """Set the bandpass filter power to on/off by driving controllable relays if necessary."""
+        power_active = fmt_bool(value)
+
+        if self.dig_model.is_bpf_controllable("power"):
+            with self._bpf_control_lock:
+                self._configure_bpf_control_relay("power")
+                self._switch_bpf_control_relay("power", power_active)
 
 def main():
     digitiser = Digitiser()

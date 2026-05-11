@@ -190,7 +190,7 @@ if __name__ == "__main__":
         latitude=53.2421, longitude=-2.3067, height=80.0,
         mode=DishMode.STANDBY_FP,
         pointing_state=PointingState.UNKNOWN,
-        feed=Feed.NONE,
+        feed_type=Feed.NONE,
         dig_id="dig002",
         capability=Capability.OPERATE_FULL,
         driver_type=DriverType.DRIFT,
@@ -228,7 +228,6 @@ if __name__ == "__main__":
     drift_driver._set_stow_mode(alt=drift_cfg.alt, az=drift_cfg.az)
     alt, az = drift_driver._get_current_altaz()
     print(f"After Stow - Current Altitude: {alt} degrees, Azimuth: {az} degrees")
-
 
 
 

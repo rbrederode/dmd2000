@@ -1,14 +1,18 @@
 import logging
+import enum
 from typing import Any
 
 from api import tm_dig, tm_sdp, tm_dm
 from models import dsh
+from models.base import BaseModel
+from models.dig import BandpassFilterType
+from models.target import TargetConfig
 
 logger = logging.getLogger(__name__)
 
 # Map Configuration items to attribute names
 _config_to_property = {
-    "load":             tm_dig.PROPERTY_LOAD,
+    "load_active":      tm_dig.PROPERTY_LOAD_ACTIVE,
     "sample_rate":      tm_dig.PROPERTY_SAMPLE_RATE,
     "center_freq":      tm_dig.PROPERTY_CENTER_FREQ,
     "bandwidth":        tm_dig.PROPERTY_BANDWIDTH,
@@ -32,20 +36,20 @@ def get_property_name_value(config_item: str, value) -> (str, Any):
 
     # If property is found, map the value accordingly
     if property:
-        if property == tm_dig.PROPERTY_LOAD:
+        if property == tm_dig.PROPERTY_LOAD_ACTIVE:
 
             if isinstance(value, bool):
                 return property, value
-            elif str(value).upper() in ["TRUE", "1", "YES", "ON"]:
+            elif isinstance(value, str) and value.upper() in ["TRUE", "1", "YES", "ON"]:
                 return property, True
-            elif str(value).upper() in ["FALSE", "0", "NO", "OFF"]:
+            elif isinstance(value, str) and value.upper() in ["FALSE", "0", "NO", "OFF"]:
                 return property, False
             else:
-                logger.error(f"Telescope Manager map: invalid LOAD value {value} for property {property}")
+                logger.error(f"Telescope Manager map: invalid LOAD_ACTIVE value {value} for property {property}")
                 return property, None
 
         elif property == tm_dig.PROPERTY_GAIN:
-            if str(value).upper() == "AUTO":
+            if TargetConfig.is_auto_gain_token(value):
                 return property, {"time_in_secs": 0.5}
             else:
                 try:
@@ -94,6 +98,9 @@ def get_property_name_value(config_item: str, value) -> (str, Any):
                 # Recursively map dictionary keys if needed (e.g., for nested configurations)
                 mapped_dict = {}
                 for k, v in value.items():
+                    if property == tm_sdp.PROPERTY_SCAN_CONFIG and k == tm_dig.PROPERTY_GAIN and TargetConfig.is_auto_gain_token(v):
+                        logger.info("Telescope Manager map: deferring scan_config gain update until auto gain is resolved.")
+                        continue
                     mapped_key, mapped_value = get_property_name_value(k, v)
                     # Use the mapped key if found, otherwise keep the original key
                     mapped_dict[mapped_key if mapped_key is not None else k] = mapped_value
@@ -141,15 +148,15 @@ def get_method_name_value(config_item: str, value) -> (str, Any):
     if config_item is None or value is None:
         return None, None
 
-    if config_item == "gain" and str(value).upper() == "AUTO":
-        return tm_dig.METHOD_GET_AUTO_GAIN, {"time_in_secs": 0.5}
+    if config_item == "gain" and TargetConfig.is_auto_gain_token(value):
+        return tm_dig.METHOD_SET_AUTO_GAIN, {"time_in_secs": 0.5}
     
     return None, None
 
 if __name__ == "__main__":
     # Test the mapping
     test_items = [
-        "Load",
+        "Load State",
         "Sample Rate",
         "Center Frequency",
         "Bandwidth",

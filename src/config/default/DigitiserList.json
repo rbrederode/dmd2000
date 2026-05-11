@@ -9,6 +9,7 @@
                 "_type": "AppModel",
                 "app_name": "app",
                 "app_running": false,
+                "version": "",
                 "health": {
                     "_type": "enum.IntEnum",
                     "instance": "HealthState",
@@ -20,14 +21,24 @@
                 "processors": [],
                 "msg_timeout_ms": 10000,
                 "arguments": {
-                    "local_host": "192.168.0.36"
+                    "local_host": "192.168.0.48"
                 },
+                "reliability": null,
+                "availability": null,
+                "last_err_msg": null,
+                "last_err_dt": null,
                 "last_update": {
                     "_type": "datetime",
-                    "value": "2026-01-11T13:13:18.466610+00:00"
+                    "value": "2026-05-08T10:09:55.808567+00:00"
                 }
             },
-            "load": false,
+            "load_active": false,
+            "bpf_type": {
+                "_type": "enum.IntEnum",
+                "instance": "BandpassFilterType",
+                "value": "UNKNOWN"
+            },
+            "bpf_config": null,
             "gain": 0.0,
             "sample_rate": 0.0,
             "bandwidth": 0.0,
@@ -52,9 +63,11 @@
             },
             "scanning": false,
             "sdr_eeprom": {},
+            "last_err_msg": null,
+            "last_err_dt": null,
             "last_update": {
                 "_type": "datetime",
-                "value": "2026-01-11T13:13:18.467076+00:00"
+                "value": "2026-05-08T10:09:55.809517+00:00"
             }
         },
         {
@@ -64,6 +77,7 @@
                 "_type": "AppModel",
                 "app_name": "app",
                 "app_running": false,
+                "version": "",
                 "health": {
                     "_type": "enum.IntEnum",
                     "instance": "HealthState",
@@ -75,14 +89,24 @@
                 "processors": [],
                 "msg_timeout_ms": 10000,
                 "arguments": {
-                    "local_host": "192.168.0.18"
+                    "local_host": "192.168.0.2"
                 },
+                "reliability": null,
+                "availability": null,
+                "last_err_msg": null,
+                "last_err_dt": null,
                 "last_update": {
                     "_type": "datetime",
-                    "value": "2026-01-11T13:13:18.467579+00:00"
+                    "value": "2026-05-08T10:09:55.810279+00:00"
                 }
             },
-            "load": false,
+            "load_active": false,
+            "bpf_type": {
+                "_type": "enum.IntEnum",
+                "instance": "BandpassFilterType",
+                "value": "UNKNOWN"
+            },
+            "bpf_config": null,
             "gain": 0.0,
             "sample_rate": 0.0,
             "bandwidth": 0.0,
@@ -107,14 +131,16 @@
             },
             "scanning": false,
             "sdr_eeprom": {},
+            "last_err_msg": null,
+            "last_err_dt": null,
             "last_update": {
                 "_type": "datetime",
-                "value": "2026-01-11T13:13:18.468017+00:00"
+                "value": "2026-05-08T10:09:55.811197+00:00"
             }
         }
     ],
     "last_update": {
         "_type": "datetime",
-        "value": "2026-01-11T13:13:18.468499+00:00"
+        "value": "2026-05-08T10:09:55.811950+00:00"
     }
 }

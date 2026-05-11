@@ -13,6 +13,21 @@ function testOnEdit() {
   onEditHandler(e);
 }
 
+function UTCNow() {
+  const d = new Date();
+
+  console.log(d.getTimezoneOffset())
+
+  // Shift back by timezone offset, multiply by 60000 to get offset in milleseconds
+  return new Date(d.getTime() + d.getTimezoneOffset() * 60000);
+}
+
+function getTimezoneOffset() {
+  const d = new Date();
+  return d.getTimezoneOffset() / 1440
+}
+
+
 // Configuration
 const WEBHOOK_URL = 'https://webhook.dmd2000.org/webhook';
 const WEBHOOK_TOKEN = PropertiesService.getScriptProperties().getProperty('WEBHOOK_TOKEN');
@@ -46,7 +61,8 @@ function sendWebhook(toSystem, jsonStr) {
     const responseCode = response.getResponseCode();
     
     if (responseCode === 200) {
-      console.log('Webhook sent successfully');
+      console.log('Webhook sent successfully ALSTON-RT' + "." + fromSystem + "." + toSystem);
+      console.log(jsonStr);
     } else {
       console.error('Webhook failed with status:', responseCode);
       console.error('Response:', response.getContentText());
@@ -430,7 +446,7 @@ function consolidateRows(sheet) {
  * DIG00X sheet:
  *   - If columns D:E (5) rows 4-10 are edited:
  *     → Generates a JSON string representing the Digitiser configuration.
- *     → Writes JSON to TM_UI_API sheet cell B3.
+ *     → Sends the JSON string to TM via a webhook
  *
  * OBS DESIGN sheet:
  *   - If cell B25 or B30 is edited:
@@ -468,7 +484,6 @@ function onEditHandler(e) {
   Logger.log(`onEdit triggered on sheet: ${sheetName}, cell: ${e.range.getA1Notation()} col: ${col} row: ${row} by user: ${userEmail}`);
 
   const ss = SpreadsheetApp.getActive();
-  const apiSheet = ss.getSheetByName("TM_UI_API");
   const obsSheet = ss.getSheetByName("DB OBS LIST")
 
   // ---------- OBS STORE sheet: Reset Observation ----------
@@ -497,9 +512,6 @@ function onEditHandler(e) {
   // ---------- DIG00X sheet: Digitiser config ----------
   if (sheetName === "DIG00X" && col === 4 && row >= 3 && row <= 11) {
     const jsonStr = generateJSON(sheet, ["A3:B3","C3:D11"]);
-
-    apiSheet.getRange("B3").setValue(jsonStr);
-    Logger.log("Digitiser JSON updated in TM_UI_API B3");
     sendWebhook("dig", jsonStr);
     return;
   }
@@ -507,9 +519,6 @@ function onEditHandler(e) {
   // ---------- DM00X sheet: Dish config ----------
   if (sheetName === "DM00X" && col === 4 && row >= 3 && row <= 4) {
     const jsonStr = generateJSON(sheet, ["C1:D1","C3:D4"]);
-
-    apiSheet.getRange("F3").setValue(jsonStr);
-    Logger.log("Dish JSON updated in TM_UI_API F3");
     sendWebhook("dsh", jsonStr);
     return;
   }
@@ -656,7 +665,7 @@ function onEditHandler(e) {
             "value": "EMPTY"
     };
     // Add targets and meta data to the observation
-    obsJsonObj["_type"] = "Observation"
+    obsJsonObj["_type"] = "ObsModel"
     obsJsonObj["target_configs"] = target_configs
     obsJsonObj["targets"] = targets
     obsJsonObj["user_email"] = userEmail
@@ -687,7 +696,7 @@ function onEditHandler(e) {
     sheet.getRange("E32").clearContent();
     targetSheet.getRange("A2:A").clearContent();
     
-    // Update TM_UI_API
+    // Generate the ObsList and send it
     obsListJSON = generateObsList()
     sendWebhook("odt", obsListJSON);
     return;
@@ -1024,13 +1033,17 @@ function generateJSON(sheet, cellRanges, returnObject = false, log = false, type
       let key = rawKey.toString().toLowerCase().replace(/ /g, "_");
 
       let value = row[1];
+      if (typeof value === "string") value = value.trim();
 
       if (log) Logger.log("Key:" + key + " Value:"+ value);
 
       if (!key || value === "") return;
 
+      Logger.log("Row rawKey=%s normalizedKey=%s value=%s", rawKey, key, value);
+
       // Convert Feed key/value pairs to enum objects
-      if (key === "feed") {
+      if (key === "feed" || key === "feed_type") {
+        key = "feed_type";
         value = {
           "_type": "enum.IntEnum",
           "instance": "Feed",
@@ -1039,8 +1052,10 @@ function generateJSON(sheet, cellRanges, returnObject = false, log = false, type
       } else if (key === 'altaz') {
         // .*?alt:([+-]?[0-9.]+) → Altitude (signed digits + decimal)
         // .*?az:([+-]?[0-9.]+)  → Azimuth (signed digits + decimal)
-        const regex = /^alt:([+-]?[0-9.]+).*?az:([+-]?[0-9.]+)/;
+        const regex = /^\s*alt:\s*([+-]?[0-9.]+).*?az:\s*([+-]?[0-9.]+)/i;
         const match = value.match(regex);
+
+        Logger.log("Entering altaz branch with value=%s", value);
 
         if (match) {
           const alt = match[1];
@@ -1185,6 +1200,13 @@ function generateJSON(sheet, cellRanges, returnObject = false, log = false, type
   // Update pointing if it was set
   var t = jsonObj.target;
   var pointing = jsonObj.pointing;
+
+  Logger.log("Before pointing update: target=%s, pointing=%s, keys=%s",
+    JSON.stringify(t),
+    JSON.stringify(pointing),
+    Object.keys(jsonObj).join(", ")
+  );
+
   if (pointing) {
     t.pointing.value = pointing.toUpperCase().replace(/\s+/g, "_");
     delete jsonObj.pointing;

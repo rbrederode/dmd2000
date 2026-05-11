@@ -1,11 +1,33 @@
 from __future__ import annotations
+from astropy import units as u
+from astropy.coordinates import SpectralCoord, EarthLocation, SkyCoord, AltAz, ICRS
 from datetime import datetime, timedelta
+from typing import TYPE_CHECKING
+
 import numpy as np
 import re
-from typing import TYPE_CHECKING
+import scipy.constants as const
+import socket
 
 import logging
 logger = logging.getLogger(__name__)
+
+f_e = 1420.405751768 * u.MHz  # Rest frequency of HI hyperfine transition
+speed_of_light = const.speed_of_light * (u.meter / u.second)
+
+DEFAULT_LOOPBACK_IP = "127.0.0.1"
+
+def resolve_default_host(service_point: str, fallback_host: str = DEFAULT_LOOPBACK_IP) -> str:
+    """Resolve the local hostname for a service point and fall back safely when unavailable."""
+    try:
+        return socket.gethostbyname(socket.gethostname())
+    except socket.gaierror:
+        logger.warning(
+            "%s could not resolve local hostname; falling back to %s",
+            service_point,
+            fallback_host,
+        )
+        return fallback_host
 
 def unpack_result(result) -> tuple:
         """ Unpacks a tuple result containing status, message, value, and payload.
@@ -243,6 +265,40 @@ def find_json_object_end(data:bytes) -> int:
                     return i + 1  # End index is after this brace
         escape = (c == '\\' and not escape)
     return -1  # Not found
+
+def velocity2LSR(coord: SkyCoord, observing_location: EarthLocation, observing_time: Time):
+    """ Calculates the velocity adjustment for the Local Standard of Rest 
+        coord:  Expected in the ICRS frame of reference i.e. RA DEC
+        observing_location: EarthLocation of observer
+        observing_time: Observing Time
+
+        Validation by comparison to the Greenbank calculator here:
+        https://www.gb.nrao.edu/cgi-bin/radvelcalc.py?UTDate=2025%2F07%2F16&UTTime=17%3A40%3A00&RA=06%3A41%3A00&DEC=09%3A52%3A59
+        Lat Long for GMB Telescope: 38.432994106420274, -79.8400693370822
+        """
+
+    # ITRS (International Terrestial Reference System) frame of reference (a geocentric system)
+    itrs = observing_location.get_itrs(obstime=observing_time)
+    frequency = SpectralCoord(
+        f_e, 
+        observer=itrs, 
+        target=coord) #Shift expected from just local motion
+    # Return a new SpectralCoord with the velocity of the observer altered, but not the position
+    f_shifted = frequency.with_observer_stationary_relative_to('lsrk') #correct for kinematic local standard of rest
+    f_shifted = f_shifted.to(u.GHz)
+    v = -freq2vel(f_shifted, f_e)
+    v_adj = v.to(u.km/u.second)
+    return v_adj
+
+def freq2vel(freq, rest=f_e):
+    """
+    Calculates velocity from measured frequency via doppler shift.
+    
+    :param freq: array of frequency quantities (including units)
+    :param rest (optional): Rest frequency, defaults to 1.42 GHz
+    :returns vel: velocity inferred by doppler shift
+    """
+    return ((rest - freq) * speed_of_light / freq).to(u.km/u.second)
 
 def get_azimuth_distance(az1, az2):
     """ This function calculates the distance needed to move in azimuth between two angles. This takes into account that the 

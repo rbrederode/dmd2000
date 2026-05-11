@@ -4,6 +4,7 @@ from typing import Any, List, Dict
 from numpy.lib.stride_tricks import sliding_window_view
 
 from models.pipeline import StepConfig, StepType
+from models.scan import ScanType
 from sdp.pipeline.pipeline_factory import ProcessingStep
 
 logger = logging.getLogger(__name__)
@@ -13,16 +14,17 @@ class RFIFlag(ProcessingStep):
     def __init__(self, config: StepConfig = None):
         super().__init__(config)
 
-        logger.info("RFIFlag pipeline step initialisation with config:\n%s", str(self.config))
+        logger.debug("RFIFlag pipeline step initialisation with config:\n%s", str(self.config))
 
         self.scan = config.params["scan"] if "scan" in config.params else None
-        self.scan_qa = self.scan.get_qa() if self.scan else None
 
-        logger.debug("RFIFlag pipeline step initialisation with scan qa:\n%s", str(self.scan_qa))
+        if self.scan is None:
+            raise ValueError("RFIFlag step requires 'scan' in config.params. It is currently None.")
 
-        if self.scan_qa is None:
-            raise ValueError(f"RFIFlag: scan_qa {self.scan_qa} must be set before initialising RFIFlag step.")
-    
+        self.scan_qa = self.scan.get_qa()
+        
+        logger.debug("RFIFlag pipeline step initialised with scan:\n%s", str(self.scan))
+
     def process(self, context: Any, signal: Any) -> Any:
         """
         Apply a vectorized sliding-window MAD RFI flagging pass to the signal array,
@@ -33,6 +35,15 @@ class RFIFlag(ProcessingStep):
 
         if not isinstance(context, dict):
             raise ValueError("RFIFlag: context must be a dictionary.")
+
+        # If this is a load scan, we should not apply rfi flagging, because we end up dividing the sky signal by the load scan
+        # and this effectively cancels out rfi that is present in both, before we apply rfi flagging in the resultant signal. 
+        if self.scan.get_scan_type() == ScanType.LOAD:
+            return signal
+        
+        if self.scan_qa is None:
+            self.scan_qa = self.scan.get_qa()
+            self.scan_qa = self.scan.init_qa() if self.scan_qa is None else self.scan_qa  # Ensure the scan QA is initialised
 
         pipeline = context.get("pipeline", "unknown")  # Get the pipeline name from the context 
 
@@ -65,8 +76,13 @@ class RFIFlag(ProcessingStep):
 
         qa.rfi_fraction = num_flagged / len(signal) if len(signal) > 0 else 0.0
 
-        logger.info(f"RFIFlag (sliding window): Flagged {num_flagged} channels as RFI outliers using window_size={window_size}, threshold={n}*MAD")
+        logger.debug(f"RFIFlag (sliding window): Flagged {num_flagged} channels as RFI outliers using window_size={window_size}, threshold={n}*MAD")
         return signal
+
+    @classmethod
+    def describe(cls) -> str:
+        return "Detect and suppress likely RFI outliers using a sliding-window median absolute deviation filter."
+
 
 def main():
  
@@ -75,7 +91,7 @@ def main():
     
     from queue import Queue
  
-    scan_q = Queue()  # Set the calibration queue in the pipeline factory to None
+    sky_q = Queue()   # Set the sky queue in the pipeline factory to None
     cal_q = Queue()   # Set the calibration queue in the pipeline factory to None
 
     from models.scan import ScanModel, ScanState
@@ -105,7 +121,7 @@ def main():
     from obs.scan import Scan
 
     scan = Scan(scan_model=scan001)
-    scan_q.put(scan)  # Put the scan in the scan queue for processing
+    sky_q.put(scan)  # Put the scan in the sky queue for processing
 
     load001 = scan001.copy()
     load001.load = True
@@ -114,8 +130,8 @@ def main():
     cal_q.put(load_scan)  # Put the load scan in the cal queue for processing
 
     params={}
-    params['scan'] = scan     # The scan that the pipeline will process
-    params['scan_q'] = scan_q    # Pipeline steps are provided access to the scan queue if needed
+    params['scan'] = scan        # The scan that the pipeline will process
+    params['sky_q'] = sky_q      # Pipeline steps are provided access to the sky queue if needed
     params['cal_q'] = cal_q      # Pipeline steps are provided access to the calibration queue if needed
     params['threshold'] = 5      # Threshold for RFI flagging
     params['window_size'] = 21   # Window size for RFI flagging (must be odd)
