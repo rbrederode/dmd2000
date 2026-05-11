@@ -16,6 +16,9 @@ bash "$BASE_DIR/scripts/dig/install_packages.sh"
 echo "Installing SDR drivers..."
 bash "$BASE_DIR/scripts/dig/install_sdr.sh"
 
+echo "Installing SoapySDR drivers..."
+bash "$BASE_DIR/scripts/dig/install_soapy.sh"
+
 echo "Setting up Python environment..."
 bash "$BASE_DIR/scripts/dig/install_python.sh"
 

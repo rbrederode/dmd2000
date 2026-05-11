@@ -65,6 +65,8 @@
                 "value": "NOT_ESTABLISHED"
             },
             "scanning": false,
+            "sdr_type": "airspy",
+            "sdr_config": {},
             "sdr_eeprom": {},
             "last_update": {
                 "_type": "datetime",

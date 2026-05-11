@@ -7,7 +7,7 @@
             "app_name": "dig",
             "entity_id": "dig001",
             "env": {
-                "_GPIOZERO_PIN_FACTORY": "mock"
+                "GPIOZERO_PIN_FACTORY": "mock"
             },
             "program": "python",
             "args": [
@@ -61,7 +61,7 @@
                 "--dig_host", "127.0.0.1",
                 "--sdp_host", "127.0.0.1",
                 "--dm_host", "127.0.0.1",
-                "-o", "config/jodrell/obs_3hr_solar_drift_scan.json"
+                "-o", "config/jodrell/obs_3hr_solar_drift_scan_airspy.json"
             ]
         }
     ]

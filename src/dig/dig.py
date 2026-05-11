@@ -4,7 +4,6 @@ import numpy as np
 import threading
 import time
 from datetime import datetime, timezone
-from rtlsdr import RtlSdr
 from gpiozero import LED
 
 from api import tm_dig, sdp_dig
@@ -117,8 +116,8 @@ class Digitiser(App):
             logger.warning(f"Digitiser could not load Digitiser configuration from directory {input_dir} file {filename}")
 
         # Initialise the Software Defined Radio (internal) interface
-        self.sdr = SDR()
-        self.dig_model.sdr_eeprom = self.sdr.get_eeprom_info()
+        self.sdr = SDR(sdr_type=self.dig_model.sdr_type, sdr_config=self.dig_model.sdr_config)
+        self.dig_model.sdr_eeprom = self.sdr.get_eeprom_info() or {}
         self.dig_model.sdr_connected = self.sdr.get_comms_status()
         
         # Start timer to periodically checks comms e.g. SDR, Bandpass filter relays, etc
@@ -374,7 +373,7 @@ class Digitiser(App):
             action.set_timer_action(Action.Timer(name=f"comms_retry", timer_action=5000))
 
             if self.sdr is None or self.sdr.get_comms_status() != CommunicationStatus.ESTABLISHED:
-                self.sdr = SDR()  # Retry connecting to the SDR
+                self.sdr = SDR(sdr_type=self.dig_model.sdr_type, sdr_config=self.dig_model.sdr_config)  # Retry connecting to the SDR
                 self.dig_model.sdr_connected = self.sdr.get_comms_status()
 
                 if self.dig_model.sdr_connected == CommunicationStatus.ESTABLISHED:
