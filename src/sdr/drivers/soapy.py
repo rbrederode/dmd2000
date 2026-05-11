@@ -421,6 +421,11 @@ class SDR:
         if self.device is None or self.stream is None:
             raise XHardwareFailure("SoapySDR device stream is not open.")
 
+        timeout_us = int(self.sdr_config.get("read_timeout_us", timeout_us))
+        timeout_total_sec = float(self.sdr_config.get("read_timeout_total_sec", 5.0))
+        timeout_deadline = time.monotonic() + max(0.0, timeout_total_sec)
+        timeout_count = 0
+
         result = np.empty(num_samples, dtype=np.complex64)
         offset = 0
 
@@ -429,6 +434,13 @@ class SDR:
             stream_result = self.device.readStream(self.stream, [view], len(view), timeoutUs=timeout_us)
             read_count = int(stream_result.ret)
             if read_count < 0:
+                if read_count == -4:
+                    timeout_count += 1
+                    if time.monotonic() < timeout_deadline:
+                        continue
+                    raise XHardwareFailure(
+                        f"SoapySDR readStream timed out after {timeout_count} retries ({timeout_total_sec:.2f}s)."
+                    )
                 raise XHardwareFailure(f"SoapySDR readStream failed with code {read_count}.")
             if read_count == 0:
                 raise XHardwareFailure("SoapySDR readStream returned zero samples.")

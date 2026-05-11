@@ -23,7 +23,7 @@ if [ "${SKIP_APT_UPDATE:-0}" != "1" ]; then
     echo "=== 2. Clean apt lists ==="
     sudo apt clean
     sudo rm -rf /var/lib/apt/lists/*
-    bash "$BASE_DIR/update_apt.sh"
+    bash "$BASE_DIR/system_update.sh" --update-only
 else
     echo "=== 2. Skipping apt list refresh (SKIP_APT_UPDATE=1) ==="
 fi
