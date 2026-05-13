@@ -6,6 +6,8 @@ PACKAGES=(
     python3
     python3-pip
     python3-gpiozero
+    python3-lgpio
+    lgpio
     build-essential
     htop
     btop

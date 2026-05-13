@@ -5,6 +5,10 @@ echo "==================================="
 echo " SoapySDR Library and Tools Installer "
 echo "==================================="
 
+SOAPY_AIRSPY_REPO="https://github.com/pothosware/SoapyAirspy.git"
+SOAPY_AIRSPY_DIR="${SOAPY_AIRSPY_DIR:-/private/tmp/SoapyAirspy}"
+HOMEBREW_PREFIX="${HOMEBREW_PREFIX:-/opt/homebrew}"
+
 require_command() {
     local cmd="$1"
     local hint="$2"
@@ -28,47 +32,118 @@ is_raspberry_pi() {
     return 1
 }
 
+install_homebrew_formula() {
+    local formula="$1"
+
+    if brew list "$formula" >/dev/null 2>&1; then
+        echo "$formula is already installed."
+    else
+        echo "Installing $formula with Homebrew..."
+        brew install "$formula"
+    fi
+}
+
+python_imports_soapy() {
+    python - <<'PY'
+import importlib.util
+raise SystemExit(0 if importlib.util.find_spec("SoapySDR") else 1)
+PY
+}
+
+add_homebrew_python_binding_to_venv() {
+    local binding_dir="$HOMEBREW_PREFIX/lib/python3.11/site-packages"
+
+    if [ ! -d "$binding_dir" ]; then
+        echo "WARNING: Homebrew SoapySDR Python binding directory not found: $binding_dir"
+        return
+    fi
+
+    if python_imports_soapy; then
+        echo "SoapySDR Python bindings already available to current Python."
+        return
+    fi
+
+    local site_packages
+    site_packages="$(python - <<'PY'
+import site
+paths = site.getsitepackages()
+print(paths[0] if paths else "")
+PY
+)"
+
+    if [ -z "$site_packages" ] || [ ! -d "$site_packages" ]; then
+        echo "WARNING: Could not determine current Python site-packages directory."
+        echo "Add this path to PYTHONPATH when running the digitiser: $binding_dir"
+        return
+    fi
+
+    echo "Adding Homebrew SoapySDR Python binding path to current Python environment..."
+    printf '%s\n' "$binding_dir" > "$site_packages/homebrew-soapysdr.pth"
+}
+
+install_soapy_airspy_from_source_macos() {
+    require_command git "Install git and rerun this script."
+    require_command cmake "Install cmake and rerun this script."
+
+    if [ -f "$HOMEBREW_PREFIX/lib/SoapySDR/modules0.8/libairspySupport.so" ]; then
+        echo "Soapy Airspy module is already installed."
+        return
+    fi
+
+    if SoapySDRUtil --info 2>/dev/null | grep -qi "airspy"; then
+        echo "Soapy Airspy module is already installed."
+        return
+    fi
+
+    if [ -d "$SOAPY_AIRSPY_DIR/.git" ]; then
+        echo "Updating existing SoapyAirspy source tree..."
+        git -C "$SOAPY_AIRSPY_DIR" pull --ff-only
+    else
+        echo "Cloning SoapyAirspy source..."
+        rm -rf "$SOAPY_AIRSPY_DIR"
+        git clone "$SOAPY_AIRSPY_REPO" "$SOAPY_AIRSPY_DIR"
+    fi
+
+    mkdir -p "$SOAPY_AIRSPY_DIR/compat"
+    touch "$SOAPY_AIRSPY_DIR/compat/ciso646"
+
+    local cxx_header_dir="/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1"
+    local cxx_flags="-I$SOAPY_AIRSPY_DIR/compat"
+    if [ -d "$cxx_header_dir" ]; then
+        cxx_flags="$cxx_flags -I$cxx_header_dir"
+    fi
+
+    echo "Building SoapyAirspy module..."
+    cmake -S "$SOAPY_AIRSPY_DIR" -B "$SOAPY_AIRSPY_DIR/build" \
+        -DCMAKE_INSTALL_PREFIX="$HOMEBREW_PREFIX" \
+        -DCMAKE_CXX_STANDARD=17 \
+        -DCMAKE_CXX_STANDARD_REQUIRED=ON \
+        -DCMAKE_CXX_FLAGS="$cxx_flags"
+    cmake --build "$SOAPY_AIRSPY_DIR/build"
+    cmake --install "$SOAPY_AIRSPY_DIR/build"
+}
+
 install_macos() {
     echo "Detected macOS."
     require_command brew "Install Homebrew from https://brew.sh/ and rerun this script."
+    require_command python "Activate the Python environment used by dmd2000 and rerun this script."
 
-    if brew list soapysdr >/dev/null 2>&1; then
-        echo "soapysdr is already installed."
-    else
-        echo "Installing SoapySDR with Homebrew..."
-        brew install soapysdr
-    fi
+    install_homebrew_formula soapysdr
+    install_homebrew_formula soapyrtlsdr
+    install_homebrew_formula airspy
+    install_homebrew_formula cmake
 
-    if brew list soapysdr-module-airspy >/dev/null 2>&1; then
-        echo "soapysdr-module-airspy is already installed."
-    else
-        echo "Installing Soapy Airspy module..."
-        brew install soapysdr-module-airspy
-    fi
-
-    if brew list soapysdr-module-rtlsdr >/dev/null 2>&1; then
-        echo "soapysdr-module-rtlsdr is already installed."
-    else
-        echo "Installing Soapy RTL-SDR module..."
-        brew install soapysdr-module-rtlsdr
-    fi
-
-    if python3 - <<'PY'
-import importlib.util
-raise SystemExit(0 if importlib.util.find_spec('SoapySDR') else 1)
-PY
-    then
-        echo "SoapySDR Python bindings already available."
-    else
-        echo "Installing SoapySDR Python bindings with pip..."
-        python3 -m pip install --user SoapySDR
-    fi
+    install_soapy_airspy_from_source_macos
+    add_homebrew_python_binding_to_venv
 }
 
 install_raspberry_pi() {
     echo "Detected Raspberry Pi Linux."
     require_command apt-get "This installer expects Raspberry Pi OS or another apt-based Pi Linux."
     require_command sudo "sudo is required to install system packages."
+
+    echo "Updating apt package index..."
+    sudo apt-get update
 
     echo "Installing SoapySDR tools, modules, and Python bindings..."
     sudo apt-get install -y \
@@ -99,13 +174,22 @@ case "$(uname -s)" in
 esac
 
 echo ""
-echo "Verifying SoapySDRUtil..."
+echo "Verifying SoapySDR..."
 if command -v SoapySDRUtil >/dev/null 2>&1; then
-    SoapySDRUtil --info || true
+    SoapySDRUtil --info
     SoapySDRUtil --find || true
 else
     echo "ERROR: SoapySDRUtil was not found after installation."
     exit 1
+fi
+
+if python_imports_soapy; then
+    python - <<'PY'
+import SoapySDR
+print(f"SoapySDR Python bindings available: {SoapySDR.SoapySDR_getLibVersion()}")
+PY
+else
+    echo "WARNING: SoapySDR Python bindings are still not importable by the current Python."
 fi
 
 echo ""

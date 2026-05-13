@@ -45,6 +45,9 @@ install_raspberry_pi() {
     require_command apt-get "This installer expects Raspberry Pi OS or another apt-based Pi Linux."
     require_command sudo "sudo is required to install system packages."
 
+    echo "Updating apt package index..."
+    sudo apt-get update
+
     echo "Installing Airspy tools and development libraries..."
     sudo apt-get install -y airspy libairspy-dev
 }
