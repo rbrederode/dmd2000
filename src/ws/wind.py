@@ -21,6 +21,7 @@ Environment variables:
     WIND_ADC_BACKEND       ads1115 | mock
     WIND_ADC_CHANNEL       0-3, default 0
     WIND_ADC_ADDRESS       I2C address, default 0x48
+    WIND_I2C_BUS           I2C bus number (e.g. 1, 3), optional
     WIND_VOLTAGE_MIN       converter output at minimum wind speed, default 0.0
     WIND_VOLTAGE_MAX       converter output at maximum wind speed, default 3.3
     WIND_SPEED_MIN         minimum wind speed in m/s, default 0.0
@@ -39,6 +40,7 @@ class WindConfig:
     adc_backend: str = os.environ.get("WIND_ADC_BACKEND", "ads1115")
     adc_channel: int = int(os.environ.get("WIND_ADC_CHANNEL", "0"))
     adc_address: int = int(os.environ.get("WIND_ADC_ADDRESS", "0x48"), 0)
+    i2c_bus: int | None = int(os.environ["WIND_I2C_BUS"], 0) if os.environ.get("WIND_I2C_BUS") else None
     voltage_min: float = float(os.environ.get("WIND_VOLTAGE_MIN", "0.0"))
     voltage_max: float = float(os.environ.get("WIND_VOLTAGE_MAX", "3.3"))
     speed_min: float = float(os.environ.get("WIND_SPEED_MIN", "0.0"))
@@ -66,7 +68,10 @@ class MockVoltageReader(VoltageReader):
 class ADS1115VoltageReader(VoltageReader):
     """Read converter output voltage from an ADS1115 ADC."""
 
-    def __init__(self, channel: int = 0, address: int = 0x48):
+    def __init__(self, channel: int = 0, address: int = 0x48, i2c_bus: int | None = None):
+        if i2c_bus is not None:
+            os.environ["BLINKA_I2C_BUS"] = str(i2c_bus)
+
         try:
             import board
             import busio
@@ -105,7 +110,11 @@ def build_voltage_reader(config: WindConfig) -> VoltageReader:
         return MockVoltageReader()
 
     if backend == "ads1115":
-        return ADS1115VoltageReader(channel=config.adc_channel, address=config.adc_address)
+        return ADS1115VoltageReader(
+            channel=config.adc_channel,
+            address=config.adc_address,
+            i2c_bus=config.i2c_bus,
+        )
 
     raise ValueError(f"Unsupported WIND_ADC_BACKEND '{config.adc_backend}'")
 
@@ -129,6 +138,7 @@ def describe_environment(config: WindConfig) -> str:
         f"backend={config.adc_backend} "
         f"channel={config.adc_channel} "
         f"address={hex(config.adc_address)} "
+        f"i2c_bus={config.i2c_bus if config.i2c_bus is not None else 'default'} "
         f"voltage_range={config.voltage_min:.3f}-{config.voltage_max:.3f}V "
         f"speed_range={config.speed_min:.3f}-{config.speed_max:.3f}m/s"
     )

@@ -1,6 +1,7 @@
 numpy
 matplotlib
 tzlocal
+pandas-stubs
 pytz
 astropy
 astroplan
