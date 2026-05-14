@@ -13,6 +13,7 @@ gpiozero
 google-auth
 google-auth-oauthlib
 google-api-python-client
+lgpio
 minimalmodbus
 pyrtlsdr==0.2.93
 #pyobjc
@@ -25,6 +26,7 @@ setuptools==75.6.0
 witmotion
 adafruit-blinka
 adafruit-circuitpython-ads1x15
+adafruit-extended-bus
 minimalmodbus
 git+https://github.com/FRBs/sigpyproc3.git
 

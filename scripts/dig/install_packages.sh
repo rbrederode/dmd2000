@@ -8,7 +8,10 @@ PACKAGES=(
     python3-gpiozero
     python3-lgpio
     build-essential
+    swig
+    liblgpio-dev
     htop
+    lgpio
     btop
     curl
     tmux

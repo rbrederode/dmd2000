@@ -21,7 +21,7 @@ Environment variables:
     WIND_ADC_BACKEND       ads1115 | mock
     WIND_ADC_CHANNEL       0-3, default 0
     WIND_ADC_ADDRESS       I2C address, default 0x48
-    WIND_I2C_BUS           I2C bus number (e.g. 1, 3), optional
+    WIND_I2C_BUS           I2C bus number (e.g. 1, 3), optional (requires adafruit-extended-bus)
     WIND_VOLTAGE_MIN       converter output at minimum wind speed, default 0.0
     WIND_VOLTAGE_MAX       converter output at maximum wind speed, default 3.3
     WIND_SPEED_MIN         minimum wind speed in m/s, default 0.0
@@ -69,25 +69,39 @@ class ADS1115VoltageReader(VoltageReader):
     """Read converter output voltage from an ADS1115 ADC."""
 
     def __init__(self, channel: int = 0, address: int = 0x48, i2c_bus: int | None = None):
-        if i2c_bus is not None:
-            os.environ["BLINKA_I2C_BUS"] = str(i2c_bus)
-
         try:
-            import board
-            import busio
             import adafruit_ads1x15.ads1115 as ADS
             from adafruit_ads1x15.ads1x15 import Pin
             from adafruit_ads1x15.analog_in import AnalogIn
         except ImportError as exc:
             raise ImportError(
-                "ADS1115 backend requires board, busio, and adafruit_ads1x15. "
+                "ADS1115 backend requires adafruit_ads1x15. "
                 "Install CircuitPython ADS1x15 packages on the Raspberry Pi."
             ) from exc
+
+        if i2c_bus is not None:
+            try:
+                from adafruit_extended_bus import ExtendedI2C
+            except ImportError as exc:
+                raise ImportError(
+                    "WIND_I2C_BUS requires adafruit-extended-bus. "
+                    "Install it to use a non-default I2C bus."
+                ) from exc
+            i2c = ExtendedI2C(i2c_bus)
+        else:
+            try:
+                import board
+                import busio
+            except ImportError as exc:
+                raise ImportError(
+                    "ADS1115 backend requires board and busio. "
+                    "Install adafruit-blinka to use the default I2C bus."
+                ) from exc
+            i2c = busio.I2C(board.SCL, board.SDA)
 
         if channel not in (0, 1, 2, 3):
             raise ValueError(f"ADS1115 channel must be 0-3, got {channel}")
 
-        i2c = busio.I2C(board.SCL, board.SDA)
         ads = ADS.ADS1115(i2c, address=address)
         ads.gain = 1  # +-4.096 V, suitable for a 0-3.3 V converter output
 
