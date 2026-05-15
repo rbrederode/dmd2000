@@ -1,4 +1,5 @@
 import logging
+import os
 import subprocess
 import numpy as np
 
@@ -13,6 +14,9 @@ import threading
 import witmotion
 
 # IMU = Inertial Measurement Unit
+
+# Default Qt platform to avoid Wayland activation warnings on Pi GUI setups.
+os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
 
 # Configure logging
 logging.basicConfig(
@@ -491,7 +495,11 @@ def main():
     parser = argparse.ArgumentParser(description="Inertial Motion Unit (IMU)")
     parser.add_argument('-imu', '--imu', type=str, help='IMU device identifier e.g. "/dev/tty.usbserial-1120"', required=True)
     parser.add_argument('-baud', '--baud', type=int, help='Baud rate for the IMU device e.g. 9600', default=9600)
+    parser.add_argument('--qt-platform', type=str, default=os.environ.get("QT_QPA_PLATFORM", "xcb"), help='Qt platform plugin (e.g. xcb, wayland, offscreen).')
     args = parser.parse_args()
+
+    if args.qt_platform:
+        os.environ["QT_QPA_PLATFORM"] = args.qt_platform
 
     motion = Motion(args.imu, args.baud)
     if not motion.connect():
