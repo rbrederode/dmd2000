@@ -137,7 +137,7 @@ class Motion:
             The first entry in the result set is used as the IMU device.
             Returns the device identifier string if found, None otherwise, e.g. /dev/ttyUSB0
         """
-        result = subprocess.run("ls /dev/tty* | grep usbserial", shell=True, capture_output=True, text=True)
+        result = subprocess.run(r"ls /dev/tty* | grep -E '(usbserial|ttyUSB)'", shell=True, capture_output=True, text=True)
         if result.returncode != 0:
             logging.error(f"Error trying to detect IMU device: {result.stderr}")
         else:
@@ -512,8 +512,10 @@ def main():
         while True:
 
             alt, az = motion.get_altaz()
+            temp = motion.get_temperature()
             logging.info(f"Altitude: {alt}, Azimuth: {az}")
             logging.info(f"Roll: {motion.get_roll()}, Pitch: {motion.get_pitch()}, Yaw: {motion.get_yaw()}")
+            logging.info(f"Temperature: {temp}")
             time.sleep(1)
     except KeyboardInterrupt:
         logging.info("Keyboard interrupt...")
