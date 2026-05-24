@@ -274,12 +274,27 @@ EOF
     . "$PRESTO_ENV_FILE"
 }
 
+find_presto_library_dir() {
+    local presto_library_file
+
+    presto_library_file="$(find "$PRESTO_PREFIX" -type f -name 'libpresto.so*' 2>/dev/null | sort | head -n 1 || true)"
+    if [ -n "$presto_library_file" ]; then
+        dirname "$presto_library_file"
+        return 0
+    fi
+
+    printf '%s\n' "$PRESTO_PREFIX/lib"
+}
+
 configure_dynamic_linker() {
     local ld_so_conf_file="/etc/ld.so.conf.d/presto.conf"
+    local presto_library_dir
+
+    presto_library_dir="$(find_presto_library_dir)"
 
     if command -v sudo >/dev/null 2>&1; then
-        echo "Registering $PRESTO_PREFIX/lib with the dynamic linker..."
-        printf '%s\n' "$PRESTO_PREFIX/lib" | sudo tee "$ld_so_conf_file" >/dev/null
+        echo "Registering $presto_library_dir with the dynamic linker..."
+        printf '%s\n' "$presto_library_dir" | sudo tee "$ld_so_conf_file" >/dev/null
         sudo ldconfig
     else
         echo "WARNING: sudo is not available, so the dynamic linker cache was not updated."
