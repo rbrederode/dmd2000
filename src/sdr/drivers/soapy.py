@@ -322,7 +322,15 @@ class SDR:
             raise XSoftwareFailure(f"SoapySDR sample rate {sample_rate:g} Hz is not supported by this device. Supported rates: {rates}")
 
         self.device.setSampleRate(self._SOAPY_SDR_RX, self.channel, sample_rate)
-        self.sample_rate = int(math.ceil(sample_rate))
+        actual_sample_rate = float(self.device.getSampleRate(self._SOAPY_SDR_RX, self.channel))
+        if not math.isclose(actual_sample_rate, sample_rate, rel_tol=0.0, abs_tol=1.0):
+            raise XSoftwareFailure(
+                f"SoapySDR coerced sample rate from {sample_rate:g} Hz to {actual_sample_rate:g} Hz; rejecting request."
+            )
+        self.sample_rate = int(math.ceil(actual_sample_rate))
+        self._needs_prime = True
+        self._prime_stream()
+        return actual_sample_rate
 
     def get_bandwidth(self):
         if self.device is None:
@@ -337,6 +345,7 @@ class SDR:
         if self.device is None:
             logger.warning("SoapySDR device not connected.")
             return
+
         try:
             self.device.setBandwidth(self._SOAPY_SDR_RX, self.channel, float(value))
         except Exception as exc:

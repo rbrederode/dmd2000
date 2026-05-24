@@ -445,9 +445,9 @@ class Digitiser(App):
             # If the property setter exists on the SDR
             if hasattr(self.sdr, prop_name) and callable(getattr(self.sdr, prop_name)):
                 setter = getattr(self.sdr, prop_name)
-                setter(prop_value)
+                result = setter(prop_value)
                 # Update the property in the digitiser model for sdr properties
-                setattr(self.dig_model, prop_name[4:], prop_value)
+                setattr(self.dig_model, prop_name[4:], result if result is not None else prop_value)
 
             # Else if the property setter exists on the Digitiser
             elif hasattr(self, prop_name) and callable(getattr(self, prop_name)):
