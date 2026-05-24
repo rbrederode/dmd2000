@@ -10,6 +10,7 @@ PACKAGES=(
     build-essential
     swig
     liblgpio-dev
+    libglib2.0-dev
     htop
     lgpio
     btop

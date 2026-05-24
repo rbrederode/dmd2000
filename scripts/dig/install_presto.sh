@@ -9,6 +9,7 @@ PRESTO_REPO="${PRESTO_REPO:-https://github.com/scottransom/presto.git}"
 PRESTO_DIR="${PRESTO_DIR:-$HOME/presto5}"
 PRESTO_PREFIX="${PRESTO_PREFIX:-$PRESTO_DIR/installation}"
 PRESTO_VENV="${PRESTO_VENV:-$HOME/.venvs/presto5}"
+DEBIAN_PKGCONFIG_DIRS="/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig"
 
 require_command() {
     local cmd="$1"
@@ -24,8 +25,9 @@ require_command() {
 require_pkg_config_dependency() {
     local package_name="$1"
     local apt_package_hint="$2"
+    local pkg_config_cmd="${PKG_CONFIG:-pkg-config}"
 
-    if ! pkg-config --exists "$package_name" >/dev/null 2>&1; then
+    if ! "$pkg_config_cmd" --exists "$package_name" >/dev/null 2>&1; then
         echo "ERROR: pkg-config dependency '$package_name' was not found."
         echo "Install the matching development package and rerun this script: $apt_package_hint"
         exit 1
@@ -104,6 +106,39 @@ prepare_python_environment() {
     python -m pip install meson meson-python ninja numpy
 }
 
+configure_pkg_config() {
+    local pkg_config_cmd
+
+    if [ -x /usr/bin/pkg-config ] && /usr/bin/pkg-config --exists glib-2.0 >/dev/null 2>&1; then
+        pkg_config_cmd=/usr/bin/pkg-config
+    elif command -v pkg-config >/dev/null 2>&1 && pkg-config --exists glib-2.0 >/dev/null 2>&1; then
+        pkg_config_cmd="$(command -v pkg-config)"
+    elif [ -x /usr/bin/pkg-config ]; then
+        pkg_config_cmd=/usr/bin/pkg-config
+    else
+        echo "ERROR: pkg-config is not available."
+        echo "Install pkg-config and rerun this script."
+        exit 1
+    fi
+
+    export PKG_CONFIG="$pkg_config_cmd"
+
+    if ! "$PKG_CONFIG" --exists glib-2.0 >/dev/null 2>&1; then
+        export PKG_CONFIG_PATH="$DEBIAN_PKGCONFIG_DIRS${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+    fi
+
+    if ! "$PKG_CONFIG" --exists glib-2.0 >/dev/null 2>&1; then
+        echo "ERROR: pkg-config still cannot see glib-2.0."
+        echo "Using PKG_CONFIG=$PKG_CONFIG"
+        echo "Using PKG_CONFIG_PATH=${PKG_CONFIG_PATH:-<empty>}"
+        echo "Run: $PKG_CONFIG --modversion glib-2.0"
+        exit 1
+    fi
+
+    echo "Using PKG_CONFIG=$PKG_CONFIG"
+    echo "Using PKG_CONFIG_PATH=${PKG_CONFIG_PATH:-<empty>}"
+}
+
 configure_environment() {
     local pgplot_dir
     local tempo_dir=""
@@ -144,7 +179,7 @@ configure_environment() {
 }
 
 preflight_build_dependencies() {
-    require_command pkg-config "Install pkg-config and rerun this script."
+    require_command "$PKG_CONFIG" "Install pkg-config and rerun this script."
     require_pkg_config_dependency glib-2.0 "sudo apt-get install -y libglib2.0-dev"
     require_pkg_config_dependency fftw3f "sudo apt-get install -y libfftw3-dev"
     require_pkg_config_dependency gsl "sudo apt-get install -y libgsl-dev"
@@ -228,6 +263,7 @@ esac
 install_raspberry_pi_dependencies
 prepare_python_environment
 configure_environment
+configure_pkg_config
 preflight_build_dependencies
 clone_or_update_presto
 build_and_install_presto
