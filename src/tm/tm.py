@@ -30,6 +30,7 @@ from models.base import BaseModel
 from models.comms import CommunicationStatus, InterfaceType
 from models.dig import DigitiserModel
 from models.dsh import DishManagerModel, Feed, Capability, DishMode, PointingState
+from models.fil import FilterBank
 from models.obs import ObsModel, ObsTransition, ObsState
 from models.oda import ODAModel, ObsList, ScanStore
 from models.health import HealthState
@@ -221,11 +222,11 @@ class TelescopeManager(App):
                 logger.error(f"Telescope Manager received digitiser configuration update with no digitiser ID specified in the new configuration: {event.new_config}")
                 return action
             
-            # Extract DIG specific properties (all properties except Scan Duration and Channels)
+            # Extract DIG specific properties (all properties except scan-only fields)
             old_dig_config = {k: v for k, v in (event.old_config or {}).items() 
-                if k not in (tm_sdp.PROPERTY_SCAN_DURATION, tm_sdp.PROPERTY_CHANNELS)}
+                if k not in (tm_sdp.PROPERTY_SCAN_DURATION, tm_sdp.PROPERTY_SPECTRAL_RESOLUTION, tm_sdp.PROPERTY_CHANNELS)}
             new_dig_config = {k: v for k, v in (event.new_config or {}).items() 
-                if k not in (tm_sdp.PROPERTY_SCAN_DURATION, tm_sdp.PROPERTY_CHANNELS)}
+                if k not in (tm_sdp.PROPERTY_SCAN_DURATION, tm_sdp.PROPERTY_SPECTRAL_RESOLUTION, tm_sdp.PROPERTY_CHANNELS)}
 
             # Update the digitiser configuration based on the received config event and trigger any necessary actions
             action = self.update_dig_configuration(old_dig_config, new_dig_config, action)
@@ -834,8 +835,15 @@ class TelescopeManager(App):
 
                 if dig is not None:
                     for key in dig_config.keys():
-                        if key in dig.schema.schema.keys():
+                        if key == "filter_bank":
+                            filter_bank = dig_config[key]
+                            if isinstance(filter_bank, dict):
+                                filter_bank = FilterBank(**filter_bank)
+                            dig.filter_bank = filter_bank
+                        elif key in dig.schema.schema.keys():
                             setattr(dig, key, dig_config[key])
+                        elif key == tm_sdp.PROPERTY_SPECTRAL_RESOLUTION:
+                            dig.channels = int(dig_config[key])
                         elif key == "load":
                             load_value = dig_config[key].get("load") if isinstance(dig_config[key], dict) else dig_config[key]
 
@@ -889,7 +897,7 @@ class TelescopeManager(App):
                             duration=completed_scan.duration,
                             sample_rate=completed_scan.sample_rate,
                             center_freq=completed_scan.center_freq,
-                            channels=completed_scan.channels,
+                            spectral_resolution=completed_scan.spectral_resolution,
                             instance_id=scan.scan_id, 
                             scan_type=scan.scan_type,
                             filetype="meta") + ".json"

@@ -19,7 +19,7 @@ class DCSpike(ProcessingStep):
         if self.scan is None:
             raise ValueError("DCSpike: scan must be set before initializing DCSpike step.")
 
-        self.channels = self.scan.scan_model.channels  # Get the number of channels from the scan to use in the DC spike removal process
+        self.channels = self.scan.scan_model.spectral_resolution  # Get the number of channels from the scan to use in the DC spike removal process
     
     def process(self, context: Any, signal: Any) -> Any:
         """
@@ -82,7 +82,7 @@ def main():
         start_idx=100,
         duration=60,
         sample_rate=1024.0,
-        channels=1024,
+        spectral_resolution=1024,
         center_freq=1420405752.0,
         gain=50.0,
         load=False,

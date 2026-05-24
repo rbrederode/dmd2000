@@ -93,10 +93,10 @@ class ObsDisplay:
         for idx, scan in enumerate(self.scans):
             start_mhz = (scan.scan_model.center_freq - scan.scan_model.sample_rate / 2.0) / 1e6
             end_mhz = (scan.scan_model.center_freq + scan.scan_model.sample_rate / 2.0) / 1e6
-            freq_axis = np.linspace(start_mhz, end_mhz, scan.scan_model.channels)
+            freq_axis = np.linspace(start_mhz, end_mhz, scan.scan_model.spectral_resolution)
             freq_spans.extend([start_mhz, end_mhz])
 
-            y = scan.mpr if scan.mpr is not None else np.zeros(scan.scan_model.channels)
+            y = scan.mpr if scan.mpr is not None else np.zeros(scan.scan_model.spectral_resolution)
             scan_id_parts = str(scan.scan_model.scan_id).split("-")
             label = f"Scan {'-'.join(scan_id_parts[-2:])}" if len(scan_id_parts) >= 2 else f"Scan {scan.scan_model.scan_id}"
             self.ax_freq.plot(freq_axis, y, color=colours[idx], linewidth=1.5, label=label)
@@ -143,13 +143,13 @@ class ObsDisplay:
             if tpw_sum.size == 0:
                 continue
 
-            time_axis = np.arange(1, tpw_sum.size + 1)
+            time_axis = np.arange(tpw_sum.size) + 1
             scan_id_parts = str(scan.scan_model.scan_id).split("-")
             label = f"Scan {'-'.join(scan_id_parts[-2:])}" if len(scan_id_parts) >= 2 else f"Scan {scan.scan_model.scan_id}"
             self.ax_vel.plot(time_axis, tpw_sum, color=colours[idx], linewidth=1.5, label=label)
             mean_tpw = float(np.mean(tpw_sum))
             self.ax_vel.axhline(mean_tpw, color=colours[idx], linestyle="--", linewidth=1.0, alpha=0.9)
-            max_secs = max(max_secs, tpw_sum.size)
+            max_secs = max(max_secs, time_axis[-1])
 
         if max_secs > 0:
             self.ax_vel.set_xlim(1, max_secs)

@@ -209,7 +209,8 @@ def gen_file_prefix(
     duration:int,
     sample_rate:float,
     center_freq:float,
-    channels:int,
+    spectral_resolution:int = None,
+    channels:int = None,
     instance_id:str = None,
     scan_type: ScanType = None,
     filetype: str = None) -> str:
@@ -221,12 +222,16 @@ def gen_file_prefix(
         :param duration: The duration in seconds
         :param sample_rate: The sample rate e.g. 2.4e6 Hz
         :param center_freq: The center frequency e.g. 1.42e9 Hz
-        :param channels: The number of channels e.g. 1024
+        :param spectral_resolution: The number of spectral bins / FFT size e.g. 1024
+        :param channels: Legacy name for spectral_resolution
         :param instance_id: The instance ID number for multiple files per entity e.g. Obs ID
         :param scan_type: The type of scan (e.g., "sky", "load", "tsys", "gain")
         :param filetype: The type of file being generated (e.g., "raw", "spr", "cal", "meta", "mpr")
         :returns: A string representing the file prefix
     """
+    if spectral_resolution is None:
+        spectral_resolution = channels
+
     prefix = (
         (str(instance_id) if instance_id is not None else '') +
         (dt.strftime("%Y-%m-%dT%H%M%S") if instance_id is None and dt is not None else '') +
@@ -235,7 +240,7 @@ def gen_file_prefix(
         ("-du" + str(duration) if duration is not None else '') +
         ("-bw" + str(round(sample_rate/1e6,2)) if sample_rate is not None else '') +
         ("-cf" + str(round(center_freq/1e6,2)) if center_freq is not None else '') +
-        ("-ch" + str(channels) if channels is not None else '') +
+        ("-ch" + str(spectral_resolution) if spectral_resolution is not None else '') +
         ("-" + scan_type.name if scan_type is not None else '') +
         ("-" + filetype if filetype is not None else '')
     )

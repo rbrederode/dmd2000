@@ -5,6 +5,7 @@ import numpy as np
 import os
 from pathlib import Path
 from queue import Queue
+from schema import SchemaError
 import re
 import time
 import threading
@@ -19,6 +20,7 @@ from ipc.tcp_server import TCPServer
 from models.base import BaseModel
 from models.comms import CommunicationStatus, InterfaceType
 from models.dig import DigitiserModel, DigitiserList
+from models.fil import FilterBank
 from models.health import HealthState
 from models.pipeline import StepConfig, StepType, PipelineConfig
 from models.scan import ScanModel, ScanState, ScanType
@@ -257,7 +259,7 @@ class SDP(App):
 
                         # Verify that the digitiser metadata still matches the scan parameters
                         if scan.scan_model.center_freq == center_freq and scan.scan_model.sample_rate == sample_rate and scan.scan_model.load == load and \
-                           scan.scan_model.channels == digitiser.channels and scan.scan_model.duration == digitiser.scan_duration:
+                            scan.scan_model.spectral_resolution == digitiser.channels and scan.scan_model.duration == digitiser.scan_duration:
                             match = scan
                             break
                         else:
@@ -291,12 +293,14 @@ class SDP(App):
                         scan_type=ScanType.LOAD if load else ScanType.SKY,
                         start_idx=read_counter,
                         duration=digitiser.scan_duration,
-                        channels=digitiser.channels,
+                        spectral_resolution=digitiser.channels,
                         sample_rate=sample_rate,
                         center_freq=center_freq,
                         gain=gain,
+                        filter_bank=None if load else digitiser.filter_bank,
                         load=load,
-                        status=ScanState.EMPTY)
+                        status=ScanState.EMPTY,
+                        files_directory=os.path.expanduser(self.get_args().scan_store_dir))
 
                     scan = Scan(scan_model=scan_model)
 
@@ -520,8 +524,8 @@ class SDP(App):
     def set_scan_config(self, value: dict) -> bool:
         """ Sets the scan configuration for a digitiser.
             This is needed to prepare the correct load (baseline) scan before samples for a sky scan start arriving.      
-            params:     value is a dictionary with keys dig_id, center_freq, sample_rate, bandwidth, gain, duration, 
-                        load, channels, obs_id, tgt_idx, freq_scan, scan_iter.
+            params:     value is a dictionary with keys dig_id, center_freq, sample_rate, bandwidth, gain, duration,
+                        load, spectral_resolution, obs_id, tgt_idx, freq_scan, scan_iter.
             returns:    True if the scan config was successfully applied, False otherwise
         """
         logger.info(f"Science Data Processor setting scan config with value: {value}")
@@ -548,6 +552,23 @@ class SDP(App):
             if key in ['dig_id', 'obs_id']:
                 continue  # skip these keys as they are identifiers and not attributes
 
+            if key == 'filter_bank':
+                if val is None:
+                    dig.filter_bank = None
+                elif isinstance(val, FilterBank):
+                    dig.filter_bank = val
+                elif isinstance(val, dict):
+                    try:
+                        dig.filter_bank = FilterBank(**val)
+                    except SchemaError as exc:
+                        logger.warning(f"Science Data Processor ignoring invalid filter_bank config for digitiser {dig_id}: {exc}")
+                        continue
+                else:
+                    logger.warning(f"Science Data Processor ignoring invalid filter_bank config for digitiser {dig_id}: {val}")
+                    continue
+                logger.info(f"Science Data Processor set digitiser {dig_id} filter_bank to {dig.filter_bank}")
+                continue
+
             if key == sdp_dig.PROPERTY_LOAD:
                 if isinstance(val, str):
                     load = val.strip().lower() in ["true", "1", "yes", "on"]
@@ -563,6 +584,9 @@ class SDP(App):
                     logger.info(f"Science Data Processor deferring digitiser {dig_id} gain update until auto gain is resolved.")
                 else:
                     logger.warning(f"Science Data Processor ignoring invalid scan config gain {val} for digitiser {dig_id}")
+            elif key == tm_sdp.PROPERTY_SPECTRAL_RESOLUTION:
+                dig.channels = int(val)
+                logger.info(f"Science Data Processor set digitiser {dig_id} spectral resolution to {val}")
             elif key in dig.schema.schema:
                 setattr(dig, key, val)
                 logger.info(f"Science Data Processor set digitiser {dig_id} attribute {key} to {val}")
@@ -584,12 +608,13 @@ class SDP(App):
             start_idx=0,                    
             duration=dig.scan_duration,
             sample_rate=dig.sample_rate,
-            channels=dig.channels,
+            spectral_resolution=dig.channels,
             center_freq=dig.center_freq,
             gain=dig.gain,
             load=True,
             status=ScanState.COMPLETE,
-            synthesised=True)                 # synthetic flag indicates this is a synthetic load scan created by the SDP to apply to sky scans until the first real load scan samples are received from the digitiser
+            synthesised=True, # synthetic flag indicates this is a synthetic load scan created by the SDP to apply to sky scans until the first real load scan samples are received from the digitiser
+            files_directory=os.path.expanduser(self.get_args().scan_store_dir))                
         load_scan = None
         load_found = False
 

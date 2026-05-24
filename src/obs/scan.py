@@ -94,6 +94,12 @@ class Scan:
 
             self.mean_real = 0.0  # Mean of real value of the raw samples (I)
             self.mean_imag = 0.0  # Mean of imaginary value of the raw samples (Q)
+
+            self._fb_file = None
+            self._fb_path = None
+            self._fb_data = None
+            self._fb_loaded_secs = None
+            self._fb_written = False
              
             # QA attributes for the signal in this scan
             self.scan_qa = None
@@ -117,6 +123,7 @@ class Scan:
     def __del__(self):
         """ Destructor to clean up resources when a Scan instance is deleted. """
         logger.info(f"Scan {self.scan_model.scan_id} - Deleting scan instance and cleaning up resources.")
+        self._fb_close_writer()
         self.del_iq()  # Flush IQ data from memory
 
     def equivalent(self, other):
@@ -149,22 +156,190 @@ class Scan:
             # Full-resolution IQ matrices are extremely memory-hungry at radio sample rates,
             # so we only retain them when explicitly requested (e.g. offline IQ reload/debug flows).
             if self.retain_iq:
-                num_rows = int(np.ceil(self.scan_model.duration * self.scan_model.sample_rate / self.scan_model.channels))
-                self.raw = np.zeros((num_rows, self.scan_model.channels), dtype=np.complex64)               # complex64 for raw IQ samples i.e. 8 bytes per sample (4 bytes for real and 4 bytes for imaginary parts)
+                num_rows = int(np.ceil(self.scan_model.duration * self.scan_model.sample_rate / self.scan_model.spectral_resolution))
+                self.raw = np.zeros((num_rows, self.scan_model.spectral_resolution), dtype=np.complex64)               # complex64 for raw IQ samples i.e. 8 bytes per sample (4 bytes for real and 4 bytes for imaginary parts)
             else:
                 self.raw = None
 
             # Power is only needed a second at a time, so avoid holding a scan-sized array in memory.
             self.pwr = None
 
-            self.spr = np.zeros((self.scan_model.duration, self.scan_model.channels), dtype=np.float64)     # float64 for summed pwr for each second in duration
-            self.cal = np.zeros((self.scan_model.duration, self.scan_model.channels), dtype=np.float64)     # float64 for calibrated spectrum for each second in duration
-            self.mpr = np.ones((self.scan_model.channels,), dtype=np.float64)               # float64 for mean power spectrum over duration for each channel (fft bin)
+            self.spr = np.zeros((self.scan_model.duration, self.scan_model.spectral_resolution), dtype=np.float64)     # float64 for summed pwr for each temporal bin
+            self.cal = np.zeros((self.scan_model.duration, self.scan_model.spectral_resolution), dtype=np.float64)     # float64 for calibrated spectrum for each temporal bin
+            self.mpr = np.ones((self.scan_model.spectral_resolution,), dtype=np.float64)               # float64 for mean power spectrum over duration for each channel (fft bin)
+
+            fb_config = getattr(self.scan_model, "filter_bank", None)
+            if fb_config is not None and getattr(fb_config, "enabled", False):
+                rows_per_sec = self._fb_rows_per_sec()
+                self._fb_data = np.zeros((self.scan_model.duration * rows_per_sec, self.scan_model.spectral_resolution), dtype=np.float32)
+                self._fb_loaded_secs = self.scan_model.duration * [False]
+            else:
+                self._fb_data = None
+                self._fb_loaded_secs = None
+            self._fb_written = False
+
+    def _fb_open_writer(self, read_start: datetime | None):
+        """ Ensure that the scan's filterbank file is open and ready for writing. """
+
+        if self._fb_file is not None:
+            return
+
+        output_dir = self.scan_model.files_directory or "./"
+        os.makedirs(output_dir, exist_ok=True)
+
+        if not self.scan_model.files_prefix:
+            prefix = gen_file_prefix(
+                dt=read_start or datetime.now(timezone.utc),
+                entity_id=self.scan_model.dig_id,
+                gain=self.scan_model.gain,
+                duration=self.scan_model.duration,
+                sample_rate=self.scan_model.sample_rate,
+                center_freq=self.scan_model.center_freq,
+                spectral_resolution=self.scan_model.spectral_resolution,
+                instance_id=self.scan_model.scan_id,
+                scan_type=self.scan_model.scan_type,
+            )
+            self.scan_model.files_prefix = prefix
+            self.scan_model.files_directory = output_dir
+
+        self._fb_path = os.path.join(output_dir, f"{self.scan_model.files_prefix}-fb.dat")
+        self._fb_file = open(self._fb_path, "wb")
+
+    def _fb_close_writer(self):
+        """ Close the scan's filterbank file if it is open. """
+        if self._fb_file is None:
+            return
+
+        try:
+            self._fb_file.close()
+        finally:
+            self._fb_file = None
+            self._fb_path = None
+
+    def _fb_quantise(self, fb: np.ndarray, dtype: str | np.dtype) -> np.ndarray:
+        """ Quantise the filterbank data to the requested dtype for output. """
+        target_dtype = np.dtype(dtype)
+
+        # If the target dtype is a float or complex type, we can directly cast without clipping or rounding
+        if target_dtype.kind in {"f", "c"}:
+            return fb.astype(target_dtype, copy=False)
+
+        # np.iifo returns the limits for integer types, but for unsigned integers the min is 0, so we only need to clip the max value
+        info = np.iinfo(target_dtype)
+        fb = np.clip(fb, info.min, info.max)
+        return np.rint(fb).astype(target_dtype, copy=False)
+
+    def _fb_temporal_ms(self) -> float:
+        """Return the configured filterbank temporal resolution in milliseconds."""
+        fb_config = getattr(self.scan_model, "filter_bank", None)
+        return float(getattr(fb_config, "temporal_resolution", 1.0) or 1.0)
+
+    def _fb_samples_per_row(self) -> int:
+        """Return the number of IQ samples used for one filterbank row."""
+        return max(1, int(round(float(self.scan_model.sample_rate) * (self._fb_temporal_ms() / 1000.0))))
+
+    def _fb_sub_bandwidth(self) -> float:
+        """Return the output sub-bandwidth in Hz for the filterbank product."""
+        fb_config = getattr(self.scan_model, "filter_bank", None)
+        sub_bandwidth = float(getattr(fb_config, "sub_bandwidth", 0.0) or 0.0)
+        sample_rate = float(self.scan_model.sample_rate)
+        return sample_rate if sub_bandwidth <= 0.0 else min(sub_bandwidth, sample_rate)
+
+    def _fb_rows_per_sec(self) -> int:
+        """Return the number of filterbank rows produced from one second of IQ samples."""
+        return int(self.scan_model.sample_rate) // self._fb_samples_per_row()
+
+    def _fb_rows_from_iq(self, iq: np.ndarray) -> np.ndarray:
+        """Create filterbank rows from flat IQ samples.
+
+        Each temporal-resolution chunk is FFT'd as a whole, converted to power,
+        and then adjacent FFT bins are averaged into the configured number of channels.
+        """
+        samples_per_row = self._fb_samples_per_row()
+        channels = int(self.scan_model.spectral_resolution)
+        usable = (len(iq) // samples_per_row) * samples_per_row
+
+        if usable == 0:
+            return np.empty((0, channels), dtype=np.float32)
+
+        selected_bins = int(round(samples_per_row * (self._fb_sub_bandwidth() / float(self.scan_model.sample_rate))))
+        selected_bins = min(samples_per_row, max(channels, selected_bins))
+
+        if selected_bins % channels != 0:
+            raise ValueError(
+                f"Scan filterbank processing requires selected FFT bins ({selected_bins}) "
+                f"to be divisible by spectral_resolution ({channels})."
+            )
+
+        chunks = np.asarray(iq[:usable], dtype=np.complex64).reshape(-1, samples_per_row)
+        pwr = np.abs(np.fft.fftshift(np.fft.fft(chunks, axis=1), axes=1)) ** 2
+        bin_start = (samples_per_row - selected_bins) // 2
+        pwr = pwr[:, bin_start:bin_start + selected_bins]
+        nave = selected_bins // channels
+        fb = pwr.reshape(pwr.shape[0], nave, channels, order="F").mean(axis=1).astype(np.float32, copy=False)
+        bad_rows = ~np.isfinite(np.mean(fb, axis=1))
+        if np.any(bad_rows):
+            fb[bad_rows, :] = 0
+        return fb
+
+    def _fb_store_rows(self, sec: int, fb: np.ndarray) -> None:
+        """Store one second of unnormalised filterbank rows in the scan buffer."""
+        if self._fb_data is None or self._fb_loaded_secs is None or fb.size == 0:
+            return
+
+        rows_per_sec = self._fb_rows_per_sec()
+        row_start = (sec - 1) * rows_per_sec
+        row_end = row_start + min(rows_per_sec, fb.shape[0])
+        self._fb_data[row_start:row_end, :] = fb[:row_end - row_start, :]
+        self._fb_loaded_secs[sec - 1] = True
+
+    def _fb_trimmed_std(self, fb: np.ndarray, prop: float = 0.2) -> float:
+        """Compute the Julia script's robust scale estimate from a trimmed vector."""
+        flat = np.sort(np.ravel(fb))
+        trim_n = int(np.floor(flat.size * prop))
+        trimmed = flat[trim_n:-trim_n] if trim_n > 0 and trim_n * 2 < flat.size else flat
+        return float(np.std(trimmed, ddof=1 if trimmed.size > 1 else 0))
+
+    def _fb_finalize_writer(self, read_start: datetime | None) -> None:
+        """Normalise, quantise, and write the complete filterbank product.
+            Trim flattened filterbank matrix by 20%
+            -> std with Julia-like sample std
+            -> divide full matrix by trimmed std
+            -> set >255 and non-finite values to 0
+            -> write configured dtype, e.g. uint8, to *-fb.dat"""
+            
+        fb_config = getattr(self.scan_model, "filter_bank", None)
+        if (
+            self._fb_written
+            or self._fb_data is None
+            or self._fb_loaded_secs is None
+            or not all(self._fb_loaded_secs)
+            or fb_config is None
+            or not getattr(fb_config, "enabled", False)
+        ):
+            return
+
+        trim_std = self._fb_trimmed_std(self._fb_data)
+        if not np.isfinite(trim_std) or trim_std <= 0.0:
+            logger.warning(f"Scan {self.scan_model.scan_id} - Invalid filterbank trimmed std {trim_std}. Skipping filterbank write.")
+            return
+
+        fb = self._fb_data / trim_std
+        fb[~np.isfinite(fb)] = 0
+        fb[fb > 255] = 0
+        fb = self._fb_quantise(fb, getattr(fb_config, "dtype", "uint8"))
+
+        self._fb_open_writer(read_start)
+        if self._fb_file is not None:
+            fb.tofile(self._fb_file)
+            self._fb_file.flush()
+            self._fb_written = True
+            logger.info(f"Scan {self.scan_model.scan_id} - Wrote Julia-style filterbank data to {self._fb_path}")
 
     def get_rows_per_sec(self) -> int:
         """Get the number of FFT rows represented by one second of data."""
-        trimmed_samples = int(self.scan_model.sample_rate - (self.scan_model.sample_rate % self.scan_model.channels))
-        return trimmed_samples // self.scan_model.channels
+        trimmed_samples = int(self.scan_model.sample_rate - (self.scan_model.sample_rate % self.scan_model.spectral_resolution))
+        return trimmed_samples // self.scan_model.spectral_resolution
 
     def init_qa(self) -> ScanQA:
         """
@@ -278,15 +453,28 @@ class Scan:
 
         logger.debug(f"Scan {self.scan_model.scan_id} - Loading {iq.shape} samples for second {sec} into scan.")
 
-        # Reshape the samples to fit into a number of rows, each of channels columns and convert to complex64 (if needed) for better efficiency
-        iq = iq[:int(self.scan_model.sample_rate - (self.scan_model.sample_rate % self.scan_model.channels))].astype(np.complex64)  # Discard excess samples that don't fit into the channels
-        iq = iq.reshape(-1, self.scan_model.channels) # Reshape to have rows each of size channels columns
+        # Keep a flat one-second IQ view for the filterbank path, then reshape a trimmed
+        # copy for the existing per-second spectrum products used by the live display.
+        iq = np.asarray(iq[:int(self.scan_model.sample_rate)], dtype=np.complex64)
+        fb_config = getattr(self.scan_model, "filter_bank", None)
+        if fb_config is not None and getattr(fb_config, "enabled", False):
+            try:
+                fb = self._fb_rows_from_iq(iq)
+            except ValueError as exc:
+                logger.warning(f"Scan {self.scan_model.scan_id} - {exc} Skipping filterbank samples for second {sec}.")
+                fb = np.empty((0, self.scan_model.spectral_resolution), dtype=np.float32)
+        else:
+            fb = None
+
+        # Reshape the samples to fit into a number of rows, each of channels columns.
+        iq = iq[:int(self.scan_model.sample_rate - (self.scan_model.sample_rate % self.scan_model.spectral_resolution))]  # Discard excess samples that don't fit into the channels
+        iq = iq.reshape(-1, self.scan_model.spectral_resolution) # Reshape to have rows each of size channels columns
 
         # Calculate the power spectrum for all rows in one vectorized FFT pass
         # This is more efficient than iterating through rows and calculating the FFT for each row separately
         # for j in range(iq.shape[0]):
         #    pwr[j,:] = np.abs(np.fft.fftshift(np.fft.fft(iq[j,:])))**2  
-        pwr = np.abs(np.fft.fftshift(np.fft.fft(iq, axis=1), axes=1)) ** 2  # The power spectrum is the absolute value of the signal squared
+        pwr = np.abs(np.fft.fftshift(np.fft.fft(iq, axis=1), axes=1)) ** 2  # The power spectrum is the absolute value of the signal squared  
 
         spr = np.sum(pwr, axis=0)  # Sum power across all rows for this second
 
@@ -306,6 +494,9 @@ class Scan:
             # Keep only the latest per-second power block in memory when IQ retention is enabled.
             self.pwr = pwr if self.retain_iq else None
 
+            if fb is not None:
+                self._fb_store_rows(sec, fb)
+
             self.spr[sec - 1,:] = spr  # sec is 1-based index, so adjust for 0-based array index
             self.cal[sec - 1,:] = cal  # sec is 1-based index, so adjust for 0-based array index
 
@@ -313,7 +504,7 @@ class Scan:
             # current second that was just written above.
             loaded_mask = np.array(self.loaded_secs, dtype=bool)
             loaded_mask[sec - 1] = True
-            mpr = np.mean(self.cal[loaded_mask, :], axis=0) if np.any(loaded_mask) else np.zeros((self.scan_model.channels,), dtype=np.float64)
+            mpr = np.mean(self.cal[loaded_mask, :], axis=0) if np.any(loaded_mask) else np.zeros((self.scan_model.spectral_resolution,), dtype=np.float64)
             self.mpr = self.pipeline.process(signal=mpr, context={"pipeline": "mpr", "sec": sec}) if self.pipeline else mpr
 
             self.loaded_secs[sec - 1] = True  # Mark this second as loaded only after mpr is populated
@@ -327,9 +518,21 @@ class Scan:
 
         self.scan_model.read_start = read_start if self.scan_model.read_start is None else min(self.scan_model.read_start, read_start)  # Update read start time
         self.scan_model.read_end = read_end if self.scan_model.read_end is None else max(self.scan_model.read_end, read_end)  # Update read end time
-        self.scan_model.gap = (read_start - self.prev_read_end).total_seconds() if self.prev_read_end is not None else None
-        if self.scan_model.gap is not None and self.scan_model.gap > 0.1:
-            logger.warning(f"Scan {self.scan_model.scan_id} - Gap of {self.scan_model.gap:.3f} seconds detected between last read end {self.prev_read_end} and current read start {read_start}.")
+        gap = (read_start - self.prev_read_end).total_seconds() if self.prev_read_end is not None else 0.0
+        self.scan_model.gap = gap
+        if gap is not None and gap > 0.1:
+            logger.warning(f"Scan {self.scan_model.scan_id} - Gap of {gap:.3f} seconds detected between last read end {self.prev_read_end} and current read start {read_start}.")
+        
+        if self.scan_model.sample_times is None:
+            self.scan_model.sample_times = [
+                {"read_start": None, "read_end": None, "gap": None}
+                for _ in range(int(self.scan_model.duration))]
+
+        if sec - 1 < len(self.scan_model.sample_times):
+            self.scan_model.sample_times[sec - 1] = {
+                "read_start": read_start,
+                "read_end": read_end,
+                "gap": gap,}
         self.prev_read_end = read_end  # Update last read end time
 
         # Update scan status based on loaded rows
@@ -339,13 +542,14 @@ class Scan:
             self.set_status(ScanState.WIP)
         elif actual_rows >= expected_rows:
             self.set_status(ScanState.COMPLETE)
+            self._fb_finalize_writer(read_start)
 
         return True
 
     def load_spr(self, sec: int, spr: np.ndarray, read_start: datetime = None, read_end: datetime = None) -> bool:
         """
         Load a pre-computed summed power spectrum row into the scan.
-            :param sec: Second within the scan to load the spectrum (1 <= sec <= scan duration)
+            :param sec: Temporal bin within the scan to load the spectrum (1 <= sec <= number of temporal bins)
             :param spr: Summed power spectrum for the given second
             :param read_start: Optional timestamp when the source data started
             :param read_end: Optional timestamp when the source data ended
@@ -353,14 +557,14 @@ class Scan:
         """
 
         if sec < 1 or sec > self.scan_model.duration:
-            logger.warning(f"Scan {self.scan_model.scan_id} - Invalid second ({sec}) for scan duration {self.scan_model.duration}")
+            logger.warning(f"Scan {self.scan_model.scan_id} - Invalid temporal bin ({sec}) for scan with {self.scan_model.duration} bins")
             self.scan_model.load_failures += 1
             return False
 
-        if spr is None or len(spr) != self.scan_model.channels:
+        if spr is None or len(spr) != self.scan_model.spectral_resolution:
             logger.warning(
                 f"Scan {self.scan_model.scan_id} - Invalid summed power spectrum length. "
-                f"Expected {self.scan_model.channels}, got {len(spr) if spr is not None else 0}."
+                f"Expected {self.scan_model.spectral_resolution}, got {len(spr) if spr is not None else 0}."
             )
             self.scan_model.load_failures += 1
             return False
@@ -375,7 +579,7 @@ class Scan:
 
             loaded_mask = np.array(self.loaded_secs, dtype=bool)
             loaded_mask[sec - 1] = True
-            mpr = np.mean(self.cal[loaded_mask, :], axis=0) if np.any(loaded_mask) else np.zeros((self.scan_model.channels,), dtype=np.float64)
+            mpr = np.mean(self.cal[loaded_mask, :], axis=0) if np.any(loaded_mask) else np.zeros((self.scan_model.spectral_resolution,), dtype=np.float64)
             self.mpr = self.pipeline.process(signal=mpr.copy(), context={"pipeline": "mpr", "sec": sec}) if self.pipeline else mpr
 
             self.loaded_secs[sec - 1] = True
@@ -476,7 +680,7 @@ class Scan:
         prefix = gen_file_prefix(
             dt=self.scan_model.read_start, entity_id=self.scan_model.dig_id, gain=self.scan_model.gain, 
             duration=self.scan_model.duration, sample_rate=self.scan_model.sample_rate, center_freq=self.scan_model.center_freq, 
-            channels=self.scan_model.channels, instance_id=self.scan_model.scan_id, scan_type=self.scan_model.scan_type
+            spectral_resolution=self.scan_model.spectral_resolution, instance_id=self.scan_model.scan_id, scan_type=self.scan_model.scan_type
         )
 
         self.scan_model.files_prefix = prefix
@@ -559,7 +763,7 @@ class Scan:
         try:
             prefix = gen_file_prefix(dt=scan.scan_model.read_start, entity_id=scan.scan_model.dig_id, gain=scan.scan_model.gain, 
                 duration=scan.scan_model.duration, sample_rate=scan.scan_model.sample_rate, center_freq=scan.scan_model.center_freq, 
-                channels=scan.scan_model.channels, instance_id=scan.scan_model.scan_id, scan_type=scan.scan_model.scan_type)
+                spectral_resolution=scan.scan_model.spectral_resolution, instance_id=scan.scan_model.scan_id, scan_type=scan.scan_model.scan_type)
 
             if include_iq:
                 # Load raw IQ samples 
@@ -569,7 +773,7 @@ class Scan:
                     logger.info(f"Scan - Loading scan data from {input_dir}/{filename}")
 
                     scan.raw = np.fromfile(f, dtype=np.complex64)
-                    scan.raw = scan.raw.reshape(-1, scan.scan_model.channels)
+                    scan.raw = scan.raw.reshape(-1, scan.scan_model.spectral_resolution)
 
                 scan.data_source = ScanDataSource.RAW
                 scan.loaded_secs = [True] * scan.scan_model.duration
@@ -581,13 +785,13 @@ class Scan:
                     logger.info(f"Scan - Loading scan data from {input_dir}/{filename}")
 
                     scan.spr = np.loadtxt(f, delimiter=",")
-                    scan.spr = scan.spr.reshape(-1, scan.scan_model.channels)
+                    scan.spr = scan.spr.reshape(-1, scan.scan_model.spectral_resolution)
 
                 loaded_spectra = scan.spr.shape[0]
                 if loaded_spectra < scan.scan_model.duration:
                     logger.warning(
                         f"Scan - Loaded {loaded_spectra} summed spectra from {input_dir}/{filename}, "
-                        f"but scan duration expects {scan.scan_model.duration}. Treating as a partial scan."
+                        f"but scan expects {scan.scan_model.duration} temporal bins. Treating as a partial scan."
                     )
 
                 scan.data_source = ScanDataSource.SPR
@@ -629,7 +833,7 @@ class Scan:
             return None
 
         file_prefix = gen_file_prefix(dt=None, entity_id=self.scan_model.dig_id, gain=self.scan_model.gain, duration=self.scan_model.duration,
-                sample_rate=self.scan_model.sample_rate, center_freq=self.scan_model.center_freq, channels=self.scan_model.channels,
+                sample_rate=self.scan_model.sample_rate, center_freq=self.scan_model.center_freq, spectral_resolution=self.scan_model.spectral_resolution,
                 scan_type=scan_type if scan_type != ScanType.UNKNOWN else None)
 
         logger.info(f"Scan {self.scan_model.scan_id} - Searching for equivalent scans in {input_dir} with prefix {file_prefix}")
@@ -745,7 +949,7 @@ if __name__ == "__main__":
         start_idx=100,
         duration=60,
         sample_rate=24e5,
-        channels=1024,
+        spectral_resolution=1024,
         center_freq=1420400000.0,
         gain=12.0,
         load=False,

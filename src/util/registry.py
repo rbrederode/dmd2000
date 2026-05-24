@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 
 WEATHER_STATION_DRIVER_NAMESPACE = "weather_station_driver"
 DISH_DRIVER_NAMESPACE = "dish_driver"
+IMU_DRIVER_NAMESPACE = "imu_driver"
 PIPELINE_STEP_NAMESPACE = "pipeline_step"
 
 _registries: Dict[str, Dict[str, Callable[..., Any]]] = defaultdict(dict)

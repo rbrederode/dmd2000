@@ -9,6 +9,7 @@ from schema import Schema, And, Or, Use, SchemaError
 from models.app import AppModel
 from models.base import BaseModel
 from models.health import HealthState
+from models.fil import FilterBank
 from models.comms import CommunicationStatus
 from util.xbase import XInvalidTransition, XAPIValidationFailed, XSoftwareFailure
 
@@ -37,6 +38,7 @@ class DigitiserModel(BaseModel):
         "center_freq": And(float, lambda v: v >= 0.0),
         "freq_correction": And(int, lambda v: -1000 <= v <= 1000),
         "channels": And(int, lambda v: v >= 0),
+        "filter_bank": Or(None, And(FilterBank, lambda v: isinstance(v, FilterBank))),
         "scan_duration": And(int, lambda v: v >= 0),
         "tm_connected": And(CommunicationStatus, lambda v: isinstance(v, CommunicationStatus)),
         "sdp_connected": And(CommunicationStatus, lambda v: isinstance(v, CommunicationStatus)),
@@ -77,6 +79,7 @@ class DigitiserModel(BaseModel):
             "center_freq": 0.0,
             "freq_correction": 0,
             "channels": 0,
+            "filter_bank": None,
             "scan_duration": 0,
             "scanning": False,
             "tm_connected": CommunicationStatus.NOT_ESTABLISHED,

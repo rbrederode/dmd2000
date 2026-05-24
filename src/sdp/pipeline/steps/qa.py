@@ -174,7 +174,7 @@ def main():
         start_idx=100,
         duration=60,
         sample_rate=1024.0,
-        channels=1024,
+        spectral_resolution=1024,
         center_freq=1420405752.0,
         gain=50.0,
         load=False,

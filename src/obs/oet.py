@@ -8,7 +8,7 @@ import threading
 from env.events import ObsEvent
 from ipc.action import Action
 from models.comms import CommunicationStatus
-from models.dsh import DishManagerModel, Feed, Capability, DishMode, PointingState
+from models.dsh import DishManagerModel, DriverType, Feed, Capability, DishMode, PointingState
 from models.health import HealthState
 from models.obs import ObsModel, ObsTransition, ObsState
 from models.oda import ODAModel, ObsList, ScanStore
@@ -664,7 +664,8 @@ class ObservationExecutionTool:
   
         # Append additional config parameters
         config_params.extend([
-            ('channels',      target_config,   'spectral_resolution'),
+            ('spectral_resolution', target_config, 'spectral_resolution'),
+            ('filter_bank', target_config, 'filter_bank'),
             ('scan_duration', target_scan_set, 'scan_duration'),
         ])
   
@@ -676,8 +677,12 @@ class ObservationExecutionTool:
             sdp_dig = next((dig for dig in self.telmodel.sdp.dig_store.dig_list if dig.dig_id == dig_model.dig_id), None) if dig_model is not None else None
 
             for dig_attr, source, source_attr in config_params:
-                current = getattr(sdp_dig, dig_attr) if sdp_dig is not None else None
+                current_attr = "channels" if dig_attr == "spectral_resolution" else dig_attr
+                current = getattr(sdp_dig, current_attr) if sdp_dig is not None else None
                 desired = getattr(source, source_attr)
+                if dig_attr == 'filter_bank':
+                    current = current.to_dict() if hasattr(current, "to_dict") else current
+                    desired = desired.to_dict() if hasattr(desired, "to_dict") else desired
                 if dig_attr == 'gain':
                     desired = self._resolve_gain_for_config(obs, target_config, target_scan_set, target_scan)
                     if TargetConfig.is_auto_gain_token(desired):
@@ -930,6 +935,12 @@ class ObservationExecutionTool:
             logger.info(f"Observation Execution Tool found Dish {dish.dsh_id} is NOT configured to point to correct target {target_id} for observation {obs.obs_id} " +
                 f"Dish target ID {dish.tgt_id} does not match expected target ID {target_id}.")
             return None
+
+        if dish.driver_type == DriverType.DRIFT:
+            on_target = dish.pointing_state == PointingState.READY
+            logger.info(f"Observation Execution Tool is {'ON' if on_target else 'OFF'} target for drift dish observation {obs.obs_id}, target index {obs.tgt_idx}, " + \
+                 f"target ID {target_id}, pointing type {target.pointing.name}, dish pointing state {dish.pointing_state.name}, dish target ID {dish.tgt_id}, dish {dish.dsh_id}")
+            return on_target
 
         on_target = True
         if target.pointing in [PointingType.SIDEREAL_TRACK,PointingType.NON_SIDEREAL_TRACK] and dish.pointing_state != PointingState.TRACK:

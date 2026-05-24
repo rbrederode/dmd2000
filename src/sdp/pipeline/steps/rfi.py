@@ -47,7 +47,7 @@ class RFIFlag(ProcessingStep):
 
         pipeline = context.get("pipeline", "unknown")  # Get the pipeline name from the context 
 
-        n = context.get("threshold", 5)
+        n = context.get("threshold", 5) # Threshold multiplier for MAD, 6-7 is recommended for pulsar search
         window_size = context.get("window_size", 21)  # Must be odd
         if window_size % 2 == 0:
             raise ValueError("window_size must be odd.")
@@ -69,12 +69,15 @@ class RFIFlag(ProcessingStep):
         if num_flagged > 0:
             signal[flagged_mask] = local_median[flagged_mask]
 
-        # --- Update scan QA attributes
-        sec = context.get("sec", max(self.scan.get_loaded_seconds(), 1))
-        idx = sec - 1
-        qa = self.scan_qa.getQA(pipeline, idx)
+        # --- Update scan QA attributes. Filterbank rows are short-timescale
+        # products and do not map cleanly onto the scan-level spr/cal/mpr QA.
+        if pipeline in {"spr", "cal", "mpr"}:
+            sec = context.get("sec", max(self.scan.get_loaded_seconds(), 1))
+            idx = sec - 1
+            qa = self.scan_qa.getQA(pipeline, idx)
 
-        qa.rfi_fraction = num_flagged / len(signal) if len(signal) > 0 else 0.0
+            if qa is not None:
+                qa.rfi_fraction = num_flagged / len(signal) if len(signal) > 0 else 0.0
 
         logger.debug(f"RFIFlag (sliding window): Flagged {num_flagged} channels as RFI outliers using window_size={window_size}, threshold={n}*MAD")
         return signal
@@ -109,7 +112,7 @@ def main():
         start_idx=100,
         duration=60,
         sample_rate=1024.0,
-        channels=1024,
+        spectral_resolution=1024,
         center_freq=1420405752.0,
         gain=50.0,
         load=False,
