@@ -1,4 +1,6 @@
 
+import astropy.units as u
+from astropy.coordinates import AltAz
 from astropy.time import Time
 from datetime import datetime, timezone
 import logging
@@ -9,7 +11,7 @@ from typing import Tuple
 
 from dsh.drivers.driver import DishDriver
 from ipc.tcp_server import TCPServer
-from dsh.drivers.drift.model import DriftConfig
+from dsh.drivers.drift.drift_config import DriftConfig
 from models.dsh import DishModel, PointingState, Capability, DishMode, Feed, DriverType
 from models.health import HealthState
 from util.xbase import XBase, XTimeoutWaitingForResponse, XCommsFailure, XInvalidTransition
@@ -55,6 +57,36 @@ class DriftDriver(DishDriver):
             :raises XBase: If there is an error getting the current Alt Az position.
         """
         return self.drift_config.alt, self.drift_config.az
+
+    def get_desired_altaz(self, target) -> AltAz:
+        """Return the fixed physical pointing for any target accepted by a drift dish."""
+        time = Time(datetime.now(timezone.utc))
+        desired_altaz = AltAz(
+            obstime=time,
+            location=self.location,
+            alt=float(self.drift_config.alt) * u.deg,
+            az=float(self.drift_config.az) * u.deg,
+        )
+        self.set_desired_altaz(desired_altaz)
+        return desired_altaz
+
+    def slew(self, altaz: AltAz):
+        """Accept target acquisition immediately because a drift dish cannot move."""
+        self.set_desired_altaz(self.get_desired_altaz(self.dsh_model.target))
+        self.dsh_model.pointing_state = PointingState.READY
+        self.dsh_model.last_update = datetime.now(timezone.utc)
+
+    def track(self):
+        """Keep a drift dish READY rather than entering a tracking state."""
+        self.set_desired_altaz(self.get_desired_altaz(self.dsh_model.target))
+        self.dsh_model.pointing_state = PointingState.READY
+        self.dsh_model.last_update = datetime.now(timezone.utc)
+
+    def scan(self):
+        """Keep a drift dish READY rather than entering a scan state."""
+        self.set_desired_altaz(self.get_desired_altaz(self.dsh_model.target))
+        self.dsh_model.pointing_state = PointingState.READY
+        self.dsh_model.last_update = datetime.now(timezone.utc)
 
     def _set_startup_mode(self):
         """
@@ -135,9 +167,7 @@ class DriftDriver(DishDriver):
             Track the current target.
             Do not set the dish model attributes here, that is done in the base class.
         """
-
-        if alt != self.drift_config.alt or az != self.drift_config.az:
-            raise XInvalidTransition(f"DriftDriver cannot reach Alt: {alt} deg, Az: {az} deg due to dish limits. The drift scan dish is fixed at Alt: {self.drift_config.alt} deg, Az: {self.drift_config.az} deg.")
+        pass
 
     def _scan(self, alt: float, az: float):
         """
@@ -151,8 +181,7 @@ class DriftDriver(DishDriver):
             Slew to the specified AltAz position.
             Do not set the dish model attributes here, that is done in the base class.
         """
-        if alt != self.drift_config.alt or az != self.drift_config.az:
-            raise XInvalidTransition(f"DriftDriver cannot reach Alt: {alt} deg, Az: {az} deg due to dish limits. The drift scan dish is fixed at Alt: {self.drift_config.alt} deg, Az: {self.drift_config.az} deg.")
+        pass
 
     def start_scan(self):
         """
@@ -174,7 +203,7 @@ class DriftDriver(DishDriver):
 
 if __name__ == "__main__":
 
-    from dsh.drivers.drift.model import DriftConfig
+    from dsh.drivers.drift.drift_config import DriftConfig
 
     drift_cfg = DriftConfig(
         alt=90.0,
@@ -228,6 +257,4 @@ if __name__ == "__main__":
     drift_driver._set_stow_mode(alt=drift_cfg.alt, az=drift_cfg.az)
     alt, az = drift_driver._get_current_altaz()
     print(f"After Stow - Current Altitude: {alt} degrees, Azimuth: {az} degrees")
-
-
 

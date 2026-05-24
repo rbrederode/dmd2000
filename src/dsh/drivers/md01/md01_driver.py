@@ -9,7 +9,7 @@ from typing import Tuple
 
 from dsh.drivers.driver import DishDriver
 from ipc.tcp_server import TCPServer
-from dsh.drivers.md01.md01_model import MD01Config
+from dsh.drivers.md01.md01_config import MD01Config
 from dsh.drivers.md01.md01_msg import MD01Msg
 from models.dsh import DishModel, PointingState, Capability, DishMode, Feed, DriverType
 from models.health import HealthState
@@ -482,7 +482,6 @@ if __name__ == "__main__":
     
     alt, az = md01_driver._get_md01_altaz()
     print(f"After Slew - Current Altitude: {alt} degrees, Azimuth: {az} degrees")
-
 
 
 

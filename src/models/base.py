@@ -208,6 +208,10 @@ class BaseModel:
             return float(v)
         if isinstance(v, np.bool_):
             return bool(v)
+        if isinstance(v, u.Quantity):
+            if v.isscalar:
+                return float(v.value)
+            return [BaseModel._serialise(x) for x in v.value.tolist()]
         # enum.IntEnum -> name and enum class
         if isinstance(v, enum.IntEnum):
             return {"_type": "enum.IntEnum", "instance": type(v).__name__, "value": v.name}
@@ -280,7 +284,9 @@ class BaseModel:
         from models.comms import CommunicationStatus, InterfaceType
         from models.dig import BandpassFilterType, DigitiserList, DigitiserModel
         from models.dsh import DishMode, DishModel, DishList, DishManagerModel, Feed, PointingState, Capability, DriverType as DishDriverType, PECModel
+        from models.fil import FilterBank
         from models.health import HealthState
+        from models.imu import IMUData, IMUDevice, IMUDeviceList, IMUDeviceModel, IMUDriverType
         from models.launch import LaunchModel, LaunchConfigModel
         from models.obs import ObsState, ObsModel
         from models.oda import ObsList, ScanStore, ODAModel
@@ -294,8 +300,6 @@ class BaseModel:
         from models.tm import TelescopeManagerModel, ResourceAllocations, Allocation, AllocationState
         from models.ui import UIDriverType, UIDriver
         from models.ws import WeatherData, WeatherStation, WeatherSummary, WeatherStationList, WeatherStationModel, WeatherStationDriverType
-        from ws.drivers.ads1115 import ADS1115Config
-        from ws.drivers.modbus import ModbusConfig
         
         if isinstance(v, np.integer):
             return int(v)
@@ -319,6 +323,7 @@ class BaseModel:
                 deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
                 return AppModel(**deserialized_fields)
             elif model_type == "ADS1115Config":
+                from ws.drivers.ads1115 import ADS1115Config
                 deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
                 return ADS1115Config(**deserialized_fields)
             elif model_type == "datetime":
@@ -362,6 +367,7 @@ class BaseModel:
                     "Feed": Feed,
                     "HealthState": HealthState,
                     "InterfaceType": InterfaceType,
+                    "IMUDriverType": IMUDriverType,
                     "ObsState": ObsState,
                     "PointingType": PointingType,
                     "PointingState": PointingState,
@@ -391,17 +397,41 @@ class BaseModel:
                     return Feed[v]
                 else:
                     return Feed(int(v))
+            elif model_type == "FilterBank":
+                deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
+                return FilterBank(**deserialized_fields)
             elif model_type == "FivePointScan":
                 deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
                 return FivePointScan(**deserialized_fields)
+            elif model_type == "IMUData":
+                deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
+                return IMUData(**deserialized_fields)
+            elif model_type == "IMUDevice":
+                deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
+                return IMUDevice(**deserialized_fields)
+            elif model_type == "IMUDeviceModel":
+                deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
+                return IMUDeviceModel(**deserialized_fields)
+            elif model_type == "IMUDeviceList":
+                deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
+                return IMUDeviceList(**deserialized_fields)
             elif model_type == "MD01Config":
                 # Import lazily to avoid package import errors when MD01 driver is not present
-                from dsh.drivers.md01.md01_model import MD01Config
+                from dsh.drivers.md01.md01_config import MD01Config
                 deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
                 return MD01Config(**deserialized_fields)
             elif model_type == "ModbusConfig":
+                from ws.drivers.modbus import ModbusConfig
                 deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
                 return ModbusConfig(**deserialized_fields)
+            elif model_type == "MotionDishConfig":
+                from dsh.drivers.motion.motion_config import MotionDishConfig
+                deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
+                return MotionDishConfig(**deserialized_fields)
+            elif model_type == "WitMotionConfig":
+                from imu.drivers.witmotion import WitMotionConfig
+                deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
+                return WitMotionConfig(**deserialized_fields)
             elif model_type == "LaunchModel":
                 deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
                 return LaunchModel(**deserialized_fields)
@@ -410,7 +440,7 @@ class BaseModel:
                 return LaunchConfigModel(**deserialized_fields)
             elif model_type == "DriftConfig":
                 # Import lazily to avoid package import errors when optional drivers are not present
-                from dsh.drivers.drift.model import DriftConfig
+                from dsh.drivers.drift.drift_config import DriftConfig
                 deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
                 return DriftConfig(**deserialized_fields)
             elif model_type == "Observer":
