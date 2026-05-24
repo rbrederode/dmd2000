@@ -425,6 +425,7 @@ class SDR:
         timeout_total_sec = float(self.sdr_config.get("read_timeout_total_sec", 5.0))
         timeout_deadline = time.monotonic() + max(0.0, timeout_total_sec)
         timeout_count = 0
+        zero_count = 0
 
         result = np.empty(num_samples, dtype=np.complex64)
         offset = 0
@@ -443,7 +444,12 @@ class SDR:
                     )
                 raise XHardwareFailure(f"SoapySDR readStream failed with code {read_count}.")
             if read_count == 0:
-                raise XHardwareFailure("SoapySDR readStream returned zero samples.")
+                zero_count += 1
+                if time.monotonic() < timeout_deadline:
+                    continue
+                raise XHardwareFailure(
+                    f"SoapySDR readStream returned zero samples after {zero_count} retries ({timeout_total_sec:.2f}s)."
+                )
             offset += read_count
 
         return result
