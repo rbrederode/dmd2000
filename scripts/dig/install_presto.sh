@@ -94,17 +94,13 @@ prepare_python_environment() {
 }
 
 configure_environment() {
-    local tempo_dir
     local pgplot_dir
+    local tempo_dir=""
 
     if [ -n "${TEMPO:-}" ] && [ -d "$TEMPO" ]; then
         tempo_dir="$TEMPO"
-    elif tempo_dir="$(find_existing_dir "$HOME/tempo" /opt/tempo /usr/local/tempo 2>/dev/null)"; then
-        :
     else
-        echo "ERROR: TEMPO is required to build PRESTO, but no TEMPO directory was found."
-        echo "Set TEMPO to your TEMPO checkout or install TEMPO first, then rerun this script."
-        exit 1
+        tempo_dir="$(find_existing_dir "$HOME/tempo" /opt/tempo /usr/local/tempo 2>/dev/null || true)"
     fi
 
     if [ -n "${PGPLOT_DIR:-}" ] && [ -d "$PGPLOT_DIR" ]; then
@@ -117,7 +113,6 @@ configure_environment() {
     fi
 
     export PRESTO="$PRESTO_DIR"
-    export TEMPO="$tempo_dir"
     export PGPLOT_DIR="$pgplot_dir"
     export PATH="$PRESTO_PREFIX/bin:$PATH"
 
@@ -125,8 +120,15 @@ configure_environment() {
     export LIBRARY_PATH="$PRESTO_PREFIX/lib${LIBRARY_PATH:+:$LIBRARY_PATH}"
     export LD_LIBRARY_PATH="$PRESTO_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
+    if [ -n "$tempo_dir" ]; then
+        export TEMPO="$tempo_dir"
+        echo "Using TEMPO=$TEMPO"
+    else
+        unset TEMPO || true
+        echo "TEMPO not found; continuing without barycentering/polyco support."
+    fi
+
     echo "Using PRESTO=$PRESTO"
-    echo "Using TEMPO=$TEMPO"
     echo "Using PGPLOT_DIR=$PGPLOT_DIR"
 }
 
@@ -152,7 +154,12 @@ build_and_install_presto() {
         meson setup build --prefix="$PRESTO_PREFIX"
     fi
 
-    python check_meson_build.py
+    if [ -n "${TEMPO:-}" ]; then
+        python check_meson_build.py
+    else
+        echo "Skipping check_meson_build.py because TEMPO is not set."
+        echo "PRESTO will still build, but TEMPO-dependent features such as barycentering and polycos will be unavailable."
+    fi
     meson compile -C build
     meson install -C build
 
@@ -168,12 +175,17 @@ post_install_summary() {
     echo ""
     echo "To use this install in a new shell, set:"
     echo "  export PRESTO=\"$PRESTO_DIR\""
-    echo "  export TEMPO=\"$TEMPO\""
     echo "  export PGPLOT_DIR=\"$PGPLOT_DIR\""
     echo "  export PATH=\"$PRESTO_PREFIX/bin:\$PATH\""
     echo "  export LD_LIBRARY_PATH=\"$PRESTO_PREFIX/lib:\$LD_LIBRARY_PATH\""
+    if [ -n "${TEMPO:-}" ]; then
+        echo "  export TEMPO=\"$TEMPO\""
+    fi
     echo ""
     echo "Useful next checks: prepfold, python tests/test_presto_python.py, and $PRESTO_DIR/build/src/makewisdom"
+    if [ -z "${TEMPO:-}" ]; then
+        echo "TEMPO-specific checks will be skipped unless you install TEMPO later."
+    fi
 }
 
 case "$(uname -s)" in
