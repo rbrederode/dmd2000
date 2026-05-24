@@ -18,6 +18,9 @@ class SDR:
     """Software Defined Radio driver implemented with SoapySDR."""
 
     AUTO_GAIN_SETTLE_SEC = 0.05
+    STARTUP_PRIME_SAMPLES = 8192
+    STARTUP_PRIME_TIMEOUT_US = 100000
+    STARTUP_PRIME_TOTAL_SEC = 2.0
 
     def __init__(self, bias_t_enabled=False, sdr_config=None):
         self.sdr_config = sdr_config or {}
@@ -62,6 +65,7 @@ class SDR:
             self.device = SoapySDR.Device(self._device_args())
             self.stream = self.device.setupStream(SOAPY_SDR_RX, SOAPY_SDR_CF32, [self.channel])
             self.device.activateStream(self.stream)
+            self._prime_stream()
             self.connected = CommunicationStatus.ESTABLISHED
             logger.info("SoapySDR connection established.")
             return True
@@ -167,6 +171,28 @@ class SDR:
         logger.exception(f"SoapySDR exception {operation}: {err}")
         self.close()
         raise XHardwareFailure(f"SoapySDR device disconnected or unavailable {operation}: {err}")
+
+    def _prime_stream(self):
+        if self.device is None or self.stream is None:
+            return
+
+        timeout_us = int(self.sdr_config.get("prime_timeout_us", self.STARTUP_PRIME_TIMEOUT_US))
+        timeout_total_sec = float(self.sdr_config.get("prime_timeout_total_sec", self.STARTUP_PRIME_TOTAL_SEC))
+        prime_samples = int(self.sdr_config.get("prime_samples", self.STARTUP_PRIME_SAMPLES))
+
+        try:
+            discarded = self._read_complex_samples(
+                prime_samples,
+                timeout_us=timeout_us,
+                timeout_total_sec=timeout_total_sec,
+            )
+            logger.info(
+                f"SoapySDR startup prime discarded {discarded.size} samples from the stream."
+            )
+        except XHardwareFailure as exc:
+            logger.warning(f"SoapySDR startup prime did not complete cleanly: {exc}")
+        except Exception as exc:
+            logger.debug(f"SoapySDR startup prime failed: {exc}")
 
     def _reset_buffer(self):
         if self.device is None:
@@ -417,12 +443,12 @@ class SDR:
         }
         return metadata, x
 
-    def _read_complex_samples(self, num_samples: int, timeout_us: int = 1000000) -> np.ndarray:
+    def _read_complex_samples(self, num_samples: int, timeout_us: int = 1000000, timeout_total_sec: float | None = None) -> np.ndarray:
         if self.device is None or self.stream is None:
             raise XHardwareFailure("SoapySDR device stream is not open.")
 
         timeout_us = int(self.sdr_config.get("read_timeout_us", timeout_us))
-        timeout_total_sec = float(self.sdr_config.get("read_timeout_total_sec", 5.0))
+        timeout_total_sec = float(self.sdr_config.get("read_timeout_total_sec", 5.0) if timeout_total_sec is None else timeout_total_sec)
         timeout_deadline = time.monotonic() + max(0.0, timeout_total_sec)
         timeout_count = 0
         zero_count = 0
