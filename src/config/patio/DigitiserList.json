@@ -57,7 +57,12 @@
             },
             "scanning": false,
             "sdr_type": "airspy",
-            "sdr_config": {},
+            "sdr_config": {
+                "device_args": {
+                    "driver": "airspy",
+                    "serial": "637862dc2e6d89d7"
+                }
+            },
             "sdr_eeprom": {},
             "last_update": {
                 "_type": "datetime",
