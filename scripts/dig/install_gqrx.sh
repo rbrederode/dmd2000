@@ -40,8 +40,9 @@ install_raspberry_pi() {
         echo "Skipping apt package index refresh (SKIP_APT_UPDATE=1)."
     fi
 
-    echo "Installing gqrx and desktop dependencies..."
-    sudo apt-get install -y gqrx-sdr
+    echo "Installing gqrx without recommended packages..."
+    echo "This avoids optional SDR extras such as xtrx-dkms unless you install them separately."
+    sudo apt-get install -y --no-install-recommends gqrx-sdr
 }
 
 case "$(uname -s)" in
