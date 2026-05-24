@@ -21,6 +21,17 @@ require_command() {
     fi
 }
 
+require_pkg_config_dependency() {
+    local package_name="$1"
+    local apt_package_hint="$2"
+
+    if ! pkg-config --exists "$package_name" >/dev/null 2>&1; then
+        echo "ERROR: pkg-config dependency '$package_name' was not found."
+        echo "Install the matching development package and rerun this script: $apt_package_hint"
+        exit 1
+    fi
+}
+
 is_raspberry_pi() {
     if [ -r /proc/device-tree/model ] && grep -qi "raspberry pi" /proc/device-tree/model; then
         return 0
@@ -132,6 +143,16 @@ configure_environment() {
     echo "Using PGPLOT_DIR=$PGPLOT_DIR"
 }
 
+preflight_build_dependencies() {
+    require_command pkg-config "Install pkg-config and rerun this script."
+    require_pkg_config_dependency glib-2.0 "sudo apt-get install -y libglib2.0-dev"
+    require_pkg_config_dependency fftw3f "sudo apt-get install -y libfftw3-dev"
+    require_pkg_config_dependency gsl "sudo apt-get install -y libgsl-dev"
+    require_pkg_config_dependency cfitsio "sudo apt-get install -y libcfitsio-dev"
+    require_pkg_config_dependency x11 "sudo apt-get install -y libx11-dev"
+    require_pkg_config_dependency libpng "sudo apt-get install -y libpng-dev"
+}
+
 clone_or_update_presto() {
     require_command git "Install git and rerun this script."
 
@@ -207,6 +228,7 @@ esac
 install_raspberry_pi_dependencies
 prepare_python_environment
 configure_environment
+preflight_build_dependencies
 clone_or_update_presto
 build_and_install_presto
 post_install_summary
