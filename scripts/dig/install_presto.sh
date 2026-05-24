@@ -274,6 +274,19 @@ EOF
     . "$PRESTO_ENV_FILE"
 }
 
+configure_dynamic_linker() {
+    local ld_so_conf_file="/etc/ld.so.conf.d/presto.conf"
+
+    if command -v sudo >/dev/null 2>&1; then
+        echo "Registering $PRESTO_PREFIX/lib with the dynamic linker..."
+        printf '%s\n' "$PRESTO_PREFIX/lib" | sudo tee "$ld_so_conf_file" >/dev/null
+        sudo ldconfig
+    else
+        echo "WARNING: sudo is not available, so the dynamic linker cache was not updated."
+        echo "rfifind and other PRESTO binaries will rely on source \"$PRESTO_ENV_FILE\" in new shells."
+    fi
+}
+
 case "$(uname -s)" in
     Linux)
         if is_raspberry_pi; then
@@ -298,4 +311,5 @@ preflight_build_dependencies
 clone_or_update_presto
 build_and_install_presto
 write_presto_env_file
+configure_dynamic_linker
 post_install_summary
