@@ -26,5 +26,6 @@ schema
 setuptools==75.6.0
 tzlocal
 witmotion
+your
 git+https://github.com/FRBs/sigpyproc3.git
 

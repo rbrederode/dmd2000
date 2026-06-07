@@ -365,9 +365,14 @@ class TargetScanSet(BaseModel):
             scan_iter = i % self.scan_iterations                # Current iteration within the frequency scan
 
             # Calculate the start, end and center frequencies for each scan
-            scan_start_freq = self.freq_min + (freq_scan * (tgt_config.sample_rate - self.freq_overlap)) 
-            scan_end_freq = scan_start_freq + tgt_config.sample_rate
-            scan_center_freq = scan_start_freq + tgt_config.sample_rate / 2
+            if self.freq_scans == 1:
+                scan_center_freq = tgt_config.center_freq
+                scan_start_freq = scan_center_freq - tgt_config.sample_rate / 2
+                scan_end_freq = scan_center_freq + tgt_config.sample_rate / 2
+            else:
+                scan_start_freq = self.freq_min + (freq_scan * (tgt_config.sample_rate - self.freq_overlap)) 
+                scan_end_freq = scan_start_freq + tgt_config.sample_rate
+                scan_center_freq = scan_start_freq + tgt_config.sample_rate / 2
 
             scan = ScanModel(
                 obs_id=obs_id if obs_id is not None else '<undefined>',
