@@ -28,7 +28,6 @@ from models.sdp import ScienceDataProcessorModel
 from models.target import TargetConfig
 from obs.scan import Scan
 from sdp.pipeline.pipeline_factory import ProcessingPipelineFactory
-from sdp.signal_display import SignalDisplay
 from util import log, util
 from util.xbase import XBase, XStreamUnableToExtract, XSoftwareFailure
 
@@ -73,6 +72,12 @@ class SDP(App):
         self._dig_locks = {}             # Dictionary of threading locks, one per digitiser ID
         self._overload_sample_drop_count = 0
         self._overload_sample_drop_last_log = 0.0
+
+    def _create_signal_display(self, dig_id: str):
+        """Create a signal display lazily so headless runs do not import Matplotlib."""
+        from sdp.signal_display import SignalDisplay
+
+        return SignalDisplay(dig_id=dig_id)
 
     def add_args(self, arg_parser): 
         """ Specifies the science data processors command line arguments.
@@ -510,7 +515,7 @@ class SDP(App):
             return True
 
         if dig_id not in self.signal_displays:
-            self.signal_displays[dig_id] = SignalDisplay(dig_id=dig_id)
+            self.signal_displays[dig_id] = self._create_signal_display(dig_id=dig_id)
 
         signal_display = self.signal_displays[dig_id]
 
@@ -973,7 +978,7 @@ def main():
                 # If there is no signal display for this digitiser, create a new active signal display
                 if dig_id not in sdp.signal_displays or sdp.signal_displays[dig_id] is None:
                     logger.info(f"Science Data Processor creating new SignalDisplay for digitiser {dig_id}")
-                    sdp.signal_displays[dig_id] = SignalDisplay(dig_id=dig_id)
+                    sdp.signal_displays[dig_id] = sdp._create_signal_display(dig_id=dig_id)
 
                 if not (sdp.signal_displays[dig_id].get_is_active()):
                     continue # Signal display for digitiser has been deactivated, continue to next scan 
