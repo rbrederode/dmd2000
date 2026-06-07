@@ -364,9 +364,24 @@ def _filterbank_tsamp(scan_model) -> float:
 def _filterbank_sub_bandwidth(scan_model) -> float:
     """Return the filterbank output sub-bandwidth in Hz."""
     fb_config = getattr(scan_model, "filter_bank", None)
-    sub_bandwidth = float(getattr(fb_config, "sub_bandwidth", 0.0) or 0.0)
-    sample_rate = float(scan_model.sample_rate)
-    return sample_rate if sub_bandwidth <= 0.0 else min(sub_bandwidth, sample_rate)
+    if fb_config is None:
+        return float(scan_model.sample_rate)
+    _, sub_bandwidth = fb_config.resolve_subband(
+        scan_center_freq=float(scan_model.center_freq),
+        scan_bandwidth=float(scan_model.sample_rate),
+    )
+    return sub_bandwidth
+
+def _filterbank_sub_center_freq(scan_model) -> float:
+    """Return the filterbank output sub-band center frequency in Hz."""
+    fb_config = getattr(scan_model, "filter_bank", None)
+    if fb_config is None:
+        return float(scan_model.center_freq)
+    sub_center_freq, _ = fb_config.resolve_subband(
+        scan_center_freq=float(scan_model.center_freq),
+        scan_bandwidth=float(scan_model.sample_rate),
+    )
+    return sub_center_freq
 
 def _filterbank_gap_mean_duration(scan_model) -> float:
     """Return the gap-fill averaging duration on each side of a gap, in seconds."""
@@ -522,9 +537,10 @@ def _write_filterbank_scan_with_gap_fill(
 
 def _fil_output_name(obs: ObsModel, target, scan_model) -> str:
     target_id = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(getattr(target, "id", None) or f"tgt{scan_model.tgt_idx}"))
+    output_center_freq = _filterbank_sub_center_freq(scan_model)
     filename = (
         f"{obs.obs_id}-{target_id}-t{scan_model.tgt_idx}-f{scan_model.freq_scan}-"
-        f"cf{round(scan_model.center_freq / 1e6, 2)}-ch{scan_model.spectral_resolution}.fil"
+        f"cf{round(output_center_freq / 1e6, 2)}-ch{scan_model.spectral_resolution}.fil"
     ).lower()
     return re.sub(r'[:\\/*?"<>|]+', "", filename)
 
@@ -582,8 +598,9 @@ def export_filterbank_observation_to_fil(
 
         nchans = int(first_scan.spectral_resolution)
         filterbank_sub_bandwidth = _filterbank_sub_bandwidth(first_scan)
+        filterbank_sub_center_freq = _filterbank_sub_center_freq(first_scan)
         chan_width_mhz = (filterbank_sub_bandwidth / nchans) / 1e6
-        fch1_mhz = (float(first_scan.center_freq) + filterbank_sub_bandwidth / 2.0) / 1e6 - chan_width_mhz / 2.0
+        fch1_mhz = (filterbank_sub_center_freq + filterbank_sub_bandwidth / 2.0) / 1e6 - chan_width_mhz / 2.0
         dtype = _filterbank_dtype(first_scan)
         tsamp = _filterbank_tsamp(first_scan)
         tstart_dt = first_scan.read_start or first_scan.created or obs.start_dt

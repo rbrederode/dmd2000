@@ -125,3 +125,45 @@ def test_filterbank_sub_bandwidth_selects_centered_subband():
 
     assert scan._fb_sub_bandwidth() == 200.0
     assert fb.shape == (100, 2)
+
+
+def test_filterbank_sub_center_freq_selects_shifted_subband():
+    scan_model = _build_scan_model(
+        duration=1,
+        sample_rate=6_000_000,
+        spectral_resolution=100,
+        center_freq=412_000_000.0,
+        filter_bank=FilterBank(
+            enabled=True,
+            temporal_resolution=1.0,
+            sub_bandwidth=1_800_000.0,
+            sub_center_freq=413_000_000.0,
+            dtype="uint8",
+        ),
+    )
+    scan = Scan(scan_model=scan_model)
+
+    assert scan._fb_sub_center_freq() == 413_000_000.0
+    assert scan._fb_sub_bandwidth() == 1_800_000.0
+    assert scan._fb_bin_range(samples_per_row=6000, channels=100) == (3100, 4900)
+
+
+def test_filterbank_sub_center_freq_rejects_subband_outside_scan_band():
+    scan_model = _build_scan_model(
+        duration=1,
+        sample_rate=6_000_000,
+        spectral_resolution=100,
+        center_freq=412_000_000.0,
+        filter_bank=FilterBank(
+            enabled=True,
+            temporal_resolution=1.0,
+            sub_center_freq=413_000_000.0,
+            dtype="uint8",
+        ),
+    )
+    try:
+        Scan(scan_model=scan_model)
+    except ValueError as exc:
+        assert "does not fit within scan band" in str(exc)
+    else:
+        raise AssertionError("Expected shifted full-band filterbank subband to be rejected")

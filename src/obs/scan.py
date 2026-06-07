@@ -170,6 +170,7 @@ class Scan:
 
             fb_config = getattr(self.scan_model, "filter_bank", None)
             if fb_config is not None and getattr(fb_config, "enabled", False):
+                self._fb_bin_range(self._fb_samples_per_row(), int(self.scan_model.spectral_resolution))
                 rows_per_sec = self._fb_rows_per_sec()
                 self._fb_data = np.zeros((self.scan_model.duration * rows_per_sec, self.scan_model.spectral_resolution), dtype=np.float32)
                 self._fb_loaded_secs = self.scan_model.duration * [False]
@@ -228,9 +229,61 @@ class Scan:
     def _fb_sub_bandwidth(self) -> float:
         """Return the output sub-bandwidth in Hz for the filterbank product."""
         fb_config = getattr(self.scan_model, "filter_bank", None)
-        sub_bandwidth = float(getattr(fb_config, "sub_bandwidth", 0.0) or 0.0)
+        if fb_config is None:
+            return float(self.scan_model.sample_rate)
+        _, sub_bandwidth = fb_config.resolve_subband(
+            scan_center_freq=float(self.scan_model.center_freq),
+            scan_bandwidth=float(self.scan_model.sample_rate),
+        )
+        return sub_bandwidth
+
+    def _fb_sub_center_freq(self) -> float:
+        """Return the output sub-band center frequency in Hz."""
+        fb_config = getattr(self.scan_model, "filter_bank", None)
+        if fb_config is None:
+            return float(self.scan_model.center_freq)
+        sub_center_freq, _ = fb_config.resolve_subband(
+            scan_center_freq=float(self.scan_model.center_freq),
+            scan_bandwidth=float(self.scan_model.sample_rate),
+        )
+        return sub_center_freq
+
+    def _fb_bin_range(self, samples_per_row: int, channels: int, raw_center_freq: float | None = None) -> tuple[int, int]:
+        """Return FFT bin start/end for the configured filterbank subband."""
         sample_rate = float(self.scan_model.sample_rate)
-        return sample_rate if sub_bandwidth <= 0.0 else min(sub_bandwidth, sample_rate)
+        sub_center_freq = self._fb_sub_center_freq()
+        sub_bandwidth = self._fb_sub_bandwidth()
+        selected_bins = int(round(samples_per_row * (sub_bandwidth / sample_rate)))
+        selected_bins = max(channels, selected_bins)
+
+        if selected_bins > samples_per_row:
+            raise ValueError(
+                f"Scan filterbank processing requires selected FFT bins ({selected_bins}) "
+                f"to fit within samples_per_row ({samples_per_row})."
+            )
+
+        if selected_bins % channels != 0:
+            raise ValueError(
+                f"Scan filterbank processing requires selected FFT bins ({selected_bins}) "
+                f"to be divisible by spectral_resolution ({channels})."
+            )
+
+        bin_width = sample_rate / samples_per_row
+        raw_center_freq = float(self.scan_model.center_freq if raw_center_freq is None else raw_center_freq)
+        center_offset_hz = sub_center_freq - raw_center_freq
+        center_bin = samples_per_row // 2 + int(round(center_offset_hz / bin_width))
+        bin_start = center_bin - selected_bins // 2
+        bin_end = bin_start + selected_bins
+        if bin_start < 0 or bin_end > samples_per_row:
+            lower = raw_center_freq - sample_rate / 2.0
+            upper = raw_center_freq + sample_rate / 2.0
+            raise ValueError(
+                f"Requested subband {sub_center_freq - sub_bandwidth / 2.0:.1f}-"
+                f"{sub_center_freq + sub_bandwidth / 2.0:.1f} Hz falls outside "
+                f"recorded band {lower:.1f}-{upper:.1f} Hz."
+            )
+
+        return bin_start, bin_end
 
     def _fb_rows_per_sec(self) -> int:
         """Return the number of filterbank rows produced from one second of IQ samples."""
@@ -249,20 +302,11 @@ class Scan:
         if usable == 0:
             return np.empty((0, channels), dtype=np.float32)
 
-        selected_bins = int(round(samples_per_row * (self._fb_sub_bandwidth() / float(self.scan_model.sample_rate))))
-        selected_bins = min(samples_per_row, max(channels, selected_bins))
-
-        if selected_bins % channels != 0:
-            raise ValueError(
-                f"Scan filterbank processing requires selected FFT bins ({selected_bins}) "
-                f"to be divisible by spectral_resolution ({channels})."
-            )
-
+        bin_start, bin_end = self._fb_bin_range(samples_per_row, channels)
         chunks = np.asarray(iq[:usable], dtype=np.complex64).reshape(-1, samples_per_row)
         pwr = np.abs(np.fft.fftshift(np.fft.fft(chunks, axis=1), axes=1)) ** 2
-        bin_start = (samples_per_row - selected_bins) // 2
-        pwr = pwr[:, bin_start:bin_start + selected_bins]
-        nave = selected_bins // channels
+        pwr = pwr[:, bin_start:bin_end]
+        nave = (bin_end - bin_start) // channels
         fb = pwr.reshape(pwr.shape[0], nave, channels, order="F").mean(axis=1).astype(np.float32, copy=False)
         bad_rows = ~np.isfinite(np.mean(fb, axis=1))
         if np.any(bad_rows):

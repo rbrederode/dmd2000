@@ -32,14 +32,14 @@ class DigitiserModel(BaseModel):
         "load_active": And(bool, lambda v: isinstance(v, bool)),
         "bpf_type": And(BandpassFilterType, lambda v: isinstance(v, BandpassFilterType)),   # Type of bandpass filter installed. None if no bandpass filter.
         "bpf_config": Or(None, lambda v: v is None or isinstance(v, BaseModel)),            # Bandpass filter configuration instance. None if no bandpass filter
-        "gain": And(float, lambda v: 0 <= v <= 100.0),
-        "sample_rate": And(float, lambda v: v >= 0.0),
-        "bandwidth": And(float, lambda v: v >= 0.0),
-        "center_freq": And(float, lambda v: v >= 0.0),
-        "freq_correction": And(int, lambda v: -1000 <= v <= 1000),
-        "channels": And(int, lambda v: v >= 0),
+        "gain": And(float, lambda v: 0 <= v <= 100.0),                                      # Gain (dBi)
+        "sample_rate": And(float, lambda v: v >= 0.0),                                      # Sample rate (Hz) 
+        "bandwidth": And(float, lambda v: v >= 0.0),                                        # Bandwidth (Hz) 
+        "center_freq": And(float, lambda v: v >= 0.0),                                      # Center frequency (Hz) 
+        "freq_correction": And(int, lambda v: -1000 <= v <= 1000),                          # Frequency correction (ppm) 
+        "channels": And(int, lambda v: v >= 0),                                             # Spectral resolution in number of channels (e.g. 1024)
         "filter_bank": Or(None, And(FilterBank, lambda v: isinstance(v, FilterBank))),
-        "scan_duration": And(int, lambda v: v >= 0),
+        "scan_duration": And(int, lambda v: v >= 0),                                        # Scan duration in seconds for current scan if scanning, otherwise 0
         "tm_connected": And(CommunicationStatus, lambda v: isinstance(v, CommunicationStatus)),
         "sdp_connected": And(CommunicationStatus, lambda v: isinstance(v, CommunicationStatus)),
         "sdr_connected": And(CommunicationStatus, lambda v: isinstance(v, CommunicationStatus)),
