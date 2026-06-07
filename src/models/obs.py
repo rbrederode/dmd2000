@@ -8,7 +8,7 @@ from models.base import BaseModel
 from models.scan import ScanModel, ScanState
 from models.target import TargetModel, TargetConfig, TargetScanSet, PointingType, MAX_SCAN_DURATION_SEC
 from util.xbase import XInvalidTransition, XAPIValidationFailed, XSoftwareFailure
-from util.fits_utils import observation_to_fits_hdulist
+from util.fits_tools import observation_to_fits_hdulist
 
 logger = logging.getLogger(__name__)
 
