@@ -1,4 +1,5 @@
 import enum
+import logging
 import os
 from datetime import datetime, timezone
 from schema import Schema, And, Or, Use, SchemaError
@@ -8,6 +9,8 @@ from models.scan import ScanModel, ScanState
 from models.target import TargetModel, TargetConfig, TargetScanSet, PointingType, MAX_SCAN_DURATION_SEC
 from util.xbase import XInvalidTransition, XAPIValidationFailed, XSoftwareFailure
 from util.fits_utils import observation_to_fits_hdulist
+
+logger = logging.getLogger(__name__)
 
 # A scheduling block is the minimum time allocation of resources to an observation
 # For example, if an observation requires 90 minutes, and the scheduling block size is 60 minutes,
@@ -255,6 +258,15 @@ class ObsModel(BaseModel):
 
     def determine_scans(self):
         """Determine the set of scans for each target configuration in the observation."""
+
+        if len(self.targets) != len(self.target_configs):
+            message = (
+                f"Observation {self.obs_id} has {len(self.targets)} targets but "
+                f"{len(self.target_configs)} target_configs; cannot determine scans. "
+                "This usually indicates a stale or partially updated observation definition."
+            )
+            logger.error(message)
+            raise XSoftwareFailure(message)
 
         # Iterate through each target, expand Five Point Scan targets into five seperate targets each with a pointing direction in C, N,S, E, W
         # Duplicate target configurations for each of the five pointings, update the target index in the target and configuration to the expanded index

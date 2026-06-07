@@ -1,8 +1,6 @@
-numpy
-matplotlib
-tzlocal
-pandas-stubs
-pytz
+adafruit-blinka
+adafruit-circuitpython-ads1x15
+adafruit-extended-bus
 astropy
 astroplan
 astroquery
@@ -14,19 +12,19 @@ google-auth
 google-auth-oauthlib
 google-api-python-client
 lgpio
+numpy
+matplotlib
 minimalmodbus
+pandas-stubs
+pytz
 pyrtlsdr==0.2.93
-#pyobjc
-pyrtlsdr
 pyserial
+pysigproc
 pytest
 scipy
 schema
 setuptools==75.6.0
+tzlocal
 witmotion
-adafruit-blinka
-adafruit-circuitpython-ads1x15
-adafruit-extended-bus
-minimalmodbus
 git+https://github.com/FRBs/sigpyproc3.git
 

@@ -22,7 +22,7 @@ def make_scan(scan_id="obs-0-0-1"):
         duration=60,
         sample_rate=2.4e6,
         center_freq=1420.4e6,
-        channels=1024,
+        spectral_resolution=1024,
         scan_type=ScanType.SKY,
     )
     return SimpleNamespace(

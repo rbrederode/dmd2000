@@ -44,7 +44,7 @@ def _find_meta_path(fb_path: Path, meta_path: str | None = None) -> Path | None:
 def _resolve_metadata(scan_model: ScanModel | None, spectral_resolution: int | None, dtype: str | None):
     filter_bank = getattr(scan_model, "filter_bank", None) if scan_model is not None else None
     resolved_spectral_resolution = spectral_resolution or getattr(scan_model, "spectral_resolution", None)
-    resolved_dtype = dtype or getattr(filter_bank, "dtype", None) or "uint8"
+    resolved_dtype = dtype or "float32"
     temporal_ms = getattr(filter_bank, "temporal_resolution", None)
 
     if not resolved_spectral_resolution or int(resolved_spectral_resolution) <= 0:

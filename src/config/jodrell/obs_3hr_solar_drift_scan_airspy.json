@@ -32,14 +32,20 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 0,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -48,14 +54,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 1,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -64,14 +76,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 2,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -80,14 +98,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 3,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -96,14 +120,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 4,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -112,14 +142,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 5,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -128,14 +164,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 6,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -144,14 +186,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 7,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -160,14 +208,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 8,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -176,14 +230,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 9,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -192,14 +252,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 10,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -208,14 +274,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 11,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -224,14 +296,20 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 12,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -240,14 +318,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 13,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -256,14 +340,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 14,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -272,14 +362,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 15,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -288,14 +384,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 16,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -304,14 +406,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 17,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -320,14 +428,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 18,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -336,14 +450,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 19,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -352,14 +472,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 20,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -368,14 +494,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 21,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -384,14 +516,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 22,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -400,14 +538,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 23,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -416,14 +560,20 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 24,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -432,14 +582,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 25,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -448,14 +604,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 26,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -464,14 +626,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 27,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -480,14 +648,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 28,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -496,14 +670,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 29,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -512,14 +692,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 30,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -528,14 +714,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 31,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -544,14 +736,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 32,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -560,14 +758,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 33,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -576,14 +780,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 34,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -592,14 +802,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 35,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -608,14 +824,20 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 36,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -624,14 +846,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 37,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -640,14 +868,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 38,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -656,14 +890,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 39,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -672,14 +912,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 40,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -688,14 +934,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 41,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -704,14 +956,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 42,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -720,14 +978,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 43,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -736,14 +1000,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 44,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -752,14 +1022,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 45,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -768,14 +1044,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 46,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -784,14 +1066,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 47,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -800,14 +1088,20 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 48,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -816,14 +1110,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 49,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -832,14 +1132,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 50,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -848,14 +1154,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 51,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -864,14 +1176,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 52,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -880,14 +1198,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 53,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -896,14 +1220,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 54,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -912,14 +1242,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 55,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -928,14 +1264,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 56,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -944,14 +1286,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 57,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -960,14 +1308,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 58,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -976,14 +1330,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 59,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -992,14 +1352,20 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 60,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1008,14 +1374,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 61,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1024,14 +1396,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 62,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1040,14 +1418,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 63,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1056,14 +1440,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 64,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1072,14 +1462,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 65,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1088,14 +1484,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 66,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1104,14 +1506,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 67,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1120,14 +1528,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 68,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1136,14 +1550,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 69,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1152,14 +1572,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 70,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1168,14 +1594,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 71,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1184,14 +1616,20 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 72,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1200,14 +1638,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 73,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1216,14 +1660,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 74,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1232,14 +1682,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 75,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1248,14 +1704,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 76,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1264,14 +1726,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 77,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1280,14 +1748,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 78,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1296,14 +1770,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 79,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1312,14 +1792,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 80,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1328,14 +1814,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 81,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1344,14 +1836,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 82,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1360,14 +1858,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 83,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1376,14 +1880,20 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 84,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1392,14 +1902,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 85,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1408,14 +1924,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 86,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1424,14 +1946,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 87,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1440,14 +1968,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 88,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1456,14 +1990,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 89,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1472,14 +2012,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 90,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1488,14 +2034,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 91,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1504,14 +2056,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 92,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1520,14 +2078,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 93,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1536,14 +2100,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 94,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1552,14 +2122,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 95,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1568,14 +2144,20 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 96,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1584,14 +2166,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 97,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1600,14 +2188,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 98,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1616,14 +2210,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 99,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1632,14 +2232,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 100,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1648,14 +2254,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 101,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1664,14 +2276,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 102,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1680,14 +2298,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 103,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1696,14 +2320,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 104,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1712,14 +2342,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 105,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1728,14 +2364,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 106,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1744,14 +2386,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 107,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1760,14 +2408,20 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 108,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1776,14 +2430,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 109,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1792,14 +2452,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 110,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1808,14 +2474,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 111,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1824,14 +2496,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 112,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1840,14 +2518,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 113,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1856,14 +2540,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 114,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1872,14 +2562,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 115,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1888,14 +2584,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 116,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1904,14 +2606,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 117,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1920,14 +2628,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 118,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1936,14 +2650,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 119,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1952,14 +2672,20 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 120,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1968,14 +2694,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 121,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -1984,14 +2716,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 122,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2000,14 +2738,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 123,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2016,14 +2760,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 124,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2032,14 +2782,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 125,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2048,14 +2804,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 126,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2064,14 +2826,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 127,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2080,14 +2848,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 128,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2096,14 +2870,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 129,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2112,14 +2892,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 130,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2128,14 +2914,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 131,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2144,14 +2936,20 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 132,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2160,14 +2958,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 133,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2176,14 +2980,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 134,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2192,14 +3002,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 135,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2208,14 +3024,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 136,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2224,14 +3046,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 137,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2240,14 +3068,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 138,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2256,14 +3090,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 139,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2272,14 +3112,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 140,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2288,14 +3134,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 141,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2304,14 +3156,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 142,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2320,14 +3178,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 143,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2336,14 +3200,20 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 144,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2352,14 +3222,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 145,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2368,14 +3244,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 146,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2384,14 +3266,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 147,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2400,14 +3288,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 148,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2416,14 +3310,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 149,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2432,14 +3332,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 150,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2448,14 +3354,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 151,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2464,14 +3376,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 152,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2480,14 +3398,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 153,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2496,14 +3420,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 154,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2512,14 +3442,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 155,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2528,14 +3464,20 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 156,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2544,14 +3486,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 157,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2560,14 +3508,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 158,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2576,14 +3530,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 159,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2592,14 +3552,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 160,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2608,14 +3574,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 161,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2624,14 +3596,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 162,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2640,14 +3618,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 163,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2656,14 +3640,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 164,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2672,14 +3662,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 165,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2688,14 +3684,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 166,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2704,14 +3706,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 167,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2720,14 +3728,20 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 168,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2736,14 +3750,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 169,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2752,14 +3772,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 170,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2768,14 +3794,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 171,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2784,14 +3816,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 172,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2800,14 +3838,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 173,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2816,14 +3860,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 174,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2832,14 +3882,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 175,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2848,14 +3904,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 176,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2864,14 +3926,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 177,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     },
     {
       "_type": "TargetConfig",
@@ -2880,14 +3948,20 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 3000000,
+      "sample_rate": 6000000,
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 178,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr"
+      "obs_id": "ODT-2026-04-18T0900Z-dish001-3hr",
+      "filter_bank": {
+        "_type": "FilterBank",
+        "enabled": true,
+        "temporal_resolution": 1.0,
+        "dtype": "uint8"
+      }
     }
   ],
   "targets": [

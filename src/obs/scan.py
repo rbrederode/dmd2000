@@ -216,19 +216,6 @@ class Scan:
             self._fb_file = None
             self._fb_path = None
 
-    def _fb_quantise(self, fb: np.ndarray, dtype: str | np.dtype) -> np.ndarray:
-        """ Quantise the filterbank data to the requested dtype for output. """
-        target_dtype = np.dtype(dtype)
-
-        # If the target dtype is a float or complex type, we can directly cast without clipping or rounding
-        if target_dtype.kind in {"f", "c"}:
-            return fb.astype(target_dtype, copy=False)
-
-        # np.iifo returns the limits for integer types, but for unsigned integers the min is 0, so we only need to clip the max value
-        info = np.iinfo(target_dtype)
-        fb = np.clip(fb, info.min, info.max)
-        return np.rint(fb).astype(target_dtype, copy=False)
-
     def _fb_temporal_ms(self) -> float:
         """Return the configured filterbank temporal resolution in milliseconds."""
         fb_config = getattr(self.scan_model, "filter_bank", None)
@@ -293,20 +280,14 @@ class Scan:
         self._fb_data[row_start:row_end, :] = fb[:row_end - row_start, :]
         self._fb_loaded_secs[sec - 1] = True
 
-    def _fb_trimmed_std(self, fb: np.ndarray, prop: float = 0.2) -> float:
-        """Compute the Julia script's robust scale estimate from a trimmed vector."""
-        flat = np.sort(np.ravel(fb))
-        trim_n = int(np.floor(flat.size * prop))
-        trimmed = flat[trim_n:-trim_n] if trim_n > 0 and trim_n * 2 < flat.size else flat
-        return float(np.std(trimmed, ddof=1 if trimmed.size > 1 else 0))
-
     def _fb_finalize_writer(self, read_start: datetime | None) -> None:
-        """Normalise, quantise, and write the complete filterbank product.
-            Trim flattened filterbank matrix by 20%
-            -> std with Julia-like sample std
-            -> divide full matrix by trimmed std
-            -> set >255 and non-finite values to 0
-            -> write configured dtype, e.g. uint8, to *-fb.dat"""
+        """Write the complete unnormalised filterbank product.
+
+        Observation-level normalisation and final dtype quantisation are handled
+        by ``obs.opt`` when the scan files are stitched into a SIGPROC file.
+        Keeping scan files unnormalised avoids introducing scan-local scale
+        changes into long observations.
+        """
             
         fb_config = getattr(self.scan_model, "filter_bank", None)
         if (
@@ -319,22 +300,12 @@ class Scan:
         ):
             return
 
-        trim_std = self._fb_trimmed_std(self._fb_data)
-        if not np.isfinite(trim_std) or trim_std <= 0.0:
-            logger.warning(f"Scan {self.scan_model.scan_id} - Invalid filterbank trimmed std {trim_std}. Skipping filterbank write.")
-            return
-
-        fb = self._fb_data / trim_std
-        fb[~np.isfinite(fb)] = 0
-        fb[fb > 255] = 0
-        fb = self._fb_quantise(fb, getattr(fb_config, "dtype", "uint8"))
-
         self._fb_open_writer(read_start)
         if self._fb_file is not None:
-            fb.tofile(self._fb_file)
+            self._fb_data.astype(np.float32, copy=False).tofile(self._fb_file)
             self._fb_file.flush()
             self._fb_written = True
-            logger.info(f"Scan {self.scan_model.scan_id} - Wrote Julia-style filterbank data to {self._fb_path}")
+            logger.info(f"Scan {self.scan_model.scan_id} - Wrote unnormalised filterbank data to {self._fb_path}")
 
     def get_rows_per_sec(self) -> int:
         """Get the number of FFT rows represented by one second of data."""

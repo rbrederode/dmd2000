@@ -65,7 +65,7 @@
             "env": {},
             "program": "python",
             "args": [
-                "tm/tm.py",
+                "-m", "tm.tm",
                 "--profile", "local",
                 "--entity_id", "tm001",
                 "--dig_host", "127.0.0.1",

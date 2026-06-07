@@ -24,7 +24,7 @@ class FilterBank(BaseModel):
         defaults = {
             "_type": "FilterBank",
             "enabled": False,                       # Whether filterbank file creation is enabled
-            "sub_bandwidth": None,                   # Output sub-bandwidth in Hz for the generated filterbank product
+            "sub_bandwidth": None,                  # Output sub-bandwidth in Hz for the generated filterbank product
             "temporal_resolution": None,            # Time resolution (milliseconds) for summing power spectra (e.g. 1 millisecond)
             "gap_mean_duration": 1.0,               # Duration either side of a data gap to average when filling gaps (milliseconds)
             "dtype": "uint8",                       # Data type for filterbank output (e.g. uint16)
