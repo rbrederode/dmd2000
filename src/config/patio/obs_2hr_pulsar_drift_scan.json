@@ -44,7 +44,6 @@
         "_type": "FilterBank",
         "enabled": true,
         "temporal_resolution": 1.0,
-        "sub_bandwidth": 1800000,
         "gap_mean_duration": 1.0,
         "dtype": "uint8"
       }
