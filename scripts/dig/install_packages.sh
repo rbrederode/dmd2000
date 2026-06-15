@@ -16,6 +16,8 @@ PACKAGES=(
     btop
     curl
     tmux
+    tk-dev
+    tcl-dev
     samba
     samba-common-bin
 )
