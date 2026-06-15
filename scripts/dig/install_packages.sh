@@ -12,7 +12,6 @@ PACKAGES=(
     liblgpio-dev
     libglib2.0-dev
     htop
-    lgpio
     btop
     curl
     tmux
