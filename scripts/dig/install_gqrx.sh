@@ -5,6 +5,12 @@ echo "==================================="
 echo " Gqrx Installer for Raspberry Pi "
 echo "==================================="
 
+GQRX_REPO="${GQRX_REPO:-https://github.com/gqrx-sdr/gqrx.git}"
+GQRX_VERSION="${GQRX_VERSION:-v2.17.7}"
+GQRX_SOURCE_DIR="${GQRX_SOURCE_DIR:-$HOME/src/gqrx}"
+GQRX_INSTALL_PREFIX="${GQRX_INSTALL_PREFIX:-/usr/local}"
+GQRX_BUILD_JOBS="${GQRX_BUILD_JOBS:-2}"
+
 require_command() {
     local cmd="$1"
     local hint="$2"
@@ -40,9 +46,53 @@ install_raspberry_pi() {
         echo "Skipping apt package index refresh (SKIP_APT_UPDATE=1)."
     fi
 
-    echo "Installing gqrx without recommended packages..."
-    echo "This avoids optional SDR extras such as xtrx-dkms unless you install them separately."
-    sudo apt-get install -y --no-install-recommends gqrx-sdr
+    echo "Installing Gqrx build dependencies..."
+    sudo apt-get install -y \
+        git \
+        cmake \
+        build-essential \
+        pkg-config \
+        gnuradio-dev \
+        gr-osmosdr \
+        libvolk2-dev \
+        libboost-all-dev \
+        liblog4cpp5-dev \
+        libspdlog-dev \
+        qtbase5-dev \
+        qttools5-dev \
+        qttools5-dev-tools \
+        libqt5svg5-dev \
+        libpulse-dev \
+        libasound2-dev
+
+    require_command git "Install git and rerun this script."
+    require_command cmake "Install cmake and rerun this script."
+
+    mkdir -p "$(dirname "$GQRX_SOURCE_DIR")"
+
+    if [ -d "$GQRX_SOURCE_DIR/.git" ]; then
+        echo "Updating existing Gqrx source tree at $GQRX_SOURCE_DIR..."
+        git -C "$GQRX_SOURCE_DIR" fetch --tags --prune
+    else
+        echo "Cloning Gqrx source into $GQRX_SOURCE_DIR..."
+        rm -rf "$GQRX_SOURCE_DIR"
+        git clone "$GQRX_REPO" "$GQRX_SOURCE_DIR"
+    fi
+
+    echo "Checking out Gqrx $GQRX_VERSION..."
+    git -C "$GQRX_SOURCE_DIR" checkout "$GQRX_VERSION"
+
+    echo "Configuring Gqrx build..."
+    cmake -S "$GQRX_SOURCE_DIR" -B "$GQRX_SOURCE_DIR/build" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX="$GQRX_INSTALL_PREFIX" \
+        -DFORCE_QT5=ON
+
+    echo "Building Gqrx with $GQRX_BUILD_JOBS job(s)..."
+    cmake --build "$GQRX_SOURCE_DIR/build" -j "$GQRX_BUILD_JOBS"
+
+    echo "Installing Gqrx to $GQRX_INSTALL_PREFIX..."
+    sudo cmake --install "$GQRX_SOURCE_DIR/build"
 }
 
 case "$(uname -s)" in
@@ -65,9 +115,10 @@ echo ""
 echo "Verifying gqrx..."
 if command -v gqrx >/dev/null 2>&1; then
     echo "gqrx was found at: $(command -v gqrx)"
+    gqrx --version || true
 else
     echo "WARNING: gqrx was not found on PATH after installation."
-    echo "If the package installed successfully, log out and back in or check whether the desktop session exposes gqrx on PATH."
+    echo "The source install normally places it at: $GQRX_INSTALL_PREFIX/bin/gqrx"
 fi
 
 echo ""
