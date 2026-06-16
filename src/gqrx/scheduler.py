@@ -157,16 +157,26 @@ def _format_status(status: GQRXStatus) -> str:
 def _parse_start_time(value: str) -> datetime | None:
     """Parse a start time string.
 
-    Accepts "now" or a time in hh:mm:ss format. "now" is resolved later,
-    after GQRX configuration has been applied.
+    Accepts "now", "+x" minutes from now, or a time in hh:mm:ss format.
+    "now" is resolved later, after GQRX configuration has been applied.
     """
-    if value.strip().lower() == "now":
+    value = value.strip()
+    if value.lower() == "now":
         return None
+
+    if value.startswith("+"):
+        try:
+            minutes = float(value[1:])
+        except ValueError as exc:
+            raise argparse.ArgumentTypeError("relative start time must be in +x format, where x is minutes") from exc
+        if minutes < 0:
+            raise argparse.ArgumentTypeError("relative start time must be zero or more minutes from now")
+        return datetime.now() + timedelta(minutes=minutes)
 
     try:
         parsed_time = datetime.strptime(value, "%H:%M:%S").time()
     except ValueError as exc:
-        raise argparse.ArgumentTypeError("start time must be 'now' or in hh:mm:ss format") from exc
+        raise argparse.ArgumentTypeError("start time must be 'now', '+x' minutes, or in hh:mm:ss format") from exc
 
     now = datetime.now()
     start = datetime.combine(now.date(), parsed_time)
@@ -337,7 +347,7 @@ def run_scheduler(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     """Build and return the command-line argument parser for the GQRX scheduler."""
     parser = argparse.ArgumentParser(description="Schedule a GQRX IQ recording through its remote-control interface.")
-    parser.add_argument("-t", "--time", dest="start_time", type=_parse_start_time, required=True, help="Local start time in hh:mm:ss format, or 'now' to start immediately after configuration.")
+    parser.add_argument("-t", "--time", dest="start_time", type=_parse_start_time, required=True, help="Local start time in hh:mm:ss format, '+x' minutes from now, or 'now' to start immediately after configuration.")
     parser.add_argument("-d", "--duration", type=int, required=True, help="IQ recording duration in seconds.")
     parser.add_argument("-cf", "--center-frequency", dest="center_freq", type=float, default=None, help="Optional center frequency in Hz.")
     parser.add_argument("-g", "--gain", type=float, default=None, help="Optional gain in dB (1-15) to set for LNA, MIX, and IF.")
