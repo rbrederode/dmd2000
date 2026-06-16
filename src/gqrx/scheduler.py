@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import logging
+import shutil
 import socket
+import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -154,6 +156,13 @@ def _format_status(status: GQRXStatus) -> str:
         f"DSP={int(status.dsp_enabled)}, IQRECORD={int(status.iq_recording)}, gains=({gains})"
     )
 
+def _format_duration(seconds: float) -> str:
+    """Format a duration in seconds as hh:mm:ss."""
+    total_seconds = max(0, int(round(seconds)))
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
 def _parse_start_time(value: str) -> datetime | None:
     """Parse a start time string.
 
@@ -214,6 +223,14 @@ def _delete_files(paths: list[Path]) -> None:
         except OSError as exc:
             logger.warning("Could not delete test IQ recording %s: %s", path, exc)
 
+def log_recording_drive_space(recording_dir: Path) -> None:
+    """Log available space on the filesystem containing the recording directory."""
+    usage = shutil.disk_usage(recording_dir)
+    free_gb = usage.free / (1024 ** 3)
+    total_gb = usage.total / (1024 ** 3)
+    logger.info("Recording directory: %s", recording_dir)
+    logger.info("Available drive space: %.2f GB free of %.2f GB total", free_gb, total_gb)
+
 def test_iq_recording(client: GQRXRemoteClient, recording_dir: Path, duration_secs: int = DEFAULT_TEST_DURATION_SECS) -> bool:
     """Test that GQRX can successfully start and stop an IQ recording.
         client: A GQRXRemoteClient instance.
@@ -251,10 +268,33 @@ def wait_until(start_time: datetime) -> None:
         start_time: A datetime object representing the local time to wait until.
     """
     while True:
-        remaining = (start_time - datetime.now()).total_seconds()
+        now = datetime.now()
+        remaining = (start_time - now).total_seconds()
         if remaining <= 0:
+            sys.stdout.write("\n")
+            sys.stdout.flush()
             return
-        time.sleep(min(remaining, 1.0))
+        sys.stdout.write(f"\rIQ recording starts in {_format_duration(remaining)}")
+        sys.stdout.flush()
+        time.sleep(min(max(remaining, 0.0), 1.0))
+
+def record_for(duration_secs: int) -> None:
+    """Wait for the recording duration while printing inline progress."""
+    started = datetime.now()
+    while True:
+        now = datetime.now()
+        elapsed = (now - started).total_seconds()
+        remaining = duration_secs - elapsed
+        if remaining <= 0:
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+            return
+        sys.stdout.write(
+            f"\rIQ recording: elapsed {_format_duration(elapsed)} "
+            f"remaining {_format_duration(remaining)}"
+        )
+        sys.stdout.flush()
+        time.sleep(min(max(remaining, 0.0), 1.0))
 
 def run_scheduler(args: argparse.Namespace) -> int:
     """Run the GQRX IQ recording scheduler with the specified arguments.
@@ -265,6 +305,7 @@ def run_scheduler(args: argparse.Namespace) -> int:
     if not recording_dir.exists() or not recording_dir.is_dir():
         logger.warning("Recording directory does not exist or is not a directory: %s", recording_dir)
         return 1
+    log_recording_drive_space(recording_dir)
 
     client = GQRXRemoteClient(port=args.port)
     # Check that we can connect to GQRX and get its status before proceeding.
@@ -329,7 +370,7 @@ def run_scheduler(args: argparse.Namespace) -> int:
     logger.info("Starting scheduled IQ recording for %s seconds.", args.duration)
     try:
         client.set_iq_recording(True)
-        time.sleep(args.duration)
+        record_for(args.duration)
     except GQRXRemoteError as exc:
         logger.warning("Scheduled IQ recording failed: %s", exc)
         return 1
