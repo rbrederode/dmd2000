@@ -154,16 +154,19 @@ def _format_status(status: GQRXStatus) -> str:
         f"DSP={int(status.dsp_enabled)}, IQRECORD={int(status.iq_recording)}, gains=({gains})"
     )
 
-def _parse_start_time(value: str) -> datetime:
-    """Parse a start time string in hh:mm:ss format and return a datetime object for today or tomorrow.
-        value: The start time string in hh:mm:ss format.
-        Returns a datetime object representing the next occurrence of the specified time.
-        Raises argparse.ArgumentTypeError if the format is invalid.
+def _parse_start_time(value: str) -> datetime | None:
+    """Parse a start time string.
+
+    Accepts "now" or a time in hh:mm:ss format. "now" is resolved later,
+    after GQRX configuration has been applied.
     """
+    if value.strip().lower() == "now":
+        return None
+
     try:
         parsed_time = datetime.strptime(value, "%H:%M:%S").time()
     except ValueError as exc:
-        raise argparse.ArgumentTypeError("start time must be in hh:mm:ss format") from exc
+        raise argparse.ArgumentTypeError("start time must be 'now' or in hh:mm:ss format") from exc
 
     now = datetime.now()
     start = datetime.combine(now.date(), parsed_time)
@@ -295,17 +298,23 @@ def run_scheduler(args: argparse.Namespace) -> int:
         logger.warning("Could not verify GQRX settings after configuration: %s", exc)
         return 1
 
-    # Run a test IQ recording to ensure that GQRX is functioning correctly before scheduling the actual recording.
-    logger.info("Running startup IQ recording test for %s seconds.", DEFAULT_TEST_DURATION_SECS)
-    try:
-        if not test_iq_recording(client, recording_dir):
+    if args.start_time is None:
+        start_time = datetime.now()
+        logger.info("Start time is 'now'; skipping startup IQ recording test.")
+        logger.info("Starting as soon as configuration has been applied: %s", start_time.strftime("%Y-%m-%d %H:%M:%S"))
+    else:
+        start_time = args.start_time
+        # Run a test IQ recording to ensure that GQRX is functioning correctly before scheduling the actual recording.
+        logger.info("Running startup IQ recording test for %s seconds.", DEFAULT_TEST_DURATION_SECS)
+        try:
+            if not test_iq_recording(client, recording_dir):
+                return 1
+        except GQRXRemoteError as exc:
+            logger.warning("Startup IQ recording test failed: %s", exc)
             return 1
-    except GQRXRemoteError as exc:
-        logger.warning("Startup IQ recording test failed: %s", exc)
-        return 1
 
-    logger.info("Waiting until %s local time to start IQ recording.", args.start_time.strftime("%Y-%m-%d %H:%M:%S"))
-    wait_until(args.start_time)
+        logger.info("Waiting until %s local time to start IQ recording.", start_time.strftime("%Y-%m-%d %H:%M:%S"))
+        wait_until(start_time)
 
     logger.info("Starting scheduled IQ recording for %s seconds.", args.duration)
     try:
@@ -328,7 +337,7 @@ def run_scheduler(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     """Build and return the command-line argument parser for the GQRX scheduler."""
     parser = argparse.ArgumentParser(description="Schedule a GQRX IQ recording through its remote-control interface.")
-    parser.add_argument("-t", "--time", dest="start_time", type=_parse_start_time, required=True, help="Local start time in hh:mm:ss format.")
+    parser.add_argument("-t", "--time", dest="start_time", type=_parse_start_time, required=True, help="Local start time in hh:mm:ss format, or 'now' to start immediately after configuration.")
     parser.add_argument("-d", "--duration", type=int, required=True, help="IQ recording duration in seconds.")
     parser.add_argument("-cf", "--center-frequency", dest="center_freq", type=float, default=None, help="Optional center frequency in Hz.")
     parser.add_argument("-g", "--gain", type=float, default=None, help="Optional gain in dB (1-15) to set for LNA, MIX, and IF.")
