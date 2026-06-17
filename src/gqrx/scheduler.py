@@ -102,20 +102,18 @@ class GQRXRemoteClient:
         self.set_value(f"F {int(float(frequency_hz))}")
 
     def set_hardware_frequency(self, frequency_hz: float, retune_offset_hz: float = DEFAULT_REMOTE_RETUNE_OFFSET_HZ) -> None:
-        """Set the SDR hardware tune frequency while leaving GQRX's filter offset at zero."""
+        """Set the SDR hardware tune frequency despite GQRX's remote-control filter offset."""
         frequency = int(float(frequency_hz))
         retune_offset = int(abs(float(retune_offset_hz)))
         if retune_offset <= 0:
             raise GQRXRemoteError("remote retune offset must be greater than zero")
 
         # GQRX's F command controls receive frequency, not hardware frequency.
-        # Force a known filter offset, retune hardware to frequency, then collapse
-        # the filter offset back to zero while keeping the hardware tune unchanged.
+        # Force a known negative offset, then tune to frequency + offset so the
+        # resulting hardware frequency is the requested frequency.
         self.set_frequency(frequency - (10 * retune_offset))
         time.sleep(0.1)
         self.set_frequency(frequency + retune_offset)
-        time.sleep(0.1)
-        self.set_frequency(frequency)
 
     def get_version(self) -> str:
         return self.query("_")
@@ -339,9 +337,9 @@ def run_scheduler(args: argparse.Namespace) -> int:
     try:
         if args.center_freq is not None:
             logger.info(
-                "Setting hardware center frequency to %d Hz using %d Hz remote retune offset",
+                "Setting hardware center frequency to %d Hz by commanding GQRX receiver frequency %d Hz",
                 int(args.center_freq),
-                int(args.remote_retune_offset),
+                int(args.center_freq + args.remote_retune_offset),
             )
             client.set_hardware_frequency(args.center_freq, args.remote_retune_offset)
 
