@@ -37,7 +37,7 @@
       "bandwidth": 5000000,
       "sample_rate": 6000000,
       "integration_time": 3600,
-      "spectral_resolution": 128,
+      "spectral_resolution": 100,
       "tgt_idx": 0,
       "obs_id": "ODT-2026-06-17T155500Z-dish001-1hr",
       "filter_bank": {
