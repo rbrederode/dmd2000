@@ -27,6 +27,7 @@ class GQRXRemoteError(RuntimeError):
 class GQRXStatus:
     version: str
     center_freq: int
+    lnb_lo_freq: int
     dsp_enabled: bool
     iq_recording: bool
     gains: dict[str, float]
@@ -100,6 +101,17 @@ class GQRXRemoteClient:
     def set_frequency(self, frequency_hz: float) -> None:
         self.set_value(f"F {int(float(frequency_hz))}")
 
+    def get_lnb_lo_freq(self) -> int:
+        return int(float(self.query("LNB_LO")))
+
+    def set_lnb_lo_freq(self, frequency_hz: float) -> None:
+        self.set_value(f"LNB_LO {int(float(frequency_hz))}")
+
+    def set_hardware_frequency(self, frequency_hz: float) -> None:
+        """Set the SDR hardware tune frequency by clearing GQRX's display LO offset first."""
+        self.set_lnb_lo_freq(0)
+        self.set_frequency(frequency_hz)
+
     def get_version(self) -> str:
         return self.query("_")
 
@@ -127,6 +139,7 @@ class GQRXRemoteClient:
         return GQRXStatus(
             version=self.get_version(),
             center_freq=self.get_frequency(),
+            lnb_lo_freq=self.get_lnb_lo_freq(),
             dsp_enabled=self.get_dsp_enabled(),
             iq_recording=self.get_iq_recording(),
             gains=gains,
@@ -153,6 +166,7 @@ def _format_status(status: GQRXStatus) -> str:
     gains = ", ".join(f"{name}={value:g} dB" for name, value in status.gains.items())
     return (
         f"GQRX version={status.version}, center_freq={status.center_freq} Hz, "
+        f"LNB_LO={status.lnb_lo_freq} Hz, "
         f"DSP={int(status.dsp_enabled)}, IQRECORD={int(status.iq_recording)}, gains=({gains})"
     )
 
@@ -321,8 +335,9 @@ def run_scheduler(args: argparse.Namespace) -> int:
     # Apply optional configuration settings (center frequency and gain) if specified on the command line.
     try:
         if args.center_freq is not None:
+            logger.info("Clearing GQRX LNB LO/display offset before setting center frequency.")
             logger.info("Setting center frequency to %d Hz", int(args.center_freq))
-            client.set_frequency(args.center_freq)
+            client.set_hardware_frequency(args.center_freq)
 
         if args.gain is not None:
             logger.info("Setting all GQRX gains to %g dB", args.gain)
