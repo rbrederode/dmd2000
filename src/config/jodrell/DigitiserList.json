@@ -31,16 +31,7 @@
             "bpf_type": {
                 "_type": "enum.IntEnum",
                 "instance": "BandpassFilterType",
-                "value": "SAWBIRD_H1_BAREBONES"
-            },
-            "bpf_config": {
-                "_type": "SAWbirdH1_BareBones",
-                "gpio_pin_power": 18,
-                "gpio_pin_load": 19,
-                "last_update": {
-                    "_type": "datetime",
-                    "value": "2026-01-11T13:13:18.466610+00:00"
-                }
+                "value": "ZCBP6_416R5_S"
             },
             "gain": 0.0,
             "sample_rate": 0.0,

@@ -7,7 +7,7 @@ from pathlib import Path
 import socket
 import time
 import threading
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 # Import google api tools
 from google.auth.transport.requests import Request
@@ -315,18 +315,6 @@ class TelescopeManager(App):
             for odt_obs in odt_empty_obs:
                 if not any(existing_obs.obs_id == odt_obs.obs_id for existing_obs in self.telmodel.oda.obs_store.obs_list):
                     logger.info(f"Adding new observation {odt_obs.obs_id} from ODT to ODA")
-
-                    # START DEBUG CODE, REMOVE LATER
-                    current_dt_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%MZ")                
-                    new_obs_id = re.sub(r"^.*?(-Dish\d{3})", current_dt_str + r"\1", odt_obs.obs_id)
-    
-                    odt_obs.obs_id = new_obs_id
-                    odt_obs.scheduling_block_start = datetime.now(timezone.utc) + timedelta(seconds=10)
-                    odt_obs.scheduling_block_end = odt_obs.scheduling_block_start + timedelta(seconds=610)
-
-                    # Inform the Science Data Processor that we are resetting these observations (in case they have been run already)
-                    self.oet.reset_sdp_scan(obs=odt_obs, action=action)
-                    # END DEBUG CODE, REMOVE LATER
 
                     self.telmodel.oda.obs_store.obs_list.append(odt_obs)
                     if is_startup_odt_event:
@@ -1017,12 +1005,12 @@ class TelescopeManager(App):
             # It is possible that multiple observations are scheduled for the current scheduling block and that some cannot be resourced
             # Example: A dish has become UNAVAILABLE, so only some observations can be resourced
             for obs in self.telmodel.oda.obs_store.obs_list:
-
-                # Calculate difference between now and the observation scheduling block start time in seconds
-                start_offset = abs((obs.scheduling_block_start - now).total_seconds())
-  
-                # Transition observations scheduled to start within 60 seconds
-                if obs.obs_state == ObsState.EMPTY and start_offset <= 60:
+                if (
+                    obs.obs_state == ObsState.EMPTY
+                    and obs.scheduling_block_start is not None
+                    and obs.scheduling_block_start <= now
+                    and (obs.scheduling_block_end is None or obs.scheduling_block_end > now)
+                ):
                     action.set_obs_transition(obs=obs, transition=ObsTransition.START)
                     logger.info(f"Telescope Manager starting observation {obs.obs_id} scheduled to start at {obs.scheduling_block_start}")
 
@@ -1591,6 +1579,20 @@ def main():
                             driver.instance = GoogleSheetsDriver(config)
                             logger.info(f"Telescope Manager initialised Google Sheets driver for UI integration with config:\n" + \
                                 f"{json.dumps(driver.config, indent=2)}")
+                        except XSoftwareFailure as e:
+                            disabled_ui_drivers.add(driver_key)
+                            logger.error(
+                                f"Telescope Manager disabled UI driver {driver.type.name} {driver.short_desc} "
+                                f"after initialization failed: {e}"
+                            )
+                    elif driver.type == UIDriverType.CUSTOM_UI:
+                        from ui.drivers.web.web_driver import WebUIDriver
+                        try:
+                            driver.instance = WebUIDriver(driver.config)
+                            logger.info(
+                                "Telescope Manager initialised Web UI driver "
+                                f"with config:\n{json.dumps(driver.config, indent=2)}"
+                            )
                         except XSoftwareFailure as e:
                             disabled_ui_drivers.add(driver_key)
                             logger.error(
