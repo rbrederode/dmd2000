@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_GQRX_HOST = "127.0.0.1"
 DEFAULT_GQRX_PORT = 7356
 DEFAULT_TEST_DURATION_SECS = 5
+DEFAULT_REMOTE_RETUNE_OFFSET_HZ = 432_000
 GAIN_NAMES = ("LNA", "MIX", "IF")
 
 
@@ -27,7 +28,6 @@ class GQRXRemoteError(RuntimeError):
 class GQRXStatus:
     version: str
     center_freq: int
-    lnb_lo_freq: int
     dsp_enabled: bool
     iq_recording: bool
     gains: dict[str, float]
@@ -101,16 +101,21 @@ class GQRXRemoteClient:
     def set_frequency(self, frequency_hz: float) -> None:
         self.set_value(f"F {int(float(frequency_hz))}")
 
-    def get_lnb_lo_freq(self) -> int:
-        return int(float(self.query("LNB_LO")))
+    def set_hardware_frequency(self, frequency_hz: float, retune_offset_hz: float = DEFAULT_REMOTE_RETUNE_OFFSET_HZ) -> None:
+        """Set the SDR hardware tune frequency while leaving GQRX's filter offset at zero."""
+        frequency = int(float(frequency_hz))
+        retune_offset = int(abs(float(retune_offset_hz)))
+        if retune_offset <= 0:
+            raise GQRXRemoteError("remote retune offset must be greater than zero")
 
-    def set_lnb_lo_freq(self, frequency_hz: float) -> None:
-        self.set_value(f"LNB_LO {int(float(frequency_hz))}")
-
-    def set_hardware_frequency(self, frequency_hz: float) -> None:
-        """Set the SDR hardware tune frequency by clearing GQRX's display LO offset first."""
-        self.set_lnb_lo_freq(0)
-        self.set_frequency(frequency_hz)
+        # GQRX's F command controls receive frequency, not hardware frequency.
+        # Force a known filter offset, retune hardware to frequency, then collapse
+        # the filter offset back to zero while keeping the hardware tune unchanged.
+        self.set_frequency(frequency - (10 * retune_offset))
+        time.sleep(0.1)
+        self.set_frequency(frequency + retune_offset)
+        time.sleep(0.1)
+        self.set_frequency(frequency)
 
     def get_version(self) -> str:
         return self.query("_")
@@ -139,7 +144,6 @@ class GQRXRemoteClient:
         return GQRXStatus(
             version=self.get_version(),
             center_freq=self.get_frequency(),
-            lnb_lo_freq=self.get_lnb_lo_freq(),
             dsp_enabled=self.get_dsp_enabled(),
             iq_recording=self.get_iq_recording(),
             gains=gains,
@@ -166,7 +170,6 @@ def _format_status(status: GQRXStatus) -> str:
     gains = ", ".join(f"{name}={value:g} dB" for name, value in status.gains.items())
     return (
         f"GQRX version={status.version}, center_freq={status.center_freq} Hz, "
-        f"LNB_LO={status.lnb_lo_freq} Hz, "
         f"DSP={int(status.dsp_enabled)}, IQRECORD={int(status.iq_recording)}, gains=({gains})"
     )
 
@@ -335,9 +338,12 @@ def run_scheduler(args: argparse.Namespace) -> int:
     # Apply optional configuration settings (center frequency and gain) if specified on the command line.
     try:
         if args.center_freq is not None:
-            logger.info("Clearing GQRX LNB LO/display offset before setting center frequency.")
-            logger.info("Setting center frequency to %d Hz", int(args.center_freq))
-            client.set_hardware_frequency(args.center_freq)
+            logger.info(
+                "Setting hardware center frequency to %d Hz using %d Hz remote retune offset",
+                int(args.center_freq),
+                int(args.remote_retune_offset),
+            )
+            client.set_hardware_frequency(args.center_freq, args.remote_retune_offset)
 
         if args.gain is not None:
             logger.info("Setting all GQRX gains to %g dB", args.gain)
@@ -406,6 +412,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-t", "--time", dest="start_time", type=_parse_start_time, required=True, help="Local start time in hh:mm:ss format, '+x' minutes from now, or 'now' to start immediately after configuration.")
     parser.add_argument("-d", "--duration", type=int, required=True, help="IQ recording duration in seconds.")
     parser.add_argument("-cf", "--center-frequency", dest="center_freq", type=float, default=None, help="Optional center frequency in Hz.")
+    parser.add_argument("--remote-retune-offset", type=float, default=DEFAULT_REMOTE_RETUNE_OFFSET_HZ, help=f"GQRX remote retune offset in Hz. Default: {DEFAULT_REMOTE_RETUNE_OFFSET_HZ}.")
     parser.add_argument("-g", "--gain", type=float, default=None, help="Optional gain in dB (1-15) to set for LNA, MIX, and IF.")
     parser.add_argument("-p", "--port", type=int, default=DEFAULT_GQRX_PORT, help=f"GQRX remote-control port. Default: {DEFAULT_GQRX_PORT}.")
     parser.add_argument("-dir", "--directory", required=True, help="Directory configured in GQRX where raw IQ recordings appear.")
@@ -427,6 +434,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("-p/--port must be between 1 and 65535")
     if args.gain is not None and (args.gain < 1 or args.gain > 15):
         parser.error("-g/--gain must be between 1 and 15 dB")
+    if args.remote_retune_offset <= 0:
+        parser.error("--remote-retune-offset must be greater than zero")
 
     return run_scheduler(args)
 
