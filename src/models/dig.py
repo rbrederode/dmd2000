@@ -44,7 +44,7 @@ class DigitiserModel(BaseModel):
         "sdp_connected": And(CommunicationStatus, lambda v: isinstance(v, CommunicationStatus)),
         "sdr_connected": And(CommunicationStatus, lambda v: isinstance(v, CommunicationStatus)),
         "scanning": And(Or(bool, str, dict, int), lambda v: isinstance(v, bool) or isinstance(v, str) or isinstance(v, dict) or isinstance(v, int)),
-        "sdr_type": And(str, lambda v: v.lower() in {"rtlsdr", "rtl-sdr", "rtl_sdr", "soapy", "soapysdr", "airspy"}),
+        "sdr_type": And(str, lambda v: v.lower() in {"rtlsdr", "soapy", "airspy", "gqrxraw", "airstream", "rtlstream"}),
         "sdr_config": And(dict, lambda v: isinstance(v, dict)),
         "sdr_eeprom": And(dict, lambda v: isinstance(v, dict)),
         "last_err_msg": Or(None, And(str, lambda v: isinstance(v, str))),                        # Last error message from the app

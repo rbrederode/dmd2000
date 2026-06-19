@@ -10,6 +10,10 @@ logger = logging.getLogger(__name__)
 
 SDR_TYPE_RTLSDR = "rtlsdr"
 SDR_TYPE_SOAPY = "soapy"
+SDR_TYPE_AIRSPY = "airspy"
+SDR_TYPE_GQRXRAW = "gqrxraw"
+SDR_TYPE_AIRSTREAM = "airstream"
+SDR_TYPE_RTLSTREAM = "rtlstream"
 DEFAULT_READ_SIZE = 256 * 1024
 
 
@@ -27,10 +31,22 @@ class SDR:
 
             return RTLSDRDriver(bias_t_enabled=bias_t_enabled, sdr_config=self.sdr_config)
 
-        if self.sdr_type == SDR_TYPE_SOAPY:
+        if self.sdr_type in {SDR_TYPE_SOAPY, SDR_TYPE_AIRSPY}:
             from sdr.drivers.soapy import SDR as SoapySDRDriver
 
             return SoapySDRDriver(bias_t_enabled=bias_t_enabled, sdr_config=self.sdr_config)
+
+        if self.sdr_type == SDR_TYPE_GQRXRAW:
+            from sdr.drivers.gqrx import SDR as GQRXReplayDriver
+
+            return GQRXReplayDriver(bias_t_enabled=bias_t_enabled, sdr_config=self.sdr_config)
+
+        if self.sdr_type in {SDR_TYPE_AIRSTREAM, SDR_TYPE_RTLSTREAM}:
+            from sdr.drivers.stream import SDR as StreamSDRDriver
+
+            sdr_config = dict(self.sdr_config)
+            sdr_config.setdefault("stream_backend", _stream_backend_for_sdr_type(self.sdr_type))
+            return StreamSDRDriver(bias_t_enabled=bias_t_enabled, sdr_config=sdr_config)
 
         raise XSoftwareFailure(f"Unsupported SDR type: {self.sdr_type}")
 
@@ -54,17 +70,23 @@ def _normalise_sdr_type(sdr_type: str | None) -> str:
     if sdr_type is None or str(sdr_type).strip() == "":
         return SDR_TYPE_RTLSDR
 
-    value = str(sdr_type).strip().lower().replace("-", "").replace("_", "")
+    value = str(sdr_type).strip().lower()
     aliases = {
-        "rtl": SDR_TYPE_RTLSDR,
         "rtlsdr": SDR_TYPE_RTLSDR,
-        "rtl2832": SDR_TYPE_RTLSDR,
         "soapy": SDR_TYPE_SOAPY,
-        "soapysdr": SDR_TYPE_SOAPY,
-        "airspy": SDR_TYPE_SOAPY,
+        "airspy": SDR_TYPE_AIRSPY,
+        "gqrxraw": SDR_TYPE_GQRXRAW,
+        "airstream": SDR_TYPE_AIRSTREAM,
+        "rtlstream": SDR_TYPE_RTLSTREAM,
     }
 
     if value not in aliases:
         raise XSoftwareFailure(f"Unsupported SDR type: {sdr_type}")
 
     return aliases[value]
+
+
+def _stream_backend_for_sdr_type(sdr_type: str) -> str:
+    if sdr_type == SDR_TYPE_RTLSTREAM:
+        return "rtl"
+    return "airspy"

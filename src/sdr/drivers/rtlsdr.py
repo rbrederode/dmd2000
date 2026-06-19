@@ -475,7 +475,7 @@ class SDR:
 
             # Record start/end times associated with sample set (in epoch seconds)
             read_start = time.time()
-            x = self.rtlsdr.read_samples(self.sample_rate)
+            x = self._read_complex_samples(self.sample_rate)
             read_end = time.time()
 
             self.read_counter += 1
@@ -483,9 +483,6 @@ class SDR:
 
         except Exception as e:
             self._handle_read_error(e, "while reading samples from SDR")
-
-        # Ensure consistent complex64 output for downstream processing.
-        x = np.array(x, dtype=np.complex64)
 
         metadata = {
             'read_counter': count,
@@ -496,6 +493,17 @@ class SDR:
 
         #logger.info(f"SDR READ SAMPLES: requested {self.sample_rate} samples, read {x.size} samples, start={read_start}, end={read_end}, duration={(read_end-read_start):.3f} seconds")
         return metadata, x
+
+    def _read_complex_samples(self, num_samples: int) -> np.ndarray:
+        if self.rtlsdr is None:
+            raise XHardwareFailure("SDR device is not connected.")
+
+        try:
+            samples = self.rtlsdr.read_samples(int(num_samples))
+        except Exception as err:
+            self._handle_read_error(err, f"while reading {num_samples} complex samples from SDR")
+
+        return np.asarray(samples, dtype=np.complex64)
 
 def _run_test_iteration(sdr: SDR):
     """Run the standalone SDR test sequence once."""
