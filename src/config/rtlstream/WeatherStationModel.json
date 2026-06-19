@@ -1,0 +1,92 @@
+{
+    "_type": "WeatherStationModel",
+    "id": "ws001",
+    "app": {
+        "_type": "AppModel",
+        "app_name": "ws",
+        "app_running": false,
+        "version": "",
+        "health": {
+            "_type": "enum.IntEnum",
+            "instance": "HealthState",
+            "value": "UNKNOWN"
+        },
+        "num_processors": 0,
+        "queue_size": 0,
+        "interfaces": [],
+        "processors": [],
+        "msg_timeout_ms": 10000,
+        "arguments": null,
+        "reliability": null,
+        "availability": null,
+        "last_err_msg": null,
+        "last_err_dt": null,
+        "last_update": {
+            "_type": "datetime",
+            "value": "2026-05-03T00:00:00+00:00"
+        }
+    },
+    "tm_connected": {
+        "_type": "enum.IntEnum",
+        "instance": "CommunicationStatus",
+        "value": "NOT_ESTABLISHED"
+    },
+    "dm_connected": {
+        "_type": "enum.IntEnum",
+        "instance": "CommunicationStatus",
+        "value": "NOT_ESTABLISHED"
+    },
+    "sim_mode": "off",
+    "driver_type": {
+        "_type": "enum.IntEnum",
+        "instance": "WeatherStationDriverType",
+        "value": "MODBUS"
+    },
+    "driver_config": {
+        "_type": "ModbusConfig",
+        "port": "/dev/ttyUSB0",
+        "slave_address": 1,
+        "baudrate": 9600,
+        "bytesize": 8,
+        "parity": "N",
+        "stopbits": 1,
+        "timeout": 1.0,
+        "mode": "rtu",
+        "function_code": 3,
+        "register_decimals": 0,
+        "signed": false,
+        "clear_buffers_before_each_transaction": true,
+        "debug": false,
+        "wind_speed_register": 0,
+        "wind_speed_scale": 0.1,
+        "wind_speed_offset": 0.0,
+        "precipitation_register": null,
+        "precipitation_scale": 1.0,
+        "precipitation_offset": 0.0,
+        "precipitation_default": 0.0,
+        "wind_direction_register": null,
+        "wind_direction_scale": 1.0,
+        "wind_direction_offset": 0.0,
+        "temperature_register": null,
+        "temperature_scale": 0.1,
+        "temperature_offset": 0.0,
+        "humidity_register": null,
+        "humidity_scale": 0.1,
+        "humidity_offset": 0.0,
+        "pressure_register": null,
+        "pressure_scale": 0.1,
+        "pressure_offset": 0.0,
+        "last_update": {
+            "_type": "datetime",
+            "value": "2026-05-03T00:00:00+00:00"
+        }
+    },
+    "driver_poll_period": 1000,
+    "driver_failures": 0,
+    "last_err_msg": null,
+    "last_err_dt": null,
+    "last_update": {
+        "_type": "datetime",
+        "value": "2026-05-03T00:00:00+00:00"
+    }
+}
