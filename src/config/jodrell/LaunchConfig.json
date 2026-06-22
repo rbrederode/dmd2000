@@ -14,7 +14,7 @@
                 "-m", "dig.dig",
                 "--profile", "jodrell",
                 "--entity_id", "dig001",
-                "--tm_host", "192.168.50.2",
+                "--tm_host", "192.168.50.1",
                 "--sdp_host", "192.168.50.1",
                 "--local_host", "192.168.50.2"
             ]
