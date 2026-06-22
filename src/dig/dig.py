@@ -424,7 +424,7 @@ class Digitiser(App):
             return HealthState.DEGRADED
         elif self.dig_model.sdp_connected != CommunicationStatus.ESTABLISHED:
             return HealthState.DEGRADED
-        elif self.sdr is None or self.sdr.get_comms_status() != CommunicationStatus.ESTABLISHED:
+        elif self.dig_model.sdr_connected != CommunicationStatus.ESTABLISHED:
             return HealthState.FAILED
         else:
             return HealthState.OK

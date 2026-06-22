@@ -339,18 +339,19 @@ class TargetScanSet(BaseModel):
         self.obs_id = obs_id if obs_id is not None else '<undefined>'
         self.tgt_idx = tgt_config.tgt_idx
 
-        self.freq_min = tgt_config.center_freq - tgt_config.bandwidth / 2 - tgt_config.sample_rate * (1-USABLE_BANDWIDTH)/2  # Start of frequency scanning
-        self.freq_max = tgt_config.center_freq + tgt_config.bandwidth / 2 + tgt_config.sample_rate * (1-USABLE_BANDWIDTH)/2  # End of frequency scanning
+        self.freq_min = tgt_config.center_freq - tgt_config.bandwidth / 2  # Requested start frequency
+        self.freq_max = tgt_config.center_freq + tgt_config.bandwidth / 2  # Requested end frequency
 
         logger.info(f"Target in {obs_id} determining scans for TargetConfig idx={self.tgt_idx} from {self.freq_min/1e6:.2f} MHz to {self.freq_max/1e6:.2f} MHz with Sample Rate: {tgt_config.sample_rate/1e6:.2f} MHz and Duration: {tgt_config.integration_time} sec(s)")
 
         # Calculate the number of frequency scans needed to cover the requested
-        # bandwidth. A target narrower than one usable sample-rate window still
-        # needs one scan.
+        # usable bandwidth. A target narrower than one usable sample-rate window
+        # still needs one full sample-rate capture centered on the target.
         freq_span = self.freq_max - self.freq_min
         usable_sample_rate = tgt_config.sample_rate * USABLE_BANDWIDTH
         self.freq_scans = max(1, int(math.ceil(freq_span / usable_sample_rate))) if usable_sample_rate > 0 else 0
-        self.freq_overlap = round((tgt_config.sample_rate * self.freq_scans - (self.freq_max-self.freq_min))/(self.freq_scans-1) if self.freq_scans > 1 else 0,4) # Overlap in the frequency domain (Hz) rounded to 4 decimals
+        usable_step = (freq_span - usable_sample_rate) / (self.freq_scans - 1) if self.freq_scans > 1 else 0
+        self.freq_overlap = round(tgt_config.sample_rate - usable_step if self.freq_scans > 1 else 0, 4) # Overlap in the frequency domain (Hz) rounded to 4 decimals
         self.scan_iterations = int(np.ceil(tgt_config.integration_time / MAX_SCAN_DURATION_SEC))  # Number of iterations of a frequency scan, # e.g. 5 minutes of data will be 5 scans of 1 minute each
         self.scan_duration = math.ceil(tgt_config.integration_time / self.scan_iterations) if self.scan_iterations > 1 else tgt_config.integration_time  # Duration of each scan in seconds
 
@@ -370,7 +371,11 @@ class TargetScanSet(BaseModel):
                 scan_start_freq = scan_center_freq - tgt_config.sample_rate / 2
                 scan_end_freq = scan_center_freq + tgt_config.sample_rate / 2
             else:
-                scan_start_freq = self.freq_min + (freq_scan * (tgt_config.sample_rate - self.freq_overlap)) 
+                scan_start_freq = (
+                    self.freq_min
+                    - tgt_config.sample_rate * (1 - USABLE_BANDWIDTH) / 2
+                    + (freq_scan * (tgt_config.sample_rate - self.freq_overlap))
+                )
                 scan_end_freq = scan_start_freq + tgt_config.sample_rate
                 scan_center_freq = scan_start_freq + tgt_config.sample_rate / 2
 

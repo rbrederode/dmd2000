@@ -8,9 +8,9 @@
             "short_desc": "3.5m Jodrell Dish",
             "diameter": 3.5,
             "fd_ratio": 0.43,
-            "latitude": 53.23547917765374,
-            "longitude": -2.304138000719167,
-            "height": 80.0,
+            "latitude": 53.234090,
+            "longitude": -2.305533,
+            "height": 78.0,
             "feed_type": {
                 "_type": "enum.IntEnum",
                 "instance": "Feed",

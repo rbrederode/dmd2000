@@ -20,7 +20,7 @@
                 "processors": [],
                 "msg_timeout_ms": 10000,
                 "arguments": {
-                    "local_host": "127.0.0.1"
+                    "local_host": "192.168.50.2"
                 },
                 "last_update": {
                     "_type": "datetime",
@@ -56,8 +56,11 @@
                 "value": "NOT_ESTABLISHED"
             },
             "scanning": false,
-            "sdr_type": "airspy",
-            "sdr_config": {},
+            "sdr_type": "airstream",
+            "sdr_config": {
+                "ring_seconds": 10,
+                "read_timeout_sec": 10
+            },
             "sdr_eeprom": {},
             "last_update": {
                 "_type": "datetime",
