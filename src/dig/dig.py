@@ -111,9 +111,11 @@ class Digitiser(App):
                 self.dig_model.dig_id = self.get_args().entity_id
                 logger.info(f"Digitiser loaded configuration for {self.dig_model.dig_id} from directory {input_dir} file {filename}")
             else:
-                logger.warning(f"Digitiser configuration for {self.dig_model.dig_id} not found in directory {input_dir} file {filename}")
+                msg = f"Digitiser configuration for {self.dig_model.dig_id} not found in directory {input_dir} file {filename}"
+                logger.warning(self.set_last_err(msg))
         else:
-            logger.warning(f"Digitiser could not load Digitiser configuration from directory {input_dir} file {filename}")
+            msg = f"Digitiser could not load Digitiser configuration from directory {input_dir} file {filename}"
+            logger.warning(self.set_last_err(msg))
 
         # Initialise the Software Defined Radio (internal) interface
         self.sdr = SDR(sdr_type=self.dig_model.sdr_type, sdr_config=self.dig_model.sdr_config)
@@ -192,7 +194,8 @@ class Digitiser(App):
                 action.set_timer_action(Action.Timer(name=f"tm_adv_timer:{dt}", timer_action=Action.Timer.TIMER_STOP))
             
             if api_call.get('status') == tm_dig.STATUS_ERROR:
-                logger.error(f"Digitiser received negative acknowledgement from TM for api call\n{json.dumps(api_call, indent=2)}")
+                msg = f"Digitiser received negative acknowledgement from TM for api call\n{json.dumps(api_call, indent=2)}"
+                logger.error(self.set_last_err(msg))
 
             return action
 
@@ -209,7 +212,7 @@ class Digitiser(App):
             if obs_id and obs_id !=api_call.get('obs_data', {}).get('obs_id'):
                 if api_call['action_code'] in ["set", "method"]:
                     msg = f"Digitiser busy scanning for observation {obs_id} and cannot process unrelated API call until observation is complete"               
-                    logger.error(msg + f"\n{json.dumps(api_call, indent=2)}")
+                    logger.error(self.set_last_err(msg) + f"\n{json.dumps(api_call, indent=2)}")
                     action.set_msg_to_remote(self._construct_rsp_to_tm(tm_dig.STATUS_ERROR, msg, None, api_msg, api_call))
                     return action
             
@@ -259,8 +262,7 @@ class Digitiser(App):
                         action.set_timer_action(Action.Timer(name=f"sdp_adv_timer:{sdp_adv.get_timestamp()}", timer_action=self.dig_model.app.msg_timeout_ms, echo_data=sdp_adv))
 
                     elif not self.dig_model.sdp_connected == CommunicationStatus.ESTABLISHED:
-                        logger.warning("Digitiser cannot send samples to Science Data Processor, not connected.")
-
+                        self.set_last_err("Digitiser cannot send samples to Science Data Processor, not connected.")
                         # Send status advice message to Telescope Manager
                         tm_adv = self._construct_status_adv_to_tm()
                         action.set_msg_to_remote(tm_adv)
@@ -335,7 +337,8 @@ class Digitiser(App):
                 action.set_timer_action(Action.Timer(name=f"sdp_adv_timer:{dt}", timer_action=Action.Timer.TIMER_STOP))
             
             if api_call.get('status') == tm_dig.STATUS_ERROR:
-                logger.error(f"Digitiser received negative acknowledgement from SDP for api call\n{json.dumps(api_call, indent=2)}")
+                msg = f"Digitiser received negative acknowledgement from SDP for api call\n{json.dumps(api_call, indent=2)}"
+                logger.error(self.set_last_err(msg))
 
         return action
 
@@ -377,13 +380,13 @@ class Digitiser(App):
 
             elif payload is None:
                 # Wait for scan_samples timer to trigger again
-                logger.warning(f"Digitiser cannot send samples to Science Data Processor on {event.name}, no payload after reading samples.")
+                self.set_last_err(f"Digitiser cannot send samples to Science Data Processor on {event.name}, no payload after reading samples.")
         
         # Else if the timer is for handling sdp adv timeouts
         elif event.name.startswith("sdp_adv_timer"):
 
             # Simply log a warning that the SDP did not acknowledge the samples advice
-            logger.warning(f"Digitiser timed out waiting for acknowledgement from SDP for samples advice {event}")
+            self.set_last_err(f"Digitiser timed out waiting for acknowledgement from SDP for samples advice {event}")
 
         # Else if the timer is for handling temperature sensor polling
         elif event.name.startswith("temp_sensor_poll"):
@@ -410,9 +413,7 @@ class Digitiser(App):
                             f"exceeds maximum configured temperature {self.dig_model.temp_max:.2f} C. "
                             "Initiating automatic shutdown.")
                 
-                        logger.error(shutdown_reason)
-
-                        self.set_last_err(shutdown_reason)
+                        logger.error(self.set_last_err(shutdown_reason))
                         self.dig_model.app.health = HealthState.FAILED
                 
                         # Power off the bandpass filter to prevent further heating
@@ -428,9 +429,11 @@ class Digitiser(App):
 
                 else:
                     logger.warning("Digitiser temperature sensor reading is stale or unavailable.")
+                    self.set_last_err("Digitiser temperature sensor reading is stale or unavailable.")
             else:
                 logger.warning(f"Digitiser temperature sensor is not connected or communication is not established. Last error: {self._get_temp_sensor_last_error()}")
-       
+                self.set_last_err(f"Digitiser temperature sensor is not connected or communication is not established. Last error: {self._get_temp_sensor_last_error()}")
+
         # Else if the timer is for handling comms retries such as SDR connection retries
         elif event.name.startswith("comms_retry"):
 
@@ -452,7 +455,7 @@ class Digitiser(App):
                     self.set_bpf_power_state(False)  # Switch bandpass filter power off when idle
 
             if self.temp_sensor is not None and self.temp_sensor.get_comms_status() != CommunicationStatus.ESTABLISHED and self.dig_model.temp_type is not None and self.dig_model.temp_type.lower() != "none":
-                logger.warning(f"Digitiser retrying temperature sensor connection. Last error: {self._get_temp_sensor_last_error()}")
+                self.set_last_err(f"Digitiser retrying temperature sensor connection. Last error: {self._get_temp_sensor_last_error()}")
                 self.temp_sensor = Temp(device=self.dig_model.temp_type, sensor_config=self.dig_model.temp_config)  # Retry connecting to the temperature sensor
                 self.dig_model.temp_connected = self.temp_sensor.get_comms_status()
 
@@ -588,6 +591,7 @@ class Digitiser(App):
                 logger.error(f"Digitiser failed to set property {prop_name} to {prop_value}: {details}")
             else:
                 logger.exception(f"Digitiser failed to set property {prop_name} to {prop_value}: {details}")
+            self.set_last_err(f"Digitiser failed to set property {prop_name} to {prop_value}: {details}")
             return tm_dig.STATUS_ERROR, f"Digitiser failed to set property {prop_name} to {prop_value}: {details}", None, None
 
         logger.info(f"Digitiser set property {prop_name[4:]} to {prop_value}")
@@ -632,6 +636,7 @@ class Digitiser(App):
             details = str(e)
             if isinstance(e, XHardwareFailure):
                 self.dig_model.sdr_connected = CommunicationStatus.NOT_ESTABLISHED
+            self.set_last_err(f"Digitiser failed to get property {prop_name}: {details}")
             logger.error(f"Digitiser failed to get property {prop_name}: {details}")
             return tm_dig.STATUS_ERROR, f"Digitiser failed to get property {prop_name}: {details}", None, None
 
@@ -675,6 +680,7 @@ class Digitiser(App):
             details = str(e)
             if isinstance(e, XHardwareFailure):
                 self.dig_model.sdr_connected = CommunicationStatus.NOT_ESTABLISHED
+            self.set_last_err(f"Digitiser method {method} failed with exception: {details}")
             logger.error(f"Digitiser method {method} failed with exception: {details}")
             return tm_dig.STATUS_ERROR, f"Digitiser method {method} failed with exception: {details}", None, None
 
