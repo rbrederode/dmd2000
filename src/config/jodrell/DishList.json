@@ -5,8 +5,8 @@
         {
             "_type": "DishModel",
             "dsh_id": "dish001",
-            "short_desc": "3.0m Alston Dish",
-            "diameter": 3.0,
+            "short_desc": "3.5m Jodrell Dish",
+            "diameter": 3.5,
             "fd_ratio": 0.45,
             "latitude": 53.234090,
             "longitude": -2.305533,
