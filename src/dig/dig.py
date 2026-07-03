@@ -120,13 +120,21 @@ class Digitiser(App):
 
         # Initialise the Digitiser Assembly temperature sensor interface
         self.temp_sensor = None
-        if self.dig_model.temp_type != None:
-            self.temp_sensor = Temp(sensor_config=self.dig_model.temp_config)
-            self.dig_model.temp_connected = self.temp_sensor.get_comms_status()
-            if self.dig_model.temp_connected == CommunicationStatus.ESTABLISHED:
+        temp_type = self._get_digitiser_model_value("temp_type", "none")
+        if temp_type is not None and str(temp_type).lower() != "none":
+            temp_config = self._get_digitiser_model_value("temp_config", {})
+            logger.info(f"Digitiser configuring temperature sensor type={temp_type} config={temp_config}")
+            self.temp_sensor = Temp(device=temp_type, sensor_config=temp_config)
+            self._set_digitiser_model_value("temp_connected", self.temp_sensor.get_comms_status())
+            if self.temp_sensor.get_comms_status() == CommunicationStatus.ESTABLISHED:
                 logger.info("Digitiser successfully connected to temperature sensor.")
-                # Poll the temperature sensor every 5 seconds
-                action.set_timer_action(Action.Timer(name=f"temp_sensor_poll", timer_action=5000, echo_data=None))  
+            else:
+                logger.info("Digitiser temperature sensor configured; waiting for background connection.")
+            # Poll the temperature sensor every 5 seconds. The Temp class returns
+            # None until its background reader has a fresh cached value.
+            action.set_timer_action(Action.Timer(name=f"temp_sensor_poll", timer_action=5000, echo_data=None))
+        else:
+            self._set_digitiser_model_value("temp_connected", CommunicationStatus.DISABLED)
         
         # Start timer to periodically checks comms e.g. SDR, Bandpass filter relays, temp sensors etc
         action.set_timer_action(Action.Timer(name=f"comms_retry", timer_action=5000))
@@ -385,10 +393,11 @@ class Digitiser(App):
                 temp_reading = self.temp_sensor.get_reading()
                 if temp_reading is not None:
                     logger.info(f"Digitiser temperature sensor reading: {temp_reading.temperature:.2f} °C, humidity: {temp_reading.humidity:.2f} %, pressure: {temp_reading.pressure:.2f} hPa")
-                    self.dig_model.temp_reading = temp_reading
+                    self._set_digitiser_model_value("temp_reading", temp_reading)
 
-                    if self.dig_model.temp_max is not None and temp_reading.temperature > self.dig_model.temp_max:
-                        logger.error(f"Digitiser temperature sensor reading {temp_reading.temperature:.2f} °C exceeds maximum configured temperature {self.dig_model.temp_max:.2f} °C. Initiating automatic shutdown.")
+                    temp_max = self._get_digitiser_model_value("temp_max", None)
+                    if temp_max is not None and temp_reading.temperature > temp_max:
+                        logger.error(f"Digitiser temperature sensor reading {temp_reading.temperature:.2f} °C exceeds maximum configured temperature {temp_max:.2f} °C. Initiating automatic shutdown.")
                         # Stop scanning and power off the bandpass filter to prevent further heating
                         self.dig_model.scanning = False
                         self._advance_scan_samples_generation()
@@ -424,14 +433,17 @@ class Digitiser(App):
                 if idle_seconds >= self._idle_poweroff_seconds:
                     self.set_bpf_power_state(False)  # Switch bandpass filter power off when idle
 
-            if self.temp_sensor is not None and self.temp_sensor.get_comms_status() != CommunicationStatus.ESTABLISHED:
-                self.temp_sensor = Temp(sensor_config=self.dig_model.temp_config)  # Retry connecting to the temperature sensor
-                self.dig_model.temp_connected = self.temp_sensor.get_comms_status()
+            temp_type = self._get_digitiser_model_value("temp_type", "none")
+            if self.temp_sensor is not None and self.temp_sensor.get_comms_status() != CommunicationStatus.ESTABLISHED and temp_type is not None and str(temp_type).lower() != "none":
+                self.temp_sensor = Temp(device=temp_type, sensor_config=self._get_digitiser_model_value("temp_config", {}))  # Retry connecting to the temperature sensor
+                self._set_digitiser_model_value("temp_connected", self.temp_sensor.get_comms_status())
 
-                if self.dig_model.temp_connected == CommunicationStatus.ESTABLISHED:
+                if self.temp_sensor.get_comms_status() == CommunicationStatus.ESTABLISHED:
                     logger.info("Digitiser successfully connected to temperature sensor.")
                     # Poll the temperature sensor every 5 seconds
                     action.set_timer_action(Action.Timer(name=f"temp_sensor_poll", timer_action=5000, echo_data=None))  
+            elif self.temp_sensor is not None:
+                self._set_digitiser_model_value("temp_connected", self.temp_sensor.get_comms_status())
 
         return action
 
@@ -448,6 +460,15 @@ class Digitiser(App):
     def _is_current_scan_samples_generation(self, generation) -> bool:
         with self._scan_samples_generation_lock:
             return generation == self._scan_samples_generation
+
+    def _get_digitiser_model_value(self, name: str, default=None):
+        return self.dig_model._data.get(name, default)
+
+    def _set_digitiser_model_value(self, name: str, value) -> bool:
+        if name not in self.dig_model.schema.schema:
+            return False
+        setattr(self.dig_model, name, value)
+        return True
 
     def process_status_event(self, event) -> Action:
         """ Processes status update events.

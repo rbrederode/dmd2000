@@ -11,7 +11,10 @@ BME280_ADDRESSES = (0x76, 0x77)
 
 
 class BME280Reader:
-    def __init__(self, bus_number: int | None = None, address: int | None = None):
+    def __init__(self, bus_number: int | None = None, address: int | None = None, bus: int | None = None):
+        if bus_number is None:
+            bus_number = bus
+
         try:
             import adafruit_bme280.advanced as adafruit_bme280
         except ImportError as err:
