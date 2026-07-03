@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import warnings
 from datetime import datetime, timezone
 
 from models.temp import TempReading
@@ -26,7 +27,15 @@ class BME280Reader:
                 f"Original import error: {err!r}. Python executable: {sys.executable}."
             ) from err
 
-        i2c = make_i2c_bus(bus_number)
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="I2C frequency is not settable in python, ignoring!",
+                category=RuntimeWarning,
+                module=r"adafruit_blinka\.microcontroller\.generic_linux\.i2c",
+            )
+            i2c = make_i2c_bus(bus_number)
+
         addresses = (address,) if address is not None else BME280_ADDRESSES
         probe_errors = []
 

@@ -3,7 +3,7 @@
 Cached temperature, humidity, and pressure readings from a sensor.
 
 Run on the Raspberry Pi with:
-    python src/dig/temp.py --bus 3
+    python src/dig/temp/temp.py --bus 3
 """
 
 from __future__ import annotations
@@ -19,8 +19,8 @@ from models.temp import TempReading
 from models.comms import CommunicationStatus
 
 try:
-    from dig.bme280 import BME280Reader, env_i2c_bus, parse_i2c_address
-except ModuleNotFoundError:
+    from .bme280 import BME280Reader, env_i2c_bus, parse_i2c_address
+except ImportError:
     from bme280 import BME280Reader, env_i2c_bus, parse_i2c_address
 
 DEFAULT_DEVICE = "bme280"
