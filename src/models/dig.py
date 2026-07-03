@@ -53,8 +53,6 @@ class DigitiserModel(BaseModel):
         "sdr_type": And(str, lambda v: v.lower() in {"rtlsdr", "soapy", "airspy", "gqrxraw", "airstream", "rtlstream"}),
         "sdr_config": And(dict, lambda v: isinstance(v, dict)),
         "sdr_eeprom": And(dict, lambda v: isinstance(v, dict)),
-        "last_err_msg": Or(None, And(str, lambda v: isinstance(v, str))),                        # Last error message from the app
-        "last_err_dt": Or(None, And(datetime, lambda v: isinstance(v, datetime))),               # Last error datetime from the app
         "last_update": And(datetime, lambda v: isinstance(v, datetime)),
     })
 
@@ -99,8 +97,6 @@ class DigitiserModel(BaseModel):
             "sdr_eeprom": {},
             "sdr_type": "rtlsdr",
             "sdr_config": {},
-            "last_err_msg": None,
-            "last_err_dt": None,
             "last_update": datetime.now(timezone.utc),
         }
 
