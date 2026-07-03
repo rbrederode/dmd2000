@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from gpiozero import LED
 
 from api import tm_dig, sdp_dig
+from dig.temp import Temp
 from env.app import App
 from ipc.message import APIMessage
 from ipc.message import AppMessage
@@ -68,9 +69,6 @@ class Digitiser(App):
         self._idle_poweroff_seconds = 300
         self._last_active_dt = datetime.now(timezone.utc)
 
-    def _touch_activity(self):
-        self._last_active_dt = datetime.now(timezone.utc)
-
     def add_args(self, arg_parser):
         """ Specifies the digitiser's command line arguments.
         """
@@ -119,8 +117,18 @@ class Digitiser(App):
         self.sdr = SDR(sdr_type=self.dig_model.sdr_type, sdr_config=self.dig_model.sdr_config)
         self.dig_model.sdr_eeprom = self.sdr.get_eeprom_info() or {}
         self.dig_model.sdr_connected = self.sdr.get_comms_status()
+
+        # Initialise the Digitiser Assembly temperature sensor interface
+        self.temp_sensor = None
+        if self.dig_model.temp_type != None:
+            self.temp_sensor = Temp(sensor_config=self.dig_model.temp_config)
+            self.dig_model.temp_connected = self.temp_sensor.get_comms_status()
+            if self.dig_model.temp_connected == CommunicationStatus.ESTABLISHED:
+                logger.info("Digitiser successfully connected to temperature sensor.")
+                # Poll the temperature sensor every 5 seconds
+                action.set_timer_action(Action.Timer(name=f"temp_sensor_poll", timer_action=5000, echo_data=None))  
         
-        # Start timer to periodically checks comms e.g. SDR, Bandpass filter relays, etc
+        # Start timer to periodically checks comms e.g. SDR, Bandpass filter relays, temp sensors etc
         action.set_timer_action(Action.Timer(name=f"comms_retry", timer_action=5000))
 
         # Connect client endpoints to interfaces
@@ -182,7 +190,8 @@ class Digitiser(App):
         # Else if api call is a req or adv msg from the TM
         elif api_call['msg_type'] in ['req', 'adv']:
 
-            self._touch_activity()
+            # Touch the last active timestamp to prevent idle power off of the bandpass filter
+            self._last_active_dt = datetime.now(timezone.utc)
 
             scanning = self.dig_model.scanning
             obs_id = scanning.get('obs_id', None) if isinstance(scanning, dict) else None
@@ -366,6 +375,35 @@ class Digitiser(App):
             # Simply log a warning that the SDP did not acknowledge the samples advice
             logger.warning(f"Digitiser timed out waiting for acknowledgement from SDP for samples advice {event}")
 
+        # Else if the timer is for handling temperature sensor polling
+        elif event.name.startswith("temp_sensor_poll"):
+
+            # Restart the timer to keep polling periodically
+            action.set_timer_action(Action.Timer(name=f"temp_sensor_poll", timer_action=5000))
+
+            if self.temp_sensor is not None and self.temp_sensor.get_comms_status() == CommunicationStatus.ESTABLISHED:
+                temp_reading = self.temp_sensor.get_reading()
+                if temp_reading is not None:
+                    logger.info(f"Digitiser temperature sensor reading: {temp_reading.temperature:.2f} °C, humidity: {temp_reading.humidity:.2f} %, pressure: {temp_reading.pressure:.2f} hPa")
+                    self.dig_model.temp_reading = temp_reading
+
+                    if self.dig_model.temp_max is not None and temp_reading.temperature > self.dig_model.temp_max:
+                        logger.error(f"Digitiser temperature sensor reading {temp_reading.temperature:.2f} °C exceeds maximum configured temperature {self.dig_model.temp_max:.2f} °C. Initiating automatic shutdown.")
+                        # Stop scanning and power off the bandpass filter to prevent further heating
+                        self.dig_model.scanning = False
+                        self._advance_scan_samples_generation()
+                        self.set_bpf_power_state(False)  # Switch bandpass filter powered off when stopping scanning
+                        # Send status advice message to Telescope Manager
+                        if self.dig_model.tm_connected == CommunicationStatus.ESTABLISHED:
+                            tm_adv = self._construct_status_adv_to_tm()
+                            action.set_msg_to_remote(tm_adv)
+                            action.set_timer_action(Action.Timer(name=f"tm_adv_timer:{tm_adv.get_timestamp()}", timer_action=self.dig_model.app.msg_timeout_ms, echo_data=tm_adv))
+
+                else:
+                    logger.warning("Digitiser temperature sensor reading is stale or unavailable.")
+            else:
+                logger.warning("Digitiser temperature sensor is not connected or communication is not established.")
+       
         # Else if the timer is for handling comms retries such as SDR connection retries
         elif event.name.startswith("comms_retry"):
 
@@ -385,6 +423,15 @@ class Digitiser(App):
                 idle_seconds = (datetime.now(timezone.utc) - self._last_active_dt).total_seconds()
                 if idle_seconds >= self._idle_poweroff_seconds:
                     self.set_bpf_power_state(False)  # Switch bandpass filter power off when idle
+
+            if self.temp_sensor is not None and self.temp_sensor.get_comms_status() != CommunicationStatus.ESTABLISHED:
+                self.temp_sensor = Temp(sensor_config=self.dig_model.temp_config)  # Retry connecting to the temperature sensor
+                self.dig_model.temp_connected = self.temp_sensor.get_comms_status()
+
+                if self.dig_model.temp_connected == CommunicationStatus.ESTABLISHED:
+                    logger.info("Digitiser successfully connected to temperature sensor.")
+                    # Poll the temperature sensor every 5 seconds
+                    action.set_timer_action(Action.Timer(name=f"temp_sensor_poll", timer_action=5000, echo_data=None))  
 
         return action
 

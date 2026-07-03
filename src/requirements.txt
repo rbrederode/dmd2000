@@ -1,5 +1,7 @@
 adafruit-blinka
+adafruit-circuitpython-bme280
 adafruit-circuitpython-ads1x15
+adafruit-circuitpython-bno08x
 adafruit-extended-bus
 astropy
 astroplan
@@ -28,4 +30,3 @@ tzlocal
 witmotion
 your
 git+https://github.com/FRBs/sigpyproc3.git
-

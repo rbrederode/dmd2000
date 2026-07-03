@@ -297,6 +297,7 @@ class BaseModel:
         from models.scan import ScanDataSource, ScanModel, ScanState, ScanType
         from models.sdp import ScienceDataProcessorModel
         from models.target import TargetModel, PointingType, OffsetScan, FivePointScan, TargetConfig, TargetScanSet
+        from models.temp import TempReading
         from models.tm import TelescopeManagerModel, ResourceAllocations, Allocation, AllocationState
         from models.ui import UIDriverType, UIDriver
         from models.ws import WeatherData, WeatherStation, WeatherSummary, WeatherStationList, WeatherStationModel, WeatherStationDriverType
@@ -428,6 +429,10 @@ class BaseModel:
                 from dsh.drivers.motion.motion_config import MotionDishConfig
                 deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
                 return MotionDishConfig(**deserialized_fields)
+            elif model_type == "BNO085Config":
+                from imu.drivers.bno085 import BNO085Config
+                deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
+                return BNO085Config(**deserialized_fields)
             elif model_type == "WitMotionConfig":
                 from imu.drivers.witmotion import WitMotionConfig
                 deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
@@ -529,6 +534,9 @@ class BaseModel:
             elif model_type == "TargetScanSet":
                 deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
                 return TargetScanSet(**deserialized_fields)
+            elif model_type == "TempReading":
+                deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
+                return TempReading(**deserialized_fields)
             elif model_type == "TelescopeManagerModel":
                 deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
                 return TelescopeManagerModel(**deserialized_fields)
