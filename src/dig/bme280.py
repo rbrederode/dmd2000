@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from datetime import datetime, timezone
 
 from models.temp import TempReading
@@ -19,8 +20,10 @@ class BME280Reader:
             import adafruit_bme280.advanced as adafruit_bme280
         except ImportError as err:
             raise RuntimeError(
-                "Missing BME280 driver. Install it with "
-                "`pip install adafruit-circuitpython-bme280` or install requirements.txt."
+                "Unable to import the BME280 driver module "
+                "`adafruit_bme280.advanced`. Install it with "
+                "`pip install adafruit-circuitpython-bme280` or install requirements.txt. "
+                f"Original import error: {err!r}. Python executable: {sys.executable}."
             ) from err
 
         i2c = make_i2c_bus(bus_number)
