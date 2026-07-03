@@ -1,0 +1,63 @@
+{
+    "_type": "PipelineConfig",
+    "steps_map": {
+        "default": [
+            {
+                "_type": "StepConfig",
+                "step": {
+                    "_type": "enum.IntEnum",
+                    "instance": "StepType",
+                    "value": "DC_SPIKE"
+                },
+                "params": {"context": "spr"},
+                "last_update": {
+                    "_type": "datetime",
+                    "value": "2026-03-14T10:27:33.526265+00:00"
+                }
+            },
+            {
+                "_type": "StepConfig",
+                "step": {
+                    "_type": "enum.IntEnum",
+                    "instance": "StepType",
+                    "value": "LOAD"
+                },
+                "params": {"context": "cal"},
+                "last_update": {
+                    "_type": "datetime",
+                    "value": "2026-03-14T10:27:33.526265+00:00"
+                }
+            },
+            {
+                "_type": "StepConfig",
+                "step": {
+                    "_type": "enum.IntEnum",
+                    "instance": "StepType",
+                    "value": "RFI_FLAG"
+                },
+                "params": {"context": "cal", "threshold": 5, "window_size": 21},
+                "last_update": {
+                    "_type": "datetime",
+                    "value": "2026-03-14T10:27:33.526265+00:00"
+                }
+            },
+            {
+                "_type": "StepConfig",
+                "step": {
+                    "_type": "enum.IntEnum",
+                    "instance": "StepType",
+                    "value": "QA"
+                },
+                "params": {"context": "mpr", "window_frac": 0.2},
+                "last_update": {
+                    "_type": "datetime",
+                    "value": "2026-03-14T10:27:33.526265+00:00"
+                }
+            }
+        ]
+    },
+    "last_update": {
+        "_type": "datetime",
+        "value": "2026-03-14T10:27:33.526450+00:00"
+    }
+}

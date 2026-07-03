@@ -20,7 +20,7 @@
                 "processors": [],
                 "msg_timeout_ms": 10000,
                 "arguments": {
-                    "local_host": "192.168.50.2"
+                    "local_host": "192.168.0.36"
                 },
                 "last_update": {
                     "_type": "datetime",
@@ -31,7 +31,7 @@
             "bpf_type": {
                 "_type": "enum.IntEnum",
                 "instance": "BandpassFilterType",
-                "value": "ZCBP6_416R5_S"
+                "value": "SAWBIRD_H1_BAREBONES"
             },
             "temp_type": "bme280",
             "temp_config": {"bus_number": 3, "address": 118},
@@ -64,7 +64,7 @@
                 "value": "NOT_ESTABLISHED"
             },
             "scanning": false,
-            "sdr_type": "airstream",
+            "sdr_type": "rtlstream",
             "sdr_config": {
                 "ring_seconds": 10,
                 "read_timeout_sec": 10
