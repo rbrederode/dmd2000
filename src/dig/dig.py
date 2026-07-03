@@ -411,7 +411,7 @@ class Digitiser(App):
                 else:
                     logger.warning("Digitiser temperature sensor reading is stale or unavailable.")
             else:
-                logger.warning("Digitiser temperature sensor is not connected or communication is not established.")
+                logger.warning(f"Digitiser temperature sensor is not connected or communication is not established. Last error: {self._get_temp_sensor_last_error()}")
        
         # Else if the timer is for handling comms retries such as SDR connection retries
         elif event.name.startswith("comms_retry"):
@@ -435,6 +435,7 @@ class Digitiser(App):
 
             temp_type = self._get_digitiser_model_value("temp_type", "none")
             if self.temp_sensor is not None and self.temp_sensor.get_comms_status() != CommunicationStatus.ESTABLISHED and temp_type is not None and str(temp_type).lower() != "none":
+                logger.warning(f"Digitiser retrying temperature sensor connection. Last error: {self._get_temp_sensor_last_error()}")
                 self.temp_sensor = Temp(device=temp_type, sensor_config=self._get_digitiser_model_value("temp_config", {}))  # Retry connecting to the temperature sensor
                 self._set_digitiser_model_value("temp_connected", self.temp_sensor.get_comms_status())
 
@@ -469,6 +470,12 @@ class Digitiser(App):
             return False
         setattr(self.dig_model, name, value)
         return True
+
+    def _get_temp_sensor_last_error(self) -> str:
+        if self.temp_sensor is None:
+            return "temperature sensor is not configured"
+        err = self.temp_sensor.get_last_error()
+        return "none" if err is None else repr(err)
 
     def process_status_event(self, event) -> Action:
         """ Processes status update events.

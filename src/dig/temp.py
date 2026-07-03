@@ -57,7 +57,9 @@ class Temp:
             raise ValueError(f"Unsupported temperature device: {device}. Supported: {supported}")
 
         self.device = device.lower()
-        self.sensor_config = sensor_config or {}
+        self.sensor_config = dict(sensor_config or {})
+        if self.device == "bme280" and "bus" in self.sensor_config and "bus_number" not in self.sensor_config:
+            self.sensor_config["bus_number"] = self.sensor_config["bus"]
         self.interval_seconds = interval_seconds
         self.max_age_seconds = max_age_seconds
 
