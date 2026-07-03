@@ -396,7 +396,7 @@ class Digitiser(App):
                 temp_reading = self.temp_sensor.get_reading()
                 if temp_reading is not None:
 
-                    logger.info(f"Digitiser temperature sensor reading: {temp_reading.temperature:.2f} C, humidity: {temp_reading.humidity:.2f} %, pressure: {temp_reading.pressure:.2f} hPa")
+                    logger.info(f"Digitiser (Assembly) temperature sensor reading: {temp_reading.temperature:.2f} C, humidity: {temp_reading.humidity:.2f} %, pressure: {temp_reading.pressure:.2f} hPa")
                     self.dig_model.temp_reading = temp_reading
 
                     if self.dig_model.temp_max is not None and temp_reading.temperature > self.dig_model.temp_max:
