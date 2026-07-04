@@ -14,8 +14,8 @@
                 "-m", "dig.dig",
                 "--profile", "alston",
                 "--entity_id", "dig001",
-                "--tm_host", "192.168.0.7",
-                "--sdp_host", "192.168.0.7",
+                "--tm_host", "192.168.0.2",
+                "--sdp_host", "192.168.0.2",
                 "--local_host", "192.168.0.36"
             ]
         },
@@ -29,8 +29,8 @@
                 "-m", "dsh.dm",
                 "--profile", "alston",
                 "--entity_id", "dm001",
-                "--tm_host", "192.168.0.7",
-                "--ws_host", "192.168.0.7"
+                "--tm_host", "192.168.0.2",
+                "--ws_host", "192.168.0.2"
             ]
         },
         {
@@ -43,8 +43,8 @@
                 "-m", "sdp.sdp",
                 "--profile", "alston",
                 "--entity_id", "sdp001",
-                "--tm_host", "192.168.0.7",
-                "--dig_host", "192.168.0.7",
+                "--tm_host", "192.168.0.2",
+                "--dig_host", "192.168.0.2",
                 "--scan_store_dir", "~/samples"
             ]
         },
@@ -58,9 +58,9 @@
                 "-m", "tm.tm",
                 "--profile", "alston",
                 "--entity_id", "tm001",
-                "--dig_host", "192.168.0.7",
-                "--sdp_host", "192.168.0.7",
-                "--dm_host", "192.168.0.7",
+                "--dig_host", "192.168.0.2",
+                "--sdp_host", "192.168.0.2",
+                "--dm_host", "192.168.0.2",
                 "-o", "config/alston/obs_1hr_pulsar_drift_scan_airspy.json"
             ]
         }
