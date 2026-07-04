@@ -410,15 +410,8 @@ class Digitiser(App):
 
                     if self.dig_model.temp_max is not None:
 
-                        # If the temperature reading is approaching the maximum configured temperature, log a warning. If it exceeds the maximum, initiate shutdown.                        
-                        if temp_reading.temperature > self.dig_model.temp_max - TEMP_WARNING_DELTA:
-
-                            msg = f"Digitiser Assembly temperature sensor reading {temp_reading.temperature:.2f} C is approaching maximum configured " \
-                                f"temperature {self.dig_model.temp_max:.2f} C."
-                            logger.warning(self.set_last_err(msg))
-
                         # If the temperature reading exceeds the maximum configured temperature, initiate shutdown of the digitiser process
-                        elif temp_reading.temperature > self.dig_model.temp_max:
+                        if temp_reading.temperature > self.dig_model.temp_max:
 
                             # Stop scanning and advance the scan samples generation to invalidate any queued/in-flight scan sample timers
                             self.dig_model.scanning = False
@@ -442,6 +435,13 @@ class Digitiser(App):
 
                             # Request shutdown of the digitiser process due to over-temperature
                             self.request_shutdown(shutdown_reason)
+
+                        # Else if temperature reading is approaching maximum configured temperature, log a warning. 
+                        elif temp_reading.temperature > self.dig_model.temp_max - TEMP_WARNING_DELTA:
+
+                            msg = f"Digitiser Assembly temperature sensor reading {temp_reading.temperature:.2f} C is approaching maximum configured " \
+                                f"temperature {self.dig_model.temp_max:.2f} C."
+                            logger.warning(self.set_last_err(msg))
 
                 else:
                     msg = "Digitiser Assembly temperature sensor reading is stale or unavailable."
