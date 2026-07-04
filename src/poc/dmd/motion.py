@@ -1,4 +1,5 @@
 import logging
+import os
 import subprocess
 import numpy as np
 
@@ -13,6 +14,9 @@ import threading
 import witmotion
 
 # IMU = Inertial Measurement Unit
+
+# Default Qt platform to avoid Wayland activation warnings on Pi GUI setups.
+os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
 
 # Configure logging
 logging.basicConfig(
@@ -33,11 +37,13 @@ class Motion:
         The Motion class subscribes to IMU messages and updates its internal state via a callback function.
     """
 
-    def __init__(self, device='auto', baudrate=9600):
+    def __init__(self, id: str, device='auto', refresh_rate=1.0, baudrate=9600):
         """ Initialize the Motion class with the given parameters.
         
             Parameters
+                id: unique identifier for the motion instance
                 device: serial device identifier (e.g. /dev/ttyUSB0 or COM3). Use 'auto' to automatically detect the first available IMU device.
+                refresh_rate: how often to read from the IMU (default: 1.0 Hz)
                 baudrate: baud rate for the serial connection (default: 9600)
         """
         global cal_key_press
@@ -46,6 +52,7 @@ class Motion:
             # Automatically detect and use the first available IMU device
             device = self.auto_detect_imu()
         
+        self.motion_id = id
         self.device = device
         self.baudrate = baudrate
         self.imu = None
@@ -71,7 +78,7 @@ class Motion:
         self.alt_offset = 0.0   # degrees
         
         # Update rate in Hz (how often to read from the IMU)
-        self.update_rate = 1.0  # Hz
+        self.refresh_rate = refresh_rate  # Hz
 
         # Read a config file called motion_config.json
         try:
@@ -83,14 +90,14 @@ class Motion:
                 self.az_offset = config.get("az_offset", self.az_offset)
                 self.alt_vector = config.get("alt_vector", self.alt_vector)
                 self.alt_offset = config.get("alt_offset", self.alt_offset)
-                self.update_rate = config.get("update_rate", self.update_rate)
+                self.refresh_rate = config.get("refresh_rate", self.refresh_rate)
 
                 logging.info(f"Loaded motion_config.json: "+\
                     f"az_vector={self.az_vector}, " +\
                     f"az_offset={self.az_offset}, " +\
                     f"alt_vector={self.alt_vector}, " +\
                     f"alt_offset={self.alt_offset}, " +\
-                    f"update_rate={self.update_rate}")
+                    f"refresh_rate={self.refresh_rate}")
 
         except FileNotFoundError:
             logging.warning("motion_config.json not found, using default offsets.")
@@ -117,7 +124,7 @@ class Motion:
             self.imu = witmotion.IMU(self.device, self.baudrate)
             self.connected = True
             
-            self.imu.set_update_rate(1.0) # Set update rate to 1 Hz
+            self.imu.set_update_rate(self.refresh_rate) # Set update rate
             self.imu.subscribe(self.callback) # Set callback for incoming messages
 
             logging.info(f"Connected to IMU on {self.device} at {self.baudrate} baud.")
@@ -133,7 +140,7 @@ class Motion:
             The first entry in the result set is used as the IMU device.
             Returns the device identifier string if found, None otherwise, e.g. /dev/ttyUSB0
         """
-        result = subprocess.run("ls /dev/tty* | grep usbserial", shell=True, capture_output=True, text=True)
+        result = subprocess.run(r"ls /dev/tty* | grep -E '(usbserial|ttyUSB)'", shell=True, capture_output=True, text=True)
         if result.returncode != 0:
             logging.error(f"Error trying to detect IMU device: {result.stderr}")
         else:
@@ -392,7 +399,7 @@ class Motion:
                 "az_offset": self.az_offset,
                 "alt_vector": self.alt_vector,
                 "alt_offset": self.alt_offset,
-                "update_rate": self.update_rate
+                "refresh_rate": self.refresh_rate
             }, f)
 
     def callback(self, msg):
@@ -491,7 +498,11 @@ def main():
     parser = argparse.ArgumentParser(description="Inertial Motion Unit (IMU)")
     parser.add_argument('-imu', '--imu', type=str, help='IMU device identifier e.g. "/dev/tty.usbserial-1120"', required=True)
     parser.add_argument('-baud', '--baud', type=int, help='Baud rate for the IMU device e.g. 9600', default=9600)
+    parser.add_argument('--qt-platform', type=str, default=os.environ.get("QT_QPA_PLATFORM", "xcb"), help='Qt platform plugin (e.g. xcb, wayland, offscreen).')
     args = parser.parse_args()
+
+    if args.qt_platform:
+        os.environ["QT_QPA_PLATFORM"] = args.qt_platform
 
     motion = Motion(args.imu, args.baud)
     if not motion.connect():
@@ -504,8 +515,10 @@ def main():
         while True:
 
             alt, az = motion.get_altaz()
+            temp = motion.get_temperature()
             logging.info(f"Altitude: {alt}, Azimuth: {az}")
             logging.info(f"Roll: {motion.get_roll()}, Pitch: {motion.get_pitch()}, Yaw: {motion.get_yaw()}")
+            logging.info(f"Temperature: {temp}")
             time.sleep(1)
     except KeyboardInterrupt:
         logging.info("Keyboard interrupt...")

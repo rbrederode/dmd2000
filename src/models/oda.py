@@ -1,13 +1,47 @@
 import enum
 import json
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from schema import Schema, And, Or, Use, SchemaError
 
 from models.base import BaseModel
 from models.obs import ObsModel, ObsState
+from util.format import parse_duration
 
 # Models comprising the Observation Data Archive (ODA)
+
+def _datetime_dict(value: datetime) -> dict:
+    return {"_type": "datetime", "value": value.isoformat()}
+
+def _normalise_schedule_time(value, now: datetime):
+    """Convert observation-file schedule aliases into serialized datetimes."""
+    if isinstance(value, dict):
+        if value.get("_type") == "relativetime":
+            relative_value = value.get("value", "00:00:00")
+            return _datetime_dict(now + timedelta(seconds=parse_duration(relative_value)))
+
+    return value
+
+def _normalise_observation_schedule(observation_data, now: datetime):
+    """Normalise relative scheduling fields in ObsModel dictionaries before deserialisation."""
+    if isinstance(observation_data, list):
+        for obs in observation_data:
+            _normalise_observation_schedule(obs, now)
+        return observation_data
+
+    if not isinstance(observation_data, dict):
+        return observation_data
+
+    if observation_data.get("_type") == "ObsList":
+        _normalise_observation_schedule(observation_data.get("obs_list", []), now)
+        return observation_data
+
+    if observation_data.get("_type") == "ObsModel":
+        for field_name in ("scheduling_block_start", "scheduling_block_end"):
+            if field_name in observation_data:
+                observation_data[field_name] = _normalise_schedule_time(observation_data[field_name], now)
+
+    return observation_data
 
 class ScanStore(BaseModel):
     """A class representing the scan store."""
@@ -101,6 +135,8 @@ class ObsList(BaseModel):
 
         with obs_path.open("r", encoding="utf-8") as f:
             observation_data = json.load(f)
+
+        observation_data = _normalise_observation_schedule(observation_data, datetime.now(timezone.utc))
 
         if isinstance(observation_data, dict):
             model_type = observation_data.get("_type")

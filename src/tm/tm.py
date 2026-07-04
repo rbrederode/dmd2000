@@ -7,7 +7,7 @@ from pathlib import Path
 import socket
 import time
 import threading
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 # Import google api tools
 from google.auth.transport.requests import Request
@@ -30,6 +30,7 @@ from models.base import BaseModel
 from models.comms import CommunicationStatus, InterfaceType
 from models.dig import DigitiserModel
 from models.dsh import DishManagerModel, Feed, Capability, DishMode, PointingState
+from models.fil import FilterBank
 from models.obs import ObsModel, ObsTransition, ObsState
 from models.oda import ODAModel, ObsList, ScanStore
 from models.health import HealthState
@@ -221,11 +222,11 @@ class TelescopeManager(App):
                 logger.error(f"Telescope Manager received digitiser configuration update with no digitiser ID specified in the new configuration: {event.new_config}")
                 return action
             
-            # Extract DIG specific properties (all properties except Scan Duration and Channels)
+            # Extract DIG specific properties (all properties except scan-only fields)
             old_dig_config = {k: v for k, v in (event.old_config or {}).items() 
-                if k not in (tm_sdp.PROPERTY_SCAN_DURATION, tm_sdp.PROPERTY_CHANNELS)}
+                if k not in (tm_sdp.PROPERTY_SCAN_DURATION, tm_sdp.PROPERTY_SPECTRAL_RESOLUTION, tm_sdp.PROPERTY_CHANNELS)}
             new_dig_config = {k: v for k, v in (event.new_config or {}).items() 
-                if k not in (tm_sdp.PROPERTY_SCAN_DURATION, tm_sdp.PROPERTY_CHANNELS)}
+                if k not in (tm_sdp.PROPERTY_SCAN_DURATION, tm_sdp.PROPERTY_SPECTRAL_RESOLUTION, tm_sdp.PROPERTY_CHANNELS)}
 
             # Update the digitiser configuration based on the received config event and trigger any necessary actions
             action = self.update_dig_configuration(old_dig_config, new_dig_config, action)
@@ -314,18 +315,6 @@ class TelescopeManager(App):
             for odt_obs in odt_empty_obs:
                 if not any(existing_obs.obs_id == odt_obs.obs_id for existing_obs in self.telmodel.oda.obs_store.obs_list):
                     logger.info(f"Adding new observation {odt_obs.obs_id} from ODT to ODA")
-
-                    # START DEBUG CODE, REMOVE LATER
-                    current_dt_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%MZ")                
-                    new_obs_id = re.sub(r"^.*?(-Dish\d{3})", current_dt_str + r"\1", odt_obs.obs_id)
-    
-                    odt_obs.obs_id = new_obs_id
-                    odt_obs.scheduling_block_start = datetime.now(timezone.utc) + timedelta(seconds=10)
-                    odt_obs.scheduling_block_end = odt_obs.scheduling_block_start + timedelta(seconds=610)
-
-                    # Inform the Science Data Processor that we are resetting these observations (in case they have been run already)
-                    self.oet.reset_sdp_scan(obs=odt_obs, action=action)
-                    # END DEBUG CODE, REMOVE LATER
 
                     self.telmodel.oda.obs_store.obs_list.append(odt_obs)
                     if is_startup_odt_event:
@@ -834,8 +823,15 @@ class TelescopeManager(App):
 
                 if dig is not None:
                     for key in dig_config.keys():
-                        if key in dig.schema.schema.keys():
+                        if key == "filter_bank":
+                            filter_bank = dig_config[key]
+                            if isinstance(filter_bank, dict):
+                                filter_bank = FilterBank(**filter_bank)
+                            dig.filter_bank = filter_bank
+                        elif key in dig.schema.schema.keys():
                             setattr(dig, key, dig_config[key])
+                        elif key == tm_sdp.PROPERTY_SPECTRAL_RESOLUTION:
+                            dig.channels = int(dig_config[key])
                         elif key == "load":
                             load_value = dig_config[key].get("load") if isinstance(dig_config[key], dict) else dig_config[key]
 
@@ -889,7 +885,7 @@ class TelescopeManager(App):
                             duration=completed_scan.duration,
                             sample_rate=completed_scan.sample_rate,
                             center_freq=completed_scan.center_freq,
-                            channels=completed_scan.channels,
+                            spectral_resolution=completed_scan.spectral_resolution,
                             instance_id=scan.scan_id, 
                             scan_type=scan.scan_type,
                             filetype="meta") + ".json"
@@ -1009,12 +1005,12 @@ class TelescopeManager(App):
             # It is possible that multiple observations are scheduled for the current scheduling block and that some cannot be resourced
             # Example: A dish has become UNAVAILABLE, so only some observations can be resourced
             for obs in self.telmodel.oda.obs_store.obs_list:
-
-                # Calculate difference between now and the observation scheduling block start time in seconds
-                start_offset = abs((obs.scheduling_block_start - now).total_seconds())
-  
-                # Transition observations scheduled to start within 60 seconds
-                if obs.obs_state == ObsState.EMPTY and start_offset <= 60:
+                if (
+                    obs.obs_state == ObsState.EMPTY
+                    and obs.scheduling_block_start is not None
+                    and obs.scheduling_block_start <= now
+                    and (obs.scheduling_block_end is None or obs.scheduling_block_end > now)
+                ):
                     action.set_obs_transition(obs=obs, transition=ObsTransition.START)
                     logger.info(f"Telescope Manager starting observation {obs.obs_id} scheduled to start at {obs.scheduling_block_start}")
 
@@ -1583,6 +1579,20 @@ def main():
                             driver.instance = GoogleSheetsDriver(config)
                             logger.info(f"Telescope Manager initialised Google Sheets driver for UI integration with config:\n" + \
                                 f"{json.dumps(driver.config, indent=2)}")
+                        except XSoftwareFailure as e:
+                            disabled_ui_drivers.add(driver_key)
+                            logger.error(
+                                f"Telescope Manager disabled UI driver {driver.type.name} {driver.short_desc} "
+                                f"after initialization failed: {e}"
+                            )
+                    elif driver.type == UIDriverType.CUSTOM_UI:
+                        from ui.drivers.web.web_driver import WebUIDriver
+                        try:
+                            driver.instance = WebUIDriver(driver.config)
+                            logger.info(
+                                "Telescope Manager initialised Web UI driver "
+                                f"with config:\n{json.dumps(driver.config, indent=2)}"
+                            )
                         except XSoftwareFailure as e:
                             disabled_ui_drivers.add(driver_key)
                             logger.error(

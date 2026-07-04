@@ -173,11 +173,12 @@ class StatusUpdateEvent:
     def notify_dequeued(self):
         self.current_status = StatusUpdateEvent.STATUS_PROCESSING
         self.dequeue_time = time.time()
-        self.total_processing_time_ms += (self.dequeue_time - self.enqueue_time) * 1000
-        self.total_processing_count += 1
 
     def notify_update_completed(self):
-        self.updated_time = time.time()
+        self.update_time = time.time()
+        if self.dequeue_time is not None:
+            self.total_processing_time_ms += (self.update_time - self.dequeue_time) * 1000
+            self.total_processing_count += 1
         self.current_status = StatusUpdateEvent.STATUS_DEQUEUED
         
     def get_dequeued_count(self):
@@ -199,6 +200,18 @@ class StatusUpdateEvent:
 
     def get_total_processing_time(self) -> float:
         return self.total_processing_time_ms
+
+    def get_current_queue_time(self) -> float:
+        if self.enqueue_time is None:
+            return 0.0
+        end_time = self.dequeue_time if self.dequeue_time is not None else time.time()
+        return (end_time - self.enqueue_time) * 1000
+
+    def get_current_processing_time(self) -> float:
+        if self.dequeue_time is None:
+            return 0.0
+        end_time = self.update_time if self.update_time is not None else time.time()
+        return (end_time - self.dequeue_time) * 1000
 
     def __str__(self):
 
@@ -229,8 +242,8 @@ class StatusUpdateEvent:
             f"Dequeued Timestamp={dequeue_str}, " + \
             f"Updated Timestamp={update_str}, " + \
             f"Current Status={status_str}, " + \
-            f"Total Processing Count={self.total_processing_count}, " + \
-            f"Total Processing Time (ms)={self.total_processing_time_ms}, " + \
+            f"Queue Time (ms)={self.get_current_queue_time()}, " + \
+            f"Processing Time (ms)={self.get_current_processing_time()}, " + \
             f"Average Processing Time (ms)={self.get_average_processing_time()})"
 
 class ConfigEvent:

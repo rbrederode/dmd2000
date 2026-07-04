@@ -9,7 +9,9 @@ from schema import Schema, And, Or, Use, SchemaError
 from models.app import AppModel
 from models.base import BaseModel
 from models.health import HealthState
+from models.fil import FilterBank
 from models.comms import CommunicationStatus
+from models.temp import TempReading
 from util.xbase import XInvalidTransition, XAPIValidationFailed, XSoftwareFailure
 
 class BandpassFilterType(enum.IntEnum):
@@ -31,20 +33,26 @@ class DigitiserModel(BaseModel):
         "load_active": And(bool, lambda v: isinstance(v, bool)),
         "bpf_type": And(BandpassFilterType, lambda v: isinstance(v, BandpassFilterType)),   # Type of bandpass filter installed. None if no bandpass filter.
         "bpf_config": Or(None, lambda v: v is None or isinstance(v, BaseModel)),            # Bandpass filter configuration instance. None if no bandpass filter
-        "gain": And(float, lambda v: 0 <= v <= 100.0),
-        "sample_rate": And(float, lambda v: v >= 0.0),
-        "bandwidth": And(float, lambda v: v >= 0.0),
-        "center_freq": And(float, lambda v: v >= 0.0),
-        "freq_correction": And(int, lambda v: -1000 <= v <= 1000),
-        "channels": And(int, lambda v: v >= 0),
-        "scan_duration": And(int, lambda v: v >= 0),
+        "temp_type": And(str, lambda v: v.lower() in {"none", "bme280"}),                   # Temperature sensor type. "none" if no sensor.
+        "temp_config": And(dict, lambda v: isinstance(v, dict)),                            # Temperature sensor configuration.
+        "temp_reading": Or(None, lambda v: v is None or isinstance(v, TempReading)),        # Temperature sensor reading instance. None if no sensor or no reading.
+        "temp_max": Or(None, And(float, lambda v: -100 <= v <= 100)),                       # Maximum temperature (Celcius) of the Digitiser Assembly before automatic shutdown. None if no sensor or no max temperature configured.
+        "gain": And(float, lambda v: 0 <= v <= 100.0),                                      # Gain (dBi)
+        "sample_rate": And(float, lambda v: v >= 0.0),                                      # Sample rate (Hz) 
+        "bandwidth": And(float, lambda v: v >= 0.0),                                        # Bandwidth (Hz) 
+        "center_freq": And(float, lambda v: v >= 0.0),                                      # Center frequency (Hz) 
+        "freq_correction": And(int, lambda v: -1000 <= v <= 1000),                          # Frequency correction (ppm) 
+        "channels": And(int, lambda v: v >= 0),                                             # Spectral resolution in number of channels (e.g. 1024)
+        "filter_bank": Or(None, And(FilterBank, lambda v: isinstance(v, FilterBank))),
+        "scan_duration": And(int, lambda v: v >= 0),                                        # Scan duration in seconds for current scan if scanning, otherwise 0
         "tm_connected": And(CommunicationStatus, lambda v: isinstance(v, CommunicationStatus)),
         "sdp_connected": And(CommunicationStatus, lambda v: isinstance(v, CommunicationStatus)),
         "sdr_connected": And(CommunicationStatus, lambda v: isinstance(v, CommunicationStatus)),
+        "temp_connected": And(CommunicationStatus, lambda v: isinstance(v, CommunicationStatus)),
         "scanning": And(Or(bool, str, dict, int), lambda v: isinstance(v, bool) or isinstance(v, str) or isinstance(v, dict) or isinstance(v, int)),
+        "sdr_type": And(str, lambda v: v.lower() in {"rtlsdr", "soapy", "airspy", "gqrxraw", "airstream", "rtlstream"}),
+        "sdr_config": And(dict, lambda v: isinstance(v, dict)),
         "sdr_eeprom": And(dict, lambda v: isinstance(v, dict)),
-        "last_err_msg": Or(None, And(str, lambda v: isinstance(v, str))),                        # Last error message from the app
-        "last_err_dt": Or(None, And(datetime, lambda v: isinstance(v, datetime))),               # Last error datetime from the app
         "last_update": And(datetime, lambda v: isinstance(v, datetime)),
     })
 
@@ -69,20 +77,26 @@ class DigitiserModel(BaseModel):
             "load_active": False,
             "bpf_type": BandpassFilterType.UNKNOWN,
             "bpf_config": None,
+            "temp_type": "none",
+            "temp_config": {},
+            "temp_reading": None,
+            "temp_max": 20.0,
             "gain": 0.0,
             "sample_rate": 0.0,
             "bandwidth": 0.0,
             "center_freq": 0.0,
             "freq_correction": 0,
             "channels": 0,
+            "filter_bank": None,
             "scan_duration": 0,
             "scanning": False,
             "tm_connected": CommunicationStatus.NOT_ESTABLISHED,
             "sdp_connected": CommunicationStatus.NOT_ESTABLISHED,
             "sdr_connected": CommunicationStatus.NOT_ESTABLISHED,
+            "temp_connected": CommunicationStatus.NOT_ESTABLISHED,
             "sdr_eeprom": {},
-            "last_err_msg": None,
-            "last_err_dt": None,
+            "sdr_type": "rtlsdr",
+            "sdr_config": {},
             "last_update": datetime.now(timezone.utc),
         }
 
@@ -188,6 +202,8 @@ if __name__ == "__main__":
             gpio_pin_load=18,
             last_update=datetime.now(timezone.utc),
         ),
+        temp_type="bme280",
+        temp_config={"bus": 3, "address": 118},
         gain=0.0,
         sample_rate=0.0,
         bandwidth=0.0,
@@ -246,6 +262,8 @@ if __name__ == "__main__":
                             'gpio_pin_power': 17,
                             'last_update': {'_type': 'datetime',
                                             'value': '2025-12-16T15:10:34.004551'}},
+            'temp_type': 'bme280',
+            'temp_config': {'bus': 3, 'address': 118},
             'bandwidth': 200000.0,
             'center_freq': 1420000000.0,
             'freq_correction': 0,

@@ -8,7 +8,7 @@ import threading
 from env.events import ObsEvent
 from ipc.action import Action
 from models.comms import CommunicationStatus
-from models.dsh import DishManagerModel, Feed, Capability, DishMode, PointingState
+from models.dsh import DishManagerModel, DriverType, Feed, Capability, DishMode, PointingState
 from models.health import HealthState
 from models.obs import ObsModel, ObsTransition, ObsState
 from models.oda import ODAModel, ObsList, ScanStore
@@ -17,6 +17,7 @@ from models.target import TargetModel, TargetConfig, PointingType
 from models.telescope import TelescopeModel
 from models.tm import ResourceType, AllocationState
 from util import log, util
+from util.format import fmt_duration
 from util.timer import Timer, TimerManager
 from util.xbase import XBase, XStreamUnableToExtract, XSoftwareFailure
 
@@ -367,22 +368,42 @@ class ObservationExecutionTool:
 
     def start_next_obs_timer(self, action) -> bool:
         """ Sets a timer to start the next scheduled observation with ObsState = EMPTY.
-            Returns an True if a timer was set, False otherwise.
+            Returns True if a timer or immediate start action was set, False otherwise.
         """
 
-        # Find observations with ObsState = EMPTY that are scheduled to start in the future
-        empty_obs = [obs for obs in self.telmodel.oda.obs_store.obs_list if obs.obs_state == ObsState.EMPTY and obs.scheduling_block_start >= datetime.now(timezone.utc)]
-        next_obs = min(empty_obs, key=lambda obs: obs.scheduling_block_start) if len(empty_obs) > 0 else None
+        now = datetime.now(timezone.utc)
+        empty_obs = [
+            obs for obs in self.telmodel.oda.obs_store.obs_list
+            if obs.obs_state == ObsState.EMPTY and obs.scheduling_block_start is not None
+        ]
+
+        due_obs = [
+            obs for obs in empty_obs
+            if obs.scheduling_block_start <= now
+            and (obs.scheduling_block_end is None or obs.scheduling_block_end > now)
+        ]
+        if due_obs:
+            for obs in due_obs:
+                action.set_obs_transition(obs=obs, transition=ObsTransition.START)
+                logger.info(f"Observation Execution Tool starting observation {obs.obs_id} scheduled to start at {obs.scheduling_block_start}")
+            return True
+
+        future_obs = [obs for obs in empty_obs if obs.scheduling_block_start > now]
+        next_obs = min(future_obs, key=lambda obs: obs.scheduling_block_start) if len(future_obs) > 0 else None
         
         if next_obs is not None:
             # Observation start time is in the future, reset timer
-            time_ms_until_start = int((next_obs.scheduling_block_start - datetime.now(timezone.utc)).total_seconds() * 1000)
+            seconds_until_start = (next_obs.scheduling_block_start - now).total_seconds()
+            milliseconds_until_start = max(0, int(seconds_until_start * 1000))
             
             action.set_timer_action(Action.Timer(
                 name=f"obs_start_timer", 
-                timer_action=time_ms_until_start,
+                timer_action=milliseconds_until_start,
                 echo_data=next_obs))
-            logger.info(f"Observation Execution Tool next observation {next_obs.obs_id} starting at {next_obs.scheduling_block_start} in {time_ms_until_start} ms")
+            logger.info(
+                f"Observation Execution Tool next observation {next_obs.obs_id} "
+                f"starting at {next_obs.scheduling_block_start} in {fmt_duration(seconds_until_start)} HH:MM:SS."
+            )
             return True
 
         return False
@@ -664,7 +685,8 @@ class ObservationExecutionTool:
   
         # Append additional config parameters
         config_params.extend([
-            ('channels',      target_config,   'spectral_resolution'),
+            ('spectral_resolution', target_config, 'spectral_resolution'),
+            ('filter_bank', target_config, 'filter_bank'),
             ('scan_duration', target_scan_set, 'scan_duration'),
         ])
   
@@ -676,8 +698,12 @@ class ObservationExecutionTool:
             sdp_dig = next((dig for dig in self.telmodel.sdp.dig_store.dig_list if dig.dig_id == dig_model.dig_id), None) if dig_model is not None else None
 
             for dig_attr, source, source_attr in config_params:
-                current = getattr(sdp_dig, dig_attr) if sdp_dig is not None else None
+                current_attr = "channels" if dig_attr == "spectral_resolution" else dig_attr
+                current = getattr(sdp_dig, current_attr) if sdp_dig is not None else None
                 desired = getattr(source, source_attr)
+                if dig_attr == 'filter_bank':
+                    current = current.to_dict() if hasattr(current, "to_dict") else current
+                    desired = desired.to_dict() if hasattr(desired, "to_dict") else desired
                 if dig_attr == 'gain':
                     desired = self._resolve_gain_for_config(obs, target_config, target_scan_set, target_scan)
                     if TargetConfig.is_auto_gain_token(desired):
@@ -930,6 +956,12 @@ class ObservationExecutionTool:
             logger.info(f"Observation Execution Tool found Dish {dish.dsh_id} is NOT configured to point to correct target {target_id} for observation {obs.obs_id} " +
                 f"Dish target ID {dish.tgt_id} does not match expected target ID {target_id}.")
             return None
+
+        if dish.driver_type == DriverType.DRIFT:
+            on_target = dish.pointing_state == PointingState.READY
+            logger.info(f"Observation Execution Tool is {'ON' if on_target else 'OFF'} target for drift dish observation {obs.obs_id}, target index {obs.tgt_idx}, " + \
+                 f"target ID {target_id}, pointing type {target.pointing.name}, dish pointing state {dish.pointing_state.name}, dish target ID {dish.tgt_id}, dish {dish.dsh_id}")
+            return on_target
 
         on_target = True
         if target.pointing in [PointingType.SIDEREAL_TRACK,PointingType.NON_SIDEREAL_TRACK] and dish.pointing_state != PointingState.TRACK:

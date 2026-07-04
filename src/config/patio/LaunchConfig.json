@@ -1,0 +1,68 @@
+{
+    "_type": "LaunchConfigModel",
+    "profile": "patio",
+    "launches": [
+        {
+            "_type": "LaunchModel",
+            "app_name": "dig",
+            "entity_id": "dig001",
+            "env": {
+                "GPIOZERO_PIN_FACTORY": "mock"
+            },
+            "program": "python",
+            "args": [
+                "-m", "dig.dig",
+                "--profile", "patio",
+                "--entity_id", "dig001",
+                "--tm_host", "127.0.0.1",
+                "--sdp_host", "127.0.0.1",
+                "--local_host", "127.0.0.1"
+            ]
+        },
+        {
+            "_type": "LaunchModel",
+            "app_name": "dm",
+            "entity_id": "dm001",
+            "env": {},
+            "program": "python",
+            "args": [
+                "-m", "dsh.dm",
+                "--profile", "patio",
+                "--entity_id", "dm001",
+                "--tm_host", "127.0.0.1",
+                "--ws_host", "127.0.0.1"
+            ]
+        },
+        {
+            "_type": "LaunchModel",
+            "app_name": "sdp",
+            "entity_id": "sdp001",
+            "env": {},
+            "program": "python",
+            "args": [
+                "-m", "sdp.sdp",
+                "--profile", "patio",
+                "--entity_id", "sdp001",
+                "--tm_host", "127.0.0.1",
+                "--dig_host", "127.0.0.1",
+                "--scan_store_dir", "~/samples"
+            ]
+        },
+        {
+            "_type": "LaunchModel",
+            "app_name": "tm",
+            "entity_id": "tm001",
+            "env": {},
+            "program": "python",
+            "args": [
+                "-m", "tm.tm",
+                "--profile", "patio",
+                "--entity_id", "tm001",
+                "--dig_host", "127.0.0.1",
+                "--sdp_host", "127.0.0.1",
+                "--dm_host", "127.0.0.1",
+                "-o", "config/patio/obs_2hr_pulsar_drift_scan.json"
+            ]
+        }
+    ]
+}

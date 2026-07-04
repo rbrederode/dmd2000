@@ -6,11 +6,17 @@ PACKAGES=(
     python3
     python3-pip
     python3-gpiozero
+    python3-lgpio
     build-essential
+    swig
+    liblgpio-dev
+    libglib2.0-dev
     htop
     btop
     curl
     tmux
+    tk-dev
+    tcl-dev
     samba
     samba-common-bin
 )

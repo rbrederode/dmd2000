@@ -1,0 +1,62 @@
+{
+    "_type": "DishList",
+    "list_id": "default",
+    "dish_list": [
+        {
+            "_type": "DishModel",
+            "dsh_id": "dish001",
+            "short_desc": "3.5m Jodrell Dish",
+            "diameter": 3.5,
+            "fd_ratio": 0.43,
+            "latitude": 53.23547917765374,
+            "longitude": -2.304138000719167,
+            "height": 80.0,
+            "feed_type": {
+                "_type": "enum.IntEnum",
+                "instance": "Feed",
+                "value": "LF_400"
+            },
+            "feed_config": null,
+            "dig_id": "dig001",
+            "mode": {
+                "_type": "enum.IntEnum",
+                "instance": "DishMode",
+                "value": "STARTUP"
+            },
+            "pointing_state": {
+                "_type": "enum.IntEnum",
+                "instance": "PointingState",
+                "value": "READY"
+            },
+            "tgt_id": null,
+            "altaz": null,
+            "capability": {
+                "_type": "enum.IntEnum",
+                "instance": "Capability",
+                "value": "OPERATE_FULL"
+            },
+            "driver_type": {
+                "_type": "enum.IntEnum",
+                "instance": "DriverType",
+                "value": "DRIFT"
+            },
+            "driver_config": {
+                "_type": "DriftConfig",
+                "alt": 90.0,
+                "az": 0.0,
+                "last_update": {
+                    "_type": "datetime",
+                    "value": "2026-01-11T13:10:03.679380+00:00"
+                }
+            },
+            "last_update": {
+                "_type": "datetime",
+                "value": "2026-01-11T13:10:03.679645+00:00"
+            }
+        }
+    ],
+    "last_update": {
+        "_type": "datetime",
+        "value": "2026-01-11T13:10:03.680299+00:00"
+    }
+}

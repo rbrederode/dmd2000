@@ -13,6 +13,7 @@ from astropy.time import Time
 
 from models.base import BaseModel
 from models.dsh import Feed
+from models.fil import FilterBank
 from models.scan import ScanModel, ScanState
 from util import log
 
@@ -188,8 +189,9 @@ class TargetConfig(BaseModel):
         "center_freq": And(Or(int, float), lambda v: v >= 0.0),                 # Center frequency (Hz) 
         "bandwidth": And(Or(int, float), lambda v: v >= 0.0),                   # Bandwidth (Hz) 
         "sample_rate": And(Or(int, float), lambda v: v >= 0.0),                 # Sample rate (Hz) 
-        "integration_time": And(Or(int, float), lambda v: v >= 0.0),            # Integration time (seconds)
+        "integration_time": And(Or(int, float), lambda v: v >= 0.0),            # Integration time (seconds) on a target (e.g. 300 seconds)
         "spectral_resolution": And(int, lambda v: v >= 0),                      # Spectral resolution (fft size)
+        "filter_bank": Or(None, FilterBank, lambda v: v is None or isinstance(v, FilterBank)), # Filterbank parameters for this target  
       })
 
     allowed_transitions = {}
@@ -212,6 +214,7 @@ class TargetConfig(BaseModel):
             "sample_rate": 0.0,             # Sample rate (Hz) 
             "integration_time": 0.0,        # Integration time (seconds)
             "spectral_resolution": 0,       # Spectral resolution (fft size)
+            "filter_bank": None,            # Filterbank parameters for this target
         }
 
         # Apply defaults if not provided in kwargs
@@ -221,6 +224,9 @@ class TargetConfig(BaseModel):
 
         gain = kwargs.get("gain")
         kwargs["gain"] = gain.upper() if self.is_auto_gain_token(gain) else gain
+
+        if isinstance(kwargs.get("filter_bank"), dict):
+            kwargs["filter_bank"] = FilterBank(**kwargs["filter_bank"])
 
         super().__init__(**kwargs)
 
@@ -333,14 +339,19 @@ class TargetScanSet(BaseModel):
         self.obs_id = obs_id if obs_id is not None else '<undefined>'
         self.tgt_idx = tgt_config.tgt_idx
 
-        self.freq_min = tgt_config.center_freq - tgt_config.bandwidth / 2 - tgt_config.sample_rate * (1-USABLE_BANDWIDTH)/2  # Start of frequency scanning
-        self.freq_max = tgt_config.center_freq + tgt_config.bandwidth / 2 + tgt_config.sample_rate * (1-USABLE_BANDWIDTH)/2  # End of frequency scanning
+        self.freq_min = tgt_config.center_freq - tgt_config.bandwidth / 2  # Requested start frequency
+        self.freq_max = tgt_config.center_freq + tgt_config.bandwidth / 2  # Requested end frequency
 
         logger.info(f"Target in {obs_id} determining scans for TargetConfig idx={self.tgt_idx} from {self.freq_min/1e6:.2f} MHz to {self.freq_max/1e6:.2f} MHz with Sample Rate: {tgt_config.sample_rate/1e6:.2f} MHz and Duration: {tgt_config.integration_time} sec(s)")
 
-        # Calculate the number of frequency scans to cover the bandwidth (ceiling of bandwidth/sample_rate)
-        self.freq_scans = int(-((self.freq_max-self.freq_min)) // -(tgt_config.sample_rate * USABLE_BANDWIDTH))  # Ceiling division
-        self.freq_overlap = round((tgt_config.sample_rate * self.freq_scans - (self.freq_max-self.freq_min))/(self.freq_scans-1) if self.freq_scans > 1 else 0,4) # Overlap in the frequency domain (Hz) rounded to 4 decimals
+        # Calculate the number of frequency scans needed to cover the requested
+        # usable bandwidth. A target narrower than one usable sample-rate window
+        # still needs one full sample-rate capture centered on the target.
+        freq_span = self.freq_max - self.freq_min
+        usable_sample_rate = tgt_config.sample_rate * USABLE_BANDWIDTH
+        self.freq_scans = max(1, int(math.ceil(freq_span / usable_sample_rate))) if usable_sample_rate > 0 else 0
+        usable_step = (freq_span - usable_sample_rate) / (self.freq_scans - 1) if self.freq_scans > 1 else 0
+        self.freq_overlap = round(tgt_config.sample_rate - usable_step if self.freq_scans > 1 else 0, 4) # Overlap in the frequency domain (Hz) rounded to 4 decimals
         self.scan_iterations = int(np.ceil(tgt_config.integration_time / MAX_SCAN_DURATION_SEC))  # Number of iterations of a frequency scan, # e.g. 5 minutes of data will be 5 scans of 1 minute each
         self.scan_duration = math.ceil(tgt_config.integration_time / self.scan_iterations) if self.scan_iterations > 1 else tgt_config.integration_time  # Duration of each scan in seconds
 
@@ -355,9 +366,18 @@ class TargetScanSet(BaseModel):
             scan_iter = i % self.scan_iterations                # Current iteration within the frequency scan
 
             # Calculate the start, end and center frequencies for each scan
-            scan_start_freq = self.freq_min + (freq_scan * (tgt_config.sample_rate - self.freq_overlap)) 
-            scan_end_freq = scan_start_freq + tgt_config.sample_rate
-            scan_center_freq = scan_start_freq + tgt_config.sample_rate / 2
+            if self.freq_scans == 1:
+                scan_center_freq = tgt_config.center_freq
+                scan_start_freq = scan_center_freq - tgt_config.sample_rate / 2
+                scan_end_freq = scan_center_freq + tgt_config.sample_rate / 2
+            else:
+                scan_start_freq = (
+                    self.freq_min
+                    - tgt_config.sample_rate * (1 - USABLE_BANDWIDTH) / 2
+                    + (freq_scan * (tgt_config.sample_rate - self.freq_overlap))
+                )
+                scan_end_freq = scan_start_freq + tgt_config.sample_rate
+                scan_center_freq = scan_start_freq + tgt_config.sample_rate / 2
 
             scan = ScanModel(
                 obs_id=obs_id if obs_id is not None else '<undefined>',
@@ -367,7 +387,8 @@ class TargetScanSet(BaseModel):
                 dig_id=None,
                 duration=self.scan_duration,
                 sample_rate=tgt_config.sample_rate,
-                channels=tgt_config.spectral_resolution,
+                spectral_resolution=tgt_config.spectral_resolution,
+                filter_bank=tgt_config.filter_bank,
                 start_freq=scan_start_freq,
                 center_freq=scan_center_freq,
                 end_freq=scan_end_freq,
@@ -380,17 +401,17 @@ class TargetScanSet(BaseModel):
 if __name__ == "__main__":
 
     import pprint
-    print("="*40)
-    print("Offset Scan Test")
-    print("="*40)
+    from util.format import fmt_title
+    
+    fmt_title("Offset Scan Test")
+    
     offsetscan001 = OffsetScan(
         offset=0.1,
         rate=0.5,
         start=datetime.now(timezone.utc)
     )
-    print('='*40)
-    print("OffsetScan Test")
-    print('='*40)
+    
+    fmt_title("OffsetScan Test")
     pprint.pprint(offsetscan001.to_dict())
 
     coord = SkyCoord(ra="18h36m56.33635s", dec="+38d47m01.2802s", frame="icrs")
@@ -402,9 +423,8 @@ if __name__ == "__main__":
         sky_coord=coord,
         altaz=None
     )
-    print('='*40)
-    print("Target Model: Sidereal Target")
-    print('='*40)
+
+    fmt_title("Target Model: Sidereal Target")
     pprint.pprint(target001.to_dict())
 
     target002 = TargetModel(
@@ -413,15 +433,10 @@ if __name__ == "__main__":
         sky_coord=None,
         altaz=altaz
     )
-    print('='*40)
-    print("Target Model: Terrestrial Target")
-    print('='*40)   
+    fmt_title("Target Model: Terrestrial Target")
     pprint.pprint(target002.to_dict())
 
-    print('='*40)
-    print("Target Model: Solar Target (Moon)")
-    print('='*40)   
-
+    fmt_title("Target Model: Solar Target (Moon)")
     dt = datetime.now(timezone.utc)
     location = EarthLocation(lat=45.67*u.deg, lon=-111.05*u.deg, height=1500*u.m)
 
@@ -438,25 +453,19 @@ if __name__ == "__main__":
         altaz={"alt": altaz.alt, "az": altaz.az}
         )
 
-    print('='*40)
-    print("Target Model: Solar Target (Moon)")
-    print('='*40)
-
+    fmt_title("Target Model: Solar Target (Moon)")
     pprint.pprint(target003.to_dict())
 
-    print('='*40)
-    print("Target Model: Solar Target (Moon)")
+    fmt_title("Target Model: Solar Target (Moon)")
     print('Tests from_dict method')
-    print('='*40)
+    fmt_title("")
 
     target004 = TargetModel()
     target004 = target004.from_dict(target003.to_dict())
 
     pprint.pprint(target004.to_dict())
 
-    print('='*40)
-    print("Target Config: Vega Target")
-    print('='*40)
+    fmt_title("Target Config: Vega Target")
     target_config001 = TargetConfig(
         obs_id="obs001",
         tgt_idx=1,
@@ -466,7 +475,13 @@ if __name__ == "__main__":
         bandwidth=2e6,
         sample_rate=2.0e6,
         integration_time=300,
-        spectral_resolution=1024
+        spectral_resolution=1024,
+        filter_bank={
+            "_type": "FilterBank",
+            "enabled": True,                      # Whether filterbank file creation is enabled
+            "temporal_resolution": 10.0,            # Time resolution (milliseconds) for summing power spectra (e.g. 1 millisecond)
+            "dtype": "uint8",                     # Data type for filterbank output (e.g. uint16)
+         }
     )
     pprint.pprint(target_config001.to_dict())
 

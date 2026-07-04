@@ -4,14 +4,27 @@ from typing import TYPE_CHECKING, Optional
 
 import datetime
 import logging
+import os
 from pathlib import Path
+import warnings
+
+_mpl_cache = Path(os.environ.get("MPLCONFIGDIR", "/tmp/dmd2000-matplotlib"))
+_mpl_cache.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("MPLCONFIGDIR", str(_mpl_cache))
 
 import matplotlib as mpl
 import matplotlib.dates as mdates
 import matplotlib.patches as mpatches
-import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.gridspec import GridSpec
+
+with warnings.catch_warnings():
+    warnings.filterwarnings(
+        "ignore",
+        message="Unable to import Axes3D.*",
+        category=UserWarning,
+    )
+    import matplotlib.pyplot as plt
 
 from models.dsh import Capability, DishMode, PointingState
 from util.matplotlib_window import get_figure_visibility

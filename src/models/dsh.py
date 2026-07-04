@@ -58,6 +58,7 @@ class Feed(enum.IntEnum):
     LOAD = 4        # Load for calibration
 
 class DriverType(enum.IntEnum):
+    UNKNOWN = 0
     MD01 = 1            # RF Hamdesigns MD-01
     MD02 = 2            # RF Hamdesigns MD-02
     MD03 = 3            # RF Hamdesigns MD-03
@@ -65,7 +66,7 @@ class DriverType(enum.IntEnum):
     LOSMANDY_G11 = 5    # Losmandy G-11
     ASCOM = 6           # ASCOM Standard Driver
     INDI = 7            # INDI Standard Driver  
-    UNKNOWN = 8
+    MOTION = 9          # Dish with no integrated motors, but pointing is reported by an attached IMU
 
 class PECModel(BaseModel):
     """A class representing the periodic error correction (PEC) model for a dish target."""
@@ -504,7 +505,7 @@ if __name__ == "__main__":
         last_update=datetime.now(timezone.utc)
     )
 
-    from dsh.drivers.md01.md01_model import MD01Config
+    from dsh.drivers.md01.md01_config import MD01Config
 
     md01_cfg = MD01Config(
         host="192.168.0.2",

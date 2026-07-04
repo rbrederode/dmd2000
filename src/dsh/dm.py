@@ -13,11 +13,10 @@ import time
 import threading
 
 from api import tm_dm, ws_dm
-from dsh.dish_display import DishDisplay
-from dsh.weather_display import WeatherDisplay
 from dsh.drivers.driver import DishDriver
-from dsh.drivers.drift.driver import DriftDriver
+from dsh.drivers.drift.drift_driver import DriftDriver
 from dsh.drivers.md01.md01_driver import MD01Driver
+from dsh.drivers.motion.motion_driver import MotionDriver
 from env.app import App
 from ipc.message import APIMessage
 from ipc.action import Action
@@ -75,6 +74,18 @@ class DM(App):
         self.weather_displays = {}    # Dictionary to hold WeatherDisplay objects for each weather station
         self.alarm_logger = self.get_alarm_logger()
         self.last_alarm_metrics_refresh_hour = None
+
+    def _create_dish_display(self, dish_driver: DishDriver):
+        """Create a dish display lazily so headless runs do not import Matplotlib."""
+        from dsh.dish_display import DishDisplay
+
+        return DishDisplay(driver=dish_driver)
+
+    def _create_weather_display(self, ws_id: str):
+        """Create a weather display lazily so headless runs do not import Matplotlib."""
+        from dsh.weather_display import WeatherDisplay
+
+        return WeatherDisplay(weather_store=self.dm_model.weather_store, ws_id=ws_id)
 
     def add_args(self, arg_parser): 
         """ Specifies the Dish Manager's command line arguments.
@@ -170,6 +181,9 @@ class DM(App):
                 elif driver_type == DriverType.DRIFT.name:
                     driver = DriftDriver(dsh_model=dish)
                     logger.info(f"DM instantiated Drift driver for Dish {dish.dsh_id}")
+                elif driver_type == DriverType.MOTION.name:
+                    driver = MotionDriver(dsh_model=dish, profile=self.get_args().profile)
+                    logger.info(f"DM instantiated Motion driver for Dish {dish.dsh_id}")
                 else:
                     logger.warning(f"DM cannot instantiate driver for Dish {dish.dsh_id} with unknown driver type {driver_type}")
 
@@ -531,9 +545,14 @@ class DM(App):
                     return action
 
                 # If the dish pointing state transitioned to READY, it means we have reached the desired slew position.
-                # Drift scans do not slew to a new position, so suppress READY status spam for active DRIFT_SCAN targets.
+                # Drift drivers never slew to a new position, so suppress READY status spam for active drift dishes.
                 # Pointing state would be SLEW if still slewing or TRACK if already tracking (if necessary).
-                if (target is not None and dish_driver.get_pointing_state() == PointingState.READY and target.pointing != PointingType.DRIFT_SCAN):
+                if (
+                    target is not None
+                    and dish_driver.get_pointing_state() == PointingState.READY
+                    and dish_driver.dsh_model.driver_type != DriverType.DRIFT
+                    and target.pointing != PointingType.DRIFT_SCAN
+                ):
                     logger.debug(f"DM reached slew target and is now in READY state for target {target} acquisition in observation {target.obs_id} with Dish {dish_id}.")
 
                     status = tm_dm.STATUS_SUCCESS
@@ -807,7 +826,7 @@ def main():
                 # If there is no signal display for this digitiser, create a new active signal display
                 if dish_id not in dm.dish_displays or dm.dish_displays[dish_id] is None:
                     logger.info(f"Dish Manager creating new DishDisplay for dish {dish_id}")
-                    dm.dish_displays[dish_id] = DishDisplay(driver=dish_driver)
+                    dm.dish_displays[dish_id] = dm._create_dish_display(dish_driver=dish_driver)
 
                 if not (dm.dish_displays[dish_id].get_is_active()):
                     continue # Dish display for dish has been deactivated, continue to next dish
@@ -819,7 +838,7 @@ def main():
 
                     if ws_id not in dm.weather_displays or dm.weather_displays[ws_id] is None:
                         logger.info(f"Dish Manager creating new WeatherDisplay for weather station {ws_id}")
-                        dm.weather_displays[ws_id] = WeatherDisplay(weather_store=dm.dm_model.weather_store, ws_id=ws_id)
+                        dm.weather_displays[ws_id] = dm._create_weather_display(ws_id=ws_id)
 
                     if not dm.weather_displays[ws_id].get_is_active():
                         continue

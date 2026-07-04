@@ -20,7 +20,7 @@
                 "processors": [],
                 "msg_timeout_ms": 10000,
                 "arguments": {
-                    "local_host": "127.0.0.1"
+                    "local_host": "192.168.50.2"
                 },
                 "last_update": {
                     "_type": "datetime",
@@ -31,17 +31,11 @@
             "bpf_type": {
                 "_type": "enum.IntEnum",
                 "instance": "BandpassFilterType",
-                "value": "SAWBIRD_H1_BAREBONES"
+                "value": "ZCBP6_416R5_S"
             },
-            "bpf_config": {
-                "_type": "SAWbirdH1_BareBones",
-                "gpio_pin_power": 18,
-                "gpio_pin_load": 19,
-                "last_update": {
-                    "_type": "datetime",
-                    "value": "2026-01-11T13:13:18.466610+00:00"
-                }
-            },
+            "temp_type": "bme280",
+            "temp_config": {"bus_number": 3, "address": 118},
+            "temp_max": 40.0,
             "gain": 0.0,
             "sample_rate": 0.0,
             "bandwidth": 0.0,
@@ -64,7 +58,17 @@
                 "instance": "CommunicationStatus",
                 "value": "NOT_ESTABLISHED"
             },
+            "temp_connected": {
+                "_type": "enum.IntEnum",
+                "instance": "CommunicationStatus",
+                "value": "NOT_ESTABLISHED"
+            },
             "scanning": false,
+            "sdr_type": "airstream",
+            "sdr_config": {
+                "ring_seconds": 10,
+                "read_timeout_sec": 10
+            },
             "sdr_eeprom": {},
             "last_update": {
                 "_type": "datetime",

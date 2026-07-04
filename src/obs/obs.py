@@ -115,13 +115,13 @@ class Observation:
                 scan_iter = scan_model.scan_iter
                 
                 # Summed Power (SPR) and Mean Power (MPR) arrays are initialized to zeros
-                int_spr = np.zeros(scan_model.channels, dtype=np.float64)
-                int_mpr = np.zeros(scan_model.channels, dtype=np.float64)
+                int_spr = np.zeros(scan_model.spectral_resolution, dtype=np.float64)
+                int_mpr = np.zeros(scan_model.spectral_resolution, dtype=np.float64)
 
                 # Initialise arrays to ones for GAIN and LOAD scans as the signal is divided by these during calibration
                 if scan_model.scan_type in [ScanType.GAIN, ScanType.LOAD]:
-                    int_spr = np.ones(scan_model.channels, dtype=np.float64)
-                    int_mpr = np.ones(scan_model.channels, dtype=np.float64)
+                    int_spr = np.ones(scan_model.spectral_resolution, dtype=np.float64)
+                    int_mpr = np.ones(scan_model.spectral_resolution, dtype=np.float64)
 
                 int_data_arrays.setdefault((tgt_idx, freq_scan, scan_iter), {})
                 int_data_arrays[(tgt_idx, freq_scan, scan_iter)] = {
@@ -157,7 +157,7 @@ class Observation:
         self.int_data_arrays[(tgt_idx, freq_scan, scan_iter)]["int_mpr"] += np.sum(scan.mpr, axis=0)           # Note: summing a single integrated row per scan iteration
         self.int_data_arrays[(tgt_idx, freq_scan, scan_iter)]["int_tpw"] += np.sum(scan.cal, axis=1).tolist()  # Extending the list by summing across channels to get total power per second
 
-        self.int_data_arrays[(tgt_idx, freq_scan, scan_iter)]["secs"] += scan.get_loaded_seconds()
+        self.int_data_arrays[(tgt_idx, freq_scan, scan_iter)]["secs"] += scan.get_loaded_duration()
         self.int_data_arrays[(tgt_idx, freq_scan, scan_iter)]["scans"] += 1
 
     def integrate_cal_scans(self, dir: str, sky_q: "Queue" = None, cal_q: "Queue" = None):
@@ -316,7 +316,7 @@ class Observation:
                     dig_id=scan_model.dig_id,
                     scan_type=scan_model.scan_type,
                     status=ScanState.EMPTY,
-                    channels=scan_model.channels,
+                    spectral_resolution=scan_model.spectral_resolution,
                     center_freq=scan_model.center_freq,
                     sample_rate=scan_model.sample_rate,
                     gain=scan_model.gain,
@@ -453,7 +453,7 @@ class Observation:
                     fmt_float(scan_model.center_freq, scale=1e6, precision=2, suffix=" MHz"),
                     fmt_float(scan_model.sample_rate, scale=1e6, precision=2, suffix=" MHz"),
                     fmt_float(scan_model.gain, precision=1, suffix=" dB"),
-                    str(scan_model.channels),
+                    str(scan_model.spectral_resolution),
                     fmt_float(scan_model.duration, precision=0, suffix=" s"),
                     fmt_image_link(scan_model.files_directory, f"{scan_model.files_prefix}-sigfig.png", 8),
                 ]
@@ -486,7 +486,7 @@ class Observation:
                     fmt_float(scan_model.center_freq, scale=1e6, precision=2, suffix=" MHz"),
                     fmt_float(scan_model.sample_rate, scale=1e6, precision=2, suffix=" MHz"),
                     fmt_float(scan_model.gain, precision=1, suffix=" dB"),
-                    str(scan_model.channels),
+                    str(scan_model.spectral_resolution),
                     fmt_float(scan_model.duration, precision=0, suffix=" s"),
                     fmt_image_link(scan_model.files_directory, f"{scan_model.files_prefix}-sigfig.png", 8),
                 ]

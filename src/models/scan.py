@@ -9,6 +9,7 @@ from schema import Schema, And, Or, Use, SchemaError
 from models.base import BaseModel
 from models.comms import CommunicationStatus
 from models.dsh import Feed
+from models.fil import FilterBank
 from util.xbase import XInvalidTransition, XAPIValidationFailed, XSoftwareFailure
 
 logger = logging.getLogger(__name__)
@@ -19,7 +20,6 @@ class ScanType(enum.IntEnum):
     LOAD = 2        # Scan of the load (terminated signal chain)
     TSYS = 3        # System Temperature calibration scan
     GAIN = 4        # Gain calibration scan
-
 
 # ScanDataSource tracks whether a Scan was populated from raw IQ or from precomputed spectrum data
 class ScanDataSource(enum.IntEnum):
@@ -36,6 +36,12 @@ class ScanState(enum.IntEnum):
 class ScanModel(BaseModel):
     """A class representing the scan model."""
 
+    _sample_timing = Schema({
+        "read_start": Or(None, And(datetime, lambda v: isinstance(v, datetime))),
+        "read_end": Or(None, And(datetime, lambda v: isinstance(v, datetime))),
+        "gap": Or(None, And(float, lambda v: isinstance(v, float))),
+    })
+
     schema = Schema({
         "_type": And(str, lambda v: v == "ScanModel"),
         "obs_id": Or(None, And(str, lambda v: isinstance(v, str))),                 # Observation ID for this scan (e.g. "obs001")
@@ -51,7 +57,7 @@ class ScanModel(BaseModel):
         "start_idx": And(int, lambda v: v >= 0),                                    # Index of the first sample in the scan, corresponding to the digitiser read counter value for the first sample in the scan
         "duration": And(Or(int, float), lambda v: v >= 0),                          # Duration of the scan in seconds e.g. 60 seconds
         "sample_rate": And(Or(int, float), lambda v: v >= 0.0),                     # Sample rate in Hz
-        "channels": And(int, lambda v: v >= 0),                                     # Number of channels (FFT size) for the analysis
+        "spectral_resolution": And(int, lambda v: v >= 0),                          # Number of spectral bins / FFT size for the analysis
         "start_freq": Or(None, And(Or(int, float), lambda v: v >= 0.0)),            # Start frequency of the samples in Hz (optional, can be calculated from center_freq and sample_rate if not provided)
         "center_freq": And(Or(int, float), lambda v: v >= 0.0),                     # Center frequency of the samples in Hz
         "end_freq": Or(None, And(Or(int, float), lambda v: v >= 0.0)),              # End frequency of the samples in Hz (optional, can be calculated from center_freq and sample_rate if not provided)
@@ -60,6 +66,7 @@ class ScanModel(BaseModel):
         "load_scan_id": Or(None, And(str, lambda v: isinstance(v, str))),           # Scan id of load scan if this is a sky scan (in the form <obs_id>-<target_index>-<freq_scan>-<scan_iter>)
         "status": And(ScanState, lambda v: isinstance(v, ScanState)),               # Status of the scan (EMPTY, WIP, ABORTED, COMPLETE)
         "load_failures": And(int, lambda v: v >= 0),                                # Number of times loading this scan has failed (used for retry logic)
+        "filter_bank": Or(None, And(FilterBank, lambda v: isinstance(v, FilterBank))), # Filterbank parameters for this scan (optional, can be used to specify filterbank creation parameters on a per-scan basis)
         "files_prefix": Or(None, And(str, lambda v: isinstance(v, str))),           # Prefix of filenames containing scan data (e.g. "ODT-2026-03-11T2100Z-dish002-7-0-0-dig002-g23.0-du60-bw2.05-cf1420.07-ch2048")
         "files_directory": Or(None, And(str, lambda v: isinstance(v, str))),        # Directory where the scan data is stored (e.g. "~/samples")
         "target_alt_pec_rms": Or(None, And(Or(int, float), lambda v: v >= 0.0)),   # Target-level RMS periodic error correction in altitude (degrees)
@@ -73,6 +80,7 @@ class ScanModel(BaseModel):
         "wind_sample_count": Or(None, And(int, lambda v: v >= 0)),                  # Number of wind samples used for the rolling summary
         "wind_sample_time": Or(None, And(datetime, lambda v: isinstance(v, datetime))),  # Timestamp of the latest weather sample used
         "synthesised": And(bool, lambda v: isinstance(v, bool)),                    # Flag indicating whether this scan was synthesised from other scans (e.g. for a load scan synthesised from a sky scan)
+        "sample_times": Or(None, And(list, lambda v: all(isinstance(i, dict) and ScanModel._sample_timing.validate(i) for i in v))),
         "last_update": And(datetime, lambda v: isinstance(v, datetime)),            # Timestamp when the scan model was last updated
     })
 
@@ -94,7 +102,7 @@ class ScanModel(BaseModel):
         "start_idx": 0,
         "duration": 0,
         "sample_rate": 0.0,
-        "channels": 0,
+        "spectral_resolution": 0,
         "start_freq": 0.0,
         "center_freq": 0.0,
         "end_freq": 0.0,
@@ -103,7 +111,7 @@ class ScanModel(BaseModel):
         "load_scan_id": None,
         "status": ScanState.EMPTY,
         "load_failures": 0,
-        "loaded_secs": [],
+        "filter_bank": None,
         "files_prefix": None,
         "files_directory": None,
         "target_alt_pec_rms": None,
@@ -117,10 +125,15 @@ class ScanModel(BaseModel):
         "wind_sample_count": None,
         "wind_sample_time": None,
         "synthesised": False,
+        "sample_times": None,
         "last_update": datetime.now(timezone.utc)
     }
 
     def __init__(self, **kwargs):
+        # Backward compatibility for older persisted scan metadata and callers.
+        if "spectral_resolution" not in kwargs and "channels" in kwargs:
+            kwargs["spectral_resolution"] = kwargs["channels"]
+
         # Apply defaults if not provided in kwargs
         for key, value in self._defaults.items():
             if key not in kwargs:
@@ -166,7 +179,7 @@ class ScanModel(BaseModel):
         equivalent = str(self.dig_id) == str(other.dig_id) and \
                      float(self.center_freq) == float(other.center_freq) and \
                      float(self.sample_rate) == float(other.sample_rate) and \
-                     int(self.channels) == int(other.channels) and \
+                     int(self.spectral_resolution) == int(other.spectral_resolution) and \
                      float(self.gain) == float(other.gain)
 
         logger.debug(f"Scan equivalence is {equivalent} between:\n{self}\nand\n{other}\n")
@@ -185,8 +198,9 @@ class ScanModel(BaseModel):
     def __str__(self):
         return f"ScanModel(scan_id={self.scan_id}, dig_id={self.dig_id}, type={self.scan_type.name}, status={self.status.name}, " + \
                f"center_freq={self.center_freq}, duration={self.duration}, sample_rate={self.sample_rate}, " + \
-               f"channels={self.channels},  gain={self.gain}, start_idx={self.start_idx}, " + \
-               f"created={self.created}, read_start={self.read_start}, read_end={self.read_end}, last_update={self.last_update})"   
+               f"spectral_resolution={self.spectral_resolution},  gain={self.gain}, " + \
+               f"start_idx={self.start_idx}, created={self.created}, read_start={self.read_start}, read_end={self.read_end}, " + \
+               f"last_update={self.last_update})"   
 
 if __name__ == "__main__":
     
@@ -202,12 +216,13 @@ if __name__ == "__main__":
         start_idx=100,
         duration=60,
         sample_rate=1024.0,
-        channels=1024,
+        spectral_resolution=1024,
         center_freq=1420405752.0,
         gain=50.0,
         load=False,
         status=ScanState.WIP,
         load_failures=0,
+        filter_bank=FilterBank(enabled=True, temporal_resolution=1.0, dtype="uint16"),
         last_update=datetime.now(timezone.utc)
     )
 

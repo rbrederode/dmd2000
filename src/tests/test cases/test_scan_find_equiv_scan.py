@@ -18,7 +18,7 @@ def test_find_equiv_scan_returns_none_for_missing_input_dir(tmp_path):
             start_idx=0,
             duration=60,
             sample_rate=2.4e6,
-            channels=1024,
+            spectral_resolution=1024,
             center_freq=1420.4e6,
             gain=10.0,
             load=False,

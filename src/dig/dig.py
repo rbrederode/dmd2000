@@ -3,11 +3,12 @@ import json
 import numpy as np
 import threading
 import time
+import _thread
 from datetime import datetime, timezone
-from rtlsdr import RtlSdr
 from gpiozero import LED
 
 from api import tm_dig, sdp_dig
+from dig.temp import Temperature
 from env.app import App
 from ipc.message import APIMessage
 from ipc.message import AppMessage
@@ -26,6 +27,8 @@ from util.timer import Timer, TimerManager
 from util.xbase import XStreamUnableToExtract, XSoftwareFailure, XHardwareFailure, XAPIValidationFailed
 
 logger = logging.getLogger("dig.dig")
+
+TEMP_WARNING_DELTA = 5.0  # Degrees Celsius below maximum temperature at which to log a warning for Digitiser Assembly temperature sensor readings
 
 class Digitiser(App):
 
@@ -68,9 +71,7 @@ class Digitiser(App):
         self._scan_samples_generation_lock = threading.Lock()
         self._idle_poweroff_seconds = 300
         self._last_active_dt = datetime.now(timezone.utc)
-
-    def _touch_activity(self):
-        self._last_active_dt = datetime.now(timezone.utc)
+        self._shutdown_requested = False
 
     def add_args(self, arg_parser):
         """ Specifies the digitiser's command line arguments.
@@ -112,16 +113,38 @@ class Digitiser(App):
                 self.dig_model.dig_id = self.get_args().entity_id
                 logger.info(f"Digitiser loaded configuration for {self.dig_model.dig_id} from directory {input_dir} file {filename}")
             else:
-                logger.warning(f"Digitiser configuration for {self.dig_model.dig_id} not found in directory {input_dir} file {filename}")
+                msg = f"Digitiser configuration for {self.dig_model.dig_id} not found in directory {input_dir} file {filename}"
+                logger.warning(self.set_last_err(msg))
         else:
-            logger.warning(f"Digitiser could not load Digitiser configuration from directory {input_dir} file {filename}")
+            msg = f"Digitiser could not load Digitiser configuration from directory {input_dir} file {filename}"
+            logger.warning(self.set_last_err(msg))
 
         # Initialise the Software Defined Radio (internal) interface
-        self.sdr = SDR()
-        self.dig_model.sdr_eeprom = self.sdr.get_eeprom_info()
+        self.sdr = SDR(sdr_type=self.dig_model.sdr_type, sdr_config=self.dig_model.sdr_config)
+        self.dig_model.sdr_eeprom = self.sdr.get_eeprom_info() or {}
         self.dig_model.sdr_connected = self.sdr.get_comms_status()
+
+        # Initialise the Digitiser Assembly temperature sensor interface
+        self.temp_sensor = None
+        if self.dig_model.temp_type is not None and self.dig_model.temp_type.lower() != "none":
+
+            logger.info(f"Digitiser configuring temperature sensor type={self.dig_model.temp_type} config={self.dig_model.temp_config}")
+            
+            self.temp_sensor = Temperature(device=self.dig_model.temp_type, sensor_config=self.dig_model.temp_config)
+            self.dig_model.temp_connected = self.temp_sensor.get_comms_status()
+            
+            if self.temp_sensor.get_comms_status() == CommunicationStatus.ESTABLISHED:
+                logger.info("Digitiser successfully connected to temperature sensor.")
+            else:
+                logger.info("Digitiser temperature sensor configured; waiting for background connection.")
+            
+            # Poll the temperature sensor every 5 seconds. The Temperature class returns
+            # None until its background reader has a fresh cached value.
+            action.set_timer_action(Action.Timer(name=f"temp_sensor_poll", timer_action=5000, echo_data=None))
+        else:
+            self.dig_model.temp_connected = CommunicationStatus.DISABLED
         
-        # Start timer to periodically checks comms e.g. SDR, Bandpass filter relays, etc
+        # Start timer to periodically checks comms e.g. SDR, Bandpass filter relays, temp sensors etc
         action.set_timer_action(Action.Timer(name=f"comms_retry", timer_action=5000))
 
         # Connect client endpoints to interfaces
@@ -150,6 +173,7 @@ class Digitiser(App):
         logger.debug(f"Digitiser disconnected from Telescope Manager: {event.remote_addr}")
 
         self.dig_model.tm_connected = CommunicationStatus.NOT_ESTABLISHED
+        self.set_last_err("Telescope Manager disconnected")
 
         # If currently scanning for an observation, stop scanning due to TM disconnect
         if isinstance(self.dig_model.scanning, dict) and self.dig_model.scanning.get('obs_id', None) is not None:
@@ -176,14 +200,16 @@ class Digitiser(App):
                 action.set_timer_action(Action.Timer(name=f"tm_adv_timer:{dt}", timer_action=Action.Timer.TIMER_STOP))
             
             if api_call.get('status') == tm_dig.STATUS_ERROR:
-                logger.error(f"Digitiser received negative acknowledgement from TM for api call\n{json.dumps(api_call, indent=2)}")
+                msg = f"Digitiser received negative acknowledgement from TM for api call\n{json.dumps(api_call, indent=2)}"
+                logger.error(self.set_last_err(msg))
 
             return action
 
         # Else if api call is a req or adv msg from the TM
         elif api_call['msg_type'] in ['req', 'adv']:
 
-            self._touch_activity()
+            # Touch the last active timestamp to prevent idle power off of the bandpass filter
+            self._last_active_dt = datetime.now(timezone.utc)
 
             scanning = self.dig_model.scanning
             obs_id = scanning.get('obs_id', None) if isinstance(scanning, dict) else None
@@ -192,7 +218,7 @@ class Digitiser(App):
             if obs_id and obs_id !=api_call.get('obs_data', {}).get('obs_id'):
                 if api_call['action_code'] in ["set", "method"]:
                     msg = f"Digitiser busy scanning for observation {obs_id} and cannot process unrelated API call until observation is complete"               
-                    logger.error(msg + f"\n{json.dumps(api_call, indent=2)}")
+                    logger.error(self.set_last_err(msg) + f"\n{json.dumps(api_call, indent=2)}")
                     action.set_msg_to_remote(self._construct_rsp_to_tm(tm_dig.STATUS_ERROR, msg, None, api_msg, api_call))
                     return action
             
@@ -242,8 +268,7 @@ class Digitiser(App):
                         action.set_timer_action(Action.Timer(name=f"sdp_adv_timer:{sdp_adv.get_timestamp()}", timer_action=self.dig_model.app.msg_timeout_ms, echo_data=sdp_adv))
 
                     elif not self.dig_model.sdp_connected == CommunicationStatus.ESTABLISHED:
-                        logger.warning("Digitiser cannot send samples to Science Data Processor, not connected.")
-
+                        self.set_last_err("Digitiser cannot send samples to Science Data Processor, not connected.")
                         # Send status advice message to Telescope Manager
                         tm_adv = self._construct_status_adv_to_tm()
                         action.set_msg_to_remote(tm_adv)
@@ -281,6 +306,7 @@ class Digitiser(App):
         logger.info(f"Digitiser disconnected from Science Data Processor: {event.remote_addr}")
 
         self.dig_model.sdp_connected = CommunicationStatus.NOT_ESTABLISHED
+        self.set_last_err("Science Data Processor disconnected")
 
         # If currently scanning for an observation, stop scanning due to SDP disconnect (TM will abort the observation anyway)
         if isinstance(self.dig_model.scanning, dict) and self.dig_model.scanning.get('obs_id', None) is not None:
@@ -317,7 +343,8 @@ class Digitiser(App):
                 action.set_timer_action(Action.Timer(name=f"sdp_adv_timer:{dt}", timer_action=Action.Timer.TIMER_STOP))
             
             if api_call.get('status') == tm_dig.STATUS_ERROR:
-                logger.error(f"Digitiser received negative acknowledgement from SDP for api call\n{json.dumps(api_call, indent=2)}")
+                msg = f"Digitiser received negative acknowledgement from SDP for api call\n{json.dumps(api_call, indent=2)}"
+                logger.error(self.set_last_err(msg))
 
         return action
 
@@ -359,14 +386,71 @@ class Digitiser(App):
 
             elif payload is None:
                 # Wait for scan_samples timer to trigger again
-                logger.warning(f"Digitiser cannot send samples to Science Data Processor on {event.name}, no payload after reading samples.")
+                self.set_last_err(f"Digitiser cannot send samples to Science Data Processor on {event.name}, no payload after reading samples.")
         
         # Else if the timer is for handling sdp adv timeouts
         elif event.name.startswith("sdp_adv_timer"):
 
             # Simply log a warning that the SDP did not acknowledge the samples advice
-            logger.warning(f"Digitiser timed out waiting for acknowledgement from SDP for samples advice {event}")
+            self.set_last_err(f"Digitiser timed out waiting for acknowledgement from SDP for samples advice {event}")
 
+        # Else if the timer is for handling temperature sensor polling
+        elif event.name.startswith("temp_sensor_poll"):
+
+            # Restart the timer to keep polling periodically
+            action.set_timer_action(Action.Timer(name=f"temp_sensor_poll", timer_action=5000))
+
+            if self.temp_sensor is not None and self.temp_sensor.get_comms_status() == CommunicationStatus.ESTABLISHED:
+                
+                temp_reading = self.temp_sensor.get_reading()
+                if temp_reading is not None:
+
+                    logger.debug(f"Digitiser (Assembly) temperature sensor reading: {temp_reading.temperature:.2f} C, humidity: {temp_reading.humidity:.2f} %, pressure: {temp_reading.pressure:.2f} hPa")
+                    self.dig_model.temp_reading = temp_reading
+
+                    if self.dig_model.temp_max is not None:
+
+                        # If the temperature reading exceeds the maximum configured temperature, initiate shutdown of the digitiser process
+                        if temp_reading.temperature > self.dig_model.temp_max:
+
+                            # Stop scanning and advance the scan samples generation to invalidate any queued/in-flight scan sample timers
+                            self.dig_model.scanning = False
+                            self._advance_scan_samples_generation()
+
+                            shutdown_reason = (
+                                f"Digitiser Assembly temperature sensor reading {temp_reading.temperature:.2f} C "
+                                f"exceeds maximum configured temperature {self.dig_model.temp_max:.2f} C. "
+                                "Initiating automatic shutdown.")
+                    
+                            logger.error(self.set_last_err(shutdown_reason))
+                            self.dig_model.app.health = HealthState.FAILED
+                    
+                            # Power off the bandpass filter to prevent further heating
+                            self.set_bpf_power_state(False)  # Switch bandpass filter powered off when stopping scanning
+                            
+                            # Send status advice message to Telescope Manager
+                            if self.dig_model.tm_connected == CommunicationStatus.ESTABLISHED:
+                                tm_adv = self._construct_status_adv_to_tm()
+                                action.set_msg_to_remote(tm_adv)
+
+                            # Request shutdown of the digitiser process due to over-temperature
+                            self.request_shutdown(shutdown_reason)
+
+                        # Else if temperature reading is approaching maximum configured temperature, log a warning. 
+                        elif temp_reading.temperature > self.dig_model.temp_max - TEMP_WARNING_DELTA:
+
+                            msg = f"Digitiser Assembly temperature sensor reading {temp_reading.temperature:.2f} C is approaching maximum configured " \
+                                f"temperature {self.dig_model.temp_max:.2f} C."
+                            logger.warning(self.set_last_err(msg))
+
+                else:
+                    msg = "Digitiser Assembly temperature sensor reading is stale or unavailable."
+                    logger.warning(self.set_last_err(msg))
+                    
+            else:
+                msg = f"Digitiser Assembly temperature sensor is not connected or communication is not established. Last error: {self._get_temp_sensor_last_error()}"
+                logger.warning(self.set_last_err(msg))
+                
         # Else if the timer is for handling comms retries such as SDR connection retries
         elif event.name.startswith("comms_retry"):
 
@@ -374,7 +458,7 @@ class Digitiser(App):
             action.set_timer_action(Action.Timer(name=f"comms_retry", timer_action=5000))
 
             if self.sdr is None or self.sdr.get_comms_status() != CommunicationStatus.ESTABLISHED:
-                self.sdr = SDR()  # Retry connecting to the SDR
+                self.sdr = SDR(sdr_type=self.dig_model.sdr_type, sdr_config=self.dig_model.sdr_config)  # Retry connecting to the SDR
                 self.dig_model.sdr_connected = self.sdr.get_comms_status()
 
                 if self.dig_model.sdr_connected == CommunicationStatus.ESTABLISHED:
@@ -387,6 +471,18 @@ class Digitiser(App):
                 if idle_seconds >= self._idle_poweroff_seconds:
                     self.set_bpf_power_state(False)  # Switch bandpass filter power off when idle
 
+            if self.temp_sensor is not None and self.temp_sensor.get_comms_status() != CommunicationStatus.ESTABLISHED and self.dig_model.temp_type is not None and self.dig_model.temp_type.lower() != "none":
+                self.set_last_err(f"Digitiser retrying temperature sensor connection. Last error: {self._get_temp_sensor_last_error()}")
+                self.temp_sensor = Temperature(device=self.dig_model.temp_type, sensor_config=self.dig_model.temp_config)  # Retry connecting to the temperature sensor
+                self.dig_model.temp_connected = self.temp_sensor.get_comms_status()
+
+                if self.temp_sensor.get_comms_status() == CommunicationStatus.ESTABLISHED:
+                    logger.info("Digitiser successfully connected to temperature sensor.")
+                    # Poll the temperature sensor every 5 seconds
+                    action.set_timer_action(Action.Timer(name=f"temp_sensor_poll", timer_action=5000, echo_data=None))  
+            elif self.temp_sensor is not None:
+                self.dig_model.temp_connected = self.temp_sensor.get_comms_status()
+
         return action
 
     def _advance_scan_samples_generation(self) -> int:
@@ -396,15 +492,47 @@ class Digitiser(App):
             return self._scan_samples_generation
 
     def _current_scan_samples_generation(self) -> int:
+        """ Returns the current scan samples generation. This is used to invalidate queued/in-flight scan 
+            sample timers when scanning is stopped or restarted."""
+
         with self._scan_samples_generation_lock:
             return self._scan_samples_generation
 
     def _is_current_scan_samples_generation(self, generation) -> bool:
+        """ Returns True if the given generation is the current scan samples generation. This is used to invalidate
+            queued/in-flight scan sample timers when scanning is stopped or restarted. """
+        
         with self._scan_samples_generation_lock:
             return generation == self._scan_samples_generation
 
+    def _get_temp_sensor_last_error(self) -> str:
+        if self.temp_sensor is None:
+            return "temperature sensor is not configured"
+        err = self.temp_sensor.get_last_error()
+        return "none" if err is None else repr(err)
+
+    def request_shutdown(self, reason: str) -> None:
+        """ Requests shutdown of the digitiser process. Initiated when the digitiser is in an unrecoverable state, 
+            such as over-temperature or hardware failure. This method is idempotent and will only request shutdown once.
+        """
+        if self._shutdown_requested:
+            return
+
+        self._shutdown_requested = True
+        logger.critical(f"Digitiser requesting process shutdown: {reason}")
+        _thread.interrupt_main()
+
+    def stop(self):
+        """ Stops the digitiser application and cleans up resources. """
+        
+        if getattr(self, "temp_sensor", None) is not None:
+            self.temp_sensor.stop()
+            self.temp_sensor = None
+        super().stop()
+
     def process_status_event(self, event) -> Action:
-        """ Processes status update events.
+        """ Processes status update events from the application. This method is called periodically by the App 
+            framework to allow the application to send status updates to the Telescope Manager.
         """
         # Refresh the app and processor state (in the digitiser model)
         self.get_app_processor_state()
@@ -419,14 +547,20 @@ class Digitiser(App):
         return action
 
     def get_health_state(self) -> HealthState:
-        """ Returns the current health state of this application.
+        """ Returns the current health state of this application. This method is called periodically by the App 
+            framework to allow the application to report its health state to the Telescope Manager.
         """
-        if self.dig_model.tm_connected != CommunicationStatus.ESTABLISHED:
+        if self.dig_model.sdr_connected != CommunicationStatus.ESTABLISHED:
+            return HealthState.FAILED
+        elif self.dig_model.tm_connected != CommunicationStatus.ESTABLISHED:
             return HealthState.DEGRADED
         elif self.dig_model.sdp_connected != CommunicationStatus.ESTABLISHED:
             return HealthState.DEGRADED
-        elif self.sdr is None or self.sdr.get_comms_status() != CommunicationStatus.ESTABLISHED:
-            return HealthState.FAILED
+        elif self.temp_sensor is not None:
+            if self.temp_sensor.get_comms_status() != CommunicationStatus.ESTABLISHED or self.dig_model.temp_reading is None:
+                return HealthState.DEGRADED
+            elif self.dig_model.temp_max is not None and self.dig_model.temp_reading.temperature > self.dig_model.temp_max - TEMP_WARNING_DELTA:
+                return HealthState.DEGRADED
         else:
             return HealthState.OK
     
@@ -446,9 +580,9 @@ class Digitiser(App):
             # If the property setter exists on the SDR
             if hasattr(self.sdr, prop_name) and callable(getattr(self.sdr, prop_name)):
                 setter = getattr(self.sdr, prop_name)
-                setter(prop_value)
+                result = setter(prop_value)
                 # Update the property in the digitiser model for sdr properties
-                setattr(self.dig_model, prop_name[4:], prop_value)
+                setattr(self.dig_model, prop_name[4:], result if result is not None else prop_value)
 
             # Else if the property setter exists on the Digitiser
             elif hasattr(self, prop_name) and callable(getattr(self, prop_name)):
@@ -476,6 +610,7 @@ class Digitiser(App):
                 logger.error(f"Digitiser failed to set property {prop_name} to {prop_value}: {details}")
             else:
                 logger.exception(f"Digitiser failed to set property {prop_name} to {prop_value}: {details}")
+            self.set_last_err(f"Digitiser failed to set property {prop_name} to {prop_value}: {details}")
             return tm_dig.STATUS_ERROR, f"Digitiser failed to set property {prop_name} to {prop_value}: {details}", None, None
 
         logger.info(f"Digitiser set property {prop_name[4:]} to {prop_value}")
@@ -520,6 +655,7 @@ class Digitiser(App):
             details = str(e)
             if isinstance(e, XHardwareFailure):
                 self.dig_model.sdr_connected = CommunicationStatus.NOT_ESTABLISHED
+            self.set_last_err(f"Digitiser failed to get property {prop_name}: {details}")
             logger.error(f"Digitiser failed to get property {prop_name}: {details}")
             return tm_dig.STATUS_ERROR, f"Digitiser failed to get property {prop_name}: {details}", None, None
 
@@ -563,6 +699,7 @@ class Digitiser(App):
             details = str(e)
             if isinstance(e, XHardwareFailure):
                 self.dig_model.sdr_connected = CommunicationStatus.NOT_ESTABLISHED
+            self.set_last_err(f"Digitiser method {method} failed with exception: {details}")
             logger.error(f"Digitiser method {method} failed with exception: {details}")
             return tm_dig.STATUS_ERROR, f"Digitiser method {method} failed with exception: {details}", None, None
 
@@ -592,8 +729,7 @@ class Digitiser(App):
                 self.set_load_active(True)
 
     def _construct_status_adv_to_tm(self) -> APIMessage:
-        """ Constructs a status advice message for the Telescope Manager.
-        """
+        """ Constructs a status advice message for the Telescope Manager. """
 
         tm_adv = APIMessage(api_version=self.tm_api.get_api_version())
         tm_adv.set_json_api_header(
@@ -612,8 +748,7 @@ class Digitiser(App):
         return tm_adv
 
     def _construct_adv_to_sdp(self, status, message, value, payload: bytes) -> APIMessage:
-        """ Constructs an advice message to the Science Data Processor with the given sample payload.
-        """
+        """ Constructs an advice message to the Science Data Processor with the given sample payload. """
 
         # Extract sample metadata from the value dictionary
         read_counter = value.get('read_counter', 0)
@@ -657,8 +792,8 @@ class Digitiser(App):
         return sdp_adv
 
     def _construct_rsp_to_tm(self, status: int, message: str, value: any, api_msg: dict, api_call: dict) -> APIMessage:
-        """ Constructs a Telescope Manager response APIMessage.
-        """
+        """ Constructs a Telescope Manager response APIMessage. """
+
         tm_rsp = APIMessage(api_msg=api_msg, api_version=self.tm_api.get_api_version())
         tm_rsp.switch_from_to()
 

@@ -1,13 +1,25 @@
 import pytest
 from datetime import datetime, timezone
 from dsh.drivers.md01.md01_driver import MD01Driver
-from dsh.drivers.md01.md01_model import MD01Config
+from dsh.drivers.md01.md01_config import MD01Config
 from models.dsh import DishModel, DishMode, PointingState, Feed, DriverType, Capability
+
+""" Fixtures defined: md01_driver, dm, target, dsh_model.
+
+Direct test usages:
+
+md01_driver used by tests in md01_driver.py:407 (e.g. def test_can_reach(md01_driver):) and md01_driver.py:414 (test_do_flip).
+dm and md01_driver used by a test in dm.py:762 (def test_get_desired_altaz(dm, md01_driver):).
+Notes on discovery:
+
+Pytest will automatically apply conftest.py fixtures to test modules in the same package/directory and its subpackages (i.e., tests under dsh will pick up this conftest.py).
+Some fixtures may be used implicitly (tests may not import conftest directly; they simply declare fixture names in test function parameters).
+"""
 
 @pytest.fixture
 def md01_driver():
     from dsh.drivers.md01.md01_driver import MD01Driver
-    from dsh.drivers.md01.md01_model import MD01Config
+    from dsh.drivers.md01.md01_config import MD01Config
     from models.dsh import DishModel, DishMode, PointingState, Feed, DriverType, Capability
 
     md01_cfg = MD01Config(

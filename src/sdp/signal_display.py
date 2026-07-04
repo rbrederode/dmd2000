@@ -6,13 +6,26 @@ if TYPE_CHECKING:
     from sdp.scan import Scan
 
 import logging
+import os
 from pathlib import Path
+import warnings
+
+_mpl_cache = Path(os.environ.get("MPLCONFIGDIR", "/tmp/dmd2000-matplotlib"))
+_mpl_cache.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("MPLCONFIGDIR", str(_mpl_cache))
 
 import matplotlib as mpl
-import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.gridspec import GridSpec
 from matplotlib.ticker import MaxNLocator
+
+with warnings.catch_warnings():
+    warnings.filterwarnings(
+        "ignore",
+        message="Unable to import Axes3D.*",
+        category=UserWarning,
+    )
+    import matplotlib.pyplot as plt
 
 from util import gen_file_prefix
 from util.matplotlib_window import get_figure_visibility
@@ -164,7 +177,7 @@ class SignalDisplay:
         self.sig[1].legend(loc="lower right")
 
         self.pwr_im = self.sig[2].imshow(
-            np.zeros((self.scan.scan_model.duration, self.scan.scan_model.channels)),
+            np.zeros((self.scan.scan_model.duration, self.scan.scan_model.spectral_resolution)),
             aspect="auto",
             extent=self.extent,
         )
@@ -213,7 +226,7 @@ class SignalDisplay:
         # Update the figure suptitle for the new scan
         self.fig.suptitle(
             f"Scan Id: {scan.scan_model.scan_id}, Type: {scan.scan_model.scan_type.name}, Center Freq: {scan.scan_model.center_freq/1e6:.2f} MHz, "
-            f"Gain: {scan.scan_model.gain} dB, Sample Rate: {scan.scan_model.sample_rate/1e6:.2f} MHz, Channels: {scan.scan_model.channels}",
+            f"Gain: {scan.scan_model.gain} dB, Sample Rate: {scan.scan_model.sample_rate/1e6:.2f} MHz, Spectral Resolution: {scan.scan_model.spectral_resolution}",
             fontsize=12,
             y=0.96,
         )
@@ -224,7 +237,7 @@ class SignalDisplay:
             scan.scan_model.duration,
             0,
         ]
-        self.freq_axis = np.linspace(self.extent[0], self.extent[1], self.scan.scan_model.channels)
+        self.freq_axis = np.linspace(self.extent[0], self.extent[1], self.scan.scan_model.spectral_resolution)
 
         self._configure_axes()          # Set axes properties and labels for the new scan
         self._create_scan_artists()     # Create persistent artists for the new scan so later updates can mutate them in place
@@ -301,8 +314,8 @@ class SignalDisplay:
                 if mpr_qa.signal_start is not None and mpr_qa.signal_end is not None:
                     sig_start_bin = int(mpr_qa.signal_start)
                     sig_end_bin = int(mpr_qa.signal_end)
-                    freq_start = self.extent[0] + (self.extent[1] - self.extent[0]) * sig_start_bin / self.scan.scan_model.channels
-                    freq_end = self.extent[0] + (self.extent[1] - self.extent[0]) * sig_end_bin / self.scan.scan_model.channels
+                    freq_start = self.extent[0] + (self.extent[1] - self.extent[0]) * sig_start_bin / self.scan.scan_model.spectral_resolution
+                    freq_end = self.extent[0] + (self.extent[1] - self.extent[0]) * sig_end_bin / self.scan.scan_model.spectral_resolution
                     self.qa_signal_start_line.set_xdata([freq_start, freq_start])
                     self.qa_signal_end_line.set_xdata([freq_end, freq_end])
                     self.qa_signal_start_line.set_visible(True)
@@ -366,7 +379,8 @@ class SignalDisplay:
             l_sec: The latest loaded second number for the current scan, starting at 1.
         """
         total_power = np.sum(self.scan.cal[:l_sec, :], axis=1)
-        self.total_power_line.set_data(np.arange(1, l_sec + 1), total_power)
+        time_axis = np.arange(l_sec) + 1
+        self.total_power_line.set_data(time_axis, total_power)
 
         if l_sec == self.scan.scan_model.duration:
             avg_tpwr = np.mean(np.sum(self.scan.cal, axis=1))
@@ -439,7 +453,7 @@ class SignalDisplay:
         # If the current displayed scan second needs to be updated
         if self.sec != l_sec:
     
-            logger.debug(f"Signal display updating for scan {self.scan.scan_model.scan_id}, from second {self.sec} to {l_sec} of {self.scan.scan_model.duration}")
+            logger.debug(f"Signal display updating for scan {self.scan.scan_model.scan_id}, from temporal bin {self.sec} to {l_sec} of {self.scan.scan_model.duration}")
 
             if self.sec is None:
                 self.sec = 0
@@ -489,7 +503,7 @@ class SignalDisplay:
             duration=self.scan.scan_model.duration,
             sample_rate=self.scan.scan_model.sample_rate,
             center_freq=self.scan.scan_model.center_freq,
-            channels=self.scan.scan_model.channels,
+            spectral_resolution=self.scan.scan_model.spectral_resolution,
             instance_id=self.scan.scan_model.scan_id,
             scan_type=self.scan.scan_model.scan_type,
             filetype="sigfig",

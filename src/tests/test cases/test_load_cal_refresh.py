@@ -22,7 +22,7 @@ def make_scan(scan_type, *, obs_id, tgt_idx, synthesised=False):
             start_idx=0,
             duration=2,
             sample_rate=2,
-            channels=2,
+            spectral_resolution=2,
             center_freq=1420.0,
             gain=34.0,
             load=scan_type == ScanType.LOAD,

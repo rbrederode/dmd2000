@@ -7,16 +7,16 @@
             "app_name": "dig",
             "entity_id": "dig001",
             "env": {
-                "_GPIOZERO_PIN_FACTORY": "mock"
+                "GPIOZERO_PIN_FACTORY": "mock"
             },
             "program": "python",
             "args": [
                 "-m", "dig.dig",
                 "--profile", "jodrell",
                 "--entity_id", "dig001",
-                "--tm_host", "127.0.0.1",
-                "--sdp_host", "127.0.0.1",
-                "--local_host", "127.0.0.1"
+                "--tm_host", "192.168.50.1",
+                "--sdp_host", "192.168.50.1",
+                "--local_host", "192.168.50.2"
             ]
         },
         {
@@ -29,8 +29,9 @@
                 "-m", "dsh.dm",
                 "--profile", "jodrell",
                 "--entity_id", "dm001",
-                "--tm_host", "127.0.0.1",
-                "--ws_host", "127.0.0.1"
+                "--tm_host", "192.168.50.1",
+                "--ws_host", "192.168.50.1",
+                "--headless"
             ]
         },
         {
@@ -43,9 +44,10 @@
                 "-m", "sdp.sdp",
                 "--profile", "jodrell",
                 "--entity_id", "sdp001",
-                "--tm_host", "127.0.0.1",
-                "--dig_host", "127.0.0.1",
-                "--scan_store_dir", "~/samples"
+                "--tm_host", "192.168.50.1",
+                "--dig_host", "192.168.50.1",
+                "--scan_store_dir", "~/samples",
+                "--headless"
             ]
         },
         {
@@ -58,10 +60,11 @@
                 "-m", "tm.tm",
                 "--profile", "jodrell",
                 "--entity_id", "tm001",
-                "--dig_host", "127.0.0.1",
-                "--sdp_host", "127.0.0.1",
-                "--dm_host", "127.0.0.1",
-                "-o", "config/jodrell/obs_3hr_solar_drift_scan.json"
+                "--dig_host", "192.168.50.1",
+                "--sdp_host", "192.168.50.1",
+                "--dm_host", "192.168.50.1",
+                "-o", "config/jodrell/obs_1hr_pulsar_drift_scan_airspy.json",
+                "--headless"
             ]
         }
     ]

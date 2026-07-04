@@ -1,0 +1,83 @@
+{
+    "_type": "DigitiserList",
+    "list_id": "default",
+    "dig_list": [
+        {
+            "_type": "DigitiserModel",
+            "dig_id": "dig001",
+            "app": {
+                "_type": "AppModel",
+                "app_name": "app",
+                "app_running": false,
+                "health": {
+                    "_type": "enum.IntEnum",
+                    "instance": "HealthState",
+                    "value": "UNKNOWN"
+                },
+                "num_processors": 0,
+                "queue_size": 0,
+                "interfaces": [],
+                "processors": [],
+                "msg_timeout_ms": 10000,
+                "arguments": {
+                    "local_host": "192.168.0.36"
+                },
+                "last_update": {
+                    "_type": "datetime",
+                    "value": "2026-01-11T13:13:18.466610+00:00"
+                }
+            },
+            "load_active": false,
+            "bpf_type": {
+                "_type": "enum.IntEnum",
+                "instance": "BandpassFilterType",
+                "value": "SAWBIRD_H1_BAREBONES"
+            },
+            "temp_type": "bme280",
+            "temp_config": {"bus_number": 3, "address": 118},
+            "temp_max": 40.0,
+            "gain": 0.0,
+            "sample_rate": 0.0,
+            "bandwidth": 0.0,
+            "center_freq": 0.0,
+            "freq_correction": 0,
+            "channels": 0,
+            "scan_duration": 0,
+            "tm_connected": {
+                "_type": "enum.IntEnum",
+                "instance": "CommunicationStatus",
+                "value": "NOT_ESTABLISHED"
+            },
+            "sdp_connected": {
+                "_type": "enum.IntEnum",
+                "instance": "CommunicationStatus",
+                "value": "NOT_ESTABLISHED"
+            },
+            "sdr_connected": {
+                "_type": "enum.IntEnum",
+                "instance": "CommunicationStatus",
+                "value": "NOT_ESTABLISHED"
+            },
+            "temp_connected": {
+                "_type": "enum.IntEnum",
+                "instance": "CommunicationStatus",
+                "value": "NOT_ESTABLISHED"
+            },
+            "scanning": false,
+            "sdr_type": "rtlstream",
+            "sdr_config": {
+                "ring_seconds": 10,
+                "read_timeout_sec": 10
+            },
+            "sdr_eeprom": {},
+            "last_update": {
+                "_type": "datetime",
+                "value": "2026-01-11T13:13:18.467076+00:00"
+            }
+        }
+    ],
+    "last_update": {
+        "_type": "datetime",
+        "value": "2026-01-11T13:13:18.468499+00:00"
+    }
+}
