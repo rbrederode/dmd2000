@@ -9,14 +9,18 @@ Run on the Raspberry Pi with:
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 import threading
 import time
 from datetime import datetime, timezone
+from logging.handlers import TimedRotatingFileHandler
+from pathlib import Path
 from typing import Any, Protocol
 
 from models.temp import TempReading
 from models.comms import CommunicationStatus
+from util.format import fmt_number, fmt_percent
 
 try:
     from .bme280 import BME280Reader, env_i2c_bus, parse_i2c_address
@@ -25,34 +29,51 @@ except ImportError:
 
 DEFAULT_DEVICE = "bme280"
 SUPPORTED_DEVICES = (DEFAULT_DEVICE,)
+DEFAULT_LOG_NAME = "dig_temperature"
+DEFAULT_LOG_INTERVAL_SECONDS = 30.0
 
 class SensorReader(Protocol):
-    """A protocol for reading sensor data. Implementations of this protocol should provide a `read` method that returns a `TempReading`.
+    """ A protocol for reading sensor data. Implementations of this protocol should provide a `read` method that returns a `TempReading`.
         ... note:: This protocol is used to define the interface for sensor readers, allowing for different sensor implementations to be used interchangeably."""
 
     def read(self) -> TempReading:
         ...
 
-class Temp:
+class Temperature:
     """ Poll a temperature sensor in the background and expose cached readings.
 
         Getters return None when the sensor is unavailable or the latest successful reading is older than max_age_seconds. """
 
-    def __init__(self, device: str = DEFAULT_DEVICE, sensor_config: dict[str, Any] | None = None, interval_seconds: float = 1.0, max_age_seconds: float = 5.0, autostart: bool = True,):
-        """ Initializes the Temp object with the specified device, sensor configuration, polling interval, maximum age for readings, and autostart option.
+    def __init__(
+        self,
+        device: str = DEFAULT_DEVICE,
+        sensor_config: dict[str, Any] | None = None,
+        interval_seconds: float = 1.0,
+        max_age_seconds: float = 5.0,
+        log_interval_seconds: float = DEFAULT_LOG_INTERVAL_SECONDS,
+        log_dir: str | Path | None = None,
+        log_name: str = DEFAULT_LOG_NAME,
+        autostart: bool = True,
+    ):
+        """ Initializes the Temperature object with the specified device, sensor configuration, polling interval, maximum age for readings, and autostart option.
             :param device: The type of temperature sensor device. Default is "bme280".
             :param sensor_config: A dictionary containing configuration parameters for the sensor. Default is None.
             :param interval_seconds: The interval in seconds between sensor polls. Default is 1.0.
             :param max_age_seconds: The maximum age in seconds before cached readings are considered stale. Default is 5.0.
+            :param log_interval_seconds: The interval in seconds between temperature telemetry log entries. Default is 30.0.
+            :param log_dir: The directory for temperature telemetry logs. Default is logs/temperature under the repository root.
+            :param log_name: The log filename stem. Default is "dig_temperature".
             :param autostart: If True, the polling thread will start automatically. Default is True. """
 
         if interval_seconds <= 0:
-            raise ValueError("Temp interval_seconds must be greater than zero")
+            raise ValueError("Temperature interval_seconds must be greater than zero")
         if max_age_seconds <= 0:
-            raise ValueError("Temp max_age_seconds must be greater than zero")
+            raise ValueError("Temperature max_age_seconds must be greater than zero")
+        if log_interval_seconds <= 0:
+            raise ValueError("Temperature log_interval_seconds must be greater than zero")
         if device.lower() not in SUPPORTED_DEVICES:
             supported = ", ".join(SUPPORTED_DEVICES)
-            raise ValueError(f"Temp detected an unsupported temperature device: {device}. Supported devices: {supported}")
+            raise ValueError(f"Temperature detected an unsupported temperature device: {device}. Supported devices: {supported}")
 
         self.device = device.lower()
         self.sensor_config = dict(sensor_config or {})
@@ -60,6 +81,7 @@ class Temp:
             self.sensor_config["bus_number"] = self.sensor_config["bus"]
         self.interval_seconds = interval_seconds
         self.max_age_seconds = max_age_seconds
+        self.log_interval_seconds = log_interval_seconds
 
         self._lock = threading.RLock()
         self._stop_event = threading.Event()
@@ -67,6 +89,8 @@ class Temp:
         self._last_reading: TempReading | None = None
         self._last_error: Exception | None = None
         self._thread: threading.Thread | None = None
+        self._last_log_time: float | None = None
+        self._telemetry_logger = self._make_telemetry_logger(log_dir, log_name)
 
         if autostart:
             self.start()
@@ -78,7 +102,7 @@ class Temp:
             return
 
         self._stop_event.clear()
-        self._thread = threading.Thread(target=self._poll_loop, name=f"Temp-{self.device}", daemon=True,)
+        self._thread = threading.Thread(target=self._poll_loop, name=f"Temperature-{self.device}", daemon=True,)
         self._thread.start()
 
     def stop(self, timeout: float | None = 2.0) -> None:
@@ -152,6 +176,7 @@ class Temp:
                 with self._lock:
                     self._last_reading = reading
                     self._last_error = None
+                self._log_reading_if_due(reading)
             except Exception as err:
                 with self._lock:
                     self._reader = None
@@ -164,7 +189,52 @@ class Temp:
         if self.device == "bme280":
             return BME280Reader(**self.sensor_config)
 
-        raise RuntimeError(f"Temp unsupported device: {self.device}")
+        raise RuntimeError(f"Temperature unsupported device: {self.device}")
+
+    def _make_telemetry_logger(self, log_dir: str | Path | None, log_name: str) -> logging.Logger:
+        """ Creates a dedicated logger for temperature telemetry. """
+        if log_dir is None:
+            project_root = Path(__file__).resolve().parents[3]
+            log_dir = project_root / "logs" / "temperature"
+
+        log_dir = Path(log_dir).expanduser()
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        logger = logging.getLogger(f"dig.temperature.{log_name}")
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+        logger.handlers.clear()
+
+        handler = TimedRotatingFileHandler(
+            filename=log_dir / f"{log_name}.log",
+            when="midnight",
+            interval=1,
+            backupCount=731,
+            encoding="utf-8",
+            utc=True,
+        )
+        handler.suffix = "%Y-%m-%d"
+        formatter = logging.Formatter("%(asctime)s UTC | %(message)s")
+        formatter.converter = time.gmtime
+        handler.setFormatter(formatter)
+
+        logger.addHandler(handler)
+        return logger
+
+    def _log_reading_if_due(self, reading: TempReading) -> None:
+        """ Logs temperature telemetry when the configured log interval has elapsed. """
+        now = time.monotonic()
+        if self._last_log_time is not None and now - self._last_log_time < self.log_interval_seconds:
+            return
+
+        self._last_log_time = now
+        self._telemetry_logger.info(
+            "%s | Temperature=%s | Humidity=%s | Pressure=%s",
+            self.device.upper(),
+            fmt_number(reading.temperature, precision=1),
+            fmt_percent(reading.humidity),
+            fmt_number(reading.pressure, precision=0),
+        )
 
 def print_reading(reading: TempReading | None) -> None:
     """ Prints the temperature, humidity, and pressure readings to the console with a timestamp. If the reading is None, prints None for all values. """
@@ -188,13 +258,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 def main(argv: list[str] | None = None) -> int:
-    """ Main function for the temperature sensor script. Parses command-line arguments, initializes the Temp object, and polls the sensor in a 
+    """ Main function for the temperature sensor script. Parses command-line arguments, initializes the Temperature object, and polls the sensor in a 
         loop until interrupted. Returns an exit code. """
 
     args = build_arg_parser().parse_args(argv)
 
     try:
-        temp = Temp(
+        temp = Temperature(
             device=args.device,
             sensor_config={
                 "bus_number": args.bus,

@@ -1,3 +1,3 @@
-from .temp import Temp
+from .temp import Temperature
 
-__all__ = ["Temp"]
+__all__ = ["Temperature"]

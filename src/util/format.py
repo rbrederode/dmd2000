@@ -54,6 +54,22 @@ def fmt_float(value, scale=1.0, precision=2, suffix="") -> str:
         return ""
     return f"{float(value) / scale:.{precision}f}{suffix}"
 
+def fmt_number(value: float | None, precision: int) -> str:
+    """Format a numeric value, preserving missing values as None."""
+    if value is None:
+        return "None"
+    return f"{value:.{precision}f}"
+
+def fmt_percent(value: float | None, precision: int = 0) -> str:
+    """Format a percentage value, preserving missing values as None."""
+    if value is None:
+        return "None"
+    return f"{value:.{precision}f}%"
+
+def fmt_angle(value, precision=2) -> str:
+    """Format an angle value for display, preserving missing values."""
+    return "None" if value is None else f"{float(value):.{precision}f}"
+
 def fmt_image_link(dir: str, filename: str, width: int = 8) -> str:
     """Build the image hyperlink cell for a scan row when metadata is available."""
     if not dir or not filename:
