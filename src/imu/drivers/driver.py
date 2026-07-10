@@ -102,6 +102,13 @@ def create_imu_driver(imu_model: IMUDeviceModel) -> Optional[IMUDriver]:
         registry_register(IMU_DRIVER_NAMESPACE, "witmotion", ctor)
         return ctor(imu_model=imu_model)
 
+    if imu_model.driver_type == IMUDriverType.BNO085:
+        from imu.drivers.bno085 import BNO085Driver
+
+        ctor = BNO085Driver
+        registry_register(IMU_DRIVER_NAMESPACE, "bno085", ctor)
+        return ctor(imu_model=imu_model)
+
     driver_identifier = None
     if imu_model.driver_config is not None:
         cfg = imu_model.driver_config
