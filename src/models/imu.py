@@ -1,6 +1,7 @@
+from datetime import datetime, timezone
 import enum
 import logging
-from datetime import datetime, timezone
+import re
 from schema import Schema, And, Or, Use, SchemaError
 
 from models.base import BaseModel
@@ -15,20 +16,21 @@ class IMUDriverType(enum.IntEnum):
 
     UNKNOWN = 0
     WITMOTION = 1
+    BNO085 = 2
 
 class IMUData(BaseModel):
     """A class representing intertial measurement unit (IMU) data from a specific imu device and time."""
 
     schema = Schema({
         "_type": And(str, lambda v: v == "IMUData"),
-        "imu_id": And(str, lambda v: isinstance(v, str)),                                                                           # IMU device ID e.g "imu001"
-        "acceleration": Or(None, And(lambda v: isinstance(v, (list, tuple)), lambda v: all(isinstance(x, (int, float)) for x in v) and len(v) == 3)),
-        "angle": Or(None, And(lambda v: isinstance(v, (list, tuple)), lambda v: all(isinstance(x, (int, float)) for x in v) and len(v) == 3)),
-        "angular_vel": Or(None, And(lambda v: isinstance(v, (list, tuple)), lambda v: all(isinstance(x, (int, float)) for x in v) and len(v) == 3)),
-        "magnetic_vector": Or(None, And(lambda v: isinstance(v, (list, tuple)), lambda v: all(isinstance(x, (int, float)) for x in v) and len(v) == 3)),
-        "temp_celsius": Or(None, And(float, lambda v: isinstance(v, float))),
-        "quaternion": Or(None, And(lambda v: isinstance(v, (list, tuple)), lambda v: all(isinstance(x, (int, float)) for x in v) and len(v) == 4)),
-        "last_update": Or(None, And(datetime, lambda v: isinstance(v, datetime))),  # Timestamp when the imu data was collected
+        "imu_id": And(str, lambda v: re.fullmatch(r"imu\d{3}", v) is not None),                                                                         # IMU device ID e.g "imu001"
+        "acceleration": Or(None, And(lambda v: isinstance(v, (list, tuple)), lambda v: all(isinstance(x, (int, float)) for x in v) and len(v) == 3)),   # Acceleration vector (x, y, z) in m/s^2
+        "angle": Or(None, And(lambda v: isinstance(v, (list, tuple)), lambda v: all(isinstance(x, (int, float)) for x in v) and len(v) == 3)),          # Angle vector (roll, pitch, yaw) in degrees
+        "angular_vel": Or(None, And(lambda v: isinstance(v, (list, tuple)), lambda v: all(isinstance(x, (int, float)) for x in v) and len(v) == 3)),    # Angular velocity vector (roll_rate, pitch_rate, yaw_rate) in degrees/s
+        "magnetic_vector": Or(None, And(lambda v: isinstance(v, (list, tuple)), lambda v: all(isinstance(x, (int, float)) for x in v) and len(v) == 3)),# Magnetic field vector (x, y, z) in microteslas
+        "temp_celsius": Or(None, And(float, lambda v: isinstance(v, float))),                                                                           # Temperature in degrees Celsius
+        "quaternion": Or(None, And(lambda v: isinstance(v, (list, tuple)), lambda v: all(isinstance(x, (int, float)) for x in v) and len(v) == 4)),     # Quaternion vector (w, x, y, z)
+        "last_update": Or(None, And(datetime, lambda v: isinstance(v, datetime))),                                                                      # Timestamp when the imu data was collected
     })
 
     allowed_transitions = {}
@@ -59,11 +61,11 @@ class IMUData(BaseModel):
         return (
             "ImuData from device: "
             f"{self.imu_id} (\n"
-            f"  acceleration={self.acceleration},\n"
-            f"  angle={self.angle},\n"
-            f"  angular_vel={self.angular_vel},\n"
-            f"  magnetic_vector={self.magnetic_vector},\n"
-            f"  temp_celsius={self.temp_celsius},\n"
+            f"  acceleration={self.acceleration} m/s^2,\n"
+            f"  angle={self.angle} deg,\n"
+            f"  angular_vel={self.angular_vel} deg/s,\n"
+            f"  magnetic_vector={self.magnetic_vector} μT,\n"
+            f"  temp_celsius={self.temp_celsius} °C,\n"
             f"  quaternion={self.quaternion},\n"
             f"  last_update={self.last_update.isoformat() if self.last_update else None})"
         )
@@ -76,12 +78,12 @@ class IMUDeviceModel(BaseModel):
     schema = Schema({
         "_type": And(str, lambda v: v == "IMUDeviceModel"),
         "driver_type": And(IMUDriverType, lambda v: isinstance(v, IMUDriverType)),                   # IMU driver implementation
-        "driver_config": Or(None, lambda v: v is None or isinstance(v, BaseModel)),                  # Concrete driver configuration
-        "imu_id": And(str, lambda v: isinstance(v, str)),                                           # IMU device ID e.g "imu001"    
-        "az_offset": And(float, lambda v: isinstance(v, float)),
-        "alt_offset": And(float, lambda v: isinstance(v, float)),
-        "alt_vector": And(str, lambda v: v in {"roll", "pitch"}),
-        "az_vector": And(str, lambda v: v in {"roll", "yaw"}),
+        "driver_config": Or(None, lambda v: v is None or isinstance(v, BaseModel)),                  # IMU driver configuration
+        "imu_id": And(str, lambda v: isinstance(v, str)),                                            # IMU device ID e.g "imu001"    
+        "az_offset": And(float, lambda v: isinstance(v, float)),                                     # Azimuth offset in degrees
+        "alt_offset": And(float, lambda v: isinstance(v, float)),                                    # Altitude offset in degrees        
+        "alt_vector": And(str, lambda v: v in {"roll", "pitch"}),                                    # Altitude vector   
+        "az_vector": And(str, lambda v: v in {"roll", "yaw"}),                                       # Azimuth vector
         "imu_connected": And(CommunicationStatus, lambda v: isinstance(v, CommunicationStatus)),
         "last_update": And(datetime, lambda v: isinstance(v, datetime)),
     })
