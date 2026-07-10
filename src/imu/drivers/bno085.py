@@ -39,7 +39,7 @@ class BNO085Config(BaseModel):
             "_type": "BNO085Config",
             "i2c_bus": None,
             "address": 0x4A,
-            "refresh_rate": 10,
+            "refresh_rate": 1,
             "last_update": datetime.now(timezone.utc),
         }
 
@@ -84,10 +84,11 @@ class BNO085Driver(IMUDriver):
 
         self.i2c = self._make_i2c_bus()
         self.bno = BNO08X_I2C(self.i2c, address=self.config.address)
-        self.bno.enable_feature(BNO_REPORT_ACCELEROMETER)
-        self.bno.enable_feature(BNO_REPORT_GYROSCOPE)
-        self.bno.enable_feature(BNO_REPORT_MAGNETOMETER)
-        self.bno.enable_feature(BNO_REPORT_ROTATION_VECTOR)
+        report_interval = self._report_interval_us()
+        self.bno.enable_feature(BNO_REPORT_ACCELEROMETER, report_interval=report_interval)
+        self.bno.enable_feature(BNO_REPORT_GYROSCOPE, report_interval=report_interval)
+        self.bno.enable_feature(BNO_REPORT_MAGNETOMETER, report_interval=report_interval)
+        self.bno.enable_feature(BNO_REPORT_ROTATION_VECTOR, report_interval=report_interval)
         self._stop_event.clear()
         self._poll_thread = threading.Thread(target=self._poll_loop, name="BNO085DriverPoll", daemon=True)
         self._poll_thread.start()
@@ -98,6 +99,11 @@ class BNO085Driver(IMUDriver):
             self.config.address,
         )
         return True
+
+    def _report_interval_us(self) -> int:
+        """Return the BNO08x feature report interval in microseconds."""
+
+        return max(1, int(1_000_000 / float(self.config.refresh_rate)))
 
     def _disconnect(self) -> None:
         """Disconnect from the BNO085 IMU and stop the polling thread."""

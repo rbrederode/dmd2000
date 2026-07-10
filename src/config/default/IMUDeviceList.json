@@ -45,7 +45,7 @@
                 "_type": "BNO085Config",
                 "i2c_bus": 3,
                 "address": 74,
-                "refresh_rate": 10,
+                "refresh_rate": 1,
                 "last_update": {
                     "_type": "datetime",
                     "value": "2026-07-10T00:00:00+00:00"
