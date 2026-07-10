@@ -95,7 +95,11 @@ class IMU:
 
     @alt_offset.setter
     def alt_offset(self, value):
-        self.imu_device.alt_offset = float(value)
+        value = float(value)
+        if not -90.0 <= value <= 90.0:
+            raise ValueError(f"Altitude offset must be between -90 and 90 degrees. Offset provided: {value}")
+
+        self.imu_device.alt_offset = value
         self.imu_device.last_update = datetime.datetime.now(datetime.timezone.utc)
 
     @property
@@ -263,13 +267,14 @@ def angle_to_altitude(angle, alt_offset=0.0):
     if angle is None:
         return None
 
-    # Ensure altitude offset is within -90 to 90 degrees
-    alt_offset = 0.0 if alt_offset is None else alt_offset if alt_offset >= -90.0 and alt_offset <= 90.0 else None
-
     if alt_offset is None:
+        alt_offset = 0.0
+
+    alt_offset = float(alt_offset)
+    if not -90.0 <= alt_offset <= 90.0:
         raise ValueError(f"Altitude offset must be between -90 and 90 degrees. Offset provided: {alt_offset}")
-    else:
-        angle += alt_offset
+
+    angle += alt_offset
 
     # If angle is outside its normal range
     if angle > 180.0 or angle < -180.0:

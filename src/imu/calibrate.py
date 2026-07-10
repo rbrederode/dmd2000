@@ -83,7 +83,7 @@ def _wait_for_calibration_keypress(imu, fig, ax, plt, message):
 
             try:
                 _plot_live_angle_history(imu, ax)
-            except (IndexError, TypeError):
+            except (IndexError, TypeError, ValueError):
                 pass
             plt.pause(0.1)
     finally:
@@ -153,7 +153,18 @@ def calibrate_imu(imu, imu_device_list=None, profile="default"):
     alt_angle = _calibration_angle(imu, imu.alt_vector, {"roll", "pitch"})
     if alt_angle is None:
         return fig, ax
-    imu.alt_offset = 90 - alt_angle
+
+    alt_offset = 90 - alt_angle
+    if not -90.0 <= alt_offset <= 90.0:
+        logger.error(
+            "Calculated altitude offset %s degrees is outside the supported -90 to 90 degree range. "
+            "Check the configured altitude vector (%s) and IMU orientation before calibrating again.",
+            alt_offset,
+            imu.alt_vector,
+        )
+        return fig, ax
+
+    imu.alt_offset = alt_offset
     logger.info("Calibrating altitude offset to %s degrees", imu.alt_offset)
 
     _wait_for_calibration_keypress(
@@ -217,7 +228,7 @@ def main():
                     _plot_live_angle_history(imu, ax)
                     fig.canvas.draw_idle()
                     fig.canvas.flush_events()
-                except (IndexError, TypeError):
+                except (IndexError, TypeError, ValueError):
                     pass
             time.sleep(1)
     except KeyboardInterrupt:
