@@ -54,7 +54,7 @@
             "imu_id": "imu002",
             "az_offset": 0.0,
             "alt_offset": 0.0,
-            "alt_vector": "roll",
+            "alt_vector": "pitch",
             "az_vector": "yaw",
             "imu_connected": {
                 "_type": "enum.IntEnum",
