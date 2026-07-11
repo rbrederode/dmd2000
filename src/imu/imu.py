@@ -212,8 +212,21 @@ class IMU(IMUProvider):
         return self.driver.get_imu_data()
 
     def get_imu_data(self) -> IMUData:
-        """Return the most recent IMUData sample from the driver."""
-        return self.imu_data
+        """Return the most recent IMUData sample with computed AltAz populated."""
+        return self._with_altaz(self.imu_data)
+
+    def _with_altaz(self, imu_data: IMUData) -> IMUData:
+        """Populate computed altitude/azimuth on an IMUData sample."""
+        if imu_data is None:
+            return None
+
+        if imu_data.angle is None:
+            imu_data.altaz = None
+            return imu_data
+
+        alt, az = self.get_altaz(imu_data)
+        imu_data.altaz = (alt, az) if alt is not None and az is not None else None
+        return imu_data
 
     def disconnect(self):
         """ Disconnect from the IMU device and stop receiving data. """
@@ -250,16 +263,14 @@ class IMU(IMUProvider):
             if imu_data.angle is None:
                 return
 
-            alt, az = self.get_altaz(imu_data)
-
-            # Update the IMUData object with the computed altitude and azimuth angles
-            imu_data.altaz = (alt, az) if alt is not None and az is not None else None
+            self._with_altaz(imu_data)
 
             # Update angle history by obtaining the current thread lock first
             # Numpy arrays (angle_hist) are not inherently thread-safe
             timestamp = imu_data.last_update.timestamp() if isinstance(imu_data.last_update, datetime.datetime) else time.time()
             with self._lock:
                 self.angle_hist = np.roll(self.angle_hist, shift=-1, axis=0)
+                alt, az = imu_data.altaz if imu_data.altaz is not None else (None, None)
                 self.angle_hist[-1] = (timestamp, imu_data.angle[0], imu_data.angle[1], imu_data.angle[2], alt, az)
 
         except Exception as e:

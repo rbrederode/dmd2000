@@ -131,7 +131,7 @@ class MotionDriver(DishDriver):
             value = api_call.get("value", None) if api_call is not None else None
             imu_data = IMUData.from_dict(value) if value is not None else None
 
-            return (imu_data.angle[0], imu_data.angle[1]) if imu_data is not None else (None, None)
+            return tuple(imu_data.altaz) if imu_data is not None and imu_data.altaz is not None else (None, None)
         
         return None, None
 
