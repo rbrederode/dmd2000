@@ -73,7 +73,9 @@ class BNO085Driver(IMUDriver):
 
     def _connect(self) -> bool:
         """Connect to the BNO085 IMU over I2C and start the polling thread."""
-        
+
+        # Lazy imports to avoid requiring adafruit-blinka and adafruit-circuitpython-bno08x unless this driver is actually used.
+        # Reference documentation here: https://docs.circuitpython.org/projects/bno08x/en/latest/index.html
         from adafruit_bno08x import (
             BNO_REPORT_ACCELEROMETER,
             BNO_REPORT_GYROSCOPE,
@@ -85,6 +87,8 @@ class BNO085Driver(IMUDriver):
         self.i2c = self._make_i2c_bus()
         self.bno = BNO08X_I2C(self.i2c, address=self.config.address)
         report_interval = self._report_interval_us()
+
+        # Enable the desired BNO08x features with the configured report interval.
         self.bno.enable_feature(BNO_REPORT_ACCELEROMETER, report_interval=report_interval)
         self.bno.enable_feature(BNO_REPORT_GYROSCOPE, report_interval=report_interval)
         self.bno.enable_feature(BNO_REPORT_MAGNETOMETER, report_interval=report_interval)
@@ -125,6 +129,8 @@ class BNO085Driver(IMUDriver):
 
         if self.config.i2c_bus is not None:
             try:
+                # Lazy import to avoid requiring adafruit-extended-bus unless a numbered I2C bus is actually used.
+                # Reference documentation: https://docs.circuitpython.org/projects/extended_bus/en/latest/api.html#
                 from adafruit_extended_bus import ExtendedI2C
             except ImportError as err:
                 raise RuntimeError(
@@ -135,6 +141,8 @@ class BNO085Driver(IMUDriver):
             return ExtendedI2C(self.config.i2c_bus)
 
         try:
+            # Lazy imports to avoid requiring adafruit-blinka unless the default I2C bus is actually used.
+            # Reference documentation: https://docs.circuitpython.org/projects/blinka/en/latest/
             import board
             import busio
         except ImportError as err:

@@ -15,7 +15,7 @@ from util.registry import (
 logger = logging.getLogger(__name__)
 
 class IMUDriver:
-    """Base interface for physical IMU drivers.
+    """Base interface for physical IMU devices. Each device needs a corresponding driver.
 
     Concrete IMU drivers must implement:
     - `_connect()`: open the physical/logical device and start sampling.
