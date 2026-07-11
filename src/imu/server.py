@@ -9,9 +9,11 @@ import logging
 import socket
 import sys
 import threading
+import time
 
 from ipc.message import APIMessage
 from imu.imu import IMU, IMUProvider, load_imu_device_list
+from util.format import fmt_angle
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,6 +40,30 @@ class IMUServer:
         self.host = host
         self.port = port
         self.running = False       
+
+    def _log_imu_angles(self):
+        """Log the current IMU angles once per second while the server is running."""
+        while self.running:
+            try:
+                imu_data = self.imu_provider.get_imu_data() if self.imu_provider is not None else None
+                angle = imu_data.angle if imu_data is not None else None
+                altaz = imu_data.altaz if imu_data is not None else None
+
+                roll, pitch, yaw = angle if angle is not None else (None, None, None)
+                alt, az = altaz if altaz is not None else (None, None)
+
+                logger.info(
+                    "IMU angles roll=%s pitch=%s yaw=%s alt=%s az=%s",
+                    fmt_angle(roll, precision=3),
+                    fmt_angle(pitch, precision=3),
+                    fmt_angle(yaw, precision=3),
+                    fmt_angle(alt, precision=3),
+                    fmt_angle(az, precision=3),
+                )
+            except Exception:
+                logger.exception("IMUServer failed to log IMU angles.")
+
+            time.sleep(1.0)
     
     def _process_get_imu_data(self, api_req: APIMessage) -> APIMessage:
         """
@@ -111,6 +137,8 @@ class IMUServer:
     def start(self):
         """Start the IMUServer."""
         self.running = True
+        angle_log_thread = threading.Thread(target=self._log_imu_angles, daemon=True)
+        angle_log_thread.start()
                 
         # Create server socket
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
