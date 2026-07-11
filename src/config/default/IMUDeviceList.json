@@ -52,23 +52,23 @@
                 }
             },
             "imu_id": "imu002",
-            "az_offset": 0.0,
-            "alt_offset": 0.0,
+            "az_offset": 292.3381494878554,
+            "alt_offset": 4.229965164819632,
             "alt_vector": "pitch",
             "az_vector": "yaw",
             "imu_connected": {
                 "_type": "enum.IntEnum",
                 "instance": "CommunicationStatus",
-                "value": "NOT_ESTABLISHED"
+                "value": "ESTABLISHED"
             },
             "last_update": {
                 "_type": "datetime",
-                "value": "2026-07-10T00:00:00+00:00"
+                "value": "2026-07-10T14:40:57.374452+00:00"
             }
         }
     ],
     "last_update": {
         "_type": "datetime",
-        "value": "2026-07-10T00:00:00+00:00"
+        "value": "2026-07-10T14:40:57.375242+00:00"
     }
 }
