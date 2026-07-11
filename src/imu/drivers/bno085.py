@@ -7,7 +7,7 @@ from schema import And, Or, Schema
 from imu.drivers.driver import IMUDriver
 from models.base import BaseModel
 from models.imu import IMUData, IMUDeviceModel
-from util.math import (
+from util.convert import (
     adafruit_quaternion_to_wxyz,
     float_or_none,
     quaternion_to_euler,

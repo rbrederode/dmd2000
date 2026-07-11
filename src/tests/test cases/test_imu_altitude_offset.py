@@ -1,6 +1,7 @@
 import pytest
 
-from imu.imu import IMU, angle_to_altitude
+from imu.imu import IMU
+from util.convert import angle_to_altitude
 
 
 class FakeIMUDevice:

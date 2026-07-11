@@ -4,15 +4,14 @@
 Implements a TCP/IP Server that provides IMU data to clients. The server listens for incoming connections and responds to requests for IMU data.
 """
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 import logging
 import socket
 import sys
 import threading
-import time
 
 from ipc.message import APIMessage
-from models.imu import IMUData
+from imu.imu import IMU, IMUProvider, load_imu_device_list
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,14 +19,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
 class IMUServer:
     """ Sends IMU data to clients over TCP/IP. 
         This is a simple server that listens for incoming connections and responds with simulated IMU data.
         The protocol conforms to the imu_app API, where clients send a request message and the server responds with the current IMU data.
     """
     
-    def __init__(self, host='127.0.0.1', port=52500):
+    def __init__(self, imu_provider: IMUProvider, host='127.0.0.1', port=52500):
+        """ Initialize the IMUServer with the given IMU provider, host, and port. 
+            :param imu_provider: An object that provides IMU data.
+            :param host: The host address to bind the server to (default is '127.0.0.1').
+            :param port: The port number to bind the server to (default is 52500).
+        """
+        if imu_provider is not None and not isinstance(imu_provider, IMUProvider):
+            raise TypeError(f"IMUServer requires an IMUProvider, got {type(imu_provider).__name__}")
+
+        self.imu_provider = imu_provider
         self.host = host
         self.port = port
         self.running = False       
@@ -35,21 +42,14 @@ class IMUServer:
     def _process_get_imu_data(self, api_req: APIMessage) -> APIMessage:
         """
         Process a request for imu data and return appropriate response.
+        Parameters:
         
-        :param api_req: Request message
-        :return: Response message as APIMessage object
+            param api_req: Request message
+
+        return: Response message as APIMessage object
         """
-        # Simulate IMU data for demonstration purposes
-        imu_data = IMUData(
-            imu_id="imu001",
-            acceleration=[0.0, 0.0, 9.81],
-            angle=[3.0, 4.0, 5.0],
-            angular_vel=[0.0, 0.0, 0.0],
-            magnetic_vector=[30.0, 5.0, -40.0],
-            temp_celsius=25.0,
-            quaternion=[1.0, 0.0, 0.0, 0.0],
-            last_update=datetime.now(timezone.utc)
-        )
+        imu_data = self.imu_provider.get_imu_data() if self.imu_provider is not None else None
+        status = "success" if imu_data is not None else "error"
         
         # Create response message
         api_rsp = APIMessage()
@@ -63,8 +63,9 @@ class IMUServer:
                 "msg_type": "rsp",
                 "action_code": "get",
                 "property": "imu_data",
-                "status": "success",
-                "value": imu_data.to_dict(),
+                "status": status,
+                "value": imu_data.to_dict() if imu_data is not None else None,
+                "message": "IMU data retrieved successfully." if imu_data is not None else "IMU data not available.",
             },
             echo=api_req.get_echo_data(),
         )
@@ -145,21 +146,39 @@ class IMUServer:
             logger.info("IMUServer stopped")
 
 
-if __name__ == "__main__":
-    # Parse command-line arguments
+def main():
+    """Run the IMU TCP/IP server using an IMU selected from a config profile."""
     import argparse
     
     parser = argparse.ArgumentParser(description='IMU TCP/IP Server')
     parser.add_argument('--host', default='127.0.0.1', help='Host address to bind to')
     parser.add_argument('--port', type=int, default=52500, help='Port to listen on')
+    parser.add_argument("--profile", type=str, default="default", help="Configuration profile under src/config, e.g. default or jodrell.")
+    parser.add_argument('--imu-id', type=str, default='imu001', help='Unique IMU model identifier.')
      
     args = parser.parse_args()
-    
-    # Create and start IMU server
-    imu_server = IMUServer(host=args.host, port=args.port)
-    
+
+    imu_device_list = load_imu_device_list(profile=args.profile)
+    imu_device = imu_device_list.get_imu_by_id(args.imu_id)
+
+    if imu_device is None:
+        logger.error("IMUServer could not find IMU %s in profile %s IMUDeviceList.json.", args.imu_id, args.profile)
+        return 1
+
+    imu = IMU(imu_device=imu_device)
+    if not imu.connect():
+        logger.error("IMUServer could not connect to IMU %s in profile %s.", args.imu_id, args.profile)
+        return 1
+
     try:
+        imu_server = IMUServer(imu_provider=imu, host=args.host, port=args.port)
         imu_server.start()
     except KeyboardInterrupt:
         logger.info("\nIMUServer interrupted by user")
-        sys.exit(0)
+    finally:
+        imu.disconnect()
+
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())

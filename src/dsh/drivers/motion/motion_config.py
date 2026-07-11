@@ -3,9 +3,8 @@ from schema import Schema, And
 
 from models.base import BaseModel
 
-
 class MotionDishConfig(BaseModel):
-    """Configuration for a dish whose pointing is reported by an attached IMU."""
+    """Configuration for a dish whose actual pointing is reported by an attached IMU."""
 
     schema = Schema({
         "_type": And(str, lambda v: v == "MotionDishConfig"),

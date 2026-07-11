@@ -126,7 +126,6 @@ def _wait_for_calibration_keypress(imu, fig, axes, plt, message):
         fig.canvas.mpl_disconnect(connection_id)
         _restore_terminal(old_terminal_settings)
 
-
 def _set_terminal_cbreak():
     """Set the terminal to cbreak mode to detect key presses without waiting for Enter.
         Returns the old terminal settings to restore later.
@@ -138,7 +137,6 @@ def _set_terminal_cbreak():
     old_settings = termios.tcgetattr(sys.stdin)
     tty.setcbreak(sys.stdin.fileno())
     return old_settings
-
 
 def _restore_terminal(old_settings):
     """Restore the terminal settings to their previous state."""
@@ -157,7 +155,6 @@ def _terminal_key_pressed():
 
     sys.stdin.read(1)
     return True
-
 
 def _calibration_angle(imu, vector_name, valid_vectors):
     """Calculate the angle for the specified vector (altitude or azimuth) during calibration.

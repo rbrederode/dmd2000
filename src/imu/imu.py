@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 import logging
 import numpy as np
 
@@ -9,6 +10,7 @@ import time
 from models.comms import CommunicationStatus
 from models.imu import IMUData, IMUDeviceList, IMUDeviceModel, IMUDriverType
 from imu.drivers.driver import create_imu_driver
+from util.convert import angle_to_altitude, yaw_to_azimuth
 from util.xbase import XSoftwareFailure
 
 # IMU = Inertial Measurement Unit
@@ -17,7 +19,17 @@ logger = logging.getLogger(__name__)
 MAX_HISTORY = 1000  # Store last X IMU-derived pointing readings
 ANGLE_INDEX = {"roll": 0, "pitch": 1, "yaw": 2}
 
-class IMU:
+
+class IMUProvider(ABC):
+    """Interface for objects that can provide current IMU data."""
+
+    @abstractmethod
+    def get_imu_data(self) -> IMUData:
+        """Return the most recent IMUData sample."""
+        raise NotImplementedError
+
+
+class IMU(IMUProvider):
     """ Class to interface with an IMU device.
         The IMU provides acceleration, angular velocity, angle (roll, pitch, yaw), magnetic vector, temperature, and quaternion data.
         The IMU is connected to a driver that handles the communication with the physical device.
@@ -95,6 +107,7 @@ class IMU:
 
     @alt_offset.setter
     def alt_offset(self, value):
+        """Set the altitude offset in degrees. The offset must be between -90 and 90 degrees."""
         value = float(value)
         if not -90.0 <= value <= 90.0:
             raise ValueError(f"Altitude offset must be between -90 and 90 degrees. Offset provided: {value}")
@@ -108,10 +121,15 @@ class IMU:
 
     @az_offset.setter
     def az_offset(self, value):
+        """Set the azimuth offset in degrees. The offset is normalized to be between 0 and 360 degrees."""
         self.imu_device.az_offset = float(value) % 360.0
         self.imu_device.last_update = datetime.datetime.now(datetime.timezone.utc)
 
     def _angle_for_vector(self, imu_data: IMUData, vector_name: str, valid_vectors: set[str]):
+        """ Return the angle for the given vector name from the IMUData object.
+            If the vector name is not valid, log an error and return None.
+            If the IMUData object is None or does not contain angle data, return None.
+        """
         if vector_name not in valid_vectors:
             logging.error("Invalid IMU angle vector: %s. Must be one of %s.", vector_name, ", ".join(sorted(valid_vectors)))
             return None
@@ -184,13 +202,21 @@ class IMU:
 
     @property
     def imu_data(self) -> IMUData:
+        """ Return the most recent IMUData sample from the driver.
+            Returns None if the IMU is not connected or if no data is available.
+        """
         if not self.connected:
             logging.warning("IMU cannot get IMU data while not connected.")
             return None
 
         return self.driver.get_imu_data()
 
+    def get_imu_data(self) -> IMUData:
+        """Return the most recent IMUData sample from the driver."""
+        return self.imu_data
+
     def disconnect(self):
+        """ Disconnect from the IMU device and stop receiving data. """
         driver = getattr(self, "driver", None)
         if driver is not None:
             driver.disconnect()
@@ -201,6 +227,7 @@ class IMU:
                 altitude={self.altitude}, azimuth={self.azimuth})")
 
     def __del__(self):
+        """ Destructor to ensure the IMU driver is disconnected when the IMU object is deleted. """
         try:
             driver = getattr(self, "driver", None)
             if driver is not None:
@@ -209,6 +236,10 @@ class IMU:
             pass
 
     def callback(self, imu_data):
+        """ Callback function to process new IMUData samples from the driver.
+            This function is called by the driver whenever new IMU data is available.
+            It updates the internal angle history and computes the current altitude and azimuth angles.
+        """
 
         try:
 
@@ -231,71 +262,13 @@ class IMU:
         except Exception as e:
             logging.error(f"Error processing IMU message: {e}")
 
-def yaw_to_azimuth(yaw, az_offset=0.0, flip_az=False):
-    """ Convert yaw angle to azimuth angle.
-        Yaw is the angle of rotation around the vertical axis.
-        Yaw is positive in the counter-clockwise direction 0-180 deg.
-        Yaw is negative in the clockwise direction 0-180 deg.
-        Azimuth is positive 0-360 degrees measured clockwise from true north.
-    """
-    if yaw is None:
-        return None
-
-    # Ensure azimuth offset is within 0 to 360 degrees
-    az_offset = 0.0 if az_offset is None else az_offset % 360.0 
-
-    # If yaw is outside its normal range
-    if yaw > 180.0 or yaw < -180.0:
-        yaw = (yaw % 180.0) - 180.0 # Ensure yaw is within -180 to 180 degrees
-
-    # Convert yaw to azimuth
-    azimuth = 360.0 - yaw if yaw > 0.0 else -yaw
-    # Adjust azimuth with offset
-    azimuth += az_offset 
-
-    return (azimuth + 180.0) % 360.0 if flip_az else azimuth % 360.0
-
-def angle_to_altitude(angle, alt_offset=0.0):
-    """ Convert pitch or roll angle to altitude angle.
-        Roll is the angle of rotation around the front-to-back axis.
-        Pitch is the angle of rotation around the side-to-side axis.
-        Roll/Pitch is positive in the counter-clockwise direction 0-180 deg.
-        Roll/Pitch is negative in the clockwise direction 0-180 deg.
-        Altitude ranges between -90 and 90 degrees.
-    """
-       
-    if angle is None:
-        return None
-
-    if alt_offset is None:
-        alt_offset = 0.0
-
-    alt_offset = float(alt_offset)
-    if not -90.0 <= alt_offset <= 90.0:
-        raise ValueError(f"Altitude offset must be between -90 and 90 degrees. Offset provided: {alt_offset}")
-
-    angle += alt_offset
-
-    # If angle is outside its normal range
-    if angle > 180.0 or angle < -180.0:
-        angle = (angle % 180.0) - 180.0 # Ensure angle is within -180 to 180 degrees
-
-    flip_az = False
-
-    # Convert angle to altitude
-    if angle > 90.0:
-        angle = 180.0 - angle # azimuth must flip 180 degrees
-        flip_az = True
-    elif angle < -90.0:
-        angle = -180.0 - angle # azimuth must flip 180 degrees
-        flip_az = True
-
-    return max(-90.0, min(90.0, angle)), flip_az
-
 def get_profile_config_dir(profile="default"):
     return Path("config") / profile
 
 def load_imu_device_list(profile="default"):
+    """ Load the IMUDeviceList from disk for the given profile.
+        If the file does not exist, return an empty IMUDeviceList.
+    """
     config_dir = get_profile_config_dir(profile)
     try:
         imu_list = IMUDeviceList.load_from_disk(input_dir=str(config_dir), filename="IMUDeviceList.json")
