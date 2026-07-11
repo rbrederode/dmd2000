@@ -180,7 +180,7 @@ def save_imu_device_list(imu, imu_device_list=None, profile="default"):
     logger.info("Saved IMUDeviceList.json to profile directory %s", config_dir)
 
 def calibrate_imu(imu, imu_device_list=None, profile="default"):
-    """Calibrate the IMU device by calculating altitude and azimuth offsets based on user input.
+    """Calibrate altitude and azimuth offsets from a single horizontal true-north pointing.
         Parameters:
             imu: IMU object to calibrate
             imu_device_list: IMUDeviceList object to update with calibration results
@@ -198,14 +198,14 @@ def calibrate_imu(imu, imu_device_list=None, profile="default"):
         fig,
         axes,
         plt,
-        "Please point the IMU device vertically at the Zenith, press a key when ready",
+        "Please point the IMU device horizontally at True North, press a key when ready",
     )
 
     alt_angle = _calibration_angle(imu, imu.alt_vector, {"roll", "pitch"})
     if alt_angle is None:
         return fig, axes
 
-    alt_offset = 90 - alt_angle
+    alt_offset = -alt_angle
     if not -90.0 <= alt_offset <= 90.0:
         logger.error(
             "Calculated altitude offset %s degrees is outside the supported -90 to 90 degree range. "
@@ -217,14 +217,6 @@ def calibrate_imu(imu, imu_device_list=None, profile="default"):
 
     imu.alt_offset = alt_offset
     logger.info("Calibrating altitude offset to %s degrees", imu.alt_offset)
-
-    _wait_for_calibration_keypress(
-        imu,
-        fig,
-        axes,
-        plt,
-        "Please point the IMU device horizontally at True North, press a key when ready",
-    )
 
     az_angle = _calibration_angle(imu, imu.az_vector, {"roll", "yaw"})
     if az_angle is None:
