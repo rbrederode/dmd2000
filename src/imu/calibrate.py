@@ -50,7 +50,7 @@ def _plot_angle_axes(imu, axes, first_idx):
     # Clear the axes and set labels for the subplots.
     for ax in axes:
         ax.cla()
-        ax.set_xlabel('Time')
+        ax.set_xlabel('Time (s)')
         ax.set_ylabel('Angle (degrees)')
         ax.grid()
 
@@ -58,10 +58,10 @@ def _plot_angle_axes(imu, axes, first_idx):
     raw_ax.set_title('Yaw, Roll, Pitch')
     pointing_ax.set_title('Altitude and Azimuth')
 
-    x_min = angle_hist[first_idx, 0]
-    x_max = angle_hist[-1, 0]
-    if x_min != x_max:
-        raw_ax.set_xlim(x_min, x_max)
+    valid_hist = angle_hist[first_idx:]
+    elapsed_seconds = valid_hist[:, 0] - valid_hist[0, 0]
+    if elapsed_seconds[-1] != elapsed_seconds[0]:
+        raw_ax.set_xlim(elapsed_seconds[0], elapsed_seconds[-1])
 
     alt, az = imu.get_altaz()
     roll = imu.get_roll()
@@ -69,11 +69,11 @@ def _plot_angle_axes(imu, axes, first_idx):
     yaw = imu.get_yaw()
 
     # Plot the angle history for yaw, roll, pitch, altitude, and azimuth with formatted labels.
-    raw_ax.plot(angle_hist[:, 0], angle_hist[:, 3], label=f'Yaw {fmt_angle(yaw)}')
-    raw_ax.plot(angle_hist[:, 0], angle_hist[:, 1], label=f'Roll {fmt_angle(roll)}')
-    raw_ax.plot(angle_hist[:, 0], angle_hist[:, 2], label=f'Pitch {fmt_angle(pitch)}')
-    pointing_ax.plot(angle_hist[:, 0], angle_hist[:, 4], label=f'Altitude {fmt_angle(alt)}')
-    pointing_ax.plot(angle_hist[:, 0], angle_hist[:, 5], label=f'Azimuth {fmt_angle(az)}')
+    raw_ax.plot(elapsed_seconds, valid_hist[:, 3], label=f'Yaw {fmt_angle(yaw)}')
+    raw_ax.plot(elapsed_seconds, valid_hist[:, 1], label=f'Roll {fmt_angle(roll)}')
+    raw_ax.plot(elapsed_seconds, valid_hist[:, 2], label=f'Pitch {fmt_angle(pitch)}')
+    pointing_ax.plot(elapsed_seconds, valid_hist[:, 4], label=f'Altitude {fmt_angle(alt)}')
+    pointing_ax.plot(elapsed_seconds, valid_hist[:, 5], label=f'Azimuth {fmt_angle(az)}')
 
     raw_ax.legend(loc='upper right')
     pointing_ax.legend(loc='upper right')

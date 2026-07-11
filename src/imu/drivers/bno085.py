@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 import logging
 import threading
+import warnings
 from schema import And, Or, Schema
 
 from imu.drivers.driver import IMUDriver
@@ -84,7 +85,14 @@ class BNO085Driver(IMUDriver):
         )
         from adafruit_bno08x.i2c import BNO08X_I2C
 
-        self.i2c = self._make_i2c_bus()
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="I2C frequency is not settable in python, ignoring!",
+                category=RuntimeWarning,
+                module=r"adafruit_blinka\.microcontroller\.generic_linux\.i2c",
+            )
+            self.i2c = self._make_i2c_bus()
         self.bno = BNO08X_I2C(self.i2c, address=self.config.address)
         report_interval = self._report_interval_us()
 
