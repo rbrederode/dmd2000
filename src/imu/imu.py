@@ -252,6 +252,9 @@ class IMU(IMUProvider):
 
             alt, az = self.get_altaz(imu_data)
 
+            # Update the IMUData object with the computed altitude and azimuth angles
+            imu_data.altaz = (alt, az) if alt is not None and az is not None else None
+
             # Update angle history by obtaining the current thread lock first
             # Numpy arrays (angle_hist) are not inherently thread-safe
             timestamp = imu_data.last_update.timestamp() if isinstance(imu_data.last_update, datetime.datetime) else time.time()

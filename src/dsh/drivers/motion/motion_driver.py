@@ -16,7 +16,7 @@ from util.xbase import XBase, XTimeoutWaitingForResponse, XCommsFailure, XStream
 logger = logging.getLogger(__name__)
 
 class MotionDriver(DishDriver):
-    """Dish driver that reports current pointing from an attached IMU."""
+    """Dish driver that reports actual pointing using an attached Inertial Measurement Unit."""
 
     def __init__(self, dsh_model: DishModel = None, profile: str = "default"):
         super().__init__(dsh_model)
@@ -193,7 +193,7 @@ class MotionDriver(DishDriver):
 if __name__ == "__main__":
 
     motion_cfg = MotionDishConfig(
-        imu_host="127.0.0.1",
+        imu_host="192.168.0.36",
         imu_port=52500,
         stow_alt=90.0,
         stow_az=0.0,

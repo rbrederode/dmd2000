@@ -30,6 +30,7 @@ class IMUData(BaseModel):
         "magnetic_vector": Or(None, And(lambda v: isinstance(v, (list, tuple)), lambda v: all(isinstance(x, (int, float)) for x in v) and len(v) == 3)),# Magnetic field vector (x, y, z) in microteslas
         "temp_celsius": Or(None, And(float, lambda v: isinstance(v, float))),                                                                           # Temperature in degrees Celsius
         "quaternion": Or(None, And(lambda v: isinstance(v, (list, tuple)), lambda v: all(isinstance(x, (int, float)) for x in v) and len(v) == 4)),     # Quaternion vector (w, x, y, z)
+        "altaz": Or(None, And(lambda v: isinstance(v, (list, tuple)), lambda v: all(isinstance(x, (int, float)) for x in v) and len(v) == 2)),          # Altitude and azimuth vector (altitude, azimuth) in degrees
         "last_update": Or(None, And(datetime, lambda v: isinstance(v, datetime))),                                                                      # Timestamp when the imu data was collected
     })
 
@@ -47,6 +48,7 @@ class IMUData(BaseModel):
             "magnetic_vector": None,
             "temp_celsius": None,
             "quaternion": None,
+            "altaz": None,
             "last_update": datetime.now(timezone.utc),
         }
 
@@ -67,6 +69,7 @@ class IMUData(BaseModel):
             f"  magnetic_vector={self.magnetic_vector} μT,\n"
             f"  temp_celsius={self.temp_celsius} °C,\n"
             f"  quaternion={self.quaternion},\n"
+            f"  altaz={self.altaz},\n"
             f"  last_update={self.last_update.isoformat() if self.last_update else None})"
         )
 
