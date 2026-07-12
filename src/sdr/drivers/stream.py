@@ -406,10 +406,12 @@ class SDR:
         return self.driver.get_gain_gaussianity(sample_rate=sample_rate, time_in_secs=time_in_secs)
 
     def get_auto_gain(self, sample_rate=None, time_in_secs=1, p_threshold=0.05):
-        return self.driver.get_auto_gain(sample_rate=sample_rate, time_in_secs=time_in_secs, p_threshold=p_threshold)
+        with self._driver_lock:
+            return self.driver.get_auto_gain(sample_rate=sample_rate, time_in_secs=time_in_secs, p_threshold=p_threshold)
 
     def set_auto_gain(self, sample_rate=None, time_in_secs=1, p_threshold=0.05):
-        return self.driver.set_auto_gain(sample_rate=sample_rate, time_in_secs=time_in_secs, p_threshold=p_threshold)
+        with self._driver_lock:
+            return self.driver.set_auto_gain(sample_rate=sample_rate, time_in_secs=time_in_secs, p_threshold=p_threshold)
 
     def get_center_freq(self):
         return self.driver.get_center_freq()

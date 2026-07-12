@@ -242,6 +242,69 @@ def test_stream_driver_reads_from_ring_buffer_with_contiguous_metadata(
     sdr.close()
 
 
+def test_rtlstream_auto_gain_calls_hold_driver_lock(monkeypatch):
+    from models.comms import CommunicationStatus
+
+    class FakeRTLSDR:
+        def __init__(self, bias_t_enabled=False, sdr_config=None):
+            self.sample_rate = int(sdr_config["sample_rate"])
+
+        def get_comms_status(self):
+            return CommunicationStatus.ESTABLISHED
+
+        def get_sample_rate(self):
+            return self.sample_rate
+
+        def get_eeprom_info(self):
+            return {}
+
+        def close(self):
+            pass
+
+        def get_auto_gain(self, sample_rate=None, time_in_secs=1, p_threshold=0.05):
+            return 12.5
+
+        def set_auto_gain(self, sample_rate=None, time_in_secs=1, p_threshold=0.05):
+            return 14.4
+
+        def __getattr__(self, name):
+            if name.startswith("get_"):
+                return lambda *args, **kwargs: 0
+            if name.startswith("set_"):
+                return lambda *args, **kwargs: None
+            raise AttributeError(name)
+
+    class RecordingLock:
+        def __init__(self):
+            self.entries = 0
+
+        def __enter__(self):
+            self.entries += 1
+
+        def __exit__(self, exc_type, exc, tb):
+            pass
+
+    monkeypatch.setattr("sdr.drivers.stream.RTLSDRDriver", FakeRTLSDR)
+    sdr = SDR(
+        sdr_type="rtlstream",
+        sdr_config={
+            "sample_rate": 100,
+            "read_samples": 10,
+            "producer_chunk_samples": 10,
+            "ring_seconds": 1,
+            "read_timeout_sec": 1,
+        },
+    )
+    recording_lock = RecordingLock()
+    sdr.driver._driver_lock = recording_lock
+
+    assert sdr.get_auto_gain(sample_rate=100, time_in_secs=1) == 12.5
+    assert sdr.set_auto_gain(sample_rate=100, time_in_secs=1) == 14.4
+    assert recording_lock.entries == 2
+
+    sdr.close()
+
+
 def test_airstream_driver_can_configure_ring_after_sample_rate_is_set(monkeypatch):
     from models.comms import CommunicationStatus
 
