@@ -901,14 +901,9 @@ def main():
     digitiser = Digitiser()
     digitiser.start() 
 
-    led = LED(17)   # define LED pin according to BCM Numbering
-
     try:
         while True:
-            led.on()    # turn on LED
-            time.sleep(0.5)
-            led.off()   # turn off LED
-            time.sleep(0.5)
+             time.sleep(1)
 
     except KeyboardInterrupt:
         pass
