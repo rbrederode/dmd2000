@@ -34,7 +34,7 @@
                 "value": "SAWBIRD_H1_BAREBONES"
             },
             "temp_type": "bme280",
-            "temp_config": {"bus_number": 3, "address": 118},
+            "temp_config": {"bus_number": 1, "address": 118},
             "temp_max": 40.0,
             "gain": 0.0,
             "sample_rate": 0.0,
