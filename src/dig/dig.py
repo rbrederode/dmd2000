@@ -561,8 +561,8 @@ class Digitiser(App):
                 return HealthState.DEGRADED
             elif self.dig_model.temp_max is not None and self.dig_model.temp_reading.temperature > self.dig_model.temp_max - TEMP_WARNING_DELTA:
                 return HealthState.DEGRADED
-        else:
-            return HealthState.OK
+
+        return HealthState.OK
     
     def handle_field_set(self, api_call):
         """ Handles field set api calls.
