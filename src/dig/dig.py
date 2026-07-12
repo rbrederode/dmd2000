@@ -65,6 +65,7 @@ class Digitiser(App):
         self.load_relay = None          # Optional GPIO output to drive a relay switch to apply a load resistor in the signal path
         self.power_relay = None         # Optional GPIO output to drive a relay switch to power on/off an optional bandpass filter in the signal path
         self._bpf_control_state = {"load": None, "power": None}
+        self._bpf_control_pin = {"load": None, "power": None}
         self._bpf_control_lock = threading.Lock()
 
         self._scan_samples_generation = 0
@@ -842,16 +843,18 @@ class Digitiser(App):
                 relay.close()
                 setattr(self, relay_attr, None)
             self._bpf_control_state[control_type] = None
+            self._bpf_control_pin[control_type] = None
             return
 
-        relay_pin = getattr(relay.pin, "number", None) if relay is not None and getattr(relay, "pin", None) is not None else None
-        pin_changed = relay is None or (relay_pin is not None and relay_pin != gpio_pin)
+        configured_pin = self._bpf_control_pin.get(control_type)
+        pin_changed = relay is None or configured_pin != gpio_pin
 
         if pin_changed:
             if relay is not None:
                 relay.close()
             setattr(self, relay_attr, LED(gpio_pin))
             self._bpf_control_state[control_type] = None
+            self._bpf_control_pin[control_type] = gpio_pin
 
     def _switch_bpf_control_relay(self, control_type: str, control_state: bool):
         """Drive optional GPIO control relays to match the current control state."""
