@@ -60,7 +60,7 @@
                 "--dig_host", "192.168.50.1",
                 "--sdp_host", "192.168.50.1",
                 "--dm_host", "192.168.50.1",
-                "-o", "config/solar/obs_1m_solar_drift_scan.json"
+                "-o", "config/solar/obs_1m_solar_drift_load_scan.json"
             ]
         }
     ]

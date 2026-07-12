@@ -315,6 +315,7 @@ class SDP(App):
 
                     self.sky_q.put(scan)
                     self.sdp_model.scans_created += 1
+                    self.sdp_model.scans_wip += 1
                     match = scan
 
                     logger.debug(f"Science Data Processor created new scan: {scan}")
@@ -896,7 +897,12 @@ class SDP(App):
         """ Completes a scan and performs necessary cleanup.
         """
         self.sdp_model.scans_completed += 1
-        self.sdp_model.scans_wip -= 1
+        if self.sdp_model.scans_wip > 0:
+            self.sdp_model.scans_wip -= 1
+        else:
+            logger.warning(
+                f"Science Data Processor completed scan {scan.scan_model.scan_id} while scans_wip was already 0."
+            )
 
         self._remove_from_queue(scan=scan, queue=self.sky_q) # Remove older completed scans from the sky processing queue
         
