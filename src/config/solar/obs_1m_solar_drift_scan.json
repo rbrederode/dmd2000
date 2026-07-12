@@ -48,7 +48,7 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO",
+      "gain": "AUTO1",
       "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
