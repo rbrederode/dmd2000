@@ -241,7 +241,7 @@ class MD01Driver(DishDriver):
         """
             Sends a command to the MD-01 rotator and returns the response.
                 :param md01_cmd: The command to send as MD01Msg object.
-                :return: The response from the MD-01 as MD01Msg object (or None if no response).
+                :return: The response from the MD-01 as an MD01Msg object.
             :raises XTimeoutWaitingForResponse if no response is received when expected.
             :raises XCommsFailure if there is a communication failure.
         """
@@ -261,26 +261,37 @@ class MD01Driver(DishDriver):
         cmd_data = md01_cmd.to_data()
         logger.debug(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} sending command to MD01 controller:\n{md01_cmd}")
         self.last_command_time = time.time()
-        sock.send(cmd_data)
-
-        # If SET command, no response is expected
-        if md01_cmd.cmd == MD01Msg.CMD_SET:
-            sock.close()
-            return None
+        sock.sendall(cmd_data)
 
         time.sleep(0.01) # Seconds, to ensure message is ready, just in case
-        
-        # Read response data (bytes) from MD01 controller
-        rsp_data = sock.recv(1024)
-        sock.close()
+
+        # Every MD01 command, including SET, returns a 12-byte position
+        # response. Consume that response before closing the connection so it
+        # cannot remain buffered in the serial-to-Ethernet adapter and become
+        # prefixed to the response for the next command.
+        rsp_data = bytearray()
+        try:
+            while len(rsp_data) < 12:
+                chunk = sock.recv(12 - len(rsp_data))
+                if not chunk:
+                    break
+                rsp_data.extend(chunk)
+        finally:
+            sock.close()
         
         if len(rsp_data) == 0:
             raise XTimeoutWaitingForResponse(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} timed-out waiting for rsp." + \
                 f" No data received after sending command {md01_cmd}.")
+
+        if len(rsp_data) != 12:
+            raise XTimeoutWaitingForResponse(
+                f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} received an incomplete "
+                f"response of {len(rsp_data)} bytes after sending command {md01_cmd}. Expected 12 bytes."
+            )
         
         # Decode response data (bytes) to MD01Msg
         md01_rsp = MD01Msg()
-        md01_rsp.from_data(rsp_data)
+        md01_rsp.from_data(bytes(rsp_data))
         logger.debug(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} received response from MD01 controller:\n{md01_rsp}")
         return md01_rsp
 
@@ -482,6 +493,5 @@ if __name__ == "__main__":
     
     alt, az = md01_driver._get_md01_altaz()
     print(f"After Slew - Current Altitude: {alt} degrees, Azimuth: {az} degrees")
-
 
 
