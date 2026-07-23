@@ -92,11 +92,25 @@ class PerModuleTimedRotatingHandler(logging.Handler):
         return h
 
     def emit(self, record: logging.LogRecord) -> None:
+        if self._closed:
+            return
+
         try:
             handler = self._handler_for(record.name)
             handler.emit(record)
         except Exception:
             self.handleError(record)
+
+    def close(self) -> None:
+        """Close all per-module handlers and reject records during shutdown."""
+        self.acquire()
+        try:
+            for handler in self._handlers.values():
+                handler.close()
+            self._handlers.clear()
+            super().close()
+        finally:
+            self.release()
 
 
 # Thread-local context to track which app is currently running
@@ -140,6 +154,9 @@ class AppRoutingHandler(logging.Handler):
         return fh
 
     def emit(self, record: logging.LogRecord) -> None:
+        if self._closed:
+            return
+
         app_name = get_current_app()
         if not app_name:
             return  # No app context; skip routing
@@ -148,6 +165,17 @@ class AppRoutingHandler(logging.Handler):
             handler.emit(record)
         except Exception:
             self.handleError(record)
+
+    def close(self) -> None:
+        """Close all per-app handlers and reject records during shutdown."""
+        self.acquire()
+        try:
+            for handler in self._app_handlers.values():
+                handler.close()
+            self._app_handlers.clear()
+            super().close()
+        finally:
+            self.release()
 
 # add per-module timed rotating handler to root logger if not present
 if not any(isinstance(h, PerModuleTimedRotatingHandler) for h in root.handlers):
