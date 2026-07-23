@@ -1,4 +1,5 @@
 import argparse
+import csv
 from contextlib import contextmanager
 from datetime import timedelta
 import os
@@ -775,6 +776,52 @@ def _collapse_integrated_arrays(int_data_arrays: dict, scan_type: ScanType | Non
 
     return collapsed
 
+
+def save_aggregated_power_csv(obs_id: str, scans, output_dir: str) -> str:
+    """Save the data plotted in the Integrated Total Power panel.
+
+    Each row identifies a synthesized SKY scan and contains the total calibrated
+    power for one integrated-scan position.
+
+    Returns:
+        The path of the written ``<obs_id>-sky-apr.csv`` file.
+    """
+    output_dir = os.path.expanduser(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = os.path.join(output_dir, f"{obs_id}-sky-apr.csv")
+
+    sorted_scans = sorted(
+        [scan for scan in scans if getattr(scan, "scan_model", None) is not None],
+        key=lambda scan: (scan.scan_model.center_freq, scan.scan_model.freq_scan),
+    )
+
+    with open(output_path, "w", newline="", encoding="utf-8") as csv_file:
+        writer = csv.writer(csv_file)
+        writer.writerow(["scan_id", "tgt_idx", "freq_scan", "integrated_scan", "aggregated_power"])
+
+        for scan in sorted_scans:
+            if scan.cal is None:
+                continue
+
+            loaded_seconds = min(int(scan.get_loaded_seconds()), scan.cal.shape[0])
+            if loaded_seconds <= 0:
+                continue
+
+            aggregated_power = np.sum(scan.cal[:loaded_seconds, :], axis=1)
+            for integrated_scan, power in enumerate(aggregated_power, start=1):
+                writer.writerow(
+                    [
+                        scan.scan_model.scan_id,
+                        scan.scan_model.tgt_idx,
+                        scan.scan_model.freq_scan,
+                        integrated_scan,
+                        float(power),
+                    ]
+                )
+
+    logger.info(f"OPT: Saved aggregated SKY power data to {output_path}")
+    return output_path
+
 def main():
     """ Parse CLI arguments, load observation metadata, let the user manage the
         blacklist, initialise processing state, and replay scans through the
@@ -840,11 +887,21 @@ def main():
 
         collapsed_sky_arrays = _collapse_integrated_arrays(obs.int_data_arrays, scan_type=ScanType.SKY)
 
+        sky_scans = [scan for scan in list(sky_q.queue) if scan.get_scan_type() == ScanType.SKY]
+        apr_path = save_aggregated_power_csv(
+            obs_id=obs.obs_model.obs_id,
+            scans=sky_scans,
+            output_dir=args.dir,
+        )
+        print(f"Aggregated SKY power data written to {apr_path}")
+
         obs_display = ObsDisplay(obs_id=obs.obs_model.obs_id)
         obs_display.set_scan(
-            [scan for scan in list(sky_q.queue) if scan.get_scan_type() == ScanType.SKY],
+            sky_scans,
             obs=obs.obs_model,
         )
+        apr_png_path = obs_display.save_integrated_total_power(os.path.splitext(apr_path)[0] + ".png")
+        print(f"Aggregated SKY power plot written to {apr_png_path}")
         obs_display.display()
 
         print_sky_scans(obs=obs.obs_model, sky_q=sky_q, blacklist=blacklist)

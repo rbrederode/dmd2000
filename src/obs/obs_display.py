@@ -5,13 +5,29 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.gridspec import GridSpec
-from matplotlib.ticker import MultipleLocator
+from matplotlib.ticker import AutoMinorLocator, MaxNLocator
 
 logger = logging.getLogger(__name__)
 
 mpl.rcParams["figure.raise_window"] = False
 
 FIG_SIZE = (14, 8)
+SCAN_COLOURS = (
+    "tab:blue",
+    "tab:orange",
+    "tab:green",
+    "tab:red",
+    "tab:purple",
+    "tab:brown",
+    "tab:pink",
+    "tab:gray",
+    "tab:cyan",
+)
+
+
+def _scan_colours(count: int) -> list[str]:
+    """Return readable categorical colours without yellow or olive tones."""
+    return [SCAN_COLOURS[idx % len(SCAN_COLOURS)] for idx in range(count)]
 
 
 class ObsDisplay:
@@ -87,8 +103,7 @@ class ObsDisplay:
             return
 
         freq_spans = []
-        cmap = mpl.colormaps["plasma"]
-        colours = cmap(np.linspace(0, 1, len(self.scans)))
+        colours = _scan_colours(len(self.scans))
 
         for idx, scan in enumerate(self.scans):
             start_mhz = (scan.scan_model.center_freq - scan.scan_model.sample_rate / 2.0) / 1e6
@@ -117,8 +132,10 @@ class ObsDisplay:
         self.ax_vel.set_title("Integrated Total Power")
         self.ax_vel.set_xlabel("Integrated Scans")
         self.ax_vel.set_ylabel("Power [a.u.]")
-        self.ax_vel.grid(True, alpha=0.25)
-        self.ax_vel.xaxis.set_major_locator(MultipleLocator(1))
+        self.ax_vel.xaxis.set_major_locator(MaxNLocator(nbins="auto", integer=True))
+        self.ax_vel.xaxis.set_minor_locator(AutoMinorLocator())
+        self.ax_vel.grid(True, which="major", alpha=0.25)
+        self.ax_vel.grid(True, which="minor", axis="x", alpha=0.12)
 
         if not self.scans:
             self.ax_vel.text(
@@ -131,8 +148,7 @@ class ObsDisplay:
             )
             return
 
-        cmap = mpl.colormaps["plasma"]
-        colours = cmap(np.linspace(0, 1, len(self.scans)))
+        colours = _scan_colours(len(self.scans))
         max_secs = 0
 
         for idx, scan in enumerate(self.scans):
@@ -164,3 +180,19 @@ class ObsDisplay:
         self._plot_velocity_panel()
         self.fig.canvas.draw_idle()
         plt.show(block=False)
+
+    def save_integrated_total_power(self, output_path: str) -> str:
+        """Save the Integrated Total Power panel as a standalone PNG."""
+        output_fig, output_axes = plt.subplots(figsize=(14, 4.5))
+        display_axes = self.ax_vel
+
+        try:
+            self.ax_vel = output_axes
+            self._plot_velocity_panel()
+            output_fig.tight_layout()
+            output_fig.savefig(output_path, dpi=150, bbox_inches="tight")
+        finally:
+            self.ax_vel = display_axes
+            plt.close(output_fig)
+
+        return output_path

@@ -157,7 +157,7 @@ class Observation:
         self.int_data_arrays[(tgt_idx, freq_scan, scan_iter)]["int_mpr"] += np.sum(scan.mpr, axis=0)           # Note: summing a single integrated row per scan iteration
         self.int_data_arrays[(tgt_idx, freq_scan, scan_iter)]["int_tpw"] += np.sum(scan.cal, axis=1).tolist()  # Extending the list by summing across channels to get total power per second
 
-        self.int_data_arrays[(tgt_idx, freq_scan, scan_iter)]["secs"] += scan.get_loaded_duration()
+        self.int_data_arrays[(tgt_idx, freq_scan, scan_iter)]["secs"] += scan.get_loaded_seconds()
         self.int_data_arrays[(tgt_idx, freq_scan, scan_iter)]["scans"] += 1
 
     def integrate_cal_scans(self, dir: str, sky_q: "Queue" = None, cal_q: "Queue" = None):
