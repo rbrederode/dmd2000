@@ -1,3 +1,24 @@
+"""Create full-sky maps of HI-line signal-to-noise measurements.
+
+This module converts DMD2000 scan products into coloured cells on a Mollweide
+projection of galactic longitude and latitude. For each scan, it:
+
+1. Loads the scan metadata and its corresponding QA metadata.
+2. Selects an SNR measurement from the requested QA processing pipeline.
+3. Uses the scan target index to find the target in the observation definition.
+4. Converts the target coordinates to the galactic coordinate system.
+5. Draws the resulting longitude, latitude, and SNR as a cell on the sky map.
+
+Targets containing a ``sky_coord`` are transformed directly to galactic
+coordinates. Fixed Alt/Az targets are converted using the scan start time and
+the telescope latitude and longitude stored in the observation definition.
+
+The module can be imported to build maps programmatically or run as a command-
+line utility. When no scan metadata files are provided, it generates synthetic
+data so the plotting layout can be demonstrated independently of an
+observation.
+"""
+
 import json
 from pathlib import Path
 
@@ -18,23 +39,59 @@ from models.scan import ScanModel
 
 iers.conf.auto_max_age = None
 
-
 def wrap_lon_deg(lon):
-    """
-    Convert galactic longitude from [0, 360] to [-180, 180],
-    then flip sign so longitude increases to the left, as in astronomy maps.
+    """ Convert galactic longitude to the orientation used by sky maps.
+
+        Params:
+            lon: float or numpy.ndarray
+                Longitude in degrees, normally in the interval [0, 360].
+
+        Returns:
+            float or numpy.ndarray: Longitude wrapped to [-180, 180] and
+                sign-reversed so it increases from right to left.
     """
     lon = ((lon + 180) % 360) - 180
     return -lon
 
-
 def galactic_bin_edges(l_step=10, b_step=10):
+    """ Create longitude and latitude bin edges covering the whole sky.
+
+        This helper does not validate the step sizes. Call ``_validate_steps``
+        first when accepting values from an external caller.
+
+        Params:
+            l_step: float
+                Galactic longitude bin width in degrees.
+            b_step: float
+                Galactic latitude bin height in degrees.
+
+        Returns:
+            tuple[numpy.ndarray, numpy.ndarray]: Longitude edges from 0 to 360
+                degrees and latitude edges from -90 to +90 degrees.
+    """
     l_edges = np.arange(0, 360 + l_step, l_step)
     b_edges = np.arange(-90, 90 + b_step, b_step)
     return l_edges, b_edges
 
-
 def _validate_steps(l_step, b_step):
+    """ Validate that the requested cells tile the sky without partial bins.
+
+        Both steps must be positive. Longitude bins must divide 360 degrees
+        exactly, and latitude bins must divide 180 degrees exactly.
+
+        Params:
+            l_step: float
+                Galactic longitude bin width in degrees.
+            b_step: float
+                Galactic latitude bin height in degrees.
+
+        Returns:
+            None
+
+        Raises:
+            ValueError: If either step is non-positive or does not divide its
+                angular range exactly.
+    """
     if l_step <= 0 or b_step <= 0:
         raise ValueError("l_step and b_step must be positive.")
     if 360 % l_step != 0:
@@ -42,8 +99,27 @@ def _validate_steps(l_step, b_step):
     if 180 % b_step != 0:
         raise ValueError("b_step must divide 180 exactly.")
 
-
 def _make_cell_polygons(l, b, l_step, b_step):
+    """ Build one or more Mollweide polygons for a galactic map cell.
+
+        Latitude is clipped at the celestial poles. Cells crossing the 0/360
+        degree boundary or the projection boundary at 180 degrees are split
+        so Matplotlib does not draw them across the entire map.
+
+        Params:
+            l: float
+                Galactic longitude of the cell centre in degrees.
+            b: float
+                Galactic latitude of the cell centre in degrees.
+            l_step: float
+                Width of the cell in degrees.
+            b_step: float
+                Height of the cell in degrees.
+
+        Returns:
+            list[matplotlib.patches.Polygon]: Plot-ready cell polygons whose
+                coordinates are expressed in radians.
+    """
     l = l % 360
     b0 = max(-90, b - b_step / 2)
     b1 = min(90, b + b_step / 2)
@@ -70,15 +146,30 @@ def _make_cell_polygons(l, b, l_step, b_step):
 
     return polygons
 
-
 def plot_hi_snr_map(cells, l_step=10, b_step=10, cmap="viridis", title=None, snr_limits=None):
-    """
-    cells: iterable of dicts:
-        {
-            "l": galactic longitude bin centre in degrees,
-            "b": galactic latitude bin centre in degrees,
-            "snr": signal-to-noise value
-        }
+    """ Plot HI-line signal-to-noise cells on a Mollweide sky map.
+
+        Params:
+            cells: iterable[dict]
+                Cells containing ``l`` and ``b`` centres in degrees and an
+                ``snr`` value. Extra metadata fields are ignored.
+            l_step: float
+                Width of every plotted cell in degrees.
+            b_step: float
+                Height of every plotted cell in degrees.
+            cmap: str
+                Name of the Matplotlib colour map used for SNR values.
+            title: str or None
+                Optional title displayed above the map.
+            snr_limits: tuple[float, float] or None
+                Optional fixed minimum and maximum for the colour scale.
+
+        Returns:
+            tuple[matplotlib.figure.Figure, matplotlib.axes.Axes]: Generated
+                figure and Mollweide axes.
+
+        Raises:
+            ValueError: If the step sizes are invalid or no cells are supplied.
     """
     _validate_steps(l_step, b_step)
 
@@ -127,19 +218,34 @@ def plot_hi_snr_map(cells, l_step=10, b_step=10, cmap="viridis", title=None, snr
     return fig, ax
 
 def scan_metadata_to_hi_snr_cell(scan_meta_path, obs_path=None, qa_path=None, qa_pipeline="mpr", qa_idx=0):
-    """
-    Convert one dmd2000 scan metadata file into one map cell.
+    """ Convert one DMD2000 scan metadata file into a plottable SNR cell.
 
-    This is the simple helper you normally want:
-      1. Read a scan `*-meta.json` file.
-      2. Read the matching `*-qa.json` file.
-      3. Look up the scan target in the observation file.
-      4. Convert the target to galactic longitude/latitude.
-      5. Return {"l": ..., "b": ..., "snr": ...} for `plot_hi_snr_map`.
+        The function loads the scan model, finds its QA file, selects an SNR
+        measurement, resolves the target through the observation definition,
+        and converts that target to galactic coordinates.
 
-    `obs_path` is needed when the scan target is not already stored as galactic
-    coordinates in the metadata. For zenith drift scans, the observation file
-    also provides the dish latitude/longitude needed to convert Alt/Az to sky.
+        Params:
+            scan_meta_path: str or Path
+                Path to a DMD2000 ``*-meta.json`` scan metadata file.
+            obs_path: str or Path
+                Observation definition containing the target and telescope
+                location.
+            qa_path: str or Path or None
+                Explicit QA metadata path. If omitted, it is derived from the
+                scan metadata filename.
+            qa_pipeline: str
+                QA result group to use: ``mpr``, ``cal``, or ``spr``.
+            qa_idx: int or None
+                Entry selected from the ``cal`` or ``spr`` QA arrays. ``None``
+                selects the first entry containing an SNR value.
+
+        Returns:
+            dict: Galactic coordinates, SNR, scan ID, observation ID, and
+                target index for one map cell.
+
+        Raises:
+            ValueError: If required files, QA values, targets, times, or
+                coordinates are missing.
     """
     scan_meta_path = Path(scan_meta_path)
     scan_model = _load_scan_model(scan_meta_path)
@@ -156,8 +262,25 @@ def scan_metadata_to_hi_snr_cell(scan_meta_path, obs_path=None, qa_path=None, qa
         "tgt_idx": scan_model.tgt_idx,
     }
 
-
 def scan_metadata_files_to_hi_snr_cells(scan_meta_paths, obs_path=None, qa_pipeline="mpr", qa_idx=0):
+    """ Convert several scan metadata files into map cells.
+
+        Files with missing or unusable metadata are reported and skipped so
+        the remaining scans can still be plotted.
+
+        Params:
+            scan_meta_paths: iterable[str or Path]
+                Scan metadata files to convert.
+            obs_path: str or Path
+                Observation definition used to resolve scan targets.
+            qa_pipeline: str
+                QA result group to use: ``mpr``, ``cal``, or ``spr``.
+            qa_idx: int or None
+                Entry selected from the ``cal`` or ``spr`` QA arrays.
+
+        Returns:
+            list[dict]: Successfully converted cells in input-file order.
+    """
     cells = []
     for scan_meta_path in scan_meta_paths:
         try:
@@ -186,6 +309,35 @@ def plot_hi_snr_map_from_scan_metadata(
     title=None,
     snr_limits=None,
 ):
+    """ Load scan files and plot their QA SNR values in one operation.
+
+        This convenience wrapper combines
+        ``scan_metadata_files_to_hi_snr_cells`` with ``plot_hi_snr_map``.
+
+        Params:
+            scan_meta_paths: iterable[str or Path]
+                Scan metadata files to plot.
+            obs_path: str or Path
+                Observation definition used to resolve scan targets.
+            l_step: float
+                Width of every plotted cell in degrees.
+            b_step: float
+                Height of every plotted cell in degrees.
+            qa_pipeline: str
+                QA result group to use: ``mpr``, ``cal``, or ``spr``.
+            qa_idx: int or None
+                Entry selected from the ``cal`` or ``spr`` QA arrays.
+            cmap: str
+                Name of the Matplotlib colour map used for SNR values.
+            title: str or None
+                Optional title displayed above the map.
+            snr_limits: tuple[float, float] or None
+                Optional fixed minimum and maximum for the colour scale.
+
+        Returns:
+            tuple[matplotlib.figure.Figure, matplotlib.axes.Axes]: Generated
+                figure and Mollweide axes.
+    """
     cells = scan_metadata_files_to_hi_snr_cells(
         scan_meta_paths,
         obs_path=obs_path,
@@ -201,20 +353,52 @@ def plot_hi_snr_map_from_scan_metadata(
         snr_limits=snr_limits,
     )
 
-
 def _load_scan_model(scan_meta_path):
+    """ Deserialize a scan metadata file into a ``ScanModel``.
+
+        Params:
+            scan_meta_path: str or Path
+                Path to the scan ``*-meta.json`` file.
+
+        Returns:
+            ScanModel: Deserialized scan metadata model.
+    """
     with open(scan_meta_path, "r") as f:
         return ScanModel.from_dict(json.load(f))
 
-
 def _matching_qa_path(scan_meta_path):
+    """ Derive the conventional QA path for a scan metadata file.
+
+        A standard ``<prefix>-meta.json`` filename becomes
+        ``<prefix>-qa.json``. Other filenames receive ``-qa.json`` after
+        their stem.
+
+        Params:
+            scan_meta_path: str or Path
+                Path to the scan metadata file.
+
+        Returns:
+            Path: Expected path of the corresponding QA metadata file.
+    """
     scan_meta_path = Path(scan_meta_path)
     if scan_meta_path.name.endswith("-meta.json"):
         return scan_meta_path.with_name(scan_meta_path.name.removesuffix("-meta.json") + "-qa.json")
     return scan_meta_path.with_name(scan_meta_path.stem + "-qa.json")
 
-
 def _load_scan_qa(qa_path):
+    """ Load and validate a scan QA metadata file.
+
+        Params:
+            qa_path: str or Path
+                Path to the ``*-qa.json`` file.
+
+        Returns:
+            ScanQA: Deserialized scan QA model.
+
+        Raises:
+            ValueError: If the file does not exist or contains an empty JSON
+                value.
+    """
     qa_path = Path(qa_path)
     if not qa_path.exists():
         raise ValueError(f"QA metadata file not found: {qa_path}")
@@ -227,8 +411,28 @@ def _load_scan_qa(qa_path):
 
     return ScanQA.from_dict(qa_meta)
 
-
 def _extract_snr_db(scan_qa, pipeline="mpr", idx=0):
+    """ Select an SNR value from one of a scan's QA processing stages.
+
+        ``mpr`` stores one result directly. ``cal`` and ``spr`` store lists,
+        so ``idx`` selects an entry. An ``idx`` of ``None`` selects the first
+        usable SNR result.
+
+        Params:
+            scan_qa: ScanQA
+                QA model containing results from the processing pipelines.
+            pipeline: str
+                QA result group to use: ``mpr``, ``cal``, or ``spr``.
+            idx: int or None
+                Entry selected from the ``cal`` or ``spr`` result arrays.
+
+        Returns:
+            float: Signal-to-noise ratio in decibels.
+
+        Raises:
+            ValueError: If the pipeline is unknown or the selected result has
+                no SNR value.
+    """
     qa = None
 
     if pipeline == "mpr":
@@ -245,8 +449,19 @@ def _extract_snr_db(scan_qa, pipeline="mpr", idx=0):
 
     return qa.snr_db
 
-
 def _qa_from_list(values, idx):
+    """ Safely select a QA result from a possibly sparse list.
+
+        Params:
+            values: list or None
+                QA result list to search.
+            idx: int or None
+                Required list index. ``None`` selects the first usable item.
+
+        Returns:
+            object or None: Selected QA result, or ``None`` when the list is
+                missing, the index is invalid, or no usable result exists.
+    """
     if values is None:
         return None
     if idx is None:
@@ -255,14 +470,35 @@ def _qa_from_list(values, idx):
         return None
     return values[idx]
 
-
 def _scan_galactic_coordinates(scan_model, obs_path=None):
+    """ Resolve a scan target and return its galactic longitude and latitude.
+
+        Equatorial or other Astropy ``sky_coord`` targets are transformed directly
+        to the galactic frame. Fixed Alt/Az targets additionally require the
+        observation's Earth location and the scan ``read_start`` time because
+        their sky position changes with time.
+
+        Params:
+            scan_model: ScanModel
+                The scan model containing the target index and read_start time.
+            obs_path: str or Path
+                Path to the observation definition JSON file containing the
+                target and telescope location. Required for Alt/Az targets.
+
+        Returns:
+            tuple[float, float]: Galactic longitude and latitude in degrees.
+
+        Raises:
+            ValueError: If the observation path, target, scan time, or usable
+                target coordinates are missing.
+    """
     if obs_path is None:
         raise ValueError("obs_path is required to work out galactic coordinates for this scan.")
 
     obs = ObsModel.load_from_disk(input_dir=str(Path(obs_path).parent), filename=Path(obs_path).name)
     target = _target_for_scan(obs, scan_model)
 
+    # If the target has a sky_coord, we can convert it directly to galactic coordinates.
     if target.sky_coord is not None:
         galactic = target.sky_coord.transform_to("galactic")
         return galactic.l.deg, galactic.b.deg
@@ -287,6 +523,20 @@ def _scan_galactic_coordinates(scan_model, obs_path=None):
 
 
 def _target_for_scan(obs, scan_model):
+    """ Find the observation target whose index is referenced by a scan.
+
+        Params:
+            obs: ObsModel
+                Observation containing the target definitions.
+            scan_model: ScanModel
+                Scan containing the target index to resolve.
+
+        Returns:
+            TargetModel: Target whose ``tgt_idx`` matches the scan.
+
+        Raises:
+            ValueError: If the observation contains no matching target.
+    """
     matches = [target for target in obs.targets if target.tgt_idx == scan_model.tgt_idx]
     if not matches:
         raise ValueError(f"No target with tgt_idx={scan_model.tgt_idx} in observation {obs.obs_id}.")
@@ -294,12 +544,36 @@ def _target_for_scan(obs, scan_model):
 
 
 def _coord_component(coord, name):
+    """ Read a named coordinate from either a dictionary or an object.
+
+        Params:
+            coord: dict or object
+                Coordinate container holding the requested component.
+            name: str
+                Component name, such as ``alt`` or ``az``.
+
+        Returns:
+            object: Value of the requested coordinate component.
+    """
     if isinstance(coord, dict):
         return coord[name]
     return getattr(coord, name)
 
-
 def _demo_cells(l_step, b_step):
+    """ Generate deterministic synthetic SNR cells for demonstrating the map.
+
+        The artificial signal is strongest near the galactic plane and
+        includes longitude variation plus a local enhancement.
+
+        Params:
+            l_step: float
+                Galactic longitude spacing in degrees.
+            b_step: float
+                Galactic latitude spacing in degrees.
+
+        Returns:
+            list[dict]: Synthetic cells containing ``l``, ``b``, and ``snr``.
+    """
     cells = []
 
     for l in np.arange(0, 360, l_step):
@@ -312,8 +586,21 @@ def _demo_cells(l_step, b_step):
 
     return cells
 
-
 def main():
+    """ Parse command-line options and display or save an HI-line SNR map.
+
+        When ``--scan-meta`` files are provided, the map is built from their QA
+        metadata. Otherwise, a synthetic full-sky demonstration map is produced.
+
+        Example usage:
+        python obs/dist_map.py --scan-meta ~/samples/solar/*-meta.json --obs-file ~/samples/solar/ODT-2026-07-19T131500Z-dish001-2h-obs.json
+
+        Params:
+            None
+
+        Returns:
+            None
+    """
     import argparse
 
     parser = argparse.ArgumentParser(description="Plot an HI line SNR map in galactic coordinates.")
@@ -349,7 +636,6 @@ def main():
         fig.savefig(args.output, dpi=160, bbox_inches="tight")
     else:
         plt.show()
-
 
 if __name__ == "__main__":
     main()
