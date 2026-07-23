@@ -270,8 +270,37 @@ class MD01Driver(DishDriver):
         # cannot remain buffered in the serial-to-Ethernet adapter and become
         # prefixed to the response for the next command.
         rsp_data = bytearray()
+        discarded_data = bytearray()
         try:
-            while len(rsp_data) < 12:
+            while True:
+                # The serial-to-Ethernet adapter can prefix a response with
+                # command-mode traffic (for example, b"AT+ENTM\r"). Find the
+                # first complete, structurally valid MD01 response rather than
+                # treating the first 12 TCP bytes as a position packet.
+                start_idx = rsp_data.find(MD01Msg.START_BYTE)
+                if start_idx < 0:
+                    discarded_data.extend(rsp_data)
+                    rsp_data.clear()
+                elif start_idx > 0:
+                    discarded_data.extend(rsp_data[:start_idx])
+                    del rsp_data[:start_idx]
+
+                if len(rsp_data) >= 12:
+                    candidate = bytes(rsp_data[:12])
+                    position_indices = (1, 2, 3, 4, 6, 7, 8, 9)
+                    if (
+                        candidate[-1:] == MD01Msg.END_BYTE
+                        and all(candidate[idx] <= 9 for idx in position_indices)
+                    ):
+                        rsp_data = bytearray(candidate)
+                        break
+
+                    # This 0x57 was not the start of a valid response. Discard
+                    # it and continue searching for the next start marker.
+                    discarded_data.append(rsp_data[0])
+                    del rsp_data[0]
+                    continue
+
                 chunk = sock.recv(12 - len(rsp_data))
                 if not chunk:
                     break
@@ -279,14 +308,21 @@ class MD01Driver(DishDriver):
         finally:
             sock.close()
         
-        if len(rsp_data) == 0:
+        if len(rsp_data) == 0 and not discarded_data:
             raise XTimeoutWaitingForResponse(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} timed-out waiting for rsp." + \
                 f" No data received after sending command {md01_cmd}.")
 
         if len(rsp_data) != 12:
             raise XTimeoutWaitingForResponse(
-                f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} received an incomplete "
-                f"response of {len(rsp_data)} bytes after sending command {md01_cmd}. Expected 12 bytes."
+                f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} did not receive a valid "
+                f"12-byte MD01 response after sending command {md01_cmd}. "
+                f"Discarded data: {bytes(discarded_data)!r}; remaining data: {bytes(rsp_data)!r}."
+            )
+
+        if discarded_data:
+            logger.warning(
+                f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} discarded "
+                f"{len(discarded_data)} unexpected byte(s) before MD01 response: {bytes(discarded_data)!r}"
             )
         
         # Decode response data (bytes) to MD01Msg
@@ -493,5 +529,4 @@ if __name__ == "__main__":
     
     alt, az = md01_driver._get_md01_altaz()
     print(f"After Slew - Current Altitude: {alt} degrees, Azimuth: {az} degrees")
-
 

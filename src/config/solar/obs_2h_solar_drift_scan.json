@@ -1,0 +1,170 @@
+{
+  "title": "2 Hour Solar Drift Scan - Load, Sky",
+  "capabilities": "Drift Scan over Sun",
+  "diameter": 0.7,
+  "f/d_ratio": 2.00,
+  "latitude": 53.234090,    
+  "longitude": -2.305533,
+  "total_integration_time": 8100,
+  "estimated_slewing_time": 0,
+  "estimated_observation_duration": "02:16:00",
+  "scheduling_block_start": {
+    "_type": "relativetime",
+    "value": "+00:00:10"
+  },
+  "scheduling_block_end": {
+    "_type": "relativetime",
+    "value": "02:15:10"
+  },
+  "dsh_id": "dish001",
+  "obs_id": "ODT-2026-07-19T131500Z-dish001-2h",
+  "obs_state": {
+    "_type": "enum.IntEnum",
+    "instance": "ObsState",
+    "value": "EMPTY"
+  },
+  "_type": "ObsModel",
+  "target_configs": [
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": 37.0,
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 2048000,
+      "integration_time": 10,
+      "spectral_resolution": 2048,
+      "tgt_idx": 0,
+      "obs_id": "ODT-2026-07-19T131500Z-dish001-2h"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "LOAD"
+      },
+      "gain": 37.0,
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 2048000,
+      "integration_time": 60,
+      "spectral_resolution": 2048,
+      "tgt_idx": 1,
+      "obs_id": "ODT-2026-07-19T131500Z-dish001-2h"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": 37.0,
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 2048000,
+      "integration_time": 8100,
+      "spectral_resolution": 2048,
+      "tgt_idx": 2,
+      "obs_id": "ODT-2026-07-19T131500Z-dish001-2h"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "LOAD"
+      },
+      "gain": 37.0,
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 2048000,
+      "integration_time": 60,
+      "spectral_resolution": 2048,
+      "tgt_idx": 3,
+      "obs_id": "ODT-2026-07-19T131500Z-dish001-2h"
+    }
+  ],
+  "targets": [
+    {
+      "_type": "TargetModel",
+      "sky_coord": {
+        "_type": "SkyCoord",
+        "ra": 118.89,
+        "dec": 20.78,
+        "frame": "icrs"
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "SIDEREAL_TRACK"
+      },
+      "tgt_idx": 0,
+      "obs_id": "ODT-2026-07-19T131500Z-dish001-2h",
+      "id": "Sun"
+    },
+    {
+      "_type": "TargetModel",
+      "sky_coord": {
+        "_type": "SkyCoord",
+        "ra": 118.89,
+        "dec": 20.78,
+        "frame": "icrs"
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "SIDEREAL_TRACK"
+      },
+      "tgt_idx": 1,
+      "obs_id": "ODT-2026-07-19T131500Z-dish001-2h",
+      "id": "Sun"
+    },
+    {
+      "_type": "TargetModel",
+      "sky_coord": {
+        "_type": "SkyCoord",
+        "ra": 118.89,
+        "dec": 20.78,
+        "frame": "icrs"
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "SIDEREAL_TRACK"
+      },
+      "tgt_idx": 2,
+      "obs_id": "ODT-2026-07-19T131500Z-dish001-2h",
+      "id": "Sun"
+    },
+    {
+      "_type": "TargetModel",
+      "sky_coord": {
+        "_type": "SkyCoord",
+        "ra": 118.89,
+        "dec": 20.78,
+        "frame": "icrs"
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "SIDEREAL_TRACK"
+      },
+      "tgt_idx": 3,
+      "obs_id": "ODT-2026-07-19T131500Z-dish001-2h",
+      "id": "Sun"
+    }
+  ],
+  "user_email": "ray.brederode@skao.int",
+  "created": {
+    "_type": "datetime",
+    "value": "2026-07-13T120000Z"
+  },
+  "timeout_ms_scan": 180000,
+  "target_scans": []
+}
