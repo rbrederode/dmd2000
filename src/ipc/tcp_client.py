@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import selectors
+import select
 import socket
 import errno
 import os
@@ -28,6 +29,7 @@ DEFAULT_DEST_IP = "127.0.0.1"
 DEST_PORT = 50000
 
 MAX_BLOCK_SIZE = 65535   # Define a maximum block size for sending data (65,535 bytes to fit in 64KB packet)
+CONNECT_TIMEOUT_SECONDS = 2.0
 
 def _iter_framed_blocks(data: bytes, max_block_size: int):
     """Yield (header, block) tuples using remaining_blocks = blocks after this block."""
@@ -64,18 +66,9 @@ class TCPClient:
         self.host = host if host is not None else resolve_default_host("TCP Client", fallback_host=DEFAULT_DEST_IP)
         self.port = port
         self.sel = selectors.DefaultSelector()
-        
-        # AF_INET: IPv4, SOCK_STREAM: TCP
-        self.client_socket = None
-        self._create_socket()
 
         self.started = True     # Flag to indicate if the client daemon thread is running
         self.connected = False  # Flag to indicate if the client is connected to a server
-
-        # Create & start a thread to handle events, set it as a daemon thread (killed when the main thread exits)
-        self.event_handler = threading.Thread(target=self._process_events)
-        self.event_handler.daemon = True 
-        self.event_handler.start()
 
         self.recv_buffer = bytearray() # Buffer to store incoming data
         self.recv_msg = message.Message() # Message being received
@@ -84,85 +77,128 @@ class TCPClient:
         self.max_block_size = max_block_size if max_block_size > 0 else MAX_BLOCK_SIZE
         self.last_result = -1  # Last result code from connect_ex()
 
-        self._connect_lock = threading.Lock()   # Lock to ensure thread-safe connect attempts
+        self._connect_lock = threading.RLock()  # Lock socket creation, connect, and disconnect as one state transition
         self._send_lock = threading.Lock()      # Lock to ensure thread-safe sending of messages
 
-    def _create_socket(self):
-        """Create a new socket and register it with the selector."""
-        
-        msg = message.Message() # Create a new (empty) message instance and associate it with the client socket
+        # AF_INET: IPv4, SOCK_STREAM: TCP. The socket is registered with the
+        # selector only after its non-blocking connection has completed.
+        self.client_socket = None
+        self._create_socket()
 
+        # Start the event thread only after all state it accesses is initialized.
+        self.event_handler = threading.Thread(target=self._process_events)
+        self.event_handler.daemon = True
+        self.event_handler.start()
+
+    def _create_socket(self):
+        """Create a new unconnected, non-blocking socket."""
         self._destroy_socket()  # Ensure any existing socket is destroyed before creating a new one
 
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client_socket.setblocking(False)
-        self.sel.register(self.client_socket, selectors.EVENT_READ | selectors.EVENT_WRITE, data=msg)
         self.connected = False  # Set the client to not connected
 
     def _destroy_socket(self):
         """Destroy the current socket and unregister it from the selector."""
-        
-        if self.client_socket:
+
+        client_socket = self.client_socket
+        self.client_socket = None
+        self.connected = False
+
+        if client_socket is not None:
             try:
-                self.sel.unregister(self.client_socket)
-                self.client_socket.close()
+                self.sel.unregister(client_socket)
+            except (KeyError, ValueError):
+                pass
             except Exception as e:
+                logging.error(f"TCP Client {self.description} error unregistering socket: {e}")
+
+            try:
+                client_socket.close()
+            except OSError as e:
                 logging.error(f"TCP Client {self.description} error closing socket: {e}")
 
-            self.client_socket = None
-            self.connected = False  # Set the client to not connected
-
     def _process_connection(self):
-        """Accept incoming connection events from a client and register the connection with the selector."""
+        """Register a completed connection and publish its connect event."""
+
+        self.sel.register(
+            self.client_socket,
+            selectors.EVENT_READ,
+            data=message.Message(),
+        )
 
         event = events.ConnectEvent(local_sap=self, remote_conn=self.client_socket, remote_addr=(self.host, self.port), timestamp=datetime.now())
         self.event_q.put(event)
 
         logging.info(f"TCP Client {self.description} connected to host {self.host} port {self.port}")
 
-    def _process_disconnect(self):
-        """Process a disconnect from a client and deregister the connection from the selector."""
+    def _schedule_retry(self):
+        """Schedule one reconnect attempt unless one is already pending."""
 
-        if self.client_socket is None or self.client_socket.fileno() == -1:
-            event = events.DisconnectEvent(local_sap=self, remote_conn=None, remote_addr=(self.host, self.port), timestamp=datetime.now())
-            self.event_q.put(event) # Create a disconnect event and add it to the queue
-        else:
-            event = events.DisconnectEvent(local_sap=self, remote_conn=None, remote_addr=(self.host, self.port), timestamp=datetime.now())
-            self.event_q.put(event) # Create a disconnect event and add it to the queue
+        if not self.started or Timer.manager is None:
+            return
 
-            # Unregister the connection from the selector
-            self.sel.unregister(self.client_socket)
-            self.client_socket.close()  # Close the socket connection
+        timer_name = f"TCPClient-{self.description}"
+        if Timer.manager.get_timers_by_name(timer_name):
+            return
 
-        self.connected = False  # Set the client to not connected
-        self.recv_buffer = bytearray() # Clear the receive buffer
-        self.recv_msg = message.Message() # Reset the receive message
+        self.retry_timer = Timer(
+            timer_name,
+            self.event_q,
+            5000,
+            user_callback=lambda x: self.connect(),
+        )
+
+    def _process_disconnect(self, expected_socket=None):
+        """Atomically close the current connection and schedule one retry.
+
+        ``expected_socket`` prevents a stale selector event from disconnecting
+        a newer socket created by a concurrent retry.
+        """
+
+        with self._connect_lock:
+            if expected_socket is not None and expected_socket is not self.client_socket:
+                return
+
+            client_socket = self.client_socket
+            was_connected = self.connected
+            self._destroy_socket()
+            self.recv_buffer = bytearray()
+            self.recv_msg = message.Message()
+
+            if was_connected or client_socket is not None:
+                event = events.DisconnectEvent(
+                    local_sap=self,
+                    remote_conn=None,
+                    remote_addr=(self.host, self.port),
+                    timestamp=datetime.now(),
+                )
+                self.event_q.put(event)
+
+            self._schedule_retry()
 
         logging.info(f"TCP Client {self.description} disconnected from host {self.host} port {self.port}")
 
-        # Start a retry timer to attempt to reconnect after a delay
-        self.retry_timer = Timer(f"TCPClient-{self.description}", self.event_q, 5000, user_callback=lambda x: self.connect())  # Retry every 5 seconds
-
-    def _process_msg(self, msg):
+    def _process_msg(self, client_socket, msg):
 
         """Process incoming msg events on the client socket in non-blocking mode."""
 
-        if self.client_socket is None or self.client_socket.fileno() == -1:
+        if client_socket is not self.client_socket or client_socket.fileno() == -1:
             logging.error(f"TCP Client {self.description} socket is invalid. Cannot receive message.\n{msg}")
             return
 
         try:
-            data = self.client_socket.recv(MAX_BLOCK_SIZE)  # non-blocking, might return 0..MAX_BLOCK_SIZE bytes
+            data = client_socket.recv(MAX_BLOCK_SIZE)  # non-blocking, might return 0..MAX_BLOCK_SIZE bytes
         except BlockingIOError:
             return  # no data ready
         except (ConnectionResetError, OSError) as e:
             logging.error(f"TCP Client {self.description} socket connection reset / OSError. Cannot receive message.\n{msg}")
-            self._process_disconnect()
+            self._process_disconnect(expected_socket=client_socket)
             return
 
         # Check if the connection has been closed i.e. zero bytes received
         if not data:
-            self._process_disconnect()
+            self._process_disconnect(expected_socket=client_socket)
             return
 
         # Append data to the receive buffer
@@ -196,7 +232,7 @@ class TCPClient:
                 msg.from_data(self.recv_msg.msg_data)
 
                 event = events.DataEvent(
-                    local_sap=self, remote_conn=self.client_socket, remote_addr=(self.host, self.port), data=msg.msg_data, timestamp=datetime.now())
+                    local_sap=self, remote_conn=client_socket, remote_addr=(self.host, self.port), data=msg.msg_data, timestamp=datetime.now())
                 self.event_q.put(event)
                 self.recv_msg = message.Message()  # Reset for next message
 
@@ -217,10 +253,10 @@ class TCPClient:
                             raise XSoftwareFailure(f"TCP Client {self.description} no key data associated with the socket")
                         else:
                             try:
-                                self._process_msg(key.data)
+                                self._process_msg(key.fileobj, key.data)
                             except Exception as e:
                                 logging.error(f"TCP Client {self.description} unhandled exception while processing events for {self.host} port {self.port} Data (hex): {key.data.msg_data.hex() if key.data.msg_data else ''} Exception: {e}")
-                                self._process_disconnect()
+                                self._process_disconnect(expected_socket=key.fileobj)
                                 break
 
     def connect(self) -> int:
@@ -230,15 +266,13 @@ class TCPClient:
                 Error code if the connection failed"""
 
         with self._connect_lock:
-
-            # Ensure a retry timer is started (if not running) to re-check the connection status every 5 seconds
-            if Timer.manager is not None and not Timer.manager.get_timers_by_name(f"TCPClient-{self.description}"):
-                self.retry_timer = Timer(f"TCPClient-{self.description}", self.event_q, 5000, user_callback=lambda x: self.connect()) 
+            if not self.started:
+                return errno.ECANCELED
 
             if self.connected:
                 return self.last_result
 
-            if self.client_socket is None or self.last_result in (errno.EBADF, errno.EINVAL) or self.client_socket.fileno() == -1: 
+            if self.client_socket is None or self.client_socket.fileno() == -1:
                 logger.debug(f"TCP Client {self.description} socket is invalid, creating a new socket.")
                 self._create_socket()
 
@@ -246,27 +280,33 @@ class TCPClient:
 
             self.last_result = self.client_socket.connect_ex((self.host, self.port)) # Attempt a connect to the server
 
+            if self.last_result in (errno.EINPROGRESS, errno.EWOULDBLOCK, errno.EALREADY):
+                _, writable, exceptional = select.select(
+                    [],
+                    [self.client_socket],
+                    [self.client_socket],
+                    CONNECT_TIMEOUT_SECONDS,
+                )
+
+                if writable or exceptional:
+                    self.last_result = self.client_socket.getsockopt(
+                        socket.SOL_SOCKET,
+                        socket.SO_ERROR,
+                    )
+                else:
+                    self.last_result = errno.ETIMEDOUT
+
             if self.last_result in (0, errno.EISCONN):  # Success (0) or socket already connected (EISCONN)
                 self.connected = True  
                 self._process_connection()
-            elif self.last_result == errno.EINPROGRESS:  # Connection in progress or already in progress
-                logger.debug(f"TCP Client {self.description} connection in progress to host {self.host} port {self.port}. Result code: {self.last_result}, {errno.errorcode.get(self.last_result)}, {os.strerror(self.last_result)}")
-                time.sleep(1)  # Sleep briefly to allow the connection to complete
-                self.last_result = self.client_socket.connect_ex((self.host, self.port)) # Re-attempt a connect to the server
-                if self.last_result in (0, errno.EISCONN):  # Success (0) or socket already connected (EISCONN)
-                    self.connected = True  
-                    self._process_connection()
             else:
                 self.connected = False
-
-                if self.last_result in (errno.EBADF, errno.ECONNREFUSED):  # Bad file descriptor or connection refused
-                    logging.error(f"TCP Client {self.description} socket is invalid, after attempting connect to host {self.host} port {self.port}. Recreating socket.")
-                    self._create_socket()
-                else:
-                    logging.error(
-                        f"TCP Client {self.description} failed to connect to host {self.host} port {self.port} "
-                        f"with error code {self.last_result}, {errno.errorcode.get(self.last_result)}, {os.strerror(self.last_result)}"
-                    )
+                logging.error(
+                    f"TCP Client {self.description} failed to connect to host {self.host} port {self.port} "
+                    f"with error code {self.last_result}, {errno.errorcode.get(self.last_result)}, {os.strerror(self.last_result)}"
+                )
+                self._destroy_socket()
+                self._schedule_retry()
 
             return self.last_result
 
@@ -323,13 +363,13 @@ class TCPClient:
                         logger.debug(f"TCP Client {self.description} sent message to peer in {total_len // self.max_block_size + 1} blocks.\n{message.Message.__str__(msg)}")
                     except (OSError,  TimeoutError ) as e:
                         logger.error(f"TCP Client {self.description} OS error / timeout sending message to host {self.host} port {self.port}\n{e}")
-                        self._process_disconnect()
+                        self._process_disconnect(expected_socket=key.fileobj)
                     except (BrokenPipeError,ConnectionResetError) as e:
                         logger.error(f"TCP Client {self.description} connection reset / broken pipe error while sending message to host {self.host} port {self.port}\n{e}")
-                        self._process_disconnect()
+                        self._process_disconnect(expected_socket=key.fileobj)
                     except Exception as e:
                         logger.error(f"TCP Client {self.description} general exception sending message to host {self.host} port {self.port}\n{e}")
-                        self._process_disconnect()
+                        self._process_disconnect(expected_socket=key.fileobj)
                     finally:
                         # If the message exceeds the maximum block size i.e. we entered blocking mode, return the socket to non-blocking mode
                         if total_len > self.max_block_size:
@@ -359,14 +399,19 @@ class TCPClient:
             logging.warning(f"TCP Client {self.description} already stopped on host {self.host} port {self.port}")
             return
 
+        self.started = False
+
         # Unregister all sockets
         for key in list(self.sel.get_map().values()):  # Create a copy of the selector values as it may change
             if key.data is not None:
-                self._process_disconnect()
+                self._process_disconnect(expected_socket=key.fileobj)
             else:
                 self.sel.unregister(key.fileobj)
 
-        self.started = False # Set the client to not started
+        # A socket whose connection is still in progress is intentionally not
+        # registered with the selector, so close that socket explicitly too.
+        with self._connect_lock:
+            self._destroy_socket()
 
         # Stop the event handler thread
         if self.event_handler.is_alive():
