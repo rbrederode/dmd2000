@@ -13,9 +13,9 @@
                 "-m", "dig.dig",
                 "--profile", "solar",
                 "--entity_id", "dig001",
-                "--tm_host", "192.168.50.1",
-                "--sdp_host", "192.168.50.1",
-                "--local_host", "192.168.50.2"
+                "--tm_host", "192.168.0.7",
+                "--sdp_host", "192.168.0.7",
+                "--local_host", "192.168.0.17"
             ]
         },
         {
@@ -28,8 +28,8 @@
                 "-m", "dsh.dm",
                 "--profile", "solar",
                 "--entity_id", "dm001",
-                "--tm_host", "192.168.50.1",
-                "--ws_host", "192.168.50.1"
+                "--tm_host", "127.0.0.1",
+                "--ws_host", "127.0.0.1"
             ]
         },
         {
@@ -42,8 +42,8 @@
                 "-m", "sdp.sdp",
                 "--profile", "solar",
                 "--entity_id", "sdp001",
-                "--tm_host", "192.168.50.1",
-                "--dig_host", "192.168.50.1",
+                "--tm_host", "127.0.0.1",
+                "--dig_host", "192.168.0.7",
                 "--scan_store_dir", "~/samples/solar"
             ]
         },
@@ -57,9 +57,9 @@
                 "-m", "tm.tm",
                 "--profile", "solar",
                 "--entity_id", "tm001",
-                "--dig_host", "192.168.50.1",
-                "--sdp_host", "192.168.50.1",
-                "--dm_host", "192.168.50.1",
+                "--dig_host", "192.168.0.7",
+                "--sdp_host", "127.0.0.1",
+                "--dm_host", "127.0.0.1",
                 "-o", "config/solar/obs_2h_solar_drift_scan.json"
             ]
         }
