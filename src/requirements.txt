@@ -13,7 +13,7 @@ gpiozero
 google-auth
 google-auth-oauthlib
 google-api-python-client
-lgpio
+lgpio; sys_platform == "linux"
 numpy
 matplotlib
 minimalmodbus
