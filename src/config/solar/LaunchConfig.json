@@ -60,7 +60,7 @@
                 "--dig_host", "192.168.0.7",
                 "--sdp_host", "127.0.0.1",
                 "--dm_host", "127.0.0.1",
-                "-o", "config/solar/obs_2h_solar_drift_scan.json"
+                "--ws_host", "127.0.0.1"
             ]
         }
     ]

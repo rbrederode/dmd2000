@@ -60,8 +60,7 @@
                 "--entity_id", "tm001",
                 "--dig_host", "127.0.0.1",
                 "--sdp_host", "127.0.0.1",
-                "--dm_host", "127.0.0.1",
-                "-o", "config/rtlstream/obs_1hr_pulsar_drift_scan.json"
+                "--dm_host", "127.0.0.1"
             ]
         }
     ]

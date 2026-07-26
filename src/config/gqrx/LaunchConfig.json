@@ -62,8 +62,7 @@
                 "--entity_id", "tm001",
                 "--dig_host", "127.0.0.1",
                 "--sdp_host", "127.0.0.1",
-                "--dm_host", "127.0.0.1",
-                "-o", "config/gqrx/obs_1hr_pulsar_drift_scan_airspy.json"
+                "--dm_host", "127.0.0.1"
             ]
         }
     ]
