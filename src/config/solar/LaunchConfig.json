@@ -13,9 +13,25 @@
                 "-m", "dig.dig",
                 "--profile", "solar",
                 "--entity_id", "dig001",
-                "--tm_host", "192.168.0.7",
-                "--sdp_host", "192.168.0.7",
+                "--tm_host", "192.168.0.2",
+                "--sdp_host", "192.168.0.2",
                 "--local_host", "192.168.0.17"
+            ]
+        },
+        {
+            "_type": "LaunchModel",
+            "app_name": "dig",
+            "entity_id": "dig002",
+            "env": {
+            },
+            "program": "python",
+            "args": [
+                "-m", "dig.dig",
+                "--profile", "solar",
+                "--entity_id", "dig002",
+                "--tm_host", "192.168.0.2",
+                "--sdp_host", "192.168.0.2",
+                "--local_host", "192.168.0.18"
             ]
         },
         {
@@ -43,7 +59,7 @@
                 "--profile", "solar",
                 "--entity_id", "sdp001",
                 "--tm_host", "127.0.0.1",
-                "--dig_host", "192.168.0.7",
+                "--dig_host", "192.168.0.2",
                 "--scan_store_dir", "~/samples/solar"
             ]
         },
@@ -57,7 +73,7 @@
                 "-m", "tm.tm",
                 "--profile", "solar",
                 "--entity_id", "tm001",
-                "--dig_host", "192.168.0.7",
+                "--dig_host", "192.168.0.2",
                 "--sdp_host", "127.0.0.1",
                 "--dm_host", "127.0.0.1",
                 "--ws_host", "127.0.0.1"
