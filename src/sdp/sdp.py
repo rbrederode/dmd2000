@@ -494,9 +494,10 @@ class SDP(App):
         """ Returns the current health state of this application.
         """
         if self.sdp_model.tm_connected != CommunicationStatus.ESTABLISHED:
-            message = "Science Data Processor health status set DEGRADED: Telescope Manager (TM) not connected" 
+            message = "Science Data Processor health status set to DEGRADED: Telescope Manager (TM) not connected" 
             self.set_last_err(message)
             return HealthState.DEGRADED
+            
         #elif any(dig.tm_connected != CommunicationStatus.ESTABLISHED for dig in self.sdp_model.dig_store.dig_list):
         #    return HealthState.DEGRADED
         else:

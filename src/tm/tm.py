@@ -1167,13 +1167,15 @@ class TelescopeManager(App):
         """ Returns the current health state of this application.
         """
         if self.telmodel.tel_mgr.sdp_connected != CommunicationStatus.ESTABLISHED:
-            message = "Telescope Manager health status set DEGRADED: Science Data Processor (SDP) not connected"
+            message = "Telescope Manager health status set to DEGRADED: Science Data Processor (SDP) not connected"
             self.set_last_err(message)
             return HealthState.DEGRADED
+
         elif self.telmodel.tel_mgr.dm_connected != CommunicationStatus.ESTABLISHED:
-            message = "Telescope Manager health status set DEGRADED: Dish Manager (DM) not connected"
+            message = "Telescope Manager health status set to DEGRADED: Dish Manager (DM) not connected"
             self.set_last_err(message)
             return HealthState.DEGRADED
+            
         elif any(dig.tm_connected != CommunicationStatus.ESTABLISHED for dig in self.telmodel.dig_store.dig_list):
 
             disconnected_dig_ids = [
@@ -1182,7 +1184,7 @@ class TelescopeManager(App):
                 if dig.tm_connected != CommunicationStatus.ESTABLISHED
             ]
 
-            message = f"Telescope Manager health status set DEGRADED: One or more Digitisers not connected: {', '.join(disconnected_dig_ids)}"
+            message = f"Telescope Manager health status set to DEGRADED: One or more Digitisers not connected: {', '.join(disconnected_dig_ids)}"
             self.set_last_err(message)
             return HealthState.DEGRADED
         else:
