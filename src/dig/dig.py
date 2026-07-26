@@ -178,7 +178,9 @@ class Digitiser(App):
 
         # If currently scanning for an observation, stop scanning due to TM disconnect
         if isinstance(self.dig_model.scanning, dict) and self.dig_model.scanning.get('obs_id', None) is not None:
-            logger.warning(f"Digitiser stopping scanning for observation {self.dig_model.scanning.get('obs_id', 'None')} due to Telescope Manager disconnect.")
+            message = f"Digitiser stopping scanning for observation {self.dig_model.scanning.get('obs_id', 'None')} due to Telescope Manager disconnect."
+            logger.warning(self.set_last_err(message))
+
             self.dig_model.scanning = False
             self._advance_scan_samples_generation()
             self.set_bpf_power_state(False)  # Switch bandpass filter powered off when stopping scanning:
@@ -220,6 +222,7 @@ class Digitiser(App):
                 if api_call['action_code'] in ["set", "method"]:
                     msg = f"Digitiser busy scanning for observation {obs_id} and cannot process unrelated API call until observation is complete"               
                     logger.error(self.set_last_err(msg) + f"\n{json.dumps(api_call, indent=2)}")
+                    
                     action.set_msg_to_remote(self._construct_rsp_to_tm(tm_dig.STATUS_ERROR, msg, None, api_msg, api_call))
                     return action
             
@@ -277,7 +280,7 @@ class Digitiser(App):
 
                     elif payload is None:
                         # Wait for scan_samples timer to trigger again
-                        logger.warning("Digitiser cannot send samples to Science Data Processor, no payload.")
+                        logger.warning(self.set_last_err("Digitiser cannot send samples to Science Data Processor, no payload (samples) from the SDR."))
 
             tm_rsp = self._construct_rsp_to_tm(status, message, value, api_msg, api_call)
             action.set_msg_to_remote(tm_rsp)
@@ -307,11 +310,12 @@ class Digitiser(App):
         logger.info(f"Digitiser disconnected from Science Data Processor: {event.remote_addr}")
 
         self.dig_model.sdp_connected = CommunicationStatus.NOT_ESTABLISHED
-        self.set_last_err("Science Data Processor disconnected")
 
         # If currently scanning for an observation, stop scanning due to SDP disconnect (TM will abort the observation anyway)
         if isinstance(self.dig_model.scanning, dict) and self.dig_model.scanning.get('obs_id', None) is not None:
-            logger.warning(f"Digitiser stopping scanning for observation {self.dig_model.scanning.get('obs_id', 'None')} due to Science Data Processor disconnect.")
+            message = f"Digitiser stopping scanning for observation {self.dig_model.scanning.get('obs_id', 'None')} due to Science Data Processor disconnect."
+            logger.warning(self.set_last_err(message))
+
             self.dig_model.scanning = False
             self._advance_scan_samples_generation()
             self.set_bpf_power_state(False)  # Switch bandpass filter powered off when stopping scanning:
@@ -344,8 +348,8 @@ class Digitiser(App):
                 action.set_timer_action(Action.Timer(name=f"sdp_adv_timer:{dt}", timer_action=Action.Timer.TIMER_STOP))
             
             if api_call.get('status') == tm_dig.STATUS_ERROR:
-                msg = f"Digitiser received negative acknowledgement from SDP for api call\n{json.dumps(api_call, indent=2)}"
-                logger.error(self.set_last_err(msg))
+                message = f"Digitiser received negative acknowledgement from SDP for api call\n{json.dumps(api_call, indent=2)}"
+                logger.error(self.set_last_err(message))
 
         return action
 
@@ -387,7 +391,7 @@ class Digitiser(App):
 
             elif payload is None:
                 # Wait for scan_samples timer to trigger again
-                self.set_last_err(f"Digitiser cannot send samples to Science Data Processor on {event.name}, no payload after reading samples.")
+                self.set_last_err(f"Digitiser cannot send samples to Science Data Processor on {event.name}, no payload (samples) after reading SDR.")
         
         # Else if the timer is for handling sdp adv timeouts
         elif event.name.startswith("sdp_adv_timer"):
@@ -418,10 +422,9 @@ class Digitiser(App):
                             self.dig_model.scanning = False
                             self._advance_scan_samples_generation()
 
-                            shutdown_reason = (
-                                f"Digitiser Assembly temperature sensor reading {temp_reading.temperature:.2f} C "
-                                f"exceeds maximum configured temperature {self.dig_model.temp_max:.2f} C. "
-                                "Initiating automatic shutdown.")
+                            shutdown_reason = (f"Digitiser Assembly temperature sensor reading {temp_reading.temperature:.2f} C "
+                                               f"exceeds maximum configured temperature {self.dig_model.temp_max:.2f} C. "
+                                               "Initiating automatic shutdown.")
                     
                             logger.error(self.set_last_err(shutdown_reason))
                             self.dig_model.app.health = HealthState.FAILED
@@ -440,17 +443,17 @@ class Digitiser(App):
                         # Else if temperature reading is approaching maximum configured temperature, log a warning. 
                         elif temp_reading.temperature > self.dig_model.temp_max - TEMP_WARNING_DELTA:
 
-                            msg = f"Digitiser Assembly temperature sensor reading {temp_reading.temperature:.2f} C is approaching maximum configured " \
+                            message = f"Digitiser Assembly temperature sensor reading {temp_reading.temperature:.2f} C is approaching maximum configured " \
                                 f"temperature {self.dig_model.temp_max:.2f} C."
-                            logger.warning(self.set_last_err(msg))
+                            logger.warning(self.set_last_err(message))
 
                 else:
-                    msg = "Digitiser Assembly temperature sensor reading is stale or unavailable."
-                    logger.warning(self.set_last_err(msg))
+                    message = "Digitiser Assembly temperature sensor reading is stale or unavailable."
+                    logger.warning(self.set_last_err(message))
                     
             else:
-                msg = f"Digitiser Assembly temperature sensor is not connected or communication is not established. Last error: {self._get_temp_sensor_last_error()}"
-                logger.warning(self.set_last_err(msg))
+                message = f"Digitiser Assembly temperature sensor is not connected or communication is not established. Last error: {self._get_temp_sensor_last_error()}"
+                logger.warning(self.set_last_err(message))
                 
         # Else if the timer is for handling comms retries such as SDR connection retries
         elif event.name.startswith("comms_retry"):
@@ -552,15 +555,25 @@ class Digitiser(App):
             framework to allow the application to report its health state to the Telescope Manager.
         """
         if self.dig_model.sdr_connected != CommunicationStatus.ESTABLISHED:
+            message = "Digitiser health status set to FAILED: Software Defined Radio (SDR) not connected"
+            self.set_last_err(message)
             return HealthState.FAILED
         elif self.dig_model.tm_connected != CommunicationStatus.ESTABLISHED:
+            message = "Digitiser health status set to DEGRADED: Telescope Manager (TM) not connected"
+            self.set_last_err(message)
             return HealthState.DEGRADED
         elif self.dig_model.sdp_connected != CommunicationStatus.ESTABLISHED:
+            message = "Digitiser health status set to DEGRADED: Science Data Processor (SDP) not connected"
+            self.set_last_err(message)
             return HealthState.DEGRADED
         elif self.temp_sensor is not None:
             if self.temp_sensor.get_comms_status() != CommunicationStatus.ESTABLISHED or self.dig_model.temp_reading is None:
+                message = "Digitiser health status set to DEGRADED: Temperature sensor not connected or reading unavailable"
+                self.set_last_err(message)
                 return HealthState.DEGRADED
             elif self.dig_model.temp_max is not None and self.dig_model.temp_reading.temperature > self.dig_model.temp_max - TEMP_WARNING_DELTA:
+                message = f"Digitiser health status set to DEGRADED: Temperature sensor reading {self.dig_model.temp_reading.temperature:.2f} C is approaching maximum configured temperature {self.dig_model.temp_max:.2f} C"
+                self.set_last_err(message)
                 return HealthState.DEGRADED
 
         return HealthState.OK
@@ -574,8 +587,9 @@ class Digitiser(App):
 
         # If the property setter exists on the SDR, but comms to the SDR is not established
         if hasattr(self.sdr, prop_name) and not self.dig_model.sdr_connected == CommunicationStatus.ESTABLISHED:
-            logger.error(f"Digitiser SDR not connected, cannot set property {prop_name} to {prop_value}")
-            return tm_dig.STATUS_ERROR, f"Digitiser SDR not connected, cannot set property {prop_name}", None, None
+            message = f"Digitiser SDR not connected, cannot set property {prop_name} to {prop_value}"
+            logger.error(self.set_last_err(message))
+            return tm_dig.STATUS_ERROR, message, None, None
 
         try:
             # If the property setter exists on the SDR
@@ -596,27 +610,27 @@ class Digitiser(App):
 
             # Else if the property does not exist on either the SDR, Digitiser or Digitiser model
             elif not hasattr(self.sdr, prop_name) and not hasattr(self, prop_name) and not prop_name[4:] in self.dig_model.schema.schema:
-                logger.error(f"Digitiser unknown property {prop_name} with value {prop_value}")
-                return tm_dig.STATUS_ERROR, f"Digitiser unknown property {prop_name}", None, None
+                message = f"Digitiser unknown property {prop_name} with value {prop_value}"
+                logger.error(self.set_last_err(message))
+                return tm_dig.STATUS_ERROR, message, None, None
 
             # Else the property exists but is not callable
             else:
-                logger.error(f"Digitiser property setter for {prop_name} with value {prop_value} is not callable")
-                return tm_dig.STATUS_ERROR, f"Digitiser property {prop_name} is not callable", None, None
+                message = f"Digitiser property setter for {prop_name} with value {prop_value} is not callable"
+                logger.error(self.set_last_err(message))
+                return tm_dig.STATUS_ERROR, message, None, None
         
         except Exception as e:
-            details = str(e)
             if isinstance(e, XHardwareFailure):
                 self.dig_model.sdr_connected = CommunicationStatus.NOT_ESTABLISHED
-                logger.error(f"Digitiser failed to set property {prop_name} to {prop_value}: {details}")
-            else:
-                logger.exception(f"Digitiser failed to set property {prop_name} to {prop_value}: {details}")
-            self.set_last_err(f"Digitiser failed to set property {prop_name} to {prop_value}: {details}")
-            return tm_dig.STATUS_ERROR, f"Digitiser failed to set property {prop_name} to {prop_value}: {details}", None, None
+            message = f"Digitiser failed to set property {prop_name} to {prop_value}: {str(e)}"
+            logger.error(self.set_last_err(message))
+            return tm_dig.STATUS_ERROR, message, None, None
 
-        logger.info(f"Digitiser set property {prop_name[4:]} to {prop_value}")
-        return tm_dig.STATUS_SUCCESS, f"Digitiser set property {prop_name} to {prop_value}", prop_value, None
-    
+        message = f"Digitiser set property {prop_name[4:]} to {prop_value}"
+        logger.info(message)
+        return tm_dig.STATUS_SUCCESS, message, prop_value, None
+
     def handle_field_get(self, api_call):
         """ Handles field get api calls.
                 : returns: (status, message, value, payload)
@@ -625,8 +639,9 @@ class Digitiser(App):
 
         # If the property getter exists on the SDR, but comms to the SDR is not established
         if hasattr(self.sdr, prop_name) and not self.dig_model.sdr_connected == CommunicationStatus.ESTABLISHED:
-            logger.error(f"Digitiser SDR not connected, cannot get value for property {prop_name}")
-            return tm_dig.STATUS_ERROR, f"Digitiser SDR not connected, cannot get value for property {prop_name}", None, None
+            message = f"Digitiser SDR not connected, cannot get value for property {prop_name}"
+            logger.error(self.set_last_err(message))
+            return tm_dig.STATUS_ERROR, message, None, None
 
         # Else if the property getter exists on the SDR and is callable
         elif hasattr(self.sdr, prop_name) and callable(getattr(self.sdr, prop_name)):
@@ -642,23 +657,24 @@ class Digitiser(App):
 
         # Else if the property does not exist on either the SDR, Digitiser or Digitiser model
         elif not hasattr(self.sdr, prop_name) and not hasattr(self, prop_name) and not prop_name[4:] in self.dig_model.schema.schema:
-            logger.error(f"Digitiser unknown property {prop_name}")
-            return tm_dig.STATUS_ERROR, f"Digitiser unknown property {prop_name}", None, None
+            message = f"Digitiser unknown property {prop_name}"
+            logger.error(self.set_last_err(message))
+            return tm_dig.STATUS_ERROR, message, None, None
 
         # Else the property exists but is not callable
         else:
-            logger.error(f"Digitiser property getter for {prop_name} is not callable")
-            return tm_dig.STATUS_ERROR, f"Digitiser property {prop_name} is not callable", None, None
+            message = f"Digitiser property getter for {prop_name} is not callable"
+            logger.error(self.set_last_err(message))
+            return tm_dig.STATUS_ERROR, message, None, None
 
         try:  # Call the getter method
             value = getter() if callable(getter) else getter
         except Exception as e:
-            details = str(e)
             if isinstance(e, XHardwareFailure):
                 self.dig_model.sdr_connected = CommunicationStatus.NOT_ESTABLISHED
-            self.set_last_err(f"Digitiser failed to get property {prop_name}: {details}")
-            logger.error(f"Digitiser failed to get property {prop_name}: {details}")
-            return tm_dig.STATUS_ERROR, f"Digitiser failed to get property {prop_name}: {details}", None, None
+            message = f"Digitiser failed to get property {prop_name}: {str(e)}"
+            logger.error(self.set_last_err(message))
+            return tm_dig.STATUS_ERROR, message, None, None
 
         return tm_dig.STATUS_SUCCESS, f"Digitiser get {prop_name} value {value}", value, None
   
@@ -670,8 +686,9 @@ class Digitiser(App):
 
         # If the method call exists on the SDR, but comms to the SDR is not established
         if hasattr(self.sdr, method) and not self.dig_model.sdr_connected == CommunicationStatus.ESTABLISHED:
-            logger.error(f"Digitiser SDR not connected, cannot call method {method}")
-            return tm_dig.STATUS_ERROR, f"Digitiser SDR not connected, cannot call method {method}", None, None
+            message = f"Digitiser SDR not connected, cannot call method {method}"
+            logger.error(self.set_last_err(message))
+            return tm_dig.STATUS_ERROR, message, None, None
 
         allowed_keys = {"sample_rate", "time_in_secs"}
         args = {k: v for k, v in api_call.get('params', {}).items() if k in allowed_keys}
@@ -688,8 +705,9 @@ class Digitiser(App):
 
         # Else if the method does not exist on either the SDR or Digitiser
         else:
-            logger.error(f"Digitiser method {method} not found")
-            return tm_dig.STATUS_ERROR, f"Digitiser method {method} not found", None, None
+            message = f"Digitiser method {method} not found"
+            logger.error(self.set_last_err(message))
+            return tm_dig.STATUS_ERROR, message, None, None
 
         try:  # Call the method
             if method in (tm_dig.METHOD_GET_AUTO_GAIN, tm_dig.METHOD_SET_AUTO_GAIN):
@@ -697,12 +715,11 @@ class Digitiser(App):
             else:
                 result = call(**args) if args is not None else call() if callable(call) else call
         except (XSoftwareFailure, XHardwareFailure) as e:
-            details = str(e)
             if isinstance(e, XHardwareFailure):
                 self.dig_model.sdr_connected = CommunicationStatus.NOT_ESTABLISHED
-            self.set_last_err(f"Digitiser method {method} failed with exception: {details}")
-            logger.error(f"Digitiser method {method} failed with exception: {details}")
-            return tm_dig.STATUS_ERROR, f"Digitiser method {method} failed with exception: {details}", None, None
+            message = f"Digitiser method {method} failed with exception: {str(e)}"
+            logger.error(self.set_last_err(message))
+            return tm_dig.STATUS_ERROR, message, None, None
 
         if method == tm_dig.METHOD_SET_AUTO_GAIN and result is not None:
             self.dig_model.gain = float(result[0] if isinstance(result, tuple) else result)

@@ -110,7 +110,8 @@ class SDP(App):
             dig_store = self.sdp_model.dig_store.load_from_disk(input_dir=input_dir, filename=filename)
         except FileNotFoundError:
             dig_store = None
-            logger.warning(f"Science Data Processor could not load Digitiser configuration from directory {input_dir} file {filename}. File not found.")
+            message = f"Science Data Processor could not load Digitiser configuration from directory {input_dir} file {filename}. File not found."
+            logger.warning(self.set_last_err(message))
 
         if dig_store is not None:
             self.sdp_model.dig_store = dig_store
@@ -126,7 +127,8 @@ class SDP(App):
             pipeline_config = self.sdp_model.pipeline_config.load_from_disk(input_dir=input_dir, filename=filename)
         except FileNotFoundError:
             pipeline_config = None
-            logger.warning(f"Science Data Processor could not load processing pipeline factory configuration from directory {input_dir} file {filename}. File not found.")
+            message = f"Science Data Processor could not load processing pipeline factory configuration from directory {input_dir} file {filename}. File not found."
+            logger.warning(self.set_last_err(message))
 
         if pipeline_config is not None:
             self.sdp_model.pipeline_config = pipeline_config
@@ -164,7 +166,8 @@ class SDP(App):
                     logger.debug(f"Science Data Processor found digitiser entity ID: {digitiser.dig_id} for remote address: {remote_addr}")
                     return digitiser.dig_id, digitiser
             else:
-                logger.warning(f"SDP found {digitiser.dig_id} not configured with valid local_host argument matching against remote address: {remote_addr}")
+                message = f"SDP found {digitiser.dig_id} not configured with valid local_host argument matching against remote address: {remote_addr}"
+                logger.warning(self.set_last_err(message))
 
         return None, None
 
@@ -241,7 +244,7 @@ class SDP(App):
                     
                     diff = self._diff_dig_metadata(digitiser, meta_dict)
                     msg = f"Science Data Processor received samples from {digitiser.dig_id} that do not match the SDP scan configuration."
-                    logger.warning(msg + f"\n{diff}")
+                    logger.warning(self.set_last_err(msg + f"\n{diff}"))
                     
                     status, message = sdp_dig.STATUS_SUCCESS, msg
                     dig_rsp = self._construct_rsp_to_dig(status, message, api_msg, api_call)
@@ -268,14 +271,15 @@ class SDP(App):
                             match = scan
                             break
                         else:
-                            logger.warning(f"Science Data Processor aborting scan id {scan.scan_model.scan_id}: scan parameters no longer match digitiser metadata {metadata} vs scan:\n" + \
-                                f"{scan}")
+                            message = f"Science Data Processor aborting scan id {scan.scan_model.scan_id}: scan parameters no longer match digitiser metadata {metadata} vs scan:\n{scan}"
+                            logger.warning(self.set_last_err(message))
                             abort_scans.append(scan)
 
                     # If the Digitiser read_counter is greater than the scan range by the scan duration or the digitiser has reset itself, abort the scan
                     elif read_counter > end_idx + scan.scan_model.duration or read_counter < start_idx:
                         abort_scans.append(scan)  # add it to the abort list
-                        logger.warning(f"Science Data Processor aborting scan id: {scan.scan_model.scan_id}, dig read_counter {read_counter} not consistent with scan indexes {start_idx}-{end_idx}")
+                        message = f"Science Data Processor aborting scan id {scan.scan_model.scan_id}: digitiser read_counter {read_counter} is outside scan range {start_idx}-{end_idx}"
+                        logger.warning(self.set_last_err(message))
                         
                         # If the digitiser read_counter is 0 or 1 (the digitiser was restarted), reset the scan_iter counter to match the digitiser
                         if read_counter in [0,1]:
@@ -339,7 +343,8 @@ class SDP(App):
                         status = sdp_dig.STATUS_ERROR
                         message = f"Science Data Processor failed to load samples into scan id: {match.scan_model.scan_id}"
                         if match.scan_model.load_failures >= 3:
-                            logger.error(f"Science Data Processor aborting scan id: {match.scan_model.scan_id} has exceeded maximum load failures: {match.scan_model.load_failures}")
+                            message = f"Science Data Processor aborting scan id: {match.scan_model.scan_id} has exceeded maximum load failures: {match.scan_model.load_failures}"
+                            logger.error(self.set_last_err(message))
                             self._abort_scan(match)
 
                     if match.get_status() == ScanState.COMPLETE:
@@ -399,7 +404,8 @@ class SDP(App):
                 action.set_timer_action(Action.Timer(name=f"tm_adv_timer_final:{dt}", timer_action=Action.Timer.TIMER_STOP))
             
             if api_call.get('status') == tm_sdp.STATUS_ERROR:
-                logger.error(self.set_last_err(f"Science Data Processor received negative acknowledgement from TM for api call\n{json.dumps(api_call, indent=2)}"))
+                message = f"Science Data Processor received negative acknowledgement from TM for api call\n{json.dumps(api_call, indent=2)}"
+                logger.error(self.set_last_err(message))
 
             return action
 
@@ -448,7 +454,8 @@ class SDP(App):
         # Handle a final request msg timer e.g. dig002_req_timer_final:<timestamp> or sdp002_req_timer_final:<timestamp>
         elif "adv_timer_final" in event.name:
             
-            logger.warning(f"Science Data Processor timed out waiting for response msg after final retry, aborting retries for {event.name}")
+            message = f"Science Data Processor timed out waiting for response msg after final retry, aborting retries for {event.name}"
+            logger.warning(self.set_last_err(message))
 
         return action
 
@@ -474,13 +481,11 @@ class SDP(App):
             and api_call.get('msg_type') == sdp_dig.MSG_TYPE_ADV
             and api_call.get('action_code') == sdp_dig.ACTION_CODE_SAMPLES
         ):
-            msg = (
-                f"Science Data Processor is overloaded; acknowledging and dropping samples from "
-                f"{entity.dig_id} to recover. {self.get_queue_overload_reason()}"
-            )
-            self._log_overload_sample_drop(msg)
+            message = (f"Science Data Processor is overloaded; acknowledging and dropping samples from " + \
+                       f"{entity.dig_id} to recover. {self.get_queue_overload_reason()}")
+            self._log_overload_sample_drop(message)
             action = Action()
-            action.set_msg_to_remote(self._construct_rsp_to_dig(sdp_dig.STATUS_SUCCESS, msg, api_msg, api_call))
+            action.set_msg_to_remote(self._construct_rsp_to_dig(sdp_dig.STATUS_SUCCESS, message, api_msg, api_call))
             return action
 
         return None
@@ -489,6 +494,8 @@ class SDP(App):
         """ Returns the current health state of this application.
         """
         if self.sdp_model.tm_connected != CommunicationStatus.ESTABLISHED:
+            message = "Science Data Processor health status set DEGRADED: Telescope Manager (TM) not connected" 
+            self.set_last_err(message)
             return HealthState.DEGRADED
         #elif any(dig.tm_connected != CommunicationStatus.ESTABLISHED for dig in self.sdp_model.dig_store.dig_list):
         #    return HealthState.DEGRADED
@@ -505,21 +512,19 @@ class SDP(App):
         active = value.get('active', False)
 
         if dig_id is None:
-            logger.error(f"Science Data Processor signal display request missing dig_id in value: {value}")
+            message = f"Science Data Processor signal display request missing dig_id in value: {value}"
+            logger.error(self.set_last_err(message))
             return False
 
         if self.is_headless():
-            logger.info(
-                f"Science Data Processor running headless; ignoring signal display request for "
-                f"digitiser {dig_id} active={active}"
-            )
+            logger.info(f"Science Data Processor running headless; ignoring signal display request for " + \
+                        f"digitiser {dig_id} active={active}")
             return True
 
         if dig_id not in self.signal_displays:
             self.signal_displays[dig_id] = self._create_signal_display(dig_id=dig_id)
 
         signal_display = self.signal_displays[dig_id]
-
         logger.info(f"Science Data Processor signal display {signal_display} set active={active}")
 
         signal_display.set_is_active(active)
@@ -541,8 +546,9 @@ class SDP(App):
         dig = self.sdp_model.dig_store.get_dig_by_id(dig_id) if dig_id is not None else None
   
         if dig is None or obs_id is None:
-            logger.error(f"Science Data Processor could not set scan config for digitiser {'None' if dig_id is None else dig_id}" + \
-                f" and observation {'None' if obs_id is None else obs_id}\n{value}")
+            message = f"Science Data Processor could not set scan config for digitiser {'None' if dig_id is None else dig_id}" + \
+                f" and observation {'None' if obs_id is None else obs_id}\n{value}"
+            logger.error(self.set_last_err(message))
             return False
 
         user_initiated = obs_id[:3].upper() == "USR" if isinstance(obs_id, str) and len(obs_id) >= 3 else False
@@ -550,7 +556,8 @@ class SDP(App):
         # If this is a user-initiated scan config and digitiser already scanning, then decline if the current scanning is an observation-initiated (ODT) scan
         if user_initiated and dig.scanning:
             if isinstance(dig.scanning, dict) and dig.scanning.get('obs_id') and str(obs_id)[:3] != str(dig.scanning.get('obs_id'))[:3]:
-                logger.warning(f"Science Data Processor declining scan config for digitiser {dig_id} because the digitiser is already scanning samples for obs_id {dig.scanning.get('obs_id')}.\n{value}")
+                message = f"Science Data Processor declining scan config for digitiser {dig_id} because the digitiser is already scanning samples for obs_id {dig.scanning.get('obs_id')}.\n{value}"
+                logger.warning(self.set_last_err(message))
                 return False
             
         # Loop through the key value pairs in value dict
@@ -567,10 +574,12 @@ class SDP(App):
                     try:
                         dig.filter_bank = FilterBank(**val)
                     except SchemaError as exc:
-                        logger.warning(f"Science Data Processor ignoring invalid filter_bank config for digitiser {dig_id}: {exc}")
+                        message = f"Science Data Processor ignoring invalid filter_bank config for digitiser {dig_id}: {exc}"
+                        logger.warning(self.set_last_err(message))
                         continue
                 else:
-                    logger.warning(f"Science Data Processor ignoring invalid filter_bank config for digitiser {dig_id}: {val}")
+                    message = f"Science Data Processor ignoring invalid filter_bank config for digitiser {dig_id}: {val}"
+                    logger.warning(self.set_last_err(message))
                     continue
                 logger.info(f"Science Data Processor set digitiser {dig_id} filter_bank to {dig.filter_bank}")
                 continue
@@ -589,7 +598,8 @@ class SDP(App):
                 elif TargetConfig.is_auto_gain_token(val):
                     logger.info(f"Science Data Processor deferring digitiser {dig_id} gain update until auto gain is resolved.")
                 else:
-                    logger.warning(f"Science Data Processor ignoring invalid scan config gain {val} for digitiser {dig_id}")
+                    message = f"Science Data Processor ignoring invalid scan config gain {val} for digitiser {dig_id}"
+                    logger.warning(self.set_last_err(message))
             elif key == tm_sdp.PROPERTY_SPECTRAL_RESOLUTION:
                 dig.channels = int(val)
                 logger.info(f"Science Data Processor set digitiser {dig_id} spectral resolution to {val}")
@@ -597,7 +607,8 @@ class SDP(App):
                 setattr(dig, key, val)
                 logger.info(f"Science Data Processor set digitiser {dig_id} attribute {key} to {val}")
             else:
-                logger.warning(f"Science Data Processor received unknown scan config key {key} for digitiser {dig_id} in value: {value}")
+                message = f"Science Data Processor received unknown scan config key {key} for digitiser {dig_id} in value: {value}"
+                logger.warning(self.set_last_err(message))
 
         scanning = value.get(sdp_dig.PROPERTY_SCANNING) if value is not None and isinstance(value, dict) else None
         if scanning is None and isinstance(dig.scanning, dict):
@@ -738,12 +749,14 @@ class SDP(App):
                 value = getattr(self.sdp_model, prop_name)
                 logger.info(f"Science Data Processor {prop_name} get to {value}")
             else:
-                logger.error(f"Science Data Processor unknown property {prop_name} get request")
-                return tm_sdp.STATUS_ERROR, f"Science Data Processor unknown property {prop_name}", None, None
+                message = f"Science Data Processor unknown property {prop_name} get request"
+                logger.error(self.set_last_err(message))
+                return tm_sdp.STATUS_ERROR, message, None, None
         
         except XSoftwareFailure as e:
-            logger.exception(f"Science Data Processor failed to get property {prop_name}: {e}")
-            return tm_sdp.STATUS_ERROR, f"Science Data Processor failed to get property {prop_name}: {e}", None, None
+            message = f"Science Data Processor failed to get property {prop_name}: {e}"
+            logger.exception(self.set_last_err(message))
+            return tm_sdp.STATUS_ERROR, message, None, None
 
         return tm_sdp.STATUS_SUCCESS, f"Science Data Processor get property {prop_name} value {value}", value, None
 
@@ -767,12 +780,14 @@ class SDP(App):
                 else:
                     return tm_sdp.STATUS_ERROR, f"Science Data Processor failed to set property {prop_name} to {prop_value}", None, None
             else:
-                logger.error(f"Science Data Processor unknown property {prop_name} with value {prop_value}")
-                return tm_sdp.STATUS_ERROR, f"Science Data Processor unknown property {prop_name}", None, None
+                message = f"Science Data Processor unknown property {prop_name} with value {prop_value}"
+                logger.error(self.set_last_err(message))
+                return tm_sdp.STATUS_ERROR, message, None, None
         
         except XSoftwareFailure as e:
-            logger.exception(f"Science Data Processor failed to set property {prop_name} to {prop_value}: {e}")
-            return tm_sdp.STATUS_ERROR, f"Science Data Processor failed to set property {prop_name} to {prop_value}: {e}", None, None
+            message = f"Science Data Processor failed to set property {prop_name} to {prop_value}: {e}"
+            logger.exception(self.set_last_err(message))
+            return tm_sdp.STATUS_ERROR, message, None, None
 
         return tm_sdp.STATUS_SUCCESS, f"Science Data Processor set property {prop_name} to {prop_value}", prop_value, None
 
@@ -900,9 +915,8 @@ class SDP(App):
         if self.sdp_model.scans_wip > 0:
             self.sdp_model.scans_wip -= 1
         else:
-            logger.warning(
-                f"Science Data Processor completed scan {scan.scan_model.scan_id} while scans_wip was already 0."
-            )
+            message = f"Science Data Processor completed scan {scan.scan_model.scan_id} but scans_wip was already 0."
+            logger.warning(self.set_last_err(message))
 
         self._remove_from_queue(scan=scan, queue=self.sky_q) # Remove older completed scans from the sky processing queue
         
@@ -927,7 +941,7 @@ class SDP(App):
         for item in equivalent_items:  
             self._remove_from_queue(item, queue=queue)
             logger.info(f"Science Data Processor removed equivalent {'load' if item.get_scan_type() == ScanType.LOAD else 'sky'} scan {item} from queue " + \
-                f"for digitiser {item.get_dig_id()} with same parameters as {scan}")
+                        f"for digitiser {item.get_dig_id()} with same parameters as {scan}")
 
     def _remove_from_queue(self, scan: Scan, queue: Queue = None):
         """ Removes a scan from the queue without marking it as aborted or completed.
@@ -939,14 +953,14 @@ class SDP(App):
             queue.queue.remove(scan) # Remove this scan from the underlying queue
             queue.task_done() # Balance the unfinished task count for the removed item
         except ValueError:
-            logger.warning(f"Science Data Processor could not find scan while attempting to remove scan {scan} from queue. It may have already been removed.")
+            logger.warning(self.set_last_err(f"Science Data Processor could not find scan while attempting to remove scan {scan} from queue. It may have already been removed."))
 
     def _log_overload_sample_drop(self, message: str):
         now = time.monotonic()
         with self._rlock:
             self._overload_sample_drop_count += 1
             if now - self._overload_sample_drop_last_log >= 5.0:
-                logger.warning(message + f" dropped_count={self._overload_sample_drop_count}")
+                logger.warning(self.set_last_err(message + f" dropped_count={self._overload_sample_drop_count}"))
                 self._overload_sample_drop_last_log = now
 
 def main():

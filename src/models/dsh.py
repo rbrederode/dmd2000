@@ -263,6 +263,14 @@ class DishModel(BaseModel):
                 return pec
         return None
 
+    def set_last_err(self, message: str):
+        """ Set the last dish model error message and timestamp.
+        """
+        self.last_err_msg = message
+        self.last_err_dt = datetime.now(timezone.utc)
+        self.last_update = datetime.now(timezone.utc)
+        return message
+
 class DishList(BaseModel):
     """A class representing a list of dishes."""
 

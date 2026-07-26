@@ -120,7 +120,8 @@ class DM(App):
             weatherstation_store = self.dm_model.weather_store.load_from_disk(input_dir=input_dir, filename=filename)
         except FileNotFoundError:
             weatherstation_store = None
-            logger.warning(f"DM could not load Weather Station configuration from directory {input_dir} file {filename}")
+            message = f"DM could not load Weather Station configuration from directory {input_dir} file {filename}: File not found"
+            logger.warning(self.set_last_err(message))
 
         self.dm_model.weather_store = weatherstation_store if weatherstation_store is not None else WeatherStationList()
 
@@ -131,6 +132,7 @@ class DM(App):
         self.dm_model.weather_store.weather_summaries = self.dm_model.weather_store.get_weather_summaries()
 
         logger.info(f"DM initialised Weather Station configuration:\n{self.dm_model.weather_store}")
+        # Provides a historical baseline whenever Dish Manager starts. Actual alarm changes are recorded separately using event_type="transition"
         self._log_alarm_event(event_type="snapshot", reason="startup")
 
         # Load Dish configuration from disk, config file is located in ./config/<profile>/<model>.json
@@ -142,10 +144,12 @@ class DM(App):
             dish_store = self.dm_model.dish_store.load_from_disk(input_dir=input_dir, filename=filename)
         except FileNotFoundError:
             dish_store = None
-            logger.warning(f"DM could not load Dish configuration from directory {input_dir} file {filename}")
-            
+            message = f"DM could not load Dish configuration from directory {input_dir} file {filename}: File not found"
+            logger.warning(self.set_last_err(message))
+
         if dish_store is None:
-            logger.error(f"DM initialisation did not find any configured dishes.")
+            message = f"DM initialisation did not find any configured dishes in directory {input_dir} file {filename}"
+            logger.error(self.set_last_err(message))
             return action
 
         self.dm_model.dish_store = dish_store
@@ -165,7 +169,8 @@ class DM(App):
             if driver_ref:
                 ctor = resolve(DISH_DRIVER_NAMESPACE, driver_ref)
                 if ctor is None:
-                    logger.warning("DM could not resolve custom driver '%s' for Dish %s", driver_ref, dish.dsh_id)
+                    message = f"DM could not resolve custom driver '{driver_ref}' for Dish {dish.dsh_id}"
+                    logger.warning(self.set_last_err(message))
                 else:
                     try:
                         driver = ctor(dsh_model=dish)
@@ -185,7 +190,8 @@ class DM(App):
                     driver = MotionDriver(dsh_model=dish, profile=self.get_args().profile)
                     logger.info(f"DM instantiated Motion driver for Dish {dish.dsh_id}")
                 else:
-                    logger.warning(f"DM cannot instantiate driver for Dish {dish.dsh_id} with unknown driver type {driver_type}")
+                    message = f"DM cannot instantiate driver for Dish {dish.dsh_id} with unknown driver type {driver_type}"
+                    logger.warning(self.set_last_err(message))
 
             if driver is not None:
                 self.dish_drivers[dish.dsh_id] = driver
@@ -225,7 +231,8 @@ class DM(App):
                 try:
                     dish_driver.set_dish_mode(DishMode.STANDBY_FP)
                 except XBase as e:
-                    logger.error(f"DM failed to set STANDBY_FP mode for Dish {dish_id} on TM connect: {e}")
+                    message = f"DM failed to set STANDBY_FP mode for Dish {dish_id} on TM connect: {e}"
+                    logger.error(self.set_last_err(message))
         
         # Send initial status advice message to Telescope Manager
         # Informs TM of current DM status including dish statuses
@@ -257,8 +264,9 @@ class DM(App):
                 try:
                     dish_driver.set_dish_mode(DishMode.STOW)
                 except XBase as e:
-                    logger.error(f"DM failed to set STOW mode for Dish {dish_id} on TM disconnect: {e}")
-                    
+                    message = f"DM failed to set STOW mode for Dish {dish_id} on TM disconnect: {e}"
+                    logger.error(self.set_last_err(message))
+
         return action
 
     def process_tm_msg(self, event, api_msg: dict, api_call: dict, payload: bytearray) -> Action:
@@ -275,9 +283,9 @@ class DM(App):
 
         # Validate that we have a valid dish driver and lock for the requested dish id
         if dish_driver is None or dish_lock is None:
-            msg = f"DM processing event for dish id {dish_id} without valid driver instance and driver lock"
-            logger.error(msg + f"\n{api_call}")
-            rsp_msg = self._construct_rsp_to_tm(status=tm_dm.STATUS_ERROR, message=msg, api_msg=api_msg, api_call=api_call)
+            message = f"DM processing event for dish id {dish_id} without valid driver instance and driver lock"
+            logger.error(self.set_last_err(message) + f"\n{api_call}")
+            rsp_msg = self._construct_rsp_to_tm(status=tm_dm.STATUS_ERROR, message=message, api_msg=api_msg, api_call=api_call)
             action.set_msg_to_remote(rsp_msg)
             return action
 
@@ -292,14 +300,14 @@ class DM(App):
                 try:
                     dish_driver.set_dish_mode(mode) # Handles invalid or None mode internally
                 except XBase as e:
-                    msg = f"DM failed to set mode {mode.name if mode is not None else 'None'} for Dish {dish_id}: {e}"
-                    logger.error(msg)
-                    rsp_msg = self._construct_rsp_to_tm(status=tm_dm.STATUS_ERROR, message=msg, api_msg=api_msg, api_call=api_call)
+                    message = f"DM failed to set mode {mode.name if mode is not None else 'None'} for Dish {dish_id}: {e}"
+                    logger.error(self.set_last_err(message))
+                    rsp_msg = self._construct_rsp_to_tm(status=tm_dm.STATUS_ERROR, message=message, api_msg=api_msg, api_call=api_call)
                     action.set_msg_to_remote(rsp_msg)
                     return action
 
-            msg = f"DM successfully set mode {mode} for Dish {dish_id}."
-            rsp_msg = self._construct_rsp_to_tm(status=tm_dm.STATUS_SUCCESS, message=msg, api_msg=api_msg, api_call=api_call)
+            message = f"DM successfully set mode {mode} for Dish {dish_id}."
+            rsp_msg = self._construct_rsp_to_tm(status=tm_dm.STATUS_SUCCESS, message=message, api_msg=api_msg, api_call=api_call)
             action.set_msg_to_remote(rsp_msg)
             return action
 
@@ -314,14 +322,14 @@ class DM(App):
                 try:
                     dish_driver.set_dish_capability(capability) # Handles invalid or None capability internally
                 except XBase as e:
-                    msg = f"DM failed to set capability {capability.name if capability is not None else 'None'} for Dish {dish_id}: {e}"
-                    logger.error(msg)
-                    rsp_msg = self._construct_rsp_to_tm(status=tm_dm.STATUS_ERROR, message=msg, api_msg=api_msg, api_call=api_call)
+                    message = f"DM failed to set capability {capability.name if capability is not None else 'None'} for Dish {dish_id}: {e}"
+                    logger.error(self.set_last_err(message))
+                    rsp_msg = self._construct_rsp_to_tm(status=tm_dm.STATUS_ERROR, message=message, api_msg=api_msg, api_call=api_call)
                     action.set_msg_to_remote(rsp_msg)
                     return action
 
-            msg = f"DM successfully set capability {capability} for Dish {dish_id}."
-            rsp_msg = self._construct_rsp_to_tm(status=tm_dm.STATUS_SUCCESS, message=msg, api_msg=api_msg, api_call=api_call)
+            message = f"DM successfully set capability {capability} for Dish {dish_id}."
+            rsp_msg = self._construct_rsp_to_tm(status=tm_dm.STATUS_SUCCESS, message=message, api_msg=api_msg, api_call=api_call)
             action.set_msg_to_remote(rsp_msg)
             return action
   
@@ -364,20 +372,20 @@ class DM(App):
                         raise XSoftwareFailure(f"Invalid target provided to set for dish {dish_id}\n{api_call}")
 
                 except XBase as e:
-                    msg = f"DM failed to set target id {target_id if target_id is not None else 'None'} in observation " \
+                    message = f"DM failed to set target id {target_id if target_id is not None else 'None'} in observation " \
                      f"{target.obs_id if target is not None else 'None' } for Dish {dish_id}: {e}"
 
-                    logger.error(msg + f"\n{target.to_dict() if target is not None else 'No Target'}")
-                    rsp_msg = self._construct_rsp_to_tm(status=tm_dm.STATUS_ERROR, message=msg, api_msg=api_msg, api_call=api_call)
+                    logger.error(self.set_last_err(message) + f"\n{target.to_dict() if target is not None else 'No Target'}")
+                    rsp_msg = self._construct_rsp_to_tm(status=tm_dm.STATUS_ERROR, message=message, api_msg=api_msg, api_call=api_call)
                     action.set_msg_to_remote(rsp_msg)
                     dish_driver.clear_target_tuple()
                     return action
 
-            msg = f"DM set target {target_id if target_id is not None else 'None'} for Dish {dish_id}."
-            logger.info(msg + f"\n{target.to_dict() if target is not None else 'No Target'}")
+            message = f"DM set target {target_id if target_id is not None else 'None'} for Dish {dish_id}."
+            logger.info(message + f"\n{target.to_dict() if target is not None else 'No Target'}")
             rsp_msg = self._construct_rsp_to_tm(
                 status=tm_dm.STATUS_SUCCESS,
-                message=msg,
+                message=message,
                 api_msg=api_msg,
                 api_call=api_call,
                 include_obs_data=target_acquired,
@@ -446,7 +454,8 @@ class DM(App):
                     dish_driver.set_weather_alarm(True)
                     dish_driver.set_dish_mode(DishMode.STOW)
                 except XBase as e:
-                    logger.error(f"DM failed to set STOW mode for Dish {dish_id} on weather alarm: {e}")
+                    message = f"DM failed to set STOW mode for Dish {dish_id} on weather alarm: {e}"
+                    logger.error(self.set_last_err(message))
 
         # If the weather alarm status has just transitioned to True, then inform the Telescope Manager
         if not prev_alarm_status and self.alarm_triggered:
@@ -477,7 +486,7 @@ class DM(App):
                     dish_driver.set_weather_alarm(False)
                     dish_driver.set_dish_mode(DishMode.STANDBY_FP)
                 except XBase as e:
-                    logger.error(f"DM failed to revert weather alarm state for Dish {dish_id}: {e}")
+                    logger.error(self.set_last_err(f"DM failed to revert weather alarm state for Dish {dish_id}: {e}"))
 
         self.alarm_triggered = False
         if prev_alarm_status and not self.alarm_triggered:
@@ -502,7 +511,8 @@ class DM(App):
             dish_lock = self._get_dish_lock(dish_id) if dish_id is not None else None
 
             if dish_driver is None or dish_lock is None:
-                raise XSoftwareFailure(f"DM driver timer event {event.name} for dish id {dish_id} without driver instance or lock\n{event}")
+                message = f"DM driver timer event {event.name} for dish id {dish_id} without valid driver instance and driver lock"
+                raise XSoftwareFailure(self.set_last_err(message) + f"\n{event}")
 
             # If weather station monitoring is enabled
             if self.dm_model.weather_store.is_ws_monitoring_enabled():
@@ -522,7 +532,7 @@ class DM(App):
                 try:
                     dish_driver.get_current_altaz()
                 except XBase as e:
-                    logger.error(f"DM failed to get current AltAz for Dish {dish_id}: {e}")
+                    logger.error(self.set_last_err(f"DM failed to get current AltAz for Dish {dish_id}: {e}"))
 
                 # Review dish health state to determine if action is needed
                 if dish_driver.get_health_state() == HealthState.FAILED:
@@ -564,8 +574,8 @@ class DM(App):
                             dish_driver.track()
                         except XBase as e:
                             status = tm_dm.STATUS_ERROR
-                            msg = f"DM failed to track for Dish {dish_id} to target {target_id} in observation {target.obs_id}: {e}"
-                            logger.error(msg)
+                            message = f"DM failed to track for Dish {dish_id} to target {target_id} in observation {target.obs_id}: {e}"
+                            logger.error(self.set_last_err(message))
 
                     # Else if we are doing an offset or five point scan, tell the driver to scan it
                     elif target.pointing in [PointingType.OFFSET_SCAN, PointingType.FIVE_POINT_SCAN]:
@@ -574,8 +584,8 @@ class DM(App):
                             dish_driver.scan()
                         except XBase as e:
                             status = tm_dm.STATUS_ERROR
-                            msg = f"DM failed to scan for Dish {dish_id} for target {target_id} in observation {target.obs_id}: {e}"
-                            logger.error(msg)
+                            message = f"DM failed to scan for Dish {dish_id} for target {target_id} in observation {target.obs_id}: {e}"
+                            logger.error(self.set_last_err(message))
 
                     self._send_status_adv_to_tm(action, target_id, target, status, msg)
 
@@ -583,17 +593,17 @@ class DM(App):
                     try:
                         dish_driver.track()  # Continue tracking the target
                     except XBase as e:
-                        msg = f"DM failed to track for Dish {dish_id} to target {target_id} in observation {target.obs_id}: {e}"
-                        logger.error(msg)
-                        self._send_status_adv_to_tm(action, target_id, target, tm_dm.STATUS_ERROR, msg)
+                        message = f"DM failed to track for Dish {dish_id} to target {target_id} in observation {target.obs_id}: {e}"
+                        logger.error(self.set_last_err(message))
+                        self._send_status_adv_to_tm(action, target_id, target, tm_dm.STATUS_ERROR, message)
 
                 elif target is not None and dish_driver.get_pointing_state() == PointingState.SCAN:                     
                     try:
                         dish_driver.scan()  # Continue scanning the target
                     except XBase as e:
-                        msg = f"DM failed to scan for Dish {dish_id} for target {target_id} in observation {target.obs_id}: {e}"
-                        logger.error(msg)
-                        self._send_status_adv_to_tm(action, target_id, target, tm_dm.STATUS_ERROR, msg)
+                        message = f"DM failed to scan for Dish {dish_id} for target {target_id} in observation {target.obs_id}: {e}"
+                        logger.error(self.set_last_err(message))
+                        self._send_status_adv_to_tm(action, target_id, target, tm_dm.STATUS_ERROR, message)
 
         # Restart the driver timer for the dish    
         action.set_timer_action(Action.Timer(
@@ -615,6 +625,7 @@ class DM(App):
         """ Returns the current health state of this application.
         """
         if self.dm_model.tm_connected != CommunicationStatus.ESTABLISHED:
+            message = "Dish Manager health status set DEGRADED: Telescope Manager (TM) not connected"
             return HealthState.DEGRADED
         else:
             return HealthState.OK
@@ -759,11 +770,10 @@ class DM(App):
             snapshot_reason = reason or "snapshot"
             self.alarm_logger.info(f"WeatherAlarm snapshot reason={snapshot_reason} state={state}")
         else:
-            raise ValueError(f"Unsupported weather alarm event type: {event_type}")
+            message = f"Unsupported weather alarm event type: {event_type}"
+            raise ValueError(self.set_last_err(message))
 
-        self.alarm_logger.info(
-            "WeatherAlarm metrics " + self.dm_model.weather_store.format_alarm_metrics()
-        )
+        self.alarm_logger.info("WeatherAlarm metrics " + self.dm_model.weather_store.format_alarm_metrics())
 
 # Runs tests: pytest dsh/dm.py -v -s 
 # -v for verbose output (or -vv or -vvv for more verbosity)

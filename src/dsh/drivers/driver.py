@@ -66,16 +66,23 @@ class DishDriver:
         old_health = self.dsh_model.health
 
         if failure_count > 0 and failure_count < 10:
+            message = f"DishDriver health status set to DEGRADED: Detected sporadic failures {failure_count} communicating with Dish {self.dsh_model.dsh_id}." + \
+                      f" Consider investigating dish driver."
+            logger.error(self.dsh_model.set_last_err(message))
             self.dsh_model.health = HealthState.DEGRADED
-            logger.error(f"DishDriver detected sporadic failures {failure_count} communicating with Dish {self.dsh_model.dsh_id}." + \
-                 f" Consider investigating dish driver.")
+            
         elif failure_count >= 10 and failure_count < threshold:
+            message = f"DishDriver health status set to DEGRADED: Detected persistent failures {failure_count} communicating with Dish {self.dsh_model.dsh_id}." + \
+                      f" Consider investigating dish driver."
+            logger.error(self.dsh_model.set_last_err(message))
             self.dsh_model.health = HealthState.DEGRADED  
-            logger.error(f"DishDriver detected persistent failures {failure_count} communicating with Dish {self.dsh_model.dsh_id}." + \
-                f" Consider investigating dish driver.")
+
         elif failure_count >= threshold:
+            message = f"DishDriver health status set to FAILED: Detected unacceptably high failures {failure_count} communicating with Dish {self.dsh_model.dsh_id}." + \
+                      f" Consider investigating dish driver."
+            logger.error(self.dsh_model.set_last_err(message))
             self.dsh_model.health = HealthState.FAILED
-            logger.error(f"DishDriver detected unacceptably high failures {failure_count} communicating with Dish {self.dsh_model.dsh_id}.")
+
         elif failure_count == 0:
             self.dsh_model.health = HealthState.OK
 
@@ -226,15 +233,18 @@ class DishDriver:
                 alt, az = self._get_current_altaz()
         except Exception as e:
             if isinstance(e, XCommsFailure):
-                logger.error(f"DishDriver {self.dsh_model.dsh_id} failed to communicate with dish controller: {e}")
+                message = f"DishDriver {self.dsh_model.dsh_id} failed to communicate with dish controller: {e}"
+                logger.error(self.dsh_model.set_last_err(message))
             else:
-                logger.exception(f"DishDriver {self.dsh_model.dsh_id} failed to get current AltAz: {e}\n{self.dsh_model.to_dict()}")
+                message = f"DishDriver {self.dsh_model.dsh_id} failed to get current AltAz: {e}\n{self.dsh_model.to_dict()}"
+                logger.exception(self.dsh_model.set_last_err(message))
             self.dsh_model.increment_failures()
             raise e
 
         if alt is None or az is None:
             self.dsh_model.increment_failures()
-            raise ValueError(f"DishDriver {self.dsh_model.dsh_id} returned invalid (None) AltAz data.\n{self.dsh_model.to_dict()}")
+            message = f"DishDriver {self.dsh_model.dsh_id} returned invalid (None) AltAz data.\n{self.dsh_model.to_dict()}"
+            raise ValueError(self.dsh_model.set_last_err(message))
         else:
             self.update_pointing_hist() # Update pointing history with the latest AltAz 
             if self.get_failure_count() > 0:
@@ -267,10 +277,11 @@ class DishDriver:
             # If we were NOT expecting the dish to be moving, log an error
             if self.dsh_model.pointing_state not in [PointingState.SLEW, PointingState.TRACK, PointingState.SCAN, PointingState.UNKNOWN]:
 
-                logger.error(f"DishDriver {self.dsh_model.dsh_id} has moved from AltAz " + \
+                message = f"DishDriver {self.dsh_model.dsh_id} has moved from AltAz " + \
                     f"(Alt: {previous_alt}, Az: {previous_az}) to AltAz (Alt: {alt}, Az: {az}) " + \
-                    f"while in {self.dsh_model.pointing_state.name} state. Dish is not expected to be moving !\n{self.dsh_model.to_dict()}")
-       
+                    f"while in {self.dsh_model.pointing_state.name} state. Dish is not expected to be moving !\n{self.dsh_model.to_dict()}"
+                logger.error(self.dsh_model.set_last_err(message))
+
         # Else if Dish has not moved noticeably (TRACKING is slow and hard to notice)
         elif alt == previous_alt and az == previous_az: 
 
@@ -290,7 +301,8 @@ class DishDriver:
                 desired_az = self.dsh_model.desired_altaz.get("az", None) if self.dsh_model.desired_altaz else None
 
                 if desired_alt is None or desired_az is None:
-                    raise XSoftwareFailure(f"DishDriver {self.dsh_model.dsh_id} is in TRACK/SLEW/SCAN pointing state but no desired AltAz is set in DishModel.\n{self.dsh_model.to_dict()}")
+                    message = f"DishDriver {self.dsh_model.dsh_id} is in TRACK/SLEW/SCAN pointing state but no desired AltAz is set in DishModel.\n{self.dsh_model.to_dict()}"
+                    raise XSoftwareFailure(self.dsh_model.set_last_err(message))
 
                 # If the dish pointing AltAz is within resolution of the desired AltAz
                 if abs(alt - desired_alt) <= self.get_resolution() and abs(az - desired_az) <= self.get_resolution():
@@ -302,13 +314,16 @@ class DishDriver:
                 # If in TRACK, Dish has drifted off target, not a major issue as tracking can catch up on the next movement
                 elif self.dsh_model.pointing_state == PointingState.TRACK:
                     
-                    logger.warning(f"DishDriver {self.dsh_model.dsh_id} has drifted off target while TRACKING.\n{self.dsh_model.to_dict()}")
+                    message = f"DishDriver {self.dsh_model.dsh_id} has drifted off target while TRACKING. " + \
+                        f"Current AltAz (Alt: {alt}, Az: {az}) is not within resolution of desired AltAz (Alt: {desired_alt}, Az: {desired_az}).\n{self.dsh_model.to_dict()}"
+                    logger.warning(self.dsh_model.set_last_err(message))
                 
                 # If in SLEW, major issue, dish should have reached target AltAz, but stopped prematurely, set pointing state to UNKNOWN
                 elif self.dsh_model.pointing_state == PointingState.SLEW:
                 
-                    logger.warning(f"DishDriver {self.dsh_model.dsh_id} has prematurely stopped moving while SLEWing. " + \
-                        f"Transition to UNKNOWN pointing state.\n{self.dsh_model.to_dict()}")
+                    message = f"DishDriver {self.dsh_model.dsh_id} has prematurely stopped moving while SLEWing. " + \
+                        f"Transition to UNKNOWN pointing state.\n{self.dsh_model.to_dict()}"
+                    logger.warning(self.dsh_model.set_last_err(message))
 
                     self.dsh_model.pointing_state = PointingState.UNKNOWN
                     self.dsh_model.last_update = datetime.now(timezone.utc)
@@ -320,10 +335,12 @@ class DishDriver:
             :raises NotImplementedError: If a required method is not implemented by a subclass
         """
         if not isinstance(mode, DishMode):
-            raise ValueError("DishDriver set_mode requires a valid DishMode enumeration value.")
+            message = f"DishDriver set_mode requires a valid DishMode enumeration value, got {mode} of type {type(mode)}."
+            raise ValueError(self.dsh_model.set_last_err(message))
 
         if self.dsh_model.capability in [Capability.UNAVAILABLE, Capability.UNKNOWN]:
-            raise XInvalidTransition(f"DishDriver {self.dsh_model.dsh_id} cannot set mode when capability unavailable or unknown.\n{self.dsh_model.to_dict()}")
+            message = f"DishDriver {self.dsh_model.dsh_id} cannot set mode when capability unavailable or unknown.\n{self.dsh_model.to_dict()}"
+            raise XInvalidTransition(self.dsh_model.set_last_err(message))
         
         logger.info(f"DishDriver {self.dsh_model.dsh_id} changing mode from {self.dsh_model.mode.name} to {mode.name}.")
 
@@ -341,14 +358,16 @@ class DishDriver:
 
             # Ensure we have the capability to enter CONFIG mode
             if self.dsh_model.capability not in [Capability.CONFIGURING, Capability.OPERATE_DEGRADED, Capability.OPERATE_FULL]:
-                raise XInvalidTransition(f"DishDriver {self.dsh_model.dsh_id} cannot set CONFIG mode when capability not available.\n{self.dsh_model.to_dict()}")
+                message = f"DishDriver {self.dsh_model.dsh_id} cannot set CONFIG mode when capability not available.\n{self.dsh_model.to_dict()}"
+                raise XInvalidTransition(self.dsh_model.set_last_err(message))
             self.set_config_mode()
 
         elif mode == DishMode.OPERATE:
 
             # Ensure we have the capability to enter OPERATE mode
             if self.dsh_model.capability not in [Capability.OPERATE_DEGRADED, Capability.OPERATE_FULL]:
-                raise XInvalidTransition(f"DishDriver {self.dsh_model.dsh_id} cannot set OPERATE mode when capability not operational.\n{self.dsh_model.to_dict()}")
+                message = f"DishDriver {self.dsh_model.dsh_id} cannot set OPERATE mode when capability not operational.\n{self.dsh_model.to_dict()}"
+                raise XInvalidTransition(self.dsh_model.set_last_err(message))
             self.set_operate_mode()
 
     def get_weather_alarm(self) -> bool:
@@ -362,8 +381,8 @@ class DishDriver:
             :param alarm_on: True if the weather alarm is on, False if it is off.
         """
         self.dsh_model.weather_alarm = alarm_on
-        self.dsh_model.last_err_msg = f"Weather alarm triggered in mode {self.get_mode().name}." if alarm_on else "Weather alarm cleared."
-        self.dsh_model.last_err_dt = self.dsh_model.last_update = datetime.now(timezone.utc)
+        message = f"Weather alarm triggered in mode {self.get_mode().name}." if alarm_on else "Weather alarm cleared."
+        self.dsh_model.set_last_err(message)
 
     def clear_target_tuple(self):
         """ Clear the target of the dish in the DishModel.
@@ -381,11 +400,13 @@ class DishDriver:
             :param target: The target model.
         """
         if self.dsh_model.mode != DishMode.CONFIG:
-            raise XInvalidTransition(f"DishDriver set_target_tuple requires Dish to be in CONFIG mode.\n{self.dsh_model.to_dict()}")
+            message = f"DishDriver set_target_tuple requires Dish to be in CONFIG mode.\n{self.dsh_model.to_dict()}"
+            raise XInvalidTransition(self.dsh_model.set_last_err(message))
 
         if tgt_id is None or target is None or not isinstance(target, TargetModel):
-            raise ValueError(f"DishDriver set_target_tuple requires a valid TargetModel and tgt_id to be provided.\n{self.dsh_model.to_dict()}")
-                
+            message = f"DishDriver set_target_tuple requires a valid TargetModel and tgt_id to be provided.\n{self.dsh_model.to_dict()}"
+            raise ValueError(self.dsh_model.set_last_err(message))
+
         # Check if the obs_id has changed i.e. we are starting a new observation
         new_obs_id = tgt_id.split("_")[0] if "_" in tgt_id else None
         cur_obs_id = self.dsh_model.tgt_id.split("_")[0] if self.dsh_model.tgt_id and "_" in self.dsh_model.tgt_id else None
@@ -413,7 +434,8 @@ class DishDriver:
             :param capability: The new capability.
         """
         if not isinstance(capability, Capability):
-            raise ValueError("DishDriver set_dish_capability requires a valid Capability enumeration value.")
+            message = "DishDriver set_dish_capability requires a valid Capability enumeration value."
+            raise ValueError(self.dsh_model.set_last_err(message))
 
         # If we are currently operational 
         if self.dsh_model.capability in [Capability.OPERATE_DEGRADED, Capability.OPERATE_FULL]:
@@ -449,9 +471,12 @@ class DishDriver:
             self.stop() # Ensures dish controller is responsive
         except Exception as e:
             if isinstance(e, XCommsFailure):
-                logger.error(f"DishDriver {self.dsh_model.dsh_id} failed to communicate with dish controller: {e}")
+                message = f"DishDriver {self.dsh_model.dsh_id} failed to communicate with dish controller: {e}"
+                logger.error(self.dsh_model.set_last_err(message))
             else:
-                logger.exception(f"DishDriver {self.dsh_model.dsh_id} failed to set startup mode: {e}\n{self.dsh_model.to_dict()}")
+                message = f"DishDriver {self.dsh_model.dsh_id} failed to set startup mode: {e}\n{self.dsh_model.to_dict()}"
+                logger.exception(self.dsh_model.set_last_err(message))
+                
             self.dsh_model.increment_failures()
             self.dsh_model.mode = DishMode.UNKNOWN
             raise e
@@ -470,9 +495,11 @@ class DishDriver:
                 self._set_standby_fp_mode()
         except Exception as e:
             if isinstance(e, XCommsFailure):
-                logger.error(f"DishDriver {self.dsh_model.dsh_id} failed to communicate with dish controller: {e}")
+                message = f"DishDriver {self.dsh_model.dsh_id} failed to communicate with dish controller: {e}"
+                logger.error(self.dsh_model.set_last_err(message))
             else:
-                logger.exception(f"DishDriver {self.dsh_model.dsh_id} failed to set standby full power mode: {e}\n{self.dsh_model.to_dict()}")
+                message = f"DishDriver {self.dsh_model.dsh_id} failed to set standby full power mode: {e}\n{self.dsh_model.to_dict()}"
+                logger.exception(self.dsh_model.set_last_err(message))
 
             self.dsh_model.increment_failures() 
             self.dsh_model.mode = DishMode.UNKNOWN
@@ -502,10 +529,13 @@ class DishDriver:
                 self._set_shutdown_mode()
         except Exception as e:
             if isinstance(e, XCommsFailure):
-                logger.error(f"DishDriver {self.dsh_model.dsh_id} failed to communicate with dish controller: {e}")
+                message = f"DishDriver {self.dsh_model.dsh_id} failed to communicate with dish controller: {e}" + \
+                          f" Transitioning to UNKNOWN mode."
+                logger.error(self.dsh_model.set_last_err(message) + f"\n{self.dsh_model.to_dict()}")
             else:
-                logger.exception(f"DishDriver {self.dsh_model.dsh_id} failed to set shutdown mode." + \
-                    f" Transitioning to UNKNOWN mode: {e}\n{self.dsh_model.to_dict()}")
+                message = f"DishDriver {self.dsh_model.dsh_id} failed to set shutdown mode: {e}" + \
+                          f" Transitioning to UNKNOWN mode."
+                logger.exception(self.dsh_model.set_last_err(message) + f"\n{self.dsh_model.to_dict()}")
 
             self.dsh_model.increment_failures()
             self.dsh_model.mode = DishMode.UNKNOWN
@@ -539,7 +569,8 @@ class DishDriver:
         alt = self.dsh_model.pointing_altaz.get("alt", None) if self.dsh_model.pointing_altaz else None
 
         if self.get_weather_alarm():
-            logger.warning(f"DishDriver {self.dsh_model.dsh_id} weather alarm is ON. Stowing from {alt}, {az} in altitude only to avoid potential damage from high winds.")
+            message = f"DishDriver {self.dsh_model.dsh_id} weather alarm is ON. Stowing from {alt}, {az} in altitude only to avoid potential damage from high winds."
+            logger.warning(self.dsh_model.set_last_err(message))
             stow_az = az if az is not None else stow_az
 
         stow_altaz = AltAz(
@@ -551,7 +582,8 @@ class DishDriver:
 
         # If the dish is already at the stow position, set mode to STOW and return
         if alt is None or az is None:
-            logger.warning(f"DishDriver {self.dsh_model.dsh_id} has no pointing AltAz data.")
+            message = f"DishDriver {self.dsh_model.dsh_id} has no pointing AltAz data."
+            logger.warning(self.dsh_model.set_last_err(message))
         elif abs(alt - stow_alt) <= self.get_resolution() and abs(az - stow_az) <= self.get_resolution():
             self.dsh_model.mode = DishMode.STOW
             self.dsh_model.pointing_state = PointingState.READY
@@ -564,10 +596,13 @@ class DishDriver:
                 self._set_stow_mode(alt=stow_alt, az=stow_az)
         except Exception as e:
             if isinstance(e, XCommsFailure):
-                logger.error(f"DishDriver {self.dsh_model.dsh_id} failed to communicate with dish controller: {e}")
+                message = f"DishDriver {self.dsh_model.dsh_id} failed to communicate with dish controller: {e}" + \
+                          f" Transitioning to UNKNOWN mode."
+                logger.error(self.dsh_model.set_last_err(message) + f"\n{self.dsh_model.to_dict()}")
             else:
-                logger.exception(f"DishDriver {self.dsh_model.dsh_id} failed to set stow mode." + \
-                    f" Transitioning to UNKNOWN mode: {e}\n{self.dsh_model.to_dict()}")
+                message = f"DishDriver {self.dsh_model.dsh_id} failed to set stow mode: {e}" + \
+                          f" Transitioning to UNKNOWN mode."
+                logger.exception(self.dsh_model.set_last_err(message) + f"\n{self.dsh_model.to_dict()}")
 
             self.dsh_model.increment_failures()
             self.dsh_model.mode = DishMode.UNKNOWN
@@ -594,9 +629,13 @@ class DishDriver:
                 self._set_maintenance_mode()
         except Exception as e:
             if isinstance(e, XCommsFailure):
-                logger.error(f"DishDriver {self.dsh_model.dsh_id} failed to communicate with dish controller: {e}")
+                message = f"DishDriver {self.dsh_model.dsh_id} failed to communicate with dish controller: {e}" + \
+                          f" Transitioning to UNKNOWN mode."
+                logger.error(self.dsh_model.set_last_err(message) + f"\n{self.dsh_model.to_dict()}")
             else:
-                logger.exception(f"DishDriver {self.dsh_model.dsh_id} failed to set maintenance mode: {e}\n{self.dsh_model.to_dict()}")
+                message = f"DishDriver {self.dsh_model.dsh_id} failed to set maintenance mode: {e}" + \
+                          f" Transitioning to UNKNOWN mode."
+                logger.exception(self.dsh_model.set_last_err(message) + f"\n{self.dsh_model.to_dict()}")
 
             self.dsh_model.increment_failures()
             self.dsh_model.mode = DishMode.UNKNOWN
@@ -619,9 +658,13 @@ class DishDriver:
                     self._set_config_mode()
         except Exception as e:
             if isinstance(e, XCommsFailure):
-                logger.error(f"DishDriver {self.dsh_model.dsh_id} failed to communicate with dish controller: {e}")
+                message = f"DishDriver {self.dsh_model.dsh_id} failed to communicate with dish controller: {e}" + \
+                          f" Transitioning to UNKNOWN mode."
+                logger.error(self.dsh_model.set_last_err(message) + f"\n{self.dsh_model.to_dict()}")
             else:
-                logger.exception(f"DishDriver {self.dsh_model.dsh_id} failed to set config mode: {e}\n{self.dsh_model.to_dict()}")
+                message = f"DishDriver {self.dsh_model.dsh_id} failed to set config mode: {e}" + \
+                          f" Transitioning to UNKNOWN mode."
+                logger.exception(self.dsh_model.set_last_err(message) + f"\n{self.dsh_model.to_dict()}")
 
             self.dsh_model.increment_failures()
             self.dsh_model.mode = DishMode.UNKNOWN
@@ -644,10 +687,14 @@ class DishDriver:
                 self._set_operate_mode()
         except Exception as e:
             if isinstance(e, XCommsFailure):
-                logger.error(f"DishDriver {self.dsh_model.dsh_id} failed to communicate with dish controller: {e}")
+                message = f"DishDriver {self.dsh_model.dsh_id} failed to communicate with dish controller: {e}" + \
+                          f" Transitioning to UNKNOWN mode."
+                logger.error(self.dsh_model.set_last_err(message) + f"\n{self.dsh_model.to_dict()}")
             else:
-                logger.exception(f"DishDriver {self.dsh_model.dsh_id} failed to set operate mode: {e}\n{self.dsh_model.to_dict()}")
-            
+                message = f"DishDriver {self.dsh_model.dsh_id} failed to set operate mode: {e}" + \
+                          f" Transitioning to UNKNOWN mode."
+                logger.exception(self.dsh_model.set_last_err(message) + f"\n{self.dsh_model.to_dict()}")
+
             self.dsh_model.increment_failures()
             self.dsh_model.mode = DishMode.UNKNOWN
             self.dsh_model.pointing_state = PointingState.UNKNOWN
@@ -682,15 +729,18 @@ class DishDriver:
        
         # Check if track command is allowed
         if not _is_track_cmd_allowed(self):
-            raise XInvalidTransition(f"DishDriver {self.dsh_model.dsh_id} track command not allowed in dish mode or pointing state.\n{self.dsh_model.to_dict()}")
+            message = f"DishDriver {self.dsh_model.dsh_id} track command not allowed in dish mode {self.dsh_model.mode.name} or pointing state {self.dsh_model.pointing_state.name}."
+            raise XInvalidTransition(self.dsh_model.set_last_err(message) + f"\n{self.dsh_model.to_dict()}")
 
         # Calculate the desired AltAz for the current target
         target_id, target = self.get_target_tuple()
         if target is None:
-            raise XInvalidTransition(f"DishDriver {self.dsh_model.dsh_id} track command requires a valid target to be set.\n{self.dsh_model.to_dict()}")
+            message = f"DishDriver {self.dsh_model.dsh_id} track command requires a valid target to be set."
+            raise XInvalidTransition(self.dsh_model.set_last_err(message) + f"\n{self.dsh_model.to_dict()}")
 
         if target.pointing not in [PointingType.SIDEREAL_TRACK, PointingType.NON_SIDEREAL_TRACK]:
-            logger.warning(f"DishDriver {self.dsh_model.dsh_id} track command ignored for target {target.id} with pointing type {target.pointing.name}.\n{self.dsh_model.to_dict()}")
+            message = f"DishDriver {self.dsh_model.dsh_id} track command ignored for target {target.id} with pointing type {target.pointing.name}."
+            logger.warning(self.dsh_model.set_last_err(message) + f"\n{self.dsh_model.to_dict()}")
             return
 
         altaz = self.get_desired_altaz(target=target)
@@ -701,10 +751,14 @@ class DishDriver:
                 self._track(altaz.alt.degree, altaz.az.degree)
         except Exception as e:
             if isinstance(e, XCommsFailure):
-                logger.error(f"DishDriver {self.dsh_model.dsh_id} failed to communicate with dish controller: {e}")
+                message = f"DishDriver {self.dsh_model.dsh_id} failed to communicate with dish controller: {e}" + \
+                          f" Transitioning to UNKNOWN mode."
+                logger.error(self.dsh_model.set_last_err(message) + f"\n{self.dsh_model.to_dict()}")
             else:
-                logger.exception(f"DishDriver {self.dsh_model.dsh_id} failed to track to AltAz (Alt: {altaz.alt.degree}, Az: {altaz.az.degree}): {e}\n{self.dsh_model.to_dict()}")
-            
+                message = f"DishDriver {self.dsh_model.dsh_id} failed to track to AltAz (Alt: {altaz.alt.degree}, Az: {altaz.az.degree}): {e}" + \
+                          f" Transitioning to UNKNOWN mode."
+                logger.exception(self.dsh_model.set_last_err(message) + f"\n{self.dsh_model.to_dict()}")
+
             self.dsh_model.increment_failures()
             self.dsh_model.mode = DishMode.UNKNOWN
             self.dsh_model.pointing_state = PointingState.UNKNOWN
@@ -732,15 +786,18 @@ class DishDriver:
        
         # Check if scan command is allowed
         if not _is_scan_cmd_allowed(self):
-            raise XInvalidTransition(f"DishDriver {self.dsh_model.dsh_id} scan command not allowed in dish mode or pointing state.\n{self.dsh_model.to_dict()}")
+            message = f"DishDriver {self.dsh_model.dsh_id} scan command not allowed in dish mode or pointing state."
+            raise XInvalidTransition(self.dsh_model.set_last_err(message) + f"\n{self.dsh_model.to_dict()}")
 
         # Calculate the desired AltAz for the current target
         target_id, target = self.get_target_tuple()
         if target is None:
-            raise XInvalidTransition(f"DishDriver {self.dsh_model.dsh_id} scan command requires a valid target to be set.\n{self.dsh_model.to_dict()}")
+            message = f"DishDriver {self.dsh_model.dsh_id} scan command requires a valid target to be set."
+            raise XInvalidTransition(self.dsh_model.set_last_err(message) + f"\n{self.dsh_model.to_dict()}")
 
         if target.pointing not in [PointingType.OFFSET_SCAN, PointingType.FIVE_POINT_SCAN]:
-            logger.warning(f"DishDriver {self.dsh_model.dsh_id} scan command ignored for target {target.id} with pointing type {target.pointing.name}.\n{self.dsh_model.to_dict()}")
+            message = f"DishDriver {self.dsh_model.dsh_id} scan command ignored for target {target.id} with pointing type {target.pointing.name}."
+            logger.warning(self.dsh_model.set_last_err(message) + f"\n{self.dsh_model.to_dict()}")
             return
 
         altaz = self.get_desired_altaz(target=target)
@@ -751,10 +808,14 @@ class DishDriver:
                 self._scan(altaz.alt.degree, altaz.az.degree)
         except Exception as e:
             if isinstance(e, XCommsFailure):
-                logger.error(f"DishDriver {self.dsh_model.dsh_id} failed to communicate with dish controller: {e}")
+                message = f"DishDriver {self.dsh_model.dsh_id} failed to communicate with dish controller: {e}" + \
+                          f" Transitioning to UNKNOWN mode."
+                logger.error(self.dsh_model.set_last_err(message) + f"\n{self.dsh_model.to_dict()}")
             else:
-                logger.exception(f"DishDriver {self.dsh_model.dsh_id} failed to scan to AltAz (Alt: {altaz.alt.degree}, Az: {altaz.az.degree}): {e}\n{self.dsh_model.to_dict()}")
-            
+                message = f"DishDriver {self.dsh_model.dsh_id} failed to scan to AltAz (Alt: {altaz.alt.degree}, Az: {altaz.az.degree}): {e}" + \
+                          f" Transitioning to UNKNOWN mode."
+                logger.exception(self.dsh_model.set_last_err(message) + f"\n{self.dsh_model.to_dict()}")
+
             self.dsh_model.increment_failures()
             self.dsh_model.mode = DishMode.UNKNOWN
             self.dsh_model.pointing_state = PointingState.UNKNOWN
@@ -778,9 +839,13 @@ class DishDriver:
                 self._stop()
         except Exception as e:
             if isinstance(e, XCommsFailure):
-                logger.error(f"DishDriver {self.dsh_model.dsh_id} failed to communicate with dish controller: {e}")
+                message = f"DishDriver {self.dsh_model.dsh_id} failed to communicate with dish controller: {e}" + \
+                          f" Transitioning to UNKNOWN mode."
+                logger.error(self.dsh_model.set_last_err(message) + f"\n{self.dsh_model.to_dict()}")
             else:
-                logger.exception(f"DishDriver {self.dsh_model.dsh_id} failed to stop dish movement: {e}\n{self.dsh_model.to_dict()}")
+                message = f"DishDriver {self.dsh_model.dsh_id} failed to stop dish movement: {e}" + \
+                          f" Transitioning to UNKNOWN mode."
+                logger.exception(self.dsh_model.set_last_err(message) + f"\n{self.dsh_model.to_dict()}")
 
             self.dsh_model.increment_failures()
             self.dsh_model.mode = DishMode.UNKNOWN
@@ -806,7 +871,8 @@ class DishDriver:
 
         # Check if slew command is allowed
         if not _is_slew_cmd_allowed(self):
-            raise XInvalidTransition(f"DishDriver {self.dsh_model.dsh_id} slew command not allowed in dish mode or pointing state.\n{self.dsh_model.to_dict()}")
+            message = f"DishDriver {self.dsh_model.dsh_id} slew command not allowed in dish mode {self.dsh_model.mode.name} or pointing state {self.dsh_model.pointing_state.name}."
+            raise XInvalidTransition(self.dsh_model.set_last_err(message) + f"\n{self.dsh_model.to_dict()}")
 
         # Update the desired AltAz in the dish model
         self.set_desired_altaz(altaz)
@@ -830,10 +896,14 @@ class DishDriver:
                 self._slew(altaz.alt.degree, altaz.az.degree)
         except Exception as e:
             if isinstance(e, XCommsFailure):
-                logger.error(f"DishDriver {self.dsh_model.dsh_id} failed to communicate with dish controller: {e}")
+                message = f"DishDriver {self.dsh_model.dsh_id} failed to communicate with dish controller: {e}" + \
+                          f" Transitioning to UNKNOWN mode."
+                logger.error(self.dsh_model.set_last_err(message) + f"\n{self.dsh_model.to_dict()}")
             else:
-                logger.exception(f"DishDriver {self.dsh_model.dsh_id} failed to slew to AltAz (Alt: {altaz.alt.degree}, Az: {altaz.az.degree}): {e}\n{self.dsh_model.to_dict()}")
-            
+                message = f"DishDriver {self.dsh_model.dsh_id} failed to slew to AltAz (Alt: {altaz.alt.degree}, Az: {altaz.az.degree}): {e}" + \
+                          f" Transitioning to UNKNOWN mode."
+                logger.exception(self.dsh_model.set_last_err(message) + f"\n{self.dsh_model.to_dict()}")
+
             self.dsh_model.increment_failures()
             self.dsh_model.mode = DishMode.UNKNOWN
             self.dsh_model.pointing_state = PointingState.UNKNOWN
@@ -871,7 +941,8 @@ class DishDriver:
         elif target.pointing == PointingType.OFFSET_SCAN:
 
             if target.scan is None or target.scan.offset is None or target.scan.rate is None or target.scan.angle is None:
-                raise XStreamUnableToExtract(f"DishDriver {self.dsh_model.dsh_id} cannot calculate desired AltAz for OFFSET_SCAN target without valid scan parameters.\n{self.dsh_model.to_dict()}")
+                message = f"DishDriver {self.dsh_model.dsh_id} cannot calculate desired AltAz for OFFSET_SCAN target without valid scan parameters.\n{self.dsh_model.to_dict()}"
+                raise XStreamUnableToExtract(self.dsh_model.set_last_err(message))
 
             # Step 1: Compute true target position in AltAz at current time
             if target.sky_coord is not None:
@@ -881,7 +952,8 @@ class DishDriver:
                 body_coord = get_body(body=target.id, time=time, location=self.location)
                 true_altaz = body_coord.transform_to(frame)
             else:
-                raise XStreamUnableToExtract(f"DishDriver {self.dsh_model.dsh_id} cannot calculate desired AltAz for OFFSET_SCAN target without valid sky_coord, altaz or target id.\n{self.dsh_model.to_dict()}")
+                message = f"DishDriver {self.dsh_model.dsh_id} cannot calculate desired AltAz for OFFSET_SCAN target without valid sky_coord, altaz or target id.\n{self.dsh_model.to_dict()}"
+                raise XStreamUnableToExtract(self.dsh_model.set_last_err(message))
             
             # Step 2: Compute elapsed time
             now = datetime.now(timezone.utc)
@@ -900,7 +972,8 @@ class DishDriver:
         elif target.pointing == PointingType.FIVE_POINT_SCAN:
             
             if target.scan is None or target.scan.offset is None or target.scan.direction is None:
-                raise XStreamUnableToExtract(f"DishDriver {self.dsh_model.dsh_id} cannot calculate desired AltAz for FIVE_POINT_SCAN target without valid scan parameters.\n{self.dsh_model.to_dict()}")
+                message = f"DishDriver {self.dsh_model.dsh_id} cannot calculate desired AltAz for FIVE_POINT_SCAN target without valid scan parameters.\n{self.dsh_model.to_dict()}"
+                raise XStreamUnableToExtract(self.dsh_model.set_last_err(message))
 
             # Step 1: Compute true target position in AltAz at current time
             if target.sky_coord is not None:
@@ -910,7 +983,8 @@ class DishDriver:
                 body_coord = get_body(body=target.id, time=time, location=self.location)
                 true_altaz = body_coord.transform_to(frame)
             else:
-                raise XStreamUnableToExtract(f"DishDriver {self.dsh_model.dsh_id} cannot calculate desired AltAz for FIVE_POINT_SCAN target without valid sky_coord, altaz or target id.\n{self.dsh_model.to_dict()}")
+                message = f"DishDriver {self.dsh_model.dsh_id} cannot calculate desired AltAz for FIVE_POINT_SCAN target without valid sky_coord, altaz or target id.\n{self.dsh_model.to_dict()}"
+                raise XStreamUnableToExtract(self.dsh_model.set_last_err(message))
                 
             # Step 2: Compute angular offset
             offset = target.scan.offset * u.deg if target.scan.direction != "C" else 0 * u.deg
@@ -1034,7 +1108,9 @@ class DishDriver:
         try:
             self.set_dish_mode(DishMode.SHUTDOWN)
         except Exception as e:
-            logger.error(f"DishDriver {self.dsh_model.dsh_id} failed to shutdown cleanly during imminent power loss notification: {e}\n{self.dsh_model.to_dict()}")
+            message = f"DishDriver {self.dsh_model.dsh_id} failed to shutdown cleanly during imminent power loss notification: {e}" + \
+                      f" Transitioning to SHUTDOWN mode."
+            logger.error(self.dsh_model.set_last_err(message) + f"\n{self.dsh_model.to_dict()}")
 
         self.dsh_model.mode = DishMode.SHUTDOWN
         self.dsh_model.last_update = datetime.now(timezone.utc)
@@ -1047,7 +1123,8 @@ class DishDriver:
         if self.dsh_model.mode in [DishMode.STANDBY_LP, DishMode.SHUTDOWN]:
             return  # Already in low power or shutdown mode
         elif self.dsh_model.mode == DishMode.MAINTENANCE:
-            logger.warning(f"DishDriver {self.dsh_model.dsh_id} is in MAINTENANCE mode during low power event. Cannot transition to STANDBY_LP mode.\n{self.dsh_model.to_dict()}")
+            message = f"DishDriver {self.dsh_model.dsh_id} is in MAINTENANCE mode during low power event. Cannot transition to STANDBY_LP mode."
+            logger.warning(self.dsh_model.set_last_err(message) + f"\n{self.dsh_model.to_dict()}")
         else:
             self.set_dish_mode(DishMode.STANDBY_LP)
 
