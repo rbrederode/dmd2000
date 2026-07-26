@@ -43,13 +43,15 @@ def test_build_webhook_payload_normalises_single_observation_file():
 def test_replace_now_tokens_uses_one_utc_base_time_for_every_reference():
     injection_time = datetime(2026, 7, 24, 14, 30, 45, tzinfo=timezone.utc)
     definition = {
-        "obs_id": "ODT-NOW-dish001-1m",
+        "obs_id": "ODT-{{NOW}}-dish001-1m",
         "references": [
+            "{{NOW}}",
+            "start-{{NOW+1m}}",
+            "repeat-{{NOW+1m}}",
+            "later-{{NOW+2m}}",
             "NOW",
-            "start-NOW1",
-            "repeat-NOW1",
-            "later-NOW2",
-            "SNOW1",
+            "NOW1",
+            "{{NOW1}}",
         ],
     }
 
@@ -61,14 +63,16 @@ def test_replace_now_tokens_uses_one_utc_base_time_for_every_reference():
         "start-2026-07-24T143145Z",
         "repeat-2026-07-24T143145Z",
         "later-2026-07-24T143245Z",
-        "SNOW1",
+        "NOW",
+        "NOW1",
+        "{{NOW1}}",
     ]
 
 
 def test_build_webhook_payload_replaces_now_tokens_before_validation(tmp_path):
     definition = json.loads(OBSERVATION_FILE.read_text(encoding="utf-8"))
     old_obs_id = definition["obs_id"]
-    tokenised_obs_id = "ODT-NOW2-dish003-2h"
+    tokenised_obs_id = "ODT-{{NOW+2m}}-dish003-2h"
 
     def replace_obs_id(value):
         if isinstance(value, dict):

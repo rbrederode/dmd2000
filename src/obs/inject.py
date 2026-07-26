@@ -19,19 +19,18 @@ from models.oda import ObsList
 
 DEFAULT_URL = "http://127.0.0.1:5001/webhook"
 
-""" The NOW<n> token pattern matches the string "NOW" followed by an optional integer number of minutes. 
-    This token is used in observation definition files to represent the current UTC time (NOW) or a time offset by n minutes (NOW<n>).
-    The regex pattern captures the optional minutes as a named group "minutes" for later use in the replacement function. 
-    The pattern ensures that "NOW" is matched as a whole word, preventing partial matches within other words. 
-    The optional minutes can be positive or negative, allowing for flexible time adjustments in the observation definitions.
+"""Match UTC time tokens such as ``{{NOW}}`` and ``{{NOW+5m}}``.
+
+The optional integer is a positive offset in minutes from the single UTC
+timestamp captured when the observation definition is injected.
 """
-NOW_TOKEN_PATTERN = re.compile(r"\bNOW(?P<minutes>\d*)\b")
+NOW_TOKEN_PATTERN = re.compile(r"\{\{NOW(?:\+(?P<minutes>\d+)m)?\}\}")
 
 def replace_now_tokens(value, now: datetime | None = None):
-    """Replace NOW labels in all strings in a JSON-compatible value.
+    """Replace UTC time tokens in all strings in a JSON-compatible value.
 
-    ``NOW`` uses the captured UTC time, while ``NOW<n>`` uses that same
-    instant plus ``n`` minutes.
+    ``{{NOW}}`` uses the captured UTC time, while ``{{NOW+<n>m}}`` uses
+    that same instant plus ``n`` minutes.
     """
 
     base_time = now or datetime.now(timezone.utc)
@@ -122,9 +121,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Inject an observation definition JSON file into a running Telescope Manager.",
         epilog=(
-            'UTC time labels may be embedded in JSON strings, for example '
-            '"obs_id": "ODT-NOW-dish001-1m". NOW is the injection time and '
-            "NOW<n> is the injection time plus n minutes."
+            'UTC time tokens may be embedded in JSON strings, for example '
+            '"obs_id": "ODT-{{NOW}}-dish001-1m". {{NOW}} is the injection '
+            "time and {{NOW+<n>m}} is the injection time plus n minutes."
         ),
     )
     

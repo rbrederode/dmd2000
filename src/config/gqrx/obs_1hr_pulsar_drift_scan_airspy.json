@@ -17,7 +17,7 @@
     "value": "01:00:05"
   },
   "dsh_id": "dish001",
-  "obs_id": "ODT-2026-06-17T155500Z-dish001-1hr",
+  "obs_id": "ODT-{{NOW}}-dish001-1hr",
   "obs_state": {
     "_type": "enum.IntEnum",
     "instance": "ObsState",
@@ -39,7 +39,7 @@
       "integration_time": 3420,
       "spectral_resolution": 100,
       "tgt_idx": 0,
-      "obs_id": "ODT-2026-06-17T155500Z-dish001-1hr",
+      "obs_id": "ODT-{{NOW}}-dish001-1hr",
       "filter_bank": {
         "_type": "FilterBank",
         "enabled": true,
@@ -64,14 +64,14 @@
         "value": "SIDEREAL_TRACK"
       },
       "tgt_idx": 0,
-      "obs_id": "ODT-2026-06-17T155500Z-dish001-1hr",
+      "obs_id": "ODT-{{NOW}}-dish001-1hr",
       "id": "B0329+54"
     }
   ],
   "user_email": "ray.brederode@skao.int",
   "created": {
     "_type": "datetime",
-    "value": "2026-06-17T07:13:47.688Z"
+    "value": "{{NOW}}"
   },
   "timeout_ms_scan": 180000,
   "target_scans": []
