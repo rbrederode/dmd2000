@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from queue import Queue
 
@@ -37,6 +38,64 @@ def test_build_webhook_payload_normalises_single_observation_file():
     assert payload["message"]["obs_list"][0]["_type"] == "ObsModel"
     assert payload["message"]["obs_list"][0]["scheduling_block_start"]["_type"] == "datetime"
     assert obs_ids == ["ODT-2026-07-21T150000Z-dish003-2h"]
+
+
+def test_replace_now_tokens_uses_one_utc_base_time_for_every_reference():
+    injection_time = datetime(2026, 7, 24, 14, 30, 45, tzinfo=timezone.utc)
+    definition = {
+        "obs_id": "ODT-NOW-dish001-1m",
+        "references": [
+            "NOW",
+            "start-NOW1",
+            "repeat-NOW1",
+            "later-NOW2",
+            "SNOW1",
+        ],
+    }
+
+    replaced = inject.replace_now_tokens(definition, injection_time)
+
+    assert replaced["obs_id"] == "ODT-2026-07-24T143045Z-dish001-1m"
+    assert replaced["references"] == [
+        "2026-07-24T143045Z",
+        "start-2026-07-24T143145Z",
+        "repeat-2026-07-24T143145Z",
+        "later-2026-07-24T143245Z",
+        "SNOW1",
+    ]
+
+
+def test_build_webhook_payload_replaces_now_tokens_before_validation(tmp_path):
+    definition = json.loads(OBSERVATION_FILE.read_text(encoding="utf-8"))
+    old_obs_id = definition["obs_id"]
+    tokenised_obs_id = "ODT-NOW2-dish003-2h"
+
+    def replace_obs_id(value):
+        if isinstance(value, dict):
+            return {
+                key: tokenised_obs_id if key == "obs_id" and child == old_obs_id
+                else replace_obs_id(child)
+                for key, child in value.items()
+            }
+        if isinstance(value, list):
+            return [replace_obs_id(child) for child in value]
+        return value
+
+    definition = replace_obs_id(definition)
+    observation_file = tmp_path / "observation-with-now.json"
+    observation_file.write_text(json.dumps(definition), encoding="utf-8")
+
+    payload, obs_ids = inject.build_webhook_payload(
+        observation_file,
+        now=datetime(2026, 7, 24, 14, 30, tzinfo=timezone.utc),
+    )
+
+    expected_obs_id = "ODT-2026-07-24T143200Z-dish003-2h"
+    assert obs_ids == [expected_obs_id]
+    assert payload["message"]["obs_list"][0]["obs_id"] == expected_obs_id
+    observation = payload["message"]["obs_list"][0]
+    assert all(config["obs_id"] == expected_obs_id for config in observation["target_configs"])
+    assert all(target["obs_id"] == expected_obs_id for target in observation["targets"])
 
 
 def test_inject_observation_posts_to_tm_webhook(monkeypatch):

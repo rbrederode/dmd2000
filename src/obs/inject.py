@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -18,7 +19,44 @@ from models.oda import ObsList
 
 DEFAULT_URL = "http://127.0.0.1:5001/webhook"
 
-def build_webhook_payload(observation_file: str | Path) -> tuple[dict, list[str]]:
+""" The NOW<n> token pattern matches the string "NOW" followed by an optional integer number of minutes. 
+    This token is used in observation definition files to represent the current UTC time (NOW) or a time offset by n minutes (NOW<n>).
+    The regex pattern captures the optional minutes as a named group "minutes" for later use in the replacement function. 
+    The pattern ensures that "NOW" is matched as a whole word, preventing partial matches within other words. 
+    The optional minutes can be positive or negative, allowing for flexible time adjustments in the observation definitions.
+"""
+NOW_TOKEN_PATTERN = re.compile(r"\bNOW(?P<minutes>\d*)\b")
+
+def replace_now_tokens(value, now: datetime | None = None):
+    """Replace NOW labels in all strings in a JSON-compatible value.
+
+    ``NOW`` uses the captured UTC time, while ``NOW<n>`` uses that same
+    instant plus ``n`` minutes.
+    """
+
+    base_time = now or datetime.now(timezone.utc)
+    if base_time.tzinfo is None:
+        base_time = base_time.replace(tzinfo=timezone.utc)
+    else:
+        base_time = base_time.astimezone(timezone.utc)
+
+    def replace(item):
+        if isinstance(item, str):
+            def token_value(match: re.Match) -> str:
+                minutes = int(match.group("minutes") or 0)
+                token_time = base_time + timedelta(minutes=minutes)
+                return token_time.strftime("%Y-%m-%dT%H%M%SZ")
+
+            return NOW_TOKEN_PATTERN.sub(token_value, item)
+        if isinstance(item, list):
+            return [replace(child) for child in item]
+        if isinstance(item, dict):
+            return {key: replace(child) for key, child in item.items()}
+        return item
+
+    return replace(value)
+
+def build_webhook_payload(observation_file: str | Path, now: datetime | None = None) -> tuple[dict, list[str]]:
     """Load, validate and wrap an observation file for the TM webhook.
         Params:
             observation_file: Path to the observation definition JSON file.
@@ -26,11 +64,24 @@ def build_webhook_payload(observation_file: str | Path) -> tuple[dict, list[str]
             A tuple containing the webhook payload and a list of observation IDs.
     """
 
-    obs_list = ObsList.from_disk(str(observation_file))
+    injection_time = now or datetime.now(timezone.utc)
+    if injection_time.tzinfo is None:
+        injection_time = injection_time.replace(tzinfo=timezone.utc)
+    else:
+        injection_time = injection_time.astimezone(timezone.utc)
+    obs_path = Path(observation_file).expanduser()
+    if not obs_path.is_absolute():
+        obs_path = Path.cwd() / obs_path
+
+    with obs_path.open("r", encoding="utf-8") as observation_stream:
+        observation_data = json.load(observation_stream)
+
+    observation_data = replace_now_tokens(observation_data, injection_time)
+    obs_list = ObsList.from_data(observation_data, now=injection_time)
     obs_ids = [obs.obs_id for obs in obs_list.obs_list]
 
     return ({   "event": "alston-rt.ui.odt",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": injection_time.isoformat(),
                 "message": obs_list.to_dict(),
             },
             obs_ids)
@@ -68,7 +119,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         Returns:
             An argparse.Namespace object containing the parsed arguments.
     """
-    parser = argparse.ArgumentParser(description="Inject an observation definition JSON file into a running Telescope Manager.")
+    parser = argparse.ArgumentParser(
+        description="Inject an observation definition JSON file into a running Telescope Manager.",
+        epilog=(
+            'UTC time labels may be embedded in JSON strings, for example '
+            '"obs_id": "ODT-NOW-dish001-1m". NOW is the injection time and '
+            "NOW<n> is the injection time plus n minutes."
+        ),
+    )
     
     parser.add_argument("-f", "--file", required=True, type=Path, help="Observation definition JSON file (ObsModel, ObsList, or raw observation list).")
     parser.add_argument("--url", default=DEFAULT_URL, help=f"Telescope Manager webhook URL (default: {DEFAULT_URL}).")
@@ -98,7 +156,6 @@ def main(argv: list[str] | None = None) -> int:
     obs_label = ", ".join(obs_ids) if obs_ids else "(empty observation list)"
     print(f"Injected observation definition into Telescope Manager: {obs_label}")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -23,6 +23,28 @@ from util.format import fmt_cell, fmt_float, fmt_hyperlink, fmt_target_coords, f
 logger = logging.getLogger(__name__)
 FILTERBANK_STORAGE_DTYPE = np.dtype("float32")
 
+def _mpr_total_power(scan) -> float | None:
+    """Return the total power in a scan's duration-averaged MPR spectrum."""
+    mpr = getattr(scan, "mpr", None)
+    if mpr is None:
+        return None
+
+    try:
+        mpr_values = np.asarray(mpr, dtype=np.float64)
+    except (TypeError, ValueError):
+        return None
+
+    if mpr_values.size == 0:
+        return None
+
+    total_power = float(np.sum(mpr_values))
+    return total_power if np.isfinite(total_power) else None
+
+def _fmt_mpr_total_power(scan) -> str:
+    """Format MPR total power compactly across a wide numeric range."""
+    total_power = _mpr_total_power(scan)
+    return "" if total_power is None else f"{total_power:.4e}"
+
 @contextmanager
 def redirect_root_logging(log_path: str):
     """ Keep console output clean while sending log output to a file.
@@ -70,7 +92,8 @@ def print_sky_scans(obs: ObsModel, sky_q: Queue | None = None, blacklist: list[s
         Parameters:
             obs:         Observation model containing the scan metadata to print.
             sky_q:       Optional queue of processed SKY ``Scan`` objects used to look up
-                         QA values such as SNR, FWHM, and dynamic range.
+                         MPR total power and QA values such as SNR, FWHM, and
+                         dynamic range.
             blacklist:   Optional list of full scan IDs currently marked as excluded.
             scan_filter: Optional predicate receiving a ``ScanModel`` and returning
                          ``True`` when the row should be printed. 
@@ -95,6 +118,7 @@ def print_sky_scans(obs: ObsModel, sky_q: Queue | None = None, blacklist: list[s
     ]
 
     if sky_q is not None and len(sky_q.queue) > 0:
+        columns.append(("MPR Total", 13))
         columns.append(("SNR (dB)", 10))
         columns.append(("FWHM", 10))
         columns.append(("DR (dB)", 10))
@@ -155,9 +179,12 @@ def print_sky_scans(obs: ObsModel, sky_q: Queue | None = None, blacklist: list[s
                     snr_db = getattr(mpr_qa, "snr_db", None)
                     fwhm = getattr(mpr_qa, "fwhm", None)
                     dr_db = getattr(mpr_qa, "dynamic_range_db", None)
+                    row.append(_fmt_mpr_total_power(latest_scan))
                     row.append(fmt_float(snr_db, precision=2))
                     row.append(fmt_float(fwhm, precision=2))
                     row.append(fmt_float(dr_db, precision=2))
+                else:
+                    row.extend(["", "", "", ""])
 
             print(" ".join(fmt_cell(value, width) for value, (_, width) in zip(row, columns)))
 
@@ -254,6 +281,7 @@ def print_aggregated_scans(obs: ObsModel, sky_q: Queue | None = None, int_arrays
         ("Spec Res", 8),
         ("Duration", 8),
         ("Image", 8),
+        ("MPR Total", 13),
         ("SNR (dB)", 10),
         ("FWHM", 10),
         ("DR (dB)", 10),
@@ -309,6 +337,7 @@ def print_aggregated_scans(obs: ObsModel, sky_q: Queue | None = None, int_arrays
             str(scan_model.spectral_resolution),
             fmt_float(integrated_secs if integrated_secs is not None else scan_model.duration, precision=0, suffix=" s"),
             _scan_image_link(scan_model, 8),
+            _fmt_mpr_total_power(scan),
             fmt_float(snr_db, precision=2),
             fmt_float(fwhm, precision=2),
             fmt_float(dr_db, precision=2),

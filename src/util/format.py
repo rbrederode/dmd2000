@@ -28,22 +28,6 @@ def fmt_duration(seconds: float) -> str:
     minutes, remaining_seconds = divmod(remainder, 60)
     return f"{hours:02d}:{minutes:02d}:{remaining_seconds:02d}"
 
-def parse_duration(value: str) -> int:
-    """Parse a duration string in HH:MM:SS format into seconds."""
-    parts = str(value).strip().split(":")
-    if len(parts) != 3:
-        raise ValueError(f"Duration must be in HH:MM:SS format, got {value!r}.")
-
-    try:
-        hours, minutes, seconds = [int(part) for part in parts]
-    except ValueError as exc:
-        raise ValueError(f"Duration must contain integer HH:MM:SS fields, got {value!r}.") from exc
-
-    if hours < 0 or minutes < 0 or seconds < 0 or minutes > 59 or seconds > 59:
-        raise ValueError(f"Duration fields are out of range in {value!r}.")
-
-    return (hours * 3600) + (minutes * 60) + seconds
-
 def fmt_cell(value, width) -> str:
     """Format a single table cell to a fixed width. """
     return f"{str(value):<{width}}"

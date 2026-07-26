@@ -1,4 +1,5 @@
 import math
+from datetime import datetime, timezone
 
 def vector_or_none(value, length, source="IMU"):
     """Convert a list of values to floats, or return None if the list is None or all values are None."""
@@ -101,3 +102,22 @@ def angle_to_altitude(angle, alt_offset=0.0):
         flip_az = True
 
     return max(-90.0, min(90.0, angle)), flip_az
+
+def duration_to_seconds(value: str) -> int:
+    """Convert a duration string in HH:MM:SS format into seconds."""
+    parts = str(value).strip().split(":")
+    if len(parts) != 3:
+        raise ValueError(f"Duration must be in HH:MM:SS format, got {value!r}.")
+
+    try:
+        hours, minutes, seconds = [int(part) for part in parts]
+    except ValueError as exc:
+        raise ValueError(f"Duration must contain integer HH:MM:SS fields, got {value!r}.") from exc
+
+    if hours < 0 or minutes < 0 or seconds < 0 or minutes > 59 or seconds > 59:
+        raise ValueError(f"Duration fields are out of range in {value!r}.")
+
+    return (hours * 3600) + (minutes * 60) + seconds
+
+def datetime_to_dict(value: datetime) -> dict:
+    return {"_type": "datetime", "value": value.isoformat()}

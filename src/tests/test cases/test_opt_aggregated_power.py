@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from obs.opt import save_aggregated_power_csv
+from obs.opt import _fmt_mpr_total_power, _mpr_total_power, save_aggregated_power_csv
 
 
 def _scan(scan_id, tgt_idx, freq_scan, center_freq, cal, loaded_seconds):
@@ -61,3 +61,16 @@ def test_save_aggregated_power_csv_exports_the_plotted_values(tmp_path):
             "aggregated_power": "70.0",
         },
     ]
+
+
+def test_mpr_total_power_sums_the_duration_averaged_spectrum():
+    scan = SimpleNamespace(mpr=np.array([1.25, 2.5, 3.75]))
+
+    assert _mpr_total_power(scan) == 7.5
+    assert _fmt_mpr_total_power(scan) == "7.5000e+00"
+
+
+def test_mpr_total_power_is_blank_when_mpr_is_unavailable_or_invalid():
+    assert _mpr_total_power(SimpleNamespace(mpr=None)) is None
+    assert _fmt_mpr_total_power(SimpleNamespace(mpr=np.array([]))) == ""
+    assert _fmt_mpr_total_power(SimpleNamespace(mpr=np.array([1.0, np.nan]))) == ""
