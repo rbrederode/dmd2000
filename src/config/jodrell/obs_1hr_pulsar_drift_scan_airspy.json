@@ -61,7 +61,7 @@
       "pointing": {
         "_type": "enum.IntEnum",
         "instance": "PointingType",
-        "value": "SIDEREAL_TRACK"
+        "value": "DRIFT_SCAN"
       },
       "tgt_idx": 0,
       "obs_id": "ODT-{{NOW}}-dish001-1hr",

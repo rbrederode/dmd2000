@@ -201,13 +201,21 @@ class Observation:
                 self._update_integrated_data_arrays(scan=scan)
                 scan.__del__()  # Explicitly release memory as quickly as possible 
 
-    def integrate_sky_scans(self, dir: str, sky_q: "Queue" = None, cal_q: "Queue" = None):
+    def integrate_sky_scans(
+        self,
+        dir: str,
+        sky_q: "Queue" = None,
+        cal_q: "Queue" = None,
+        processed_scans: list["Scan"] | None = None,
+    ):
         """ Iterate over sky scan iterations for each target and aggregate their summed power spectra into integrated data arrays.
 
             Parameters:
                 dir:        Directory containing the scan files.
                 sky_q:      Optional SKY queue passed into the pipeline factory.
                 cal_q:      Optional calibration queue passed into the pipeline factory.
+                processed_scans: Optional list that retains each processed physical
+                    SKY scan for callers such as observation visualisations.
         """
 
         if self.obs_model is None:
@@ -243,7 +251,10 @@ class Observation:
                     continue
 
                 self._update_integrated_data_arrays(scan=scan)
-                scan.__del__()  # Explicitly release memory as quickly as possible 
+                if processed_scans is not None:
+                    processed_scans.append(scan)
+                else:
+                    scan.__del__()  # Explicitly release memory as quickly as possible
 
     def synthesise_integrated_scans(self, sky_q: "Queue" = None, cal_q: "Queue" = None, signal_displays: dict = None):
         """ Synthesise integrated scans for each target and frequency scan combination by averaging the integrated summed power spectra across scan iterations.

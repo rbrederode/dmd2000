@@ -507,7 +507,11 @@ def _scan_galactic_coordinates(scan_model, obs_path=None):
         if scan_model.read_start is None:
             raise ValueError(f"Scan {scan_model.scan_id} has no read_start time for Alt/Az conversion.")
 
-        location = EarthLocation(lat=float(obs.latitude) * u.deg, lon=float(obs.longitude) * u.deg)
+        location = EarthLocation(
+            lat=float(obs.latitude) * u.deg,
+            lon=float(obs.longitude) * u.deg,
+            height=float(obs.height) * u.m,
+        )
         alt = _coord_component(target.altaz, "alt")
         az = _coord_component(target.altaz, "az")
         altaz = AltAz(

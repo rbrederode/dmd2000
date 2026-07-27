@@ -104,6 +104,7 @@ class ObsModel(BaseModel):
         "f/d_ratio": And(Or(int, float), lambda v: v >= 0.0),                   # Dish focal length to diameter ratio
         "latitude": And(Or(int, float), lambda v: -90.0 <= v <= 90.0),          # Dish latitude (degrees)
         "longitude": And(Or(int, float), lambda v: -180.0 <= v <= 180.0),       # Dish longitude (degrees)
+        "height": And(Or(int, float), lambda v: v >= 0.0),                      # Dish height above sea level (meters)
 
         "total_integration_time": And(Or(int, float), lambda v: v >= 0.0),          # Total integration time (seconds)
         "estimated_slewing_time": And(Or(int, float), lambda v: v >= 0.0),          # Estimated slewing time (seconds)
@@ -162,6 +163,7 @@ class ObsModel(BaseModel):
             "f/d_ratio": 0.0,
             "latitude": 0.0,
             "longitude": 0.0,
+            "height": 0.0,
             "total_integration_time": 0.0,
             "estimated_slewing_time": 0.0,
             "estimated_observation_duration": "00:00:00",

@@ -494,6 +494,13 @@ class ObservationExecutionTool:
             action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
             return False
 
+        # Snapshot the resolved dish location in the observation metadata. This
+        # keeps archived observations self-contained if the dish model changes.
+        obs.latitude = dsh_model.latitude
+        obs.longitude = dsh_model.longitude
+        obs.height = dsh_model.height
+        obs.last_update = datetime.now(timezone.utc)
+
         with self._rlock:
 
             granted_all_resources = True    # Flag indicating if all resources were granted

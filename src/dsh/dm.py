@@ -625,7 +625,7 @@ class DM(App):
         """ Returns the current health state of this application.
         """
         if self.dm_model.tm_connected != CommunicationStatus.ESTABLISHED:
-            message = "Dish Manager health status set to DEGRADED: Telescope Manager (TM) not connected"
+            message = "Dish Manager health status set to DEGRADED: Telescope Manager not connected"
             return HealthState.DEGRADED
         else:
             return HealthState.OK

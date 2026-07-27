@@ -5,6 +5,7 @@ from datetime import timedelta
 import os
 import logging
 import re
+from pathlib import Path
 from queue import Queue
 
 import numpy as np
@@ -851,6 +852,64 @@ def save_aggregated_power_csv(obs_id: str, scans, output_dir: str) -> str:
     logger.info(f"OPT: Saved aggregated SKY power data to {output_path}")
     return output_path
 
+def process_observation(
+    directory: str,
+    obs_id: str,
+    profile: str = "default",
+    blacklist: list[str] | None = None,
+    retain_sky_scans: bool = False,
+    signal_displays: dict | None = None,
+):
+    """Load and process an observation using the same pipeline as OPT.
+
+    Returns:
+        A tuple of ``(observation, sky_queue, calibration_queue,
+        processed_sky_scans)``. ``processed_sky_scans`` contains physical SKY
+        scans only when ``retain_sky_scans`` is true.
+    """
+    directory = os.path.expanduser(directory)
+    config_dir = Path(__file__).resolve().parents[1] / "config" / profile
+    pipeline_factory = Observation.init_pipeline_factory(input_dir=str(config_dir))
+    observation = Observation.from_disk(
+        dir=directory,
+        obs_id=obs_id,
+        blacklist=blacklist or [],
+        pipeline_factory=pipeline_factory,
+    )
+    if observation is None:
+        raise FileNotFoundError(
+            f"Observation metadata {obs_id}-obs.json was not found in {directory}"
+        )
+
+    sky_queue = Queue()
+    calibration_queue = Queue()
+    retained_scans = [] if retain_sky_scans else None
+    displays = signal_displays or {}
+
+    observation.integrate_cal_scans(
+        dir=directory,
+        sky_q=sky_queue,
+        cal_q=calibration_queue,
+    )
+    observation.synthesise_integrated_scans(
+        sky_q=sky_queue,
+        cal_q=calibration_queue,
+        signal_displays=displays,
+    )
+    observation.integrate_sky_scans(
+        dir=directory,
+        sky_q=sky_queue,
+        cal_q=calibration_queue,
+        processed_scans=retained_scans,
+    )
+    observation.synthesise_integrated_scans(
+        sky_q=sky_queue,
+        cal_q=calibration_queue,
+        signal_displays=displays,
+    )
+
+    return observation, sky_queue, calibration_queue, retained_scans or []
+
 def main():
     """ Parse CLI arguments, load observation metadata, let the user manage the
         blacklist, initialise processing state, and replay scans through the
@@ -899,20 +958,21 @@ def main():
                 break
             blacklist = updated_blacklist
 
-        pipeline_factory = Observation.init_pipeline_factory(input_dir='config/' + args.profile)
-        obs = Observation.from_disk(dir=args.dir, obs_id=args.obs, blacklist=blacklist, pipeline_factory=pipeline_factory)
-        if obs is None:
+        signal_displays = preview_obs.init_signal_displays()
+
+        try:
+            obs, sky_q, cal_q, _ = process_observation(
+                directory=args.dir,
+                obs_id=args.obs,
+                profile=args.profile,
+                blacklist=blacklist,
+                signal_displays=signal_displays,
+            )
+        except FileNotFoundError:
             logger.error(f"OPT: Failed to reload observation metadata for Observation {args.obs} in {args.dir}. Exiting.")
             return
 
-        signal_displays = obs.init_signal_displays()
-
         print(obs.describe_processing_pipeline_factory())
-
-        obs.integrate_cal_scans(dir=args.dir, sky_q=sky_q, cal_q=cal_q)
-        obs.synthesise_integrated_scans(sky_q=sky_q, cal_q=cal_q, signal_displays=signal_displays)
-        obs.integrate_sky_scans(dir=args.dir, sky_q=sky_q, cal_q=cal_q)
-        obs.synthesise_integrated_scans(sky_q=sky_q, cal_q=cal_q, signal_displays=signal_displays)
 
         collapsed_sky_arrays = _collapse_integrated_arrays(obs.int_data_arrays, scan_type=ScanType.SKY)
 
