@@ -200,12 +200,12 @@ class WeatherStation(App):
             health_state = HealthState.OK
 
         elif self.ws_model.tm_connected != CommunicationStatus.ESTABLISHED and self.ws_model.dm_connected == CommunicationStatus.ESTABLISHED:
-            message = f"WeatherStation {self.ws_model.id} health status set to DEGRADED: Telescope Manager (TM) not connected"
+            message = f"WeatherStation {self.ws_model.id} health status set to DEGRADED: Telescope Manager not connected"
             self.set_last_err(message)
             health_state = HealthState.DEGRADED
 
         elif self.ws_model.tm_connected == CommunicationStatus.ESTABLISHED and self.ws_model.dm_connected != CommunicationStatus.ESTABLISHED:
-            message = f"WeatherStation {self.ws_model.id} health status set to FAILED: Dish Manager (DM) not connected"
+            message = f"WeatherStation {self.ws_model.id} health status set to FAILED: Dish Manager not connected"
             self.set_last_err(message)
             health_state = HealthState.FAILED
 
@@ -218,7 +218,7 @@ class WeatherStation(App):
                 message = f"WeatherStation {self.ws_model.id} health status set to FAILED: Weather driver failures exceeded threshold ({failure_count} >= {failure_threshold})"
                 self.set_last_err(message)
                 health_state = HealthState.FAILED
-                
+
             elif failure_count > 0 and health_state == HealthState.OK:
                 message = f"WeatherStation {self.ws_model.id} health status set to DEGRADED: Weather driver failures ({failure_count}) exceeded 0 but below threshold ({failure_threshold})"
                 self.set_last_err(message)

@@ -555,15 +555,15 @@ class Digitiser(App):
             framework to allow the application to report its health state to the Telescope Manager.
         """
         if self.dig_model.sdr_connected != CommunicationStatus.ESTABLISHED:
-            message = "Digitiser health status set to FAILED: Software Defined Radio (SDR) not connected"
+            message = "Digitiser health status set to FAILED: Software Defined Radio not connected"
             self.set_last_err(message)
             return HealthState.FAILED
         elif self.dig_model.tm_connected != CommunicationStatus.ESTABLISHED:
-            message = "Digitiser health status set to DEGRADED: Telescope Manager (TM) not connected"
+            message = "Digitiser health status set to DEGRADED: Telescope Manager not connected"
             self.set_last_err(message)
             return HealthState.DEGRADED
         elif self.dig_model.sdp_connected != CommunicationStatus.ESTABLISHED:
-            message = "Digitiser health status set to DEGRADED: Science Data Processor (SDP) not connected"
+            message = "Digitiser health status set to DEGRADED: Science Data Processor not connected"
             self.set_last_err(message)
             return HealthState.DEGRADED
         elif self.temp_sensor is not None:
