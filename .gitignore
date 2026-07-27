@@ -21,3 +21,8 @@ __pycache__/
 
 # CAD STL Files
 *.stl
+
+# Parquet files
+*.parquet
+de421.bsp
+duckdb-extensions
