@@ -57,7 +57,7 @@
         {
             "_type": "DishModel",
             "dsh_id": "dish002",
-            "short_desc": "70cm Discovery Dish mounted on BigRAS HD",
+            "short_desc": "70cm Discovery Dish",
             "diameter": 0.7,
             "fd_ratio": 0.37,
             "latitude": 53.187052,
@@ -94,8 +94,8 @@
             },
             "driver_config": {
                 "_type": "MD01Config",
-                "host": "127.0.0.1",
-                "port": 6000,
+                "host": "192.168.0.63",
+                "port": 23,
                 "stow_alt": 90.0,
                 "stow_az": 0.0,
                 "offset_alt": 0.0,
