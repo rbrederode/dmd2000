@@ -181,7 +181,7 @@ class Digitiser(App):
             message = f"Digitiser stopping scanning for observation {self.dig_model.scanning.get('obs_id', 'None')} due to Telescope Manager disconnect."
             logger.warning(self.set_last_err(message))
 
-            self.dig_model.scanning = False
+            self.set_scanning(False)
             self._advance_scan_samples_generation()
             self.set_bpf_power_state(False)  # Switch bandpass filter powered off when stopping scanning:
 
@@ -316,7 +316,7 @@ class Digitiser(App):
             message = f"Digitiser stopping scanning for observation {self.dig_model.scanning.get('obs_id', 'None')} due to Science Data Processor disconnect."
             logger.warning(self.set_last_err(message))
 
-            self.dig_model.scanning = False
+            self.set_scanning(False)
             self._advance_scan_samples_generation()
             self.set_bpf_power_state(False)  # Switch bandpass filter powered off when stopping scanning:
 
@@ -419,7 +419,7 @@ class Digitiser(App):
                         if temp_reading.temperature > self.dig_model.temp_max:
 
                             # Stop scanning and advance the scan samples generation to invalidate any queued/in-flight scan sample timers
-                            self.dig_model.scanning = False
+                            self.set_scanning(False)
                             self._advance_scan_samples_generation()
 
                             shutdown_reason = (f"Digitiser Assembly temperature sensor reading {temp_reading.temperature:.2f} C "
@@ -630,6 +630,16 @@ class Digitiser(App):
         message = f"Digitiser set property {prop_name[4:]} to {prop_value}"
         logger.info(message)
         return tm_dig.STATUS_SUCCESS, message, prop_value, None
+
+    def set_scanning(self, value):
+        """Update scanning state and reset the stream when acquisition stops."""
+        self.dig_model.scanning = value
+        if not value:
+            discarded = self.sdr.stream_reset()
+            logger.info(
+                "Digitiser reset SDR stream after scanning stopped; discarded %d buffered samples.",
+                discarded,
+            )
 
     def handle_field_get(self, api_call):
         """ Handles field get api calls.
