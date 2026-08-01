@@ -17,7 +17,7 @@
     "value": "2026-04-18T09:05:00.000Z"
   },
   "dsh_id": "dish001",
-  "obs_id": "ODT-2026-04-18T0900Z-dish001-5min-load",
+  "obs_id": "ODT-{{NOW}}-dish001-5min-load",
   "obs_state": {
     "_type": "enum.IntEnum",
     "instance": "ObsState",
@@ -39,7 +39,7 @@
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 0,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-5min-load"
+      "obs_id": "ODT-{{NOW}}-dish001-5min-load"
     },
     {
       "_type": "TargetConfig",
@@ -55,7 +55,7 @@
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 1,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-5min-load"
+      "obs_id": "ODT-{{NOW}}-dish001-5min-load"
     },
     {
       "_type": "TargetConfig",
@@ -71,7 +71,7 @@
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 2,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-5min-load"
+      "obs_id": "ODT-{{NOW}}-dish001-5min-load"
     },
     {
       "_type": "TargetConfig",
@@ -87,7 +87,7 @@
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 3,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-5min-load"
+      "obs_id": "ODT-{{NOW}}-dish001-5min-load"
     },
     {
       "_type": "TargetConfig",
@@ -103,7 +103,7 @@
       "integration_time": 60,
       "spectral_resolution": 2048,
       "tgt_idx": 4,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-5min-load"
+      "obs_id": "ODT-{{NOW}}-dish001-5min-load"
     }
   ],
   "targets": [
@@ -119,7 +119,7 @@
         "value": "DRIFT_SCAN"
       },
       "tgt_idx": 0,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-5min-load"
+      "obs_id": "ODT-{{NOW}}-dish001-5min-load"
     },
     {
       "_type": "TargetModel",
@@ -133,7 +133,7 @@
         "value": "DRIFT_SCAN"
       },
       "tgt_idx": 1,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-5min-load"
+      "obs_id": "ODT-{{NOW}}-dish001-5min-load"
     },
     {
       "_type": "TargetModel",
@@ -147,7 +147,7 @@
         "value": "DRIFT_SCAN"
       },
       "tgt_idx": 2,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-5min-load"
+      "obs_id": "ODT-{{NOW}}-dish001-5min-load"
     },
     {
       "_type": "TargetModel",
@@ -161,7 +161,7 @@
         "value": "DRIFT_SCAN"
       },
       "tgt_idx": 3,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-5min-load"
+      "obs_id": "ODT-{{NOW}}-dish001-5min-load"
     },
     {
       "_type": "TargetModel",
@@ -175,13 +175,13 @@
         "value": "DRIFT_SCAN"
       },
       "tgt_idx": 4,
-      "obs_id": "ODT-2026-04-18T0900Z-dish001-5min-load"
+      "obs_id": "ODT-{{NOW}}-dish001-5min-load"
     }
   ],
   "user_email": "ray.brederode@skao.int",
   "created": {
     "_type": "datetime",
-    "value": "2026-05-14T00:00:00.000Z"
+    "value": "{{NOW}}"
   },
   "timeout_ms_scan": 180000
 }
