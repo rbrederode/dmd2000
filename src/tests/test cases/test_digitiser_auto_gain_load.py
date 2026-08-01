@@ -20,6 +20,15 @@ class AutoGainSdr:
         return 34.0
 
 
+class ResetSdr:
+    def __init__(self):
+        self.reset_calls = 0
+
+    def stream_reset(self):
+        self.reset_calls += 1
+        return 123
+
+
 def make_digitiser(load_active=True, fail=False):
     digitiser = Digitiser.__new__(Digitiser)
     digitiser.stop = MethodType(lambda self: None, digitiser)
@@ -28,6 +37,7 @@ def make_digitiser(load_active=True, fail=False):
         load_active=load_active,
         sdr_connected=CommunicationStatus.ESTABLISHED,
     )
+    digitiser.app_model = digitiser.dig_model.app
     digitiser.load_state_changes = []
 
     def set_load_active(self, value):
@@ -70,3 +80,28 @@ def test_set_auto_gain_restores_load_after_hardware_failure():
     assert digitiser.sdr.load_states_seen == [False]
     assert digitiser.load_state_changes == [False, True]
     assert digitiser.dig_model.load_active is True
+
+
+def test_stopping_scan_resets_stream_buffer():
+    digitiser = Digitiser.__new__(Digitiser)
+    digitiser.stop = MethodType(lambda self: None, digitiser)
+    digitiser.dig_model = DigitiserModel(dig_id="dig001", scanning={"obs_id": "obs001"})
+    digitiser.sdr = ResetSdr()
+
+    digitiser.set_scanning(False)
+
+    assert digitiser.dig_model.scanning is False
+    assert digitiser.sdr.reset_calls == 1
+
+
+def test_starting_scan_does_not_reset_stream_buffer():
+    digitiser = Digitiser.__new__(Digitiser)
+    digitiser.stop = MethodType(lambda self: None, digitiser)
+    digitiser.dig_model = DigitiserModel(dig_id="dig001", scanning=False)
+    digitiser.sdr = ResetSdr()
+
+    scanning = {"obs_id": "obs001"}
+    digitiser.set_scanning(scanning)
+
+    assert digitiser.dig_model.scanning == scanning
+    assert digitiser.sdr.reset_calls == 0

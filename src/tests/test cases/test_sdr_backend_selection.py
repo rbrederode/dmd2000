@@ -364,3 +364,67 @@ def test_airstream_driver_can_configure_ring_after_sample_rate_is_set(monkeypatc
     assert np.array_equal(samples, np.arange(100, dtype=np.complex64))
 
     sdr.close()
+
+
+def test_stream_reset_discards_buffered_samples_and_restarts_at_live_edge(monkeypatch):
+    from models.comms import CommunicationStatus
+
+    class FakeRTLSDR:
+        def __init__(self, bias_t_enabled=False, sdr_config=None):
+            self.sample_rate = int(sdr_config["sample_rate"])
+            self.next_sample = 0
+
+        def get_comms_status(self):
+            return CommunicationStatus.ESTABLISHED
+
+        def get_sample_rate(self):
+            return self.sample_rate
+
+        def get_eeprom_info(self):
+            return {}
+
+        def close(self):
+            pass
+
+        def _read_complex_samples(self, num_samples):
+            time.sleep(0.01)
+            start = self.next_sample
+            self.next_sample += num_samples
+            return np.arange(start, start + num_samples, dtype=np.complex64)
+
+        def __getattr__(self, name):
+            if name.startswith("get_"):
+                return lambda *args, **kwargs: 0
+            if name.startswith("set_"):
+                return lambda *args, **kwargs: None
+            raise AttributeError(name)
+
+    monkeypatch.setattr("sdr.drivers.stream.RTLSDRDriver", FakeRTLSDR)
+    sdr = SDR(
+        sdr_type="rtlstream",
+        sdr_config={
+            "sample_rate": 100,
+            "read_samples": 10,
+            "producer_chunk_samples": 10,
+            "ring_seconds": 1,
+            "read_timeout_sec": 1,
+        },
+    )
+
+    sdr.read_samples()
+    deadline = time.monotonic() + 1
+    while sdr.driver.available < 20 and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    discarded = sdr.stream_reset()
+    live_edge = sdr.driver.driver.next_sample
+
+    assert discarded >= 20
+    assert sdr.driver.available == 0
+    assert sdr.driver._producer_thread is None
+    assert sdr.driver._last_metadata_end is None
+
+    _, samples = sdr.read_samples()
+    assert np.array_equal(samples, np.arange(live_edge, live_edge + 10, dtype=np.complex64))
+
+    sdr.close()
