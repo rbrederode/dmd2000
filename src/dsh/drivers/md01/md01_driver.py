@@ -163,21 +163,12 @@ class MD01Driver(DishDriver):
             Do not set the dish model attributes here, that is done in the base class.
         """
 
-        # Check if we need to do a flip
-        if self.do_flip(alt, az, tracking=True):
-            # Flip to 180-alt, az+180
-            flip_alt = 180 - alt
-            flip_az = (az + 180) % 360
-
-            logger.debug(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} tracking with flip to Alt: {flip_alt} deg, Az: {flip_az} deg.")
-            alt, az = flip_alt, flip_az
-
-        elif self.can_reach(alt, az):
-            logger.debug(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} tracking without flip to Alt: {alt} deg, Az: {az} deg.")
-
-        # Neither original nor flipped position is reachable
-        else:
+        # This MD01 mount does not support flipped coordinates. Always command the
+        # requested encoder position so it remains consistent with desired_altaz.
+        if not self.can_reach(alt, az):
             raise XInvalidTransition(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} cannot reach Alt: {alt} deg, Az: {az} deg due to dish limits: {self.md01_config.min_alt}-{self.md01_config.max_alt} deg altitude.")
+
+        logger.debug(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} tracking to Alt: {alt} deg, Az: {az} deg.")
     
         self._set_md01_altaz(alt, az)
 
@@ -194,22 +185,12 @@ class MD01Driver(DishDriver):
             Do not set the dish model attributes here, that is done in the base class.
         """
 
-        # Check if we need to do a flip
-        if self.do_flip(alt, az, tracking=False):
-            # Flip to 180-alt, az+180
-            flip_alt = 180 - alt
-            flip_az = (az + 180) % 360
-
-            alt, az = flip_alt, flip_az
-            logger.debug(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} slewing with flip to Alt: {alt} deg, Az: {az} deg.")
-        
-        # Still need to check if we can reach the original position (non-flipped)
-        elif self.can_reach(alt, az):
-            logger.debug(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} slewing without flip to Alt: {alt} deg, Az: {az} deg.")
-
-        # Neither original nor flipped position is reachable
-        else:
+        # This MD01 mount does not support flipped coordinates. Always command the
+        # requested encoder position so it remains consistent with desired_altaz.
+        if not self.can_reach(alt, az):
             raise XInvalidTransition(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} cannot reach Alt: {alt} deg, Az: {az} deg due to dish limits: {self.md01_config.min_alt}-{self.md01_config.max_alt} deg altitude.")
+
+        logger.debug(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} slewing to Alt: {alt} deg, Az: {az} deg.")
     
         self._set_md01_altaz(alt, az)
         
@@ -305,6 +286,11 @@ class MD01Driver(DishDriver):
                 if not chunk:
                     break
                 rsp_data.extend(chunk)
+        except socket.timeout as e:
+            raise XTimeoutWaitingForResponse(
+                f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} "
+                f"timed-out waiting for rsp after sending command {md01_cmd}."
+            ) from e
         finally:
             sock.close()
         
@@ -529,4 +515,3 @@ if __name__ == "__main__":
     
     alt, az = md01_driver._get_md01_altaz()
     print(f"After Slew - Current Altitude: {alt} degrees, Azimuth: {az} degrees")
-
