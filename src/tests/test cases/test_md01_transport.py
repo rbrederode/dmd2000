@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+import socket
 
 import pytest
 
@@ -47,6 +48,7 @@ def make_driver():
     driver = MD01Driver.__new__(MD01Driver)
     driver.md01_config = SimpleNamespace(host="192.0.2.1", port=23)
     driver.last_command_time = 0
+    driver._last_set_command_data = None
     driver._rate_limit_wait = lambda command: None
     return driver
 
@@ -129,10 +131,11 @@ def test_md01_response_resynchronizes_across_fragmented_adapter_data(monkeypatch
 
 
 def test_md01_response_reports_adapter_data_without_valid_frame(monkeypatch):
-    fake_socket = FakeSocket([b"AT+ENTM\r"])
+    fake_sockets = [FakeSocket([b"AT+ENTM\r"]), FakeSocket([b"AT+ENTM\r"])]
+    sockets = iter(fake_sockets)
     monkeypatch.setattr(
         "dsh.drivers.md01.md01_driver.socket.socket",
-        lambda *args, **kwargs: fake_socket,
+        lambda *args, **kwargs: next(sockets),
     )
 
     command = MD01Msg()
@@ -144,4 +147,103 @@ def test_md01_response_reports_adapter_data_without_valid_frame(monkeypatch):
         make_driver()._send_md01_command(command)
 
     assert "AT+ENTM" in str(exc_info.value)
+    assert all(fake_socket.closed for fake_socket in fake_sockets)
+
+
+def test_md01_socket_timeout_is_reported_as_domain_timeout(monkeypatch):
+    fake_socket = FakeSocket([])
+
+    def raise_timeout(size):
+        fake_socket.recv_sizes.append(size)
+        raise socket.timeout("timed out")
+
+    fake_socket.recv = raise_timeout
+    monkeypatch.setattr(
+        "dsh.drivers.md01.md01_driver.socket.socket",
+        lambda *args, **kwargs: fake_socket,
+    )
+
+    command = MD01Msg()
+    command.set_cmd(MD01Msg.CMD_STOP)
+
+    with pytest.raises(
+        XTimeoutWaitingForResponse, match="timed-out waiting for rsp"
+    ) as exc_info:
+        make_driver()._send_md01_command(command)
+
+    assert isinstance(exc_info.value.__cause__, socket.timeout)
     assert fake_socket.closed
+
+
+def test_md01_command_retries_once_after_response_timeout(monkeypatch, caplog):
+    timed_out_socket = FakeSocket([])
+
+    def raise_timeout(size):
+        timed_out_socket.recv_sizes.append(size)
+        raise socket.timeout("timed out")
+
+    timed_out_socket.recv = raise_timeout
+    successful_socket = FakeSocket([MD01_RESPONSE])
+    sockets = iter([timed_out_socket, successful_socket])
+    monkeypatch.setattr(
+        "dsh.drivers.md01.md01_driver.socket.socket",
+        lambda *args, **kwargs: next(sockets),
+    )
+
+    command = MD01Msg()
+    command.set_cmd(MD01Msg.CMD_STATUS)
+
+    response = make_driver()._send_md01_command(command)
+
+    assert response.alt == 0.0
+    assert response.az == 0.0
+    assert timed_out_socket.closed
+    assert successful_socket.closed
+    assert "retrying" in caplog.text
+
+
+def test_md01_suppresses_duplicate_quantised_set_commands():
+    driver = make_driver()
+    driver.md01_config.offset_alt = 0.0
+    driver.md01_config.offset_az = 0.0
+    driver.md01_config.min_alt = 0.0
+    driver.md01_config.max_alt = 90.0
+    sent_commands = []
+
+    def send(command):
+        sent_commands.append(command.to_data())
+        return MD01Msg()
+
+    driver._send_md01_command = send
+
+    driver._set_md01_altaz(40.927, 212.707)
+    driver._set_md01_altaz(40.923, 212.718)
+    driver._set_md01_altaz(40.923, 212.818)
+
+    assert len(sent_commands) == 2
+    assert sent_commands[0] != sent_commands[1]
+
+
+def test_md01_stop_allows_same_set_command_to_be_sent_again():
+    driver = make_driver()
+    driver.md01_config.offset_alt = 0.0
+    driver.md01_config.offset_az = 0.0
+    driver.md01_config.min_alt = 0.0
+    driver.md01_config.max_alt = 90.0
+    sent_commands = []
+
+    def send(command):
+        sent_commands.append(command.to_data())
+        return MD01Msg()
+
+    driver._send_md01_command = send
+
+    driver._set_md01_altaz(40.9, 212.7)
+    driver._stop_md01()
+    driver._set_md01_altaz(40.9, 212.7)
+
+    assert [packet[-2:-1] for packet in sent_commands] == [
+        MD01Msg.CMD_SET,
+        MD01Msg.CMD_STOP,
+        MD01Msg.CMD_SET,
+    ]

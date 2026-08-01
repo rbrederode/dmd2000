@@ -46,11 +46,17 @@ logger = logging.getLogger(__name__)
 
 class MD01Driver(DishDriver):
 
+    COMMAND_ATTEMPTS = 2
+
     def __init__(self, dsh_model: DishModel=None):
         super().__init__(dsh_model)
 
         self.md01_config: MD01Config = dsh_model.driver_config
         self.last_command_time = 0  # Track last command timestamp for rate limiting
+        # Full encoded packet of the last SET command that received a valid
+        # acknowledgement. Comparing packets applies the MD01's actual
+        # position quantisation instead of comparing floating-point inputs.
+        self._last_set_command_data = None
 
     def _get_rotation_speed(self) -> float:
         """ Get the rotation speed of the dish from the MD01 configuration.
@@ -226,6 +232,23 @@ class MD01Driver(DishDriver):
             :raises XTimeoutWaitingForResponse if no response is received when expected.
             :raises XCommsFailure if there is a communication failure.
         """
+        for attempt in range(1, self.COMMAND_ATTEMPTS + 1):
+            try:
+                return self._send_md01_command_once(md01_cmd)
+            except XTimeoutWaitingForResponse:
+                if attempt >= self.COMMAND_ATTEMPTS:
+                    raise
+
+                logger.warning(
+                    f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} "
+                    f"received no valid response for {md01_cmd.get_cmd()} on attempt {attempt}/"
+                    f"{self.COMMAND_ATTEMPTS}; retrying."
+                )
+
+        raise AssertionError("MD01 command retry loop exited unexpectedly")
+
+    def _send_md01_command_once(self, md01_cmd: MD01Msg) -> MD01Msg:
+        """Send one MD01 command attempt and return its decoded response."""
         # Enforce rate limiting between commands
         self._rate_limit_wait(md01_cmd)  
         
@@ -351,8 +374,19 @@ class MD01Driver(DishDriver):
         md01_cmd = MD01Msg()
         md01_cmd.set_cmd(MD01Msg.CMD_SET)
         md01_cmd.set_position(talt, taz)
-        
+
+        command_data = md01_cmd.to_data()
+        if command_data == getattr(self, "_last_set_command_data", None):
+            logger.debug(
+                f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} "
+                f"skipping duplicate quantised SET command for Alt: {talt}, Az: {taz}."
+            )
+            return
+
         self._send_md01_command(md01_cmd)
+        # Cache only an acknowledged command. If both attempts time out, the
+        # position remains eligible to be sent on the next driver cycle.
+        self._last_set_command_data = command_data
 
     def _stop_md01(self):
         """Stops any movement of the telescope 
@@ -360,6 +394,9 @@ class MD01Driver(DishDriver):
         """
         md01_cmd = MD01Msg()
         md01_cmd.set_cmd(MD01Msg.CMD_STOP)
+        # A later SET to the same coordinates must not be suppressed after a
+        # stop, even if this STOP's response is lost after reaching the mount.
+        self._last_set_command_data = None
         rsp = self._send_md01_command(md01_cmd)
 
     def _offset_corr(self, alt, az):
