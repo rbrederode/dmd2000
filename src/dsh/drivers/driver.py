@@ -5,6 +5,7 @@ import astropy.units as u
 
 from datetime import datetime, timezone
 import logging
+import math
 import numpy as np
 from typing import Tuple
 import threading
@@ -121,6 +122,33 @@ class DishDriver:
         # Delegate to subclass implementation
         with self._rlock:
             return self._get_resolution()
+
+    @staticmethod
+    def _truncate_to_resolution(value: float, resolution: float) -> float:
+        """Return the greatest representable position not above ``value``."""
+        if resolution <= 0:
+            return value
+
+        # The small epsilon prevents an already representable floating-point
+        # value such as 46.7 from accidentally truncating to 46.6.
+        steps = math.floor((value / resolution) + 1e-9)
+        return steps * resolution
+
+    def _is_within_pointing_resolution(
+        self,
+        current_alt: float,
+        current_az: float,
+        desired_alt: float,
+        desired_az: float,
+    ) -> bool:
+        """Compare feedback with the desired position achievable by the dish."""
+        resolution = float(self.get_resolution())
+        achievable_alt = self._truncate_to_resolution(desired_alt, resolution)
+        achievable_az = self._truncate_to_resolution(desired_az, resolution)
+        alt_error = abs(current_alt - achievable_alt)
+        az_error = abs((current_az - achievable_az + 180.0) % 360.0 - 180.0)
+        epsilon = max(1.0, abs(resolution)) * 1e-9
+        return alt_error <= resolution + epsilon and az_error <= resolution + epsilon
 
     def get_target_tuple(self) -> (str, 'TargetModel'):
         """ Get the current target of the dish from the DishModel.
@@ -319,7 +347,7 @@ class DishDriver:
                     raise XSoftwareFailure(self.dsh_model.set_last_err(message))
 
                 # If the dish pointing AltAz is within resolution of the desired AltAz
-                if abs(alt - desired_alt) <= self.get_resolution() and abs(az - desired_az) <= self.get_resolution():
+                if self._is_within_pointing_resolution(alt, az, desired_alt, desired_az):
 
                     # Transition from SLEW to READY or stay in original pointing state
                     self.dsh_model.pointing_state = PointingState.READY if self.dsh_model.pointing_state == PointingState.SLEW else self.dsh_model.pointing_state
@@ -598,7 +626,7 @@ class DishDriver:
         if alt is None or az is None:
             message = f"DishDriver {self.dsh_model.dsh_id} has no pointing AltAz data."
             logger.warning(self.dsh_model.set_last_err(message))
-        elif abs(alt - stow_alt) <= self.get_resolution() and abs(az - stow_az) <= self.get_resolution():
+        elif self._is_within_pointing_resolution(alt, az, stow_alt, stow_az):
             self.dsh_model.mode = DishMode.STOW
             self.dsh_model.pointing_state = PointingState.READY
             self.dsh_model.last_update = datetime.now(timezone.utc)
@@ -895,7 +923,12 @@ class DishDriver:
         current_alt = self.dsh_model.pointing_altaz.get("alt", None) if self.dsh_model.pointing_altaz else None
         current_az = self.dsh_model.pointing_altaz.get("az", None) if self.dsh_model.pointing_altaz else None
         if current_alt is not None and current_az is not None:
-            if abs(current_alt - altaz.alt.degree) <= self.get_resolution() and abs(current_az - altaz.az.degree) <= self.get_resolution():
+            if self._is_within_pointing_resolution(
+                current_alt,
+                current_az,
+                altaz.alt.degree,
+                altaz.az.degree,
+            ):
                 logger.info(
                     f"DishDriver {self.dsh_model.dsh_id} already on target at AltAz "
                     f"(Alt: {current_alt}, Az: {current_az}); slew command not required."
