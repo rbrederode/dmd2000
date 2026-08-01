@@ -43,6 +43,14 @@
             },
             {
                 "_type": "StepConfig",
+                "step": "BANDPASS_FILTER",
+                "params": {
+                    "context": "cal",
+                    "ranges_pct": [[20, 80]]
+                }
+            },
+            {
+                "_type": "StepConfig",
                 "step": {
                     "_type": "enum.IntEnum",
                     "instance": "StepType",
