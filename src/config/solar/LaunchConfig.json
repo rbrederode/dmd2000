@@ -75,18 +75,7 @@
                 "--entity_id", "tm001",
                 "--dig_host", "192.168.0.7",
                 "--sdp_host", "127.0.0.1",
-                "--dm_host", "127.0.0.1",
-                "--ws_host", "127.0.0.1"
-            ]
-        },
-        {
-            "_type": "LaunchModel",
-            "app_name": "mdsim",
-            "entity_id": "mdsim",
-            "env": {},
-            "program": "python",
-            "args": [
-                "dsh/drivers/md01/md01_simulator.py", "--host", "127.0.0.1"
+                "--dm_host", "127.0.0.1"
             ]
         }
     ]
