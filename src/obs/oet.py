@@ -217,7 +217,7 @@ class ObservationExecutionTool:
                 event.obs.obs_state = ObsState.READY
 
                 # Attempt to start scanning, returns true if scanning successfully requested, false otherwise
-                if self.start_scanning(event.obs, action):
+                if self.start_obs_scanning(event.obs, action):
                     action.set_obs_transition(obs=event.obs, transition=ObsTransition.SCAN_STARTED)
                 else:
                     message = f"Observation Execution Tool aborting observation {event.obs.obs_id} " + \
@@ -271,7 +271,7 @@ class ObservationExecutionTool:
 
                 # If the observation is complete, stop scanning and release resources
                 if self.complete_scan(event.obs, action):
-                    self.stop_scanning(event.obs, action)
+                    self.stop_obs_scanning(event.obs, action)
                     action.set_obs_transition(obs=event.obs, transition=ObsTransition.RELEASE_RESOURCES)
                 
                 # If the observation is not complete, prepare for the next scan
@@ -290,7 +290,7 @@ class ObservationExecutionTool:
 
                 # If the observation is complete, stop scanning and release resources
                 if self.complete_scan(event.obs, action):
-                    self.stop_scanning(event.obs, action)
+                    self.stop_obs_scanning(event.obs, action)
                     action.set_obs_transition(obs=event.obs, transition=ObsTransition.RELEASE_RESOURCES)
 
                 # If the observation is not complete, prepare for the next scan
@@ -305,7 +305,7 @@ class ObservationExecutionTool:
                 # If resources were assigned and are either configuring, ready or scanning
                 if event.obs.obs_state in [ObsState.CONFIGURING, ObsState.READY, ObsState.SCANNING]:
                     # Stop scanning for this observation
-                    self.stop_scanning(event.obs, action)
+                    self.stop_obs_scanning(event.obs, action)
 
                 # Transition to ABORTED state where resources will be released after a timeout
                 event.obs.obs_state = ObsState.ABORTED
@@ -609,6 +609,8 @@ class ObservationExecutionTool:
         # Lookup the dish model for this observation
         dsh_model = next((dsh for dsh in self.telmodel.dsh_mgr.dish_store.dish_list if dsh.dsh_id == obs.dsh_id), None)
 
+        on_target = None
+
         if dsh_model is not None and target is not None:
 
             old_dsh_config = {}
@@ -630,6 +632,13 @@ class ObservationExecutionTool:
             else:
                 logger.info(f"Observation Execution Tool found Dish already configured for correct target for observation {obs.obs_id} with index {obs.tgt_idx}-{obs.tgt_scan}. " +
                     f"Dish target ID {dsh_model.tgt_id} matches expected target ID {obs.obs_id}-{obs.tgt_idx}. On Target {on_target}")
+
+                # Matching the target ID only means that the target has been configured. For sky
+                # acquisition the dish must also finish slewing (or enter TRACK/SCAN as
+                # appropriate). A LOAD acquisition does not observe the sky, so it may proceed
+                # while the dish is moving.
+                if not on_target and target_config.feed_type != Feed.LOAD:
+                    already_configured = False
   
             if len(new_dsh_config) > 0:
 
@@ -685,9 +694,21 @@ class ObservationExecutionTool:
                     old_dig_config[dig_attr] = current
                     new_dig_config[dig_attr] = desired
 
-            desired_scanning = {'obs_id': obs.obs_id, 'tgt_idx': obs.tgt_idx, 'freq_scan': target_scan.freq_scan}
+            # Determine if the digitiser is allowed to acquire data based on whether the dish is on target or if the feed type is LOAD
+            acquisition_allowed = (
+                on_target is True
+                or (on_target is False and target_config.feed_type == Feed.LOAD)
+            )
+            # Set the desired scanning metadata to the desired values if acquisition is allowed, otherwise set it to False to indicate that scanning should not occur.
+            desired_scanning = (
+                {'obs_id': obs.obs_id, 'tgt_idx': obs.tgt_idx, 'freq_scan': target_scan.freq_scan}
+                if acquisition_allowed
+                else False
+            )
             # Keep active digitiser sample metadata aligned with the target scan,
-            # even when no other digitiser hardware setting changes.
+            # even when no other digitiser hardware setting changes. Stop an active
+            # digitiser while the dish has the wrong target, or while a sky scan is
+            # waiting to get on target. LOAD acquisition may continue while slewing.
             if dig_model.scanning is not False and dig_model.scanning != desired_scanning:
                 old_dig_config['scanning'] = dig_model.scanning
                 new_dig_config['scanning'] = desired_scanning
@@ -787,7 +808,7 @@ class ObservationExecutionTool:
 
         return already_configured
 
-    def start_scanning(self, obs, action) -> bool:
+    def start_obs_scanning(self, obs, action) -> bool:
         """ Process an observation start scanning request.
             Returns true if start scanning was requested, false otherwise.
         """
@@ -845,7 +866,7 @@ class ObservationExecutionTool:
 
         return True
 
-    def stop_scanning(self, obs, action) -> bool:
+    def stop_obs_scanning(self, obs, action) -> bool:
         """ Process an observation stop scanning request. 
             This is used when an observation has completed all scans or is aborted and needs to stop scanning immediately.
             Returns true if stop scanning was requested, false otherwise.

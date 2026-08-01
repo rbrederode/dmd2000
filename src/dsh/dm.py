@@ -528,6 +528,9 @@ class DM(App):
                 # Retrieve the target model and unique target identifier from the driver
                 target_id, target = dish_driver.get_target_tuple()
 
+                # Remember whether this poll is the one that completes a slew.
+                previous_pointing_state = dish_driver.get_pointing_state()
+
                 # Get latest AltAz from the dish driver called regardless of the current pointing state or dish mode
                 try:
                     dish_driver.get_current_altaz()
@@ -555,13 +558,18 @@ class DM(App):
                     return action
 
                 # If the dish pointing state transitioned to READY, it means we have reached the desired slew position.
-                # Drift drivers never slew to a new position, so suppress READY status spam for active drift dishes.
+                # Drift drivers never slew to a new position, so suppress READY status spam for those drivers.
+                # A physical driver can still need to slew to the fixed position of a DRIFT_SCAN target; report
+                # that SLEW-to-READY transition once so TM/OET can finish configuring the observation.
                 # Pointing state would be SLEW if still slewing or TRACK if already tracking (if necessary).
                 if (
                     target is not None
                     and dish_driver.get_pointing_state() == PointingState.READY
                     and dish_driver.dsh_model.driver_type != DriverType.DRIFT
-                    and target.pointing != PointingType.DRIFT_SCAN
+                    and (
+                        target.pointing != PointingType.DRIFT_SCAN
+                        or previous_pointing_state == PointingState.SLEW
+                    )
                 ):
                     logger.debug(f"Dish Manager reached slew target and is now in READY state for target {target} acquisition in observation {target.obs_id} with Dish {dish_id}.")
 
@@ -626,6 +634,7 @@ class DM(App):
         """
         if self.dm_model.tm_connected != CommunicationStatus.ESTABLISHED:
             message = "Dish Manager health status set to DEGRADED: Telescope Manager not connected"
+            self.set_last_err(message)
             return HealthState.DEGRADED
         else:
             return HealthState.OK

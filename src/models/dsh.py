@@ -25,11 +25,11 @@ from util.xbase import XInvalidTransition, XAPIValidationFailed, XSoftwareFailur
 
 # Pointing States are only relevant when the dish is in OPERATE mode
 class PointingState(enum.IntEnum):
-    READY = 0
-    SLEW = 1
-    TRACK = 2
-    SCAN = 3
-    UNKNOWN = 4
+    READY = 0               # Dish is pointing in a stationary direction and is ready to slew, track or scan i.e. receive pointing commands
+    SLEW = 1                # Dish moves to the commanded alt-az position at maximum speed. SLEW is also used when settling onto a target. 
+    TRACK = 2               # Dish is tracking a target within the pointing accuracy limits of the dish. The target may be moving across the sky.
+    SCAN = 3                # Dish is scanning across the sky e.g. offset or five-point scan. The target may be moving across the sky.
+    UNKNOWN = 4             # Pointing state is unknown
 
 class DishMode(enum.IntEnum):
     STARTUP = 0             # Transitional: Reported when power is restored to the dish, perform initial checks and generally auto-transition to STANDBY

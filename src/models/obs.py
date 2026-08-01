@@ -172,7 +172,7 @@ class ObsModel(BaseModel):
             "created": None,
             "user_email": "",
             "timeout_ms_scan": MAX_SCAN_DURATION_SEC*2*1000,  # Scan timeout in milliseconds
-            "timeout_ms_config": 60000,                      # Configuration timeout in milliseconds (includes slew time)
+            "timeout_ms_config": 240000,                      # Configuration timeout in milliseconds (includes slew time)
 
             "start_dt": datetime.now(timezone.utc),
             "end_dt": datetime.now(timezone.utc),

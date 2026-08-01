@@ -151,7 +151,7 @@ class TelescopeManager(App):
             logger.info(f"Telescope Manager loaded TM configuration from directory {input_dir} file {filename}")
         else:
             message = f"Telescope Manager could not load TM configuration from directory {input_dir} file {filename}"
-            logger.warning(self.tm.set_last_err(message))
+            logger.warning(self.set_last_err(message))
 
         # Load Digitiser configuration from disk
         # Config file defines initial list of digitisers to be processed by the TM
@@ -167,7 +167,7 @@ class TelescopeManager(App):
             logger.info(f"Telescope Manager loaded Digitiser configuration from directory {input_dir} file {filename}")
         else:
             message = f"Telescope Manager could not load Digitiser configuration from directory {input_dir} file {filename}"
-            logger.warning(self.tm.set_last_err(message))
+            logger.warning(self.set_last_err(message))
 
         action = Action()
 
@@ -193,7 +193,7 @@ class TelescopeManager(App):
             dig_id = event.new_config.get("dig_id", None) if event.new_config is not None else None
             if dig_id is None:
                 message = f"Telescope Manager received digitiser configuration update with no digitiser ID specified in the new configuration: {event.new_config}"
-                logger.error(self.tm.set_last_err(message))
+                logger.error(self.set_last_err(message))
                 return action
             
             # Extract DIG specific properties (all properties except scan-only fields)
@@ -341,7 +341,7 @@ class TelescopeManager(App):
         # If the Dish ID is specified in the API message but not found in the Dish Manager model, raise an exception
         if dsh_id is not None and dsh_model is None:
             message = f"Telescope Manager received Dish Manager API message for unknown dish {dsh_id}.\n{api_call}"
-            raise XUnknownEntity(self.tm.set_last_err(message))
+            raise XUnknownEntity(self.set_last_err(message))
         
         # If the api call indicates that an error occured
         if api_call.get('status','') != tm_dm.STATUS_SUCCESS:
@@ -379,6 +379,16 @@ class TelescopeManager(App):
                 dsh_model.target = TargetModel.from_dict(api_call['value']) if api_call['value'] is not None and isinstance(api_call['value'], dict) else None
                 dsh_model.tgt_id = dsh_model.target.obs_id + f"-{dsh_model.target.tgt_idx}" if dsh_model.target is not None else None
                 dsh_model.mode = DishMode.OPERATE if dsh_model.target is not None else DishMode.STANDBY_FP
+
+                if dsh_model.target is not None:
+                    # A successful target response updates the target immediately, before the
+                    # periodic Dish Manager status snapshot arrives. Do not retain a stale
+                    # READY/TRACK/SCAN state for the new target, but also do not infer SLEW: the
+                    # response does not report the physical pointing state. UNKNOWN is a legal
+                    # temporary transition from every pointing state and keeps sky acquisition
+                    # gated until an authoritative Dish Manager status update arrives.
+                    target_acquired = isinstance(api_call.get('obs_data'), dict)
+                    dsh_model.pointing_state = PointingState.READY if target_acquired else PointingState.UNKNOWN
                 
             # If the api call is a status update message, update the Dish Manager model
             elif api_call.get('property','') == tm_dm.PROPERTY_STATUS:
@@ -395,12 +405,24 @@ class TelescopeManager(App):
                         obs = self.telmodel.oda.obs_store.get_obs_by_dsh_id(dsh.dsh_id)
                         if obs is not None:
                             message = f"Telescope Manager detected active weather alarm on dish {dsh.dsh_id} for observation {obs.obs_id}. Aborting affected observation for safe recovery."
-                            logger.error(self.tm.set_last_err(message))
+                            logger.error(self.set_last_err(message))
                             action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
 
             # If the status update message contains additional observation data, trigger the observation workflow
             obs_data = api_call.get('obs_data', None)
             obs_id = obs_data.get('obs_id', None) if obs_data is not None and isinstance(obs_data, dict) else None
+
+            # A target acknowledgement must wake the configuration workflow even when the dish
+            # has not yet acquired the target and the response therefore has no obs_data. This is
+            # especially important for LOAD scans, which may proceed while the dish is moving.
+            if (
+                obs_id is None
+                and api_call.get('property', '') == tm_dm.PROPERTY_TARGET
+                and dsh_model is not None
+                and dsh_model.target is not None
+            ):
+                obs_id = dsh_model.target.obs_id
+
             obs = self.telmodel.oda.obs_store.get_obs_by_id(obs_id) if obs_id is not None else None
                     
             # If the observation is still in CONFIGURING state, trigger the workflow to attempt to move to READY
@@ -457,7 +479,7 @@ class TelescopeManager(App):
         if api_call.get('status','') == tm_ws.STATUS_ERROR:
 
             message = f"Telescope Manager received error response from Weather Station for station {ws_id}.\n{api_call}"
-            logger.error(self.tm.set_last_err(message))
+            logger.error(self.set_last_err(message))
 
             self.telmodel.wtr_stn.last_err_msg = api_call['message'] if 'message' in api_call else self.telmodel.wtr_stn.last_err_msg
             self.telmodel.wtr_stn.last_err_dt = datetime.fromisoformat(dt) if dt is not None else datetime.now(timezone.utc)
@@ -497,7 +519,7 @@ class TelescopeManager(App):
                     return digitiser.dig_id, digitiser
             else:
                 message = f"Telescope Manager digitiser {digitiser.dig_id} is not configured with a valid local_host argument to match against remote address: {remote_addr}"
-                logger.warning(self.tm.set_last_err(message))
+                logger.warning(self.set_last_err(message))
 
         return None, None
 
@@ -540,7 +562,7 @@ class TelescopeManager(App):
         # If the Digitiser entity could not be identified, raise an exception
         if digitiser is None:
             message = f"Telescope Manager received Digitiser API message for unknown (None) digitiser.\n{api_call}"
-            raise XUnknownEntity(self.tm.set_last_err(message))
+            raise XUnknownEntity(self.set_last_err(message))
 
         action = Action()
 
@@ -613,7 +635,7 @@ class TelescopeManager(App):
                                 sdp_config_update_pending = len(action.msgs_to_remote) > pending_msg_count
                     else:
                         message = f"Telescope Manager received Digitiser {digitiser.dig_id} auto gain response without a gain value for observation {obs_id}."
-                        logger.warning(self.tm.set_last_err(message))
+                        logger.warning(self.set_last_err(message))
                 else:
                     logger.info(f"Telescope Manager received Digitiser method response: {method} = {api_call.get('value')}")
 
@@ -634,11 +656,11 @@ class TelescopeManager(App):
                     setattr(digitiser, property_name, value)
                 except (XAPIValidationFailed, XSoftwareFailure) as e:
                     message = f"Telescope Manager failed to set attribute {api_call.get('property','')} on Digitiser {digitiser.dig_id} due to validation error: {e}"
-                    logger.error(self.tm.set_last_err(message))
+                    logger.error(self.set_last_err(message))
                     return action
             else:
                 message = f"Telescope Manager received unknown Digitiser property update: {api_call.get('property')} from {digitiser.dig_id}"
-                logger.warning(self.tm.set_last_err(message))
+                logger.warning(self.set_last_err(message))
                 return action
 
             # If the api call is a rsp message
@@ -692,7 +714,7 @@ class TelescopeManager(App):
         target_scan_set = obs.get_current_tgt_scan_set()
         if target_scan_set is None:
             message = f"Telescope Manager could not find current target scan set for observation {obs.obs_id} to apply auto gain {gain}."
-            logger.warning(self.tm.set_last_err(message))
+            logger.warning(self.set_last_err(message))
             return
 
         token = gain_token.upper() if TargetConfig.is_auto_gain_token(gain_token) else None
@@ -788,7 +810,7 @@ class TelescopeManager(App):
                     dig.last_update = datetime.now(timezone.utc)
                 else:
                     message = f"Telescope Manager received Science Data Processor SCAN_CONFIG rsp for unknown digitiser {dig_id}\n{api_call}"
-                    logger.warning(self.tm.set_last_err(message))
+                    logger.warning(self.set_last_err(message))
 
             elif api_call.get('property','') == tm_sdp.PROPERTY_OBS_RESET:
                 logger.info(f"Telescope Manager received Science Data Processor OBS_RESET response: {api_call['value']}")
@@ -861,7 +883,7 @@ class TelescopeManager(App):
                     return action
             else:
                 message = f"Telescope Manager received unknown Science Data Processor property update: {api_call.get('property')}"
-                logger.warning(self.tm.set_last_err(message))
+                logger.warning(self.set_last_err(message))
                 return action
 
             # If the api call is a rsp message
@@ -922,7 +944,7 @@ class TelescopeManager(App):
         elif "req_timer_final" in event.name:
             
             message = f"Telescope Manager timed out waiting for response msg {event.name} after final retry, aborting retries.\n{event}"
-            logger.warning(self.tm.set_last_err(message))
+            logger.warning(self.set_last_err(message))
 
             if event.user_ref is not None:
 
@@ -944,7 +966,7 @@ class TelescopeManager(App):
                 # If the observation is still in CONFIGURING state, ABORT the observation
                 if obs is not None and obs.obs_state == ObsState.CONFIGURING:
                     message = f"Telescope Manager aborting observation {obs_id} after request timeout for {event.name}."
-                    logger.warning(self.tm.set_last_err(message))
+                    logger.warning(self.set_last_err(message))
                     action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
 
         # Handle observation start timer event
@@ -977,7 +999,7 @@ class TelescopeManager(App):
 
             if obs is not None and obs.obs_state == ObsState.CONFIGURING:
                 message = f"Telescope Manager observation {obs.obs_id} configuration timeout occurred, aborting observation"
-                logger.warning(self.tm.set_last_err(message))
+                logger.warning(self.set_last_err(message))
                 action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
 
         # Handle observation scanning timeout timer event
@@ -988,7 +1010,7 @@ class TelescopeManager(App):
 
             if obs is not None and obs.obs_state == ObsState.SCANNING:
                 message = f"Telescope Manager observation {obs.obs_id} scanning timeout occurred, ending scan"
-                logger.warning(self.tm.set_last_err(message))
+                logger.warning(self.set_last_err(message))
                 action.set_obs_transition(obs=obs, transition=ObsTransition.SCAN_ENDED)
 
         # Handle observation aborting timeout timer event
@@ -999,7 +1021,7 @@ class TelescopeManager(App):
 
             if obs is not None and obs.obs_state == ObsState.ABORTED:
                 message = f"Telescope Manager observation {obs.obs_id} abort timeout occurred, releasing resources"
-                logger.warning(self.tm.set_last_err(message))
+                logger.warning(self.set_last_err(message))
                 action.set_obs_transition(obs=obs, transition=ObsTransition.RELEASE_RESOURCES)
 
         return action
@@ -1016,7 +1038,7 @@ class TelescopeManager(App):
 
         if self.telmodel.tel_mgr.sdp_connected != CommunicationStatus.ESTABLISHED:
             message = f"Telescope Manager cannot send Science Data Processor configuration update, not connected\n{new_config}"
-            logger.warning(self.tm.set_last_err(message))
+            logger.warning(self.set_last_err(message))
             return action
 
         # Extract sdp_id from the incoming SDP configuration event (JSON)
@@ -1069,7 +1091,7 @@ class TelescopeManager(App):
 
         if digitiser is not None and digitiser.tm_connected != CommunicationStatus.ESTABLISHED:
             message = f"Telescope Manager cannot send Digitiser {dig_id} configuration update, not connected\n{new_config}"
-            logger.warning(self.tm.set_last_err(message))
+            logger.warning(self.set_last_err(message))
             return action
 
         for config_key in new_config.keys():
@@ -1125,7 +1147,7 @@ class TelescopeManager(App):
 
         if self.telmodel.tel_mgr.dm_connected != CommunicationStatus.ESTABLISHED:
             message = f"Telescope Manager cannot send Dish Manager configuration update, not connected\n{new_config}"
-            logger.warning(self.tm.set_last_err(message))
+            logger.warning(self.set_last_err(message))
             return action
 
         # Extract dsh_id from the incoming DM configuration event (JSON)

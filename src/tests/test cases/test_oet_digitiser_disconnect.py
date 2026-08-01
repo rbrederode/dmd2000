@@ -1,12 +1,15 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+import pytest
+
 from env.events import ObsEvent
 from ipc.action import Action
 from models.comms import CommunicationStatus
-from models.dsh import Capability, DishMode, Feed
+from models.dsh import Capability, DishMode, DriverType, Feed, PointingState
 from models.health import HealthState
 from models.obs import ObsModel, ObsState, ObsTransition
+from models.target import PointingType
 from obs import oet as oet_module
 from obs.oet import ObservationExecutionTool
 
@@ -35,7 +38,7 @@ def _configured_resource_fixture():
         freq_scan=0,
     )
     target_scan_set = SimpleNamespace(scan_duration=60)
-    target = SimpleNamespace()
+    target = SimpleNamespace(pointing=PointingType.DRIFT_SCAN)
 
     observation.get_target_config_by_index = lambda _index: target_config
     observation.get_current_tgt_scan_set = lambda: target_scan_set
@@ -46,6 +49,9 @@ def _configured_resource_fixture():
         dsh_id="dish001",
         dig_id="dig001",
         tgt_id="obs-disconnected-0",
+        mode=DishMode.OPERATE,
+        driver_type=DriverType.MD01,
+        pointing_state=PointingState.READY,
     )
     digitiser = SimpleNamespace(
         dig_id="dig001",
@@ -86,7 +92,6 @@ def _configured_resource_fixture():
         telescope,
         SimpleNamespace(set_last_err=lambda message: message),
     )
-    oet.is_on_target = lambda *_args: True
     return oet, observation
 
 
@@ -113,6 +118,129 @@ def test_disconnected_digitiser_stays_configuring_until_timeout(monkeypatch):
     assert ObsTransition.READY not in transitions
     assert len(config_timers) == 1
     assert config_timers[0].get_timer_action() == observation.timeout_ms_config
+
+
+@pytest.mark.parametrize(
+    ("pointing_type", "pointing_state"),
+    [
+        (PointingType.DRIFT_SCAN, PointingState.SLEW),
+        (PointingType.NON_SIDEREAL_TRACK, PointingState.SLEW),
+        (PointingType.OFFSET_SCAN, PointingState.SLEW),
+    ],
+)
+def test_off_target_dish_stays_configuring_until_pointing_is_ready(
+    monkeypatch,
+    pointing_type,
+    pointing_state,
+):
+    oet, observation = _configured_resource_fixture()
+    dish = oet.telmodel.dsh_mgr.dish_store.dish_list[0]
+    digitiser = oet.telmodel.dig_store.dig_list[0]
+    target = observation.get_target_by_index(observation.tgt_idx)
+    dish.pointing_state = pointing_state
+    digitiser.tm_connected = CommunicationStatus.ESTABLISHED
+    target.pointing = pointing_type
+    monkeypatch.setattr(
+        oet_module.Timer,
+        "manager",
+        SimpleNamespace(get_timers_by_name=lambda _name: []),
+    )
+
+    action = oet.process_obs_event(
+        ObsEvent(obs=observation, transition=ObsTransition.CONFIGURE_RESOURCES)
+    )
+
+    transitions = [item.get_transition() for item in action.obs_transitions]
+    assert observation.obs_state == ObsState.CONFIGURING
+    assert ObsTransition.READY not in transitions
+
+
+def test_load_scan_can_become_ready_while_dish_is_slewing(monkeypatch):
+    oet, observation = _configured_resource_fixture()
+    dish = oet.telmodel.dsh_mgr.dish_store.dish_list[0]
+    digitiser = oet.telmodel.dig_store.dig_list[0]
+    sdp_digitiser = oet.telmodel.sdp.dig_store.dig_list[0]
+    target_config = observation.get_target_config_by_index(observation.tgt_idx)
+    target = observation.get_target_by_index(observation.tgt_idx)
+
+    dish.pointing_state = PointingState.SLEW
+    digitiser.tm_connected = CommunicationStatus.ESTABLISHED
+    digitiser.load_active = True
+    sdp_digitiser.load_active = True
+    target_config.feed_type = Feed.LOAD
+    target.pointing = PointingType.NON_SIDEREAL_TRACK
+    monkeypatch.setattr(
+        oet_module.Timer,
+        "manager",
+        SimpleNamespace(get_timers_by_name=lambda _name: []),
+    )
+
+    action = oet.process_obs_event(
+        ObsEvent(obs=observation, transition=ObsTransition.CONFIGURE_RESOURCES)
+    )
+
+    transitions = [item.get_transition() for item in action.obs_transitions]
+    assert ObsTransition.READY in transitions
+
+
+@pytest.mark.parametrize(
+    ("target_matches", "on_target", "feed_type", "expect_scanning"),
+    [
+        (False, False, Feed.LOAD, False),
+        (True, False, Feed.H3T_1420, False),
+        (True, False, Feed.LOAD, True),
+        (True, True, Feed.H3T_1420, True),
+    ],
+)
+def test_digitiser_scanning_is_gated_by_dish_target_and_load_feed(
+    monkeypatch,
+    target_matches,
+    on_target,
+    feed_type,
+    expect_scanning,
+):
+    oet, observation = _configured_resource_fixture()
+    dish = oet.telmodel.dsh_mgr.dish_store.dish_list[0]
+    digitiser = oet.telmodel.dig_store.dig_list[0]
+    sdp_digitiser = oet.telmodel.sdp.dig_store.dig_list[0]
+    target_config = observation.get_target_config_by_index(observation.tgt_idx)
+
+    dish.tgt_id = (
+        f"{observation.obs_id}-{observation.tgt_idx}"
+        if target_matches
+        else "previous-target"
+    )
+    digitiser.tm_connected = CommunicationStatus.ESTABLISHED
+    digitiser.scanning = {"obs_id": observation.obs_id, "tgt_idx": 99, "freq_scan": 0}
+    target_config.feed_type = feed_type
+    digitiser.load_active = feed_type == Feed.LOAD
+    sdp_digitiser.load_active = feed_type == Feed.LOAD
+
+    captured_dig_configs = []
+    oet.is_on_target = lambda *_args: on_target if target_matches else None
+    oet.tm.update_dsh_configuration = lambda _old, _new, action: action
+    oet.tm.update_dig_configuration = lambda _old, new, action: (
+        captured_dig_configs.append(new) or action
+    )
+    monkeypatch.setattr(
+        oet_module.Timer,
+        "manager",
+        SimpleNamespace(get_timers_by_keyword=lambda _keyword: []),
+    )
+
+    oet.configure_resources(observation, Action())
+
+    assert len(captured_dig_configs) == 1
+    expected = (
+        {
+            "obs_id": observation.obs_id,
+            "tgt_idx": observation.tgt_idx,
+            "freq_scan": observation.get_current_tgt_scan().freq_scan,
+        }
+        if expect_scanning
+        else False
+    )
+    assert captured_dig_configs[0]["scanning"] == expected
 
 
 def test_disconnected_digitiser_aborts_instead_of_starting_scan():
