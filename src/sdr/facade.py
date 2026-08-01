@@ -30,6 +30,7 @@ _SDR_METHODS = {
     "get_gains",
     "get_tuner_type",
     "set_direct_sampling",
+    "stream_reset",
     "read_bytes",
     "read_samples",
 }
