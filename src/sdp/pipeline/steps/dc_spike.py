@@ -37,25 +37,37 @@ class DCSpike(ProcessingStep):
         if not isinstance(signal, np.ndarray):
             raise ValueError("DCSpike: signal must be a numpy array.")
 
+        if signal.ndim != 1:
+            raise ValueError(f"DCSpike: signal must be one-dimensional, got shape {signal.shape}.")
+        if signal.size < 3:
+            return signal
+
         # Review the bins either side the centre of channels
         # We expect the DC spike to occur in the central bin
         start = self.channels//2-1 # Zero indexed array
         end =  self.channels//2+2 # DC spike is in the middle
 
         # Calculate the mean and std deviation of the reviewed samples
-        mean = np.mean(signal[start:end])
-        std = np.std(signal[start:end])
+        centre = signal[start:end]
+        finite = np.isfinite(centre)
+        if np.count_nonzero(finite) < 2:
+            return signal
+        mean = np.mean(centre[finite])
+        std = np.std(centre[finite])
 
         # Create a mask for values above one standard deviation from the mean
-        mask = signal[start:end] > (mean + std)
+        mask = finite & (centre > (mean + std))
 
-        # Replace values above the threshold with the mean of the non-spike values
-        signal[start:end][mask] = np.mean(signal[start:end][~mask]) 
+        # DC removal is an explicit correction rather than an exclusion: replace
+        # detected centre-bin spikes so they cannot dominate plot autoscaling.
+        replacement_values = centre[finite & ~mask]
+        if np.any(mask) and replacement_values.size > 0:
+            centre[mask] = np.mean(replacement_values)
         return signal
 
     @classmethod
     def describe(cls) -> str:
-        return "Remove the central DC spike by detecting outliers around the centre channel and replacing them with neighbouring values."
+        return "Explicitly remove the central DC spike by replacing detected centre-bin outliers with neighbouring values."
 
 def main():
 

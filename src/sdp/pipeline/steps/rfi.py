@@ -1,10 +1,12 @@
 import numpy as np
 import logging
+import warnings
 from typing import Any, List, Dict
 from numpy.lib.stride_tricks import sliding_window_view
 
 from models.pipeline import StepConfig, StepType
 from models.scan import ScanType
+from sdp.channel_mask import ChannelFlag, empty_channel_flags, valid_channels
 from sdp.pipeline.pipeline_factory import ProcessingStep
 
 logger = logging.getLogger(__name__)
@@ -28,13 +30,33 @@ class RFIFlag(ProcessingStep):
     def process(self, context: Any, signal: Any) -> Any:
         """
         Apply a vectorized sliding-window MAD RFI flagging pass to the signal array,
-        modifying it in-place.
+        recording detected channels without modifying the measured spectrum.
         """
         if not isinstance(signal, np.ndarray):
             raise ValueError("RFIFlag: signal must be a numpy array.")
 
+        if signal.ndim != 1:
+            raise ValueError(f"RFIFlag: signal must be one-dimensional, got shape {signal.shape}.")
+        if signal.size == 0:
+            raise ValueError("RFIFlag: signal must contain at least one channel.")
+
         if not isinstance(context, dict):
             raise ValueError("RFIFlag: context must be a dictionary.")
+
+        channel_flags = context.get("channel_flags")
+        if not isinstance(channel_flags, np.ndarray):
+            raise ValueError("RFIFlag: context must contain a NumPy 'channel_flags' array.")
+        if channel_flags.shape != signal.shape:
+            raise ValueError(
+                "RFIFlag: signal and channel_flags must have the same shape; "
+                f"got {signal.shape} and {channel_flags.shape}."
+            )
+        if not np.issubdtype(channel_flags.dtype, np.unsignedinteger):
+            raise ValueError(
+                f"RFIFlag: channel_flags must use an unsigned integer dtype, got {channel_flags.dtype}."
+            )
+        if not channel_flags.flags.writeable:
+            raise ValueError("RFIFlag: channel_flags must be writable.")
 
         # If this is a load scan, we should not apply rfi flagging, because we end up dividing the sky signal by the load scan
         # and this effectively cancels out rfi that is present in both, before we apply rfi flagging in the resultant signal. 
@@ -47,27 +69,49 @@ class RFIFlag(ProcessingStep):
 
         pipeline = context.get("pipeline", "unknown")  # Get the pipeline name from the context 
 
-        n = context.get("threshold", 5) # Threshold multiplier for MAD, 6-7 is recommended for pulsar search
-        window_size = context.get("window_size", 21)  # Must be odd
+        n = context.get("threshold", self.config.params.get("threshold", 5))
+        window_size = context.get("window_size", self.config.params.get("window_size", 21))
+        if isinstance(n, bool) or not isinstance(n, (int, float)) or not np.isfinite(n) or n <= 0:
+            raise ValueError("threshold must be a finite number greater than zero.")
+        if isinstance(window_size, bool) or not isinstance(window_size, (int, np.integer)):
+            raise ValueError("window_size must be an integer.")
         if window_size % 2 == 0:
             raise ValueError("window_size must be odd.")
 
         if window_size < 1:
             raise ValueError("window_size must be >= 1.")
 
-        pad = window_size // 2
-        padded_signal = np.pad(signal, pad_width=pad, mode="edge")
-        windows = sliding_window_view(padded_signal, window_shape=window_size)
+        # Reprocessing replaces only the RFI decision. Flags raised by bandpass,
+        # calibration, or users remain intact and make those channels ineligible
+        # both as candidates and as contributors to neighbouring statistics.
+        rfi_bit = np.array(int(ChannelFlag.RFI_DETECTED), dtype=channel_flags.dtype)
+        channel_flags[:] &= np.bitwise_not(rfi_bit)
+        eligible = valid_channels(signal, channel_flags)
 
-        local_median = np.median(windows, axis=1)
-        local_mad = np.median(np.abs(windows - local_median[:, np.newaxis]), axis=1)
+        pad = window_size // 2
+        padded_signal = np.pad(signal, pad_width=pad, mode="constant", constant_values=np.nan)
+        padded_eligible = np.pad(eligible, pad_width=pad, mode="constant", constant_values=False)
+        windows = sliding_window_view(padded_signal, window_shape=window_size)
+        eligible_windows = sliding_window_view(padded_eligible, window_shape=window_size)
+        masked_windows = np.where(eligible_windows, windows, np.nan)
+
+        # nanmedian warns for an all-NaN window; such windows are rejected by
+        # enough_samples below, so the warning carries no useful information.
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="All-NaN slice encountered", category=RuntimeWarning)
+            local_median = np.nanmedian(masked_windows, axis=1)
+            local_mad = np.nanmedian(
+                np.abs(masked_windows - local_median[:, np.newaxis]),
+                axis=1,
+            )
         threshold = n * np.maximum(local_mad, 1e-12)
 
-        flagged_mask = np.abs(signal - local_median) > threshold
+        valid_samples_per_window = np.count_nonzero(eligible_windows, axis=1)
+        minimum_samples = min(window_size, 3)
+        enough_samples = valid_samples_per_window >= minimum_samples
+        flagged_mask = eligible & enough_samples & (np.abs(signal - local_median) > threshold)
         num_flagged = int(np.count_nonzero(flagged_mask))
-
-        if num_flagged > 0:
-            signal[flagged_mask] = local_median[flagged_mask]
+        channel_flags[flagged_mask] |= rfi_bit
 
         # --- Update scan QA attributes. Filterbank rows are short-timescale
         # products and do not map cleanly onto the scan-level spr/cal/mpr QA.
@@ -77,14 +121,15 @@ class RFIFlag(ProcessingStep):
             qa = self.scan_qa.getQA(pipeline, idx)
 
             if qa is not None:
-                qa.rfi_fraction = num_flagged / len(signal) if len(signal) > 0 else 0.0
+                eligible_count = int(np.count_nonzero(eligible))
+                qa.rfi_fraction = num_flagged / eligible_count if eligible_count > 0 else 0.0
 
         logger.debug(f"RFIFlag (sliding window): Flagged {num_flagged} channels as RFI outliers using window_size={window_size}, threshold={n}*MAD")
         return signal
 
     @classmethod
     def describe(cls) -> str:
-        return "Detect and suppress likely RFI outliers using a sliding-window median absolute deviation filter."
+        return "Detect and flag likely RFI outliers using a sliding-window median absolute deviation filter without changing measured values."
 
 
 def main():
@@ -147,7 +192,12 @@ def main():
     import numpy as np
     signal = np.random.rand(1024)
     print("Original signal: ", signal)
-    context = {"pipeline": "cal", "channels": 1024, "rfi": 10}
+    context = {
+        "pipeline": "cal",
+        "channels": 1024,
+        "rfi": 10,
+        "channel_flags": empty_channel_flags(signal.shape),
+    }
 
     processed_signal = rfi_step.process(context, signal)
     print("Processed signal:", processed_signal)

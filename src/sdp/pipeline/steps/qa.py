@@ -3,11 +3,24 @@ import logging
 from typing import Any, List, Dict
 
 from models.pipeline import StepConfig, StepType
+from sdp.channel_mask import empty_channel_flags, valid_channels
 from sdp.pipeline.pipeline_factory import ProcessingStep, ProcessingPipeline
 
 logger = logging.getLogger(__name__)
 
 class QA(ProcessingStep):
+
+    CALCULATED_FIELDS = (
+        "baseline",
+        "snr_db",
+        "signal_db",
+        "noise_db",
+        "signal_start",
+        "signal_end",
+        "fwhm",
+        "dynamic_range_db",
+        "signal_pwr_db",
+    )
 
     def __init__(self, config: StepConfig = None):
         super().__init__(config)
@@ -43,26 +56,81 @@ class QA(ProcessingStep):
         if not isinstance(signal, np.ndarray):
             raise ValueError("QA: input signal must be a numpy array.")
 
+        if signal.ndim != 1:
+            raise ValueError(f"QA: signal must be one-dimensional, got shape {signal.shape}.")
+
         if not isinstance(context, dict):
             raise ValueError("QA: context must be a dictionary.")
+
+        channel_flags = context.get("channel_flags")
+        if not isinstance(channel_flags, np.ndarray):
+            raise ValueError("QA: context must contain a NumPy 'channel_flags' array.")
+        if channel_flags.shape != signal.shape:
+            raise ValueError(
+                "QA: signal and channel_flags must have the same shape; "
+                f"got {signal.shape} and {channel_flags.shape}."
+            )
+        if not np.issubdtype(channel_flags.dtype, np.unsignedinteger):
+            raise ValueError(
+                f"QA: channel_flags must use an unsigned integer dtype, got {channel_flags.dtype}."
+            )
 
         if self.scan_qa is None:
             self.scan_qa = self.scan.get_qa()
             self.scan_qa = self.scan.init_qa() if self.scan_qa is None else self.scan_qa  # Ensure the scan QA is initialised
 
         pipeline = context.get("pipeline", "unknown")  # Get the pipeline name from the context 
-        window_frac = context.get("window_frac", 0.2)  # Fraction of channels to consider around the peak for signal region
-        smooth_window = max(1, int(context.get("smooth_window", 10)))  # Odd window size for linewidth detection smoothing
+        window_frac = context.get("window_frac", self.config.params.get("window_frac", 0.2))
+        smooth_window = context.get("smooth_window", self.config.params.get("smooth_window", 10))
+        if (
+            isinstance(window_frac, bool)
+            or not isinstance(window_frac, (int, float))
+            or not np.isfinite(window_frac)
+            or not 0.0 < window_frac < 1.0
+        ):
+            raise ValueError("window_frac must be a finite number between zero and one.")
+        if isinstance(smooth_window, bool) or not isinstance(smooth_window, (int, np.integer)) or smooth_window < 1:
+            raise ValueError("smooth_window must be a positive integer.")
 
         channels = len(signal)
+        valid = valid_channels(signal, channel_flags)
+
+        sec = context.get("sec", max(self.scan.get_loaded_seconds(), 1))
+        idx = sec - 1
+        qa = self.scan_qa.getQA(pipeline=pipeline, idx=idx)
+        if qa is None:
+            logger.warning("QA could not find a QA record for pipeline '%s' at index %s.", pipeline, idx)
+            return signal
+
+        # Clear values from a previous processing pass. The RFI step owns
+        # rfi_fraction, so it is deliberately not reset here.
+        for field in self.CALCULATED_FIELDS:
+            setattr(qa, field, None)
+
+        if channels == 0 or np.count_nonzero(valid) < 3:
+            logger.warning("QA requires at least three usable channels; metrics were left unset.")
+            return signal
+
+        smooth_window = min(int(smooth_window), channels if channels % 2 == 1 else channels - 1)
         if smooth_window % 2 == 0:
             smooth_window += 1
 
         if smooth_window > 1:
-            kernel = np.ones(smooth_window, dtype=np.float64) / smooth_window
-            smoothed_signal = np.convolve(signal, kernel, mode="same")
+            kernel = np.ones(smooth_window, dtype=np.float64)
+            smoothed_sum = np.convolve(np.where(valid, signal, 0.0), kernel, mode="same")
+            smoothed_count = np.convolve(valid.astype(np.float64), kernel, mode="same")
+            smoothed_signal = np.divide(
+                smoothed_sum,
+                smoothed_count,
+                out=np.full(signal.shape, -np.inf, dtype=np.float64),
+                where=smoothed_count > 0,
+            )
         else:
-            smoothed_signal = signal
+            smoothed_signal = np.where(valid, signal, -np.inf)
+
+        # A flagged channel cannot be selected merely because valid neighbours
+        # make its smoothed value large.
+        smoothed_signal[~valid] = -np.inf
 
         peak_bin = int(np.argmax(smoothed_signal))
 
@@ -71,33 +139,34 @@ class QA(ProcessingStep):
         half_width = window_width // 2
         exclude_start = max(0, peak_bin - half_width)
         exclude_end = min(channels, peak_bin + half_width + 1)
-        if exclude_start == 0:
-            noise_region = signal[exclude_end:]
-        elif exclude_end == channels:
-            noise_region = signal[:exclude_start]
-        else:
-            noise_region = np.concatenate((signal[:exclude_start], signal[exclude_end:]))
+        noise_mask = valid.copy()
+        noise_mask[exclude_start:exclude_end] = False
+        noise_region = signal[noise_mask]
+        if noise_region.size == 0:
+            logger.warning("QA found no usable noise channels outside the signal window; metrics were left unset.")
+            return signal
 
         # --- Baseline (robust)
         baseline = np.median(noise_region)
 
         # --- FWHM-based signal region detection around the peak bin ---
-        peak = np.max(signal)
+        peak = signal[peak_bin]
         smoothed_peak = smoothed_signal[peak_bin]
         half_max = baseline + 0.5 * (smoothed_peak - baseline)
 
         left_idx = int(peak_bin)
-        while left_idx > 0 and smoothed_signal[left_idx - 1] >= half_max:
+        while left_idx > 0 and valid[left_idx - 1] and smoothed_signal[left_idx - 1] >= half_max:
             left_idx -= 1
 
         right_idx = int(peak_bin)
-        while right_idx < channels - 1 and smoothed_signal[right_idx + 1] >= half_max:
+        while right_idx < channels - 1 and valid[right_idx + 1] and smoothed_signal[right_idx + 1] >= half_max:
             right_idx += 1
 
         signal_start = left_idx
         signal_end = right_idx + 1  # exclusive
 
-        signal_region = signal[signal_start:signal_end]
+        signal_region_mask = valid[signal_start:signal_end]
+        signal_region = signal[signal_start:signal_end][signal_region_mask]
 
         # --- Signal (peak above baseline)
         signal_lin = max(peak - baseline, 1e-12)  # avoid log(0)
@@ -126,11 +195,6 @@ class QA(ProcessingStep):
 
         # --- FWHM (full width at half maximum) in bins ---
         fwhm = float(right_idx - left_idx + 1) if signal_region.size > 0 else 0.0
-
-        # --- Update scan QA attributes
-        sec = context.get("sec", max(self.scan.get_loaded_seconds(), 1))
-        idx = sec - 1
-        qa = self.scan_qa.getQA(pipeline=pipeline, idx=idx)
 
         qa.baseline = float(baseline)
         qa.snr_db = snr_db
@@ -208,7 +272,11 @@ def main():
     input_signal = np.random.rand(1024)
 
     print("Original signal: ", input_signal)
-    context = {"pipeline": "cal", "window_frac": 0.2}  # Example context with pipeline name and window fraction
+    context = {
+        "pipeline": "cal",
+        "window_frac": 0.2,
+        "channel_flags": empty_channel_flags(input_signal.shape),
+    }
 
     output_signal = qa_step.process(context, input_signal)
     print("Processed signal:", output_signal)

@@ -6,6 +6,7 @@ from typing import Any, List, Dict
 
 from models.pipeline import StepConfig, StepType
 from models.scan import ScanType, ScanState
+from sdp.channel_mask import ChannelFlag, empty_channel_flags
 from sdp.pipeline.pipeline_factory import ProcessingStep, ProcessingPipeline
 
 logger = logging.getLogger(__name__)
@@ -101,6 +102,29 @@ class LoadCal(ProcessingStep):
         if not isinstance(signal, np.ndarray):
             raise ValueError("LoadCal: input signal must be a numpy array.")
 
+        if signal.ndim != 1:
+            raise ValueError(f"LoadCal: signal must be one-dimensional, got shape {signal.shape}.")
+        if not isinstance(context, dict):
+            raise ValueError("LoadCal: context must be a dictionary.")
+
+        channel_flags = context.get("channel_flags")
+        if not isinstance(channel_flags, np.ndarray):
+            raise ValueError("LoadCal: context must contain a NumPy 'channel_flags' array.")
+        if channel_flags.shape != signal.shape:
+            raise ValueError(
+                "LoadCal: signal and channel_flags must have the same shape; "
+                f"got {signal.shape} and {channel_flags.shape}."
+            )
+        if not np.issubdtype(channel_flags.dtype, np.unsignedinteger):
+            raise ValueError(
+                f"LoadCal: channel_flags must use an unsigned integer dtype, got {channel_flags.dtype}."
+            )
+        if not channel_flags.flags.writeable:
+            raise ValueError("LoadCal: channel_flags must be writable.")
+
+        nonfinite_bit = np.array(int(ChannelFlag.NONFINITE), dtype=channel_flags.dtype)
+        channel_flags[~np.isfinite(signal)] |= nonfinite_bit
+
         # If this is a load scan, we should not apply the load calibration, otherwise we will divide the load scan by itself and end up 
         # with an array of ones, losing the actual load calibration values. Instead, we return the signal unchanged for load scans.
         if self.scan.get_scan_type() == ScanType.LOAD:
@@ -114,11 +138,32 @@ class LoadCal(ProcessingStep):
                 logger.info(f"LoadCal pipeline step updated load calibration scan for processing:\n{self.load_scan}")
 
         # Check if the length of the input signal array matches the length of the load scan's spectrum
-        if not self.load_scan or signal.shape[0] != self.load_scan.mpr.shape[0]:
+        if not self.load_scan or signal.shape != self.load_scan.mpr.shape:
             logger.warning(f"LoadCal: load_scan {'found but' if self.load_scan else 'not found'} and must be the same shape {str(self.load_scan.mpr.shape[0])+' ' if self.load_scan else ''}" + \
                 f"as the scan {signal.shape[0]} on which to apply it.")
 
-        return signal / self.load_scan.mpr if self.load_scan is not None else signal
+        if self.load_scan is None:
+            return signal
+        if signal.shape != self.load_scan.mpr.shape:
+            raise ValueError(
+                "LoadCal: signal and load spectrum must have the same shape; "
+                f"got {signal.shape} and {self.load_scan.mpr.shape}."
+            )
+
+        load_flags = getattr(self.load_scan, "mpr_flags", None)
+        if load_flags is not None:
+            if not isinstance(load_flags, np.ndarray) or load_flags.shape != signal.shape:
+                raise ValueError("LoadCal: load spectrum flags must match the signal shape.")
+            channel_flags[:] |= load_flags.astype(channel_flags.dtype, copy=False)
+
+        invalid_load = ~np.isfinite(self.load_scan.mpr) | (self.load_scan.mpr == 0)
+        calibration_bit = np.array(int(ChannelFlag.CALIBRATION_INVALID), dtype=channel_flags.dtype)
+        channel_flags[invalid_load] |= calibration_bit
+
+        with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+            calibrated = signal / self.load_scan.mpr
+        channel_flags[~np.isfinite(calibrated)] |= nonfinite_bit
+        return calibrated
 
     @classmethod
     def describe(cls) -> str:
@@ -183,7 +228,7 @@ def main():
     input_signal = np.random.rand(1024)
 
     print("Original signal: ", input_signal)
-    context = {}
+    context = {"pipeline": "cal", "channel_flags": empty_channel_flags(input_signal.shape)}
 
     output_signal = load_step.process(context, input_signal)
     print("Processed signal:", output_signal)
