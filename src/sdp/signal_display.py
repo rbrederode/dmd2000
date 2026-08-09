@@ -46,6 +46,8 @@ mpl.rcParams["figure.raise_window"] = False
 logger = logging.getLogger(__name__)
 
 FIG_SIZE = (14, 7) # Default figure size for plots
+WATERFALL_PERCENTILES = (1.0, 99.0)
+WATERFALL_LIMIT_SMOOTHING = 0.25
 
 
 class SignalDisplay:
@@ -101,6 +103,7 @@ class SignalDisplay:
         self.q_bar = None
         self.sat_33_line = None
         self.sat_66_line = None
+        self._waterfall_limits = None
 
     def _create_figure(self):
         """Create the matplotlib figure and all subplot axes for this digitiser display."""
@@ -491,12 +494,38 @@ class SignalDisplay:
             waterfall_mask = np.ma.getmaskarray(waterfall).copy()
             loaded_rows = np.asarray(getattr(self.scan, "loaded_secs", []), dtype=bool)
             if loaded_rows.shape == (waterfall.shape[0],):
-                waterfall_mask[~loaded_rows, :] = True
+                unloaded_rows = ~loaded_rows
             else:
                 loaded_seconds = min(int(self.scan.get_loaded_seconds()), waterfall.shape[0])
-                waterfall_mask[loaded_seconds:, :] = True
+                unloaded_rows = np.arange(waterfall.shape[0]) >= loaded_seconds
+            waterfall_mask[unloaded_rows, :] = True
             self.pwr_im.set_data(np.ma.array(self.scan.cal, mask=waterfall_mask, copy=False))
-            self.pwr_im.autoscale()
+
+            # Derive the colour scale from science-usable samples only. The
+            # display mask deliberately leaves bandpass channels visible under
+            # their grey overlay, but those channels must not influence the
+            # waterfall contrast.
+            limit_mask = ~valid_channels(self.scan.cal, cal_flags)
+            limit_mask |= np.broadcast_to(unloaded_rows[:, None], waterfall.shape)
+            limit_values = np.asarray(self.scan.cal)[~limit_mask]
+            limits = self._percentile_limits(limit_values)
+            if limits is not None:
+                observation_complete = not np.any(unloaded_rows)
+                if self._waterfall_limits is None or observation_complete:
+                    self._waterfall_limits = limits
+                else:
+                    alpha = WATERFALL_LIMIT_SMOOTHING
+                    self._waterfall_limits = tuple(
+                        previous + alpha * (current - previous)
+                        for previous, current in zip(self._waterfall_limits, limits)
+                    )
+                self.pwr_im.set_norm(
+                    mpl.colors.Normalize(
+                        vmin=self._waterfall_limits[0],
+                        vmax=self._waterfall_limits[1],
+                        clip=True,
+                    )
+                )
 
             if self.bandpass_im is not None:
                 bandpass = channels_with_flag(cal_flags, ChannelFlag.BANDPASS_EXCLUDED)
@@ -504,6 +533,26 @@ class SignalDisplay:
                 overlay = np.zeros((*self.scan.cal.shape, 4), dtype=np.float32)
                 overlay[bandpass] = (0.5, 0.5, 0.5, 0.28)
                 self.bandpass_im.set_data(overlay)
+
+    @staticmethod
+    def _percentile_limits(values: np.ndarray) -> tuple[float, float] | None:
+        """Return robust P1-P99 colour limits, with safe degenerate-data handling."""
+        finite = np.asarray(values)[np.isfinite(values)]
+        if finite.size == 0:
+            return None
+
+        if finite.size >= 2:
+            vmin, vmax = np.percentile(finite, WATERFALL_PERCENTILES)
+        else:
+            vmin = vmax = float(finite[0])
+
+        if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin >= vmax:
+            vmin, vmax = float(np.min(finite)), float(np.max(finite))
+        if vmin >= vmax:
+            padding = max(abs(vmin) * 1e-6, 1e-12)
+            vmin -= padding
+            vmax += padding
+        return float(vmin), float(vmax)
 
     def _update_saturation_axis(self):
         """Update the SDR saturation bars and legend text for the latest I/Q values."""
@@ -698,7 +747,7 @@ class SignalDisplay:
         Parameters:
             axes: Matplotlib axis to configure.
         """
-        axes.set_title("Waterfall Plot of Spectrum")
+        axes.set_title("Waterfall Plot of Spectrum (P1-P99)")
         axes.set_xlabel("Frequency [MHz]")
         axes.set_ylabel("Integrated Scans" if self._is_integrated_scan() else "Time [sec]")
         axes.set_aspect("auto")

@@ -171,6 +171,8 @@ def test_signal_display_masks_spectra_marks_rfi_and_shades_bandpass():
     waterfall_mask = np.ma.getmaskarray(display.pwr_im.get_array())
     np.testing.assert_array_equal(waterfall_mask[0], [False, False, False, True, False, False])
     assert np.all(waterfall_mask[1])
+    np.testing.assert_allclose(display.pwr_im.get_clim(), [3.02, 4.98])
+    assert display.pwr_im.norm.clip is True
     assert display.pwr_im.get_cmap().get_bad()[-1] == 0.35
     bandpass_overlay = np.asarray(display.bandpass_im.get_array())
     np.testing.assert_allclose(bandpass_overlay[0, :, 3], [0.28, 0.28, 0.0, 0.0, 0.0, 0.28])
@@ -195,6 +197,13 @@ def test_signal_display_masks_spectra_marks_rfi_and_shades_bandpass():
     assert "RFI Frac: 1 channels, 0.68%" in display.qa_text.get_text()
 
     plt.close(display.fig)
+
+
+def test_waterfall_percentile_limits_fall_back_for_constant_data():
+    limits = SignalDisplay._percentile_limits(np.array([5.0, 5.0, np.nan]))
+
+    assert limits is not None
+    assert limits[0] < 5.0 < limits[1]
 
 
 def test_total_power_axis_reconstructs_rfi_without_changing_cal_data():
