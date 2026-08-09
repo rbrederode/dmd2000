@@ -13,6 +13,7 @@ from astropy.time import Time
 
 from models.obs import ObsModel
 from models.scan import ScanState, ScanType
+from sdp.channel_mask import empty_channel_flags, reconstructed_total_power
 try:
     from obs.obs import Observation
     from obs.obs_display import ObsDisplay
@@ -38,7 +39,15 @@ def _mpr_total_power(scan) -> float | None:
     if mpr_values.size == 0:
         return None
 
-    total_power = float(np.sum(mpr_values))
+    mpr_flags = getattr(scan, "mpr_flags", None)
+    if mpr_flags is None:
+        mpr_flags = empty_channel_flags(mpr_values.shape)
+
+    total_power, measured_count, filled_count = reconstructed_total_power(mpr_values, mpr_flags)
+    if int(measured_count) + int(filled_count) == 0:
+        return None
+
+    total_power = float(total_power)
     return total_power if np.isfinite(total_power) else None
 
 def _fmt_mpr_total_power(scan) -> str:
@@ -837,7 +846,14 @@ def save_aggregated_power_csv(obs_id: str, scans, output_dir: str) -> str:
             if loaded_seconds <= 0:
                 continue
 
-            aggregated_power = np.sum(scan.cal[:loaded_seconds, :], axis=1)
+            cal_values = scan.cal[:loaded_seconds, :]
+            cal_flags = getattr(scan, "cal_flags", None)
+            if cal_flags is None:
+                cal_flags = empty_channel_flags(scan.cal.shape)
+            aggregated_power, _, _ = reconstructed_total_power(
+                cal_values,
+                cal_flags[:loaded_seconds, :],
+            )
             for integrated_scan, power in enumerate(aggregated_power, start=1):
                 writer.writerow(
                     [

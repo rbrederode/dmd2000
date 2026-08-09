@@ -88,6 +88,14 @@ def test_mpr_total_power_excludes_flagged_channels():
     assert _mpr_total_power(scan) == 4.0
 
 
+def test_mpr_total_power_reconstructs_rfi_flagged_channels():
+    flags = empty_channel_flags(3)
+    flags[1] |= int(ChannelFlag.RFI_DETECTED)
+    scan = SimpleNamespace(mpr=np.array([1.0, 100.0, 3.0]), mpr_flags=flags)
+
+    assert _mpr_total_power(scan) == 6.0
+
+
 def test_save_aggregated_power_csv_excludes_flagged_channels(tmp_path):
     flags = empty_channel_flags((2, 3))
     flags[:, 1] |= int(ChannelFlag.BANDPASS_EXCLUDED)
@@ -98,3 +106,15 @@ def test_save_aggregated_power_csv_excludes_flagged_channels(tmp_path):
     with open(output_path, newline="", encoding="utf-8") as csv_file:
         rows = list(csv.DictReader(csv_file))
     assert [row["aggregated_power"] for row in rows] == ["4.0", "10.0"]
+
+
+def test_save_aggregated_power_csv_reconstructs_rfi_flagged_channels(tmp_path):
+    flags = empty_channel_flags((2, 3))
+    flags[:, 1] |= int(ChannelFlag.RFI_DETECTED)
+    scan = _scan("obs-0-0", 0, 0, 1420e6, [[1, 100, 3], [4, 200, 6]], 2, flags)
+
+    output_path = save_aggregated_power_csv("observation-id", [scan], str(tmp_path))
+
+    with open(output_path, newline="", encoding="utf-8") as csv_file:
+        rows = list(csv.DictReader(csv_file))
+    assert [row["aggregated_power"] for row in rows] == ["6.0", "15.0"]

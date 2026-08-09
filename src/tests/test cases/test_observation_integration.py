@@ -41,7 +41,7 @@ def test_update_integrated_data_arrays_uses_loaded_seconds():
     assert observation.int_data_arrays[key]["scans"] == 1
 
 
-def test_update_integrated_data_arrays_excludes_flagged_channels():
+def test_update_integrated_data_arrays_excludes_bandpass_and_reconstructs_rfi_channels():
     observation = Observation.__new__(Observation)
     observation.obs_model = SimpleNamespace(obs_id="test-observation")
     key = (2, 0, 1)
@@ -55,7 +55,7 @@ def test_update_integrated_data_arrays_excludes_flagged_channels():
         }
     }
     cal_flags = empty_channel_flags((2, 3))
-    cal_flags[:, 1] |= int(ChannelFlag.BANDPASS_EXCLUDED)
+    cal_flags[:, 1] |= int(ChannelFlag.RFI_DETECTED)
     mpr_flags = empty_channel_flags(3)
     mpr_flags[1] |= int(ChannelFlag.BANDPASS_EXCLUDED)
     scan = SimpleNamespace(
@@ -76,7 +76,7 @@ def test_update_integrated_data_arrays_excludes_flagged_channels():
     observation._update_integrated_data_arrays(scan)
 
     np.testing.assert_allclose(observation.int_data_arrays[key]["int_mpr"], [2.5, 0.0, 4.5])
-    assert observation.int_data_arrays[key]["int_tpw"] == [4.0, 10.0]
+    assert observation.int_data_arrays[key]["int_tpw"] == [6.0, 15.0]
 
 
 def test_pipeline_description_supports_enum_and_string_step_names():

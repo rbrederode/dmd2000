@@ -6,6 +6,7 @@ import numpy as np
 from models.pipeline import StepConfig, StepType
 from models.scan import ScanModel, ScanState, ScanType
 from obs.scan import Scan
+from sdp.channel_mask import empty_channel_flags
 from sdp.pipeline.steps.load import LoadCal
 from sdp.sdp import SDP
 
@@ -49,7 +50,10 @@ def test_load_cal_refreshes_when_real_load_replaces_synthetic_without_queue_size
     cal_q.put(real_load)
     cal_q.queue.remove(synthetic_load)
 
-    result = step.process(context={"pipeline": "cal"}, signal=np.array([8.0, 8.0], dtype=np.float64))
+    result = step.process(
+        context={"pipeline": "cal", "channel_flags": empty_channel_flags(2)},
+        signal=np.array([8.0, 8.0], dtype=np.float64),
+    )
 
     np.testing.assert_allclose(result, np.array([4.0, 2.0]))
     assert step.load_scan is real_load
