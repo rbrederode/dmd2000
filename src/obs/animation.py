@@ -1,4 +1,4 @@
-"""Create an animated HI spectrum from processed DMD2000 observation scans."""
+"""Create an animated spectrum from processed DMD2000 observation scans."""
 
 from __future__ import annotations
 
@@ -21,7 +21,15 @@ from astropy.utils import iers
 
 from models.target import PointingType
 from obs.opt import process_observation
-from util.util import f_e, freq2vel, velocity2LSR
+from sdp.channel_mask import (
+    DEFAULT_EXCLUDED_FLAGS,
+    ChannelFlag,
+    channels_with_flag,
+    contiguous_regions,
+    empty_channel_flags,
+    masked_values,
+    valid_channels,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -38,8 +46,9 @@ class AnimationFrame:
     dec_deg: float
     galactic_l_deg: float
     galactic_b_deg: float
-    velocity_lsr_kms: np.ndarray
+    frequency_mhz: np.ndarray
     spectrum: np.ndarray
+    channel_flags: np.ndarray | None = None
 
 
 def earth_location_for_observation(obs_model) -> EarthLocation:
@@ -97,12 +106,12 @@ def target_icrs_at_time(target, observing_time: datetime, location: EarthLocatio
         return get_body(target.id, time, location).transform_to("icrs")
 
     raise ValueError(
-        f"Pointing type {target.pointing.name} is not supported by the HI animation"
+        f"Pointing type {target.pointing.name} is not supported by the animation"
     )
 
 
-def scan_velocity_axis_lsr(scan_model, target_icrs: SkyCoord, location: EarthLocation, observing_time: datetime) -> np.ndarray:
-    """Build the scan's per-channel LSR velocity axis from its metadata."""
+def scan_frequency_axis_mhz(scan_model) -> np.ndarray:
+    """Build the scan's FFT-shifted channel-centre frequency axis in MHz."""
     channels = int(scan_model.spectral_resolution)
     sample_rate = float(scan_model.sample_rate)
     center_frequency = float(scan_model.center_freq)
@@ -115,15 +124,56 @@ def scan_velocity_axis_lsr(scan_model, target_icrs: SkyCoord, location: EarthLoc
     channel_offsets = np.fft.fftshift(
         np.fft.fftfreq(channels, d=1.0 / sample_rate)
     )
-    frequencies = (center_frequency + channel_offsets) * u.Hz
-    observer_adjustment = velocity2LSR(
-        coord=target_icrs,
-        observing_location=location,
-        observing_time=Time(observing_time),
+    return (center_frequency + channel_offsets) / 1e6
+
+
+def generate_star_chart(dt, lon, lat, ra, dec, filename) -> np.ndarray:
+    """Generate a zenith chart showing both the Sun and telescope pointing."""
+    try:
+        from starplot import ZenithPlot, Observer, _
+        from starplot.styles import PlotStyle, extensions
+    except ModuleNotFoundError as exc:
+        if exc.name == "starplot":
+            raise RuntimeError(
+                "The starplot package is required to generate the animation. "
+                "Install dependencies from src/requirements.txt."
+            ) from exc
+        raise
+
+    observer = Observer(dt=dt, lon=lon, lat=lat)
+    plot = ZenithPlot(
+        observer=observer,
+        style=PlotStyle().extend(
+            extensions.BLUE_GOLD,
+            extensions.GRADIENT_PRE_DAWN,
+            {"milky_way": {"alpha": 0.36, "color": "#FFFFFF"}},
+        ),
+        resolution=1800,
+        autoscale=True,
     )
-    return (
-        freq2vel(frequencies, rest=f_e) - observer_adjustment
-    ).to_value(u.km / u.s)
+
+    plot.sun(label="Sun", legend_label="Sun")
+    plot.marker(
+        ra=ra,
+        dec=dec,
+        style={
+            "marker": {
+                "size": 100,
+                "symbol": "circle_cross",
+                "fill": "none",
+                "color": "yellow",
+                "edge_width": 5,
+                "alpha": 1,
+            },
+        },
+    )
+    plot.horizon()
+    plot.constellations()
+    plot.stars(where=[_.magnitude < 3], where_labels=[False])
+    plot.milky_way()
+    plot.export(filename, transparent=True, padding=0.1)
+    plot.close_fig()
+    return plt.imread(filename)
 
 
 def build_animation_frames(obs_model, scans, location: EarthLocation) -> list[AnimationFrame]:
@@ -151,14 +201,15 @@ def build_animation_frames(obs_model, scans, location: EarthLocation) -> list[An
         target = target_for_scan(obs_model, scan_model)
         target_icrs = target_icrs_at_time(target, observing_time, location)
         galactic = target_icrs.transform_to("galactic")
-        velocity = scan_velocity_axis_lsr(
-            scan_model,
-            target_icrs,
-            location,
-            observing_time,
-        )
+        frequency_mhz = scan_frequency_axis_mhz(scan_model)
+        channel_flags = getattr(scan, "mpr_flags", None)
+        if (
+            not isinstance(channel_flags, np.ndarray)
+            or channel_flags.shape != spectrum.shape
+            or not np.issubdtype(channel_flags.dtype, np.integer)
+        ):
+            channel_flags = empty_channel_flags(spectrum.shape)
 
-        velocity_order = np.argsort(velocity)
         frames.append(
             AnimationFrame(
                 scan_id=scan_model.scan_id,
@@ -167,23 +218,60 @@ def build_animation_frames(obs_model, scans, location: EarthLocation) -> list[An
                 dec_deg=float(target_icrs.dec.deg),
                 galactic_l_deg=float(galactic.l.deg),
                 galactic_b_deg=float(galactic.b.deg),
-                velocity_lsr_kms=velocity[velocity_order],
-                spectrum=spectrum[velocity_order],
+                frequency_mhz=frequency_mhz,
+                spectrum=spectrum,
+                channel_flags=channel_flags.copy(),
             )
         )
 
     return frames
 
 
-def _plot_limits(frames: list[AnimationFrame]):
-    velocity = np.concatenate([frame.velocity_lsr_kms for frame in frames])
-    spectra = np.concatenate([frame.spectrum for frame in frames])
-    finite_velocity = velocity[np.isfinite(velocity)]
-    finite_spectra = spectra[np.isfinite(spectra)]
-    if finite_velocity.size == 0 or finite_spectra.size == 0:
-        raise ValueError("Animation frames contain no finite velocity or spectrum values")
+def _frame_flags(frame: AnimationFrame) -> np.ndarray:
+    """Return channel flags matching a frame, including legacy unflagged frames."""
+    flags = frame.channel_flags
+    if (
+        not isinstance(flags, np.ndarray)
+        or flags.shape != frame.spectrum.shape
+        or not np.issubdtype(flags.dtype, np.integer)
+    ):
+        return empty_channel_flags(frame.spectrum.shape)
+    return flags
 
-    x_limits = (float(np.min(finite_velocity)), float(np.max(finite_velocity)))
+
+def _bandpass_regions(frame: AnimationFrame) -> list[tuple[float, float]]:
+    """Return frequency-edge spans for contiguous bandpass-excluded channels."""
+    flags = _frame_flags(frame)
+    excluded = channels_with_flag(flags, ChannelFlag.BANDPASS_EXCLUDED)
+    if frame.frequency_mhz.size == 0:
+        return []
+
+    if frame.frequency_mhz.size == 1:
+        half_channel = 0.0
+    else:
+        half_channel = float(np.median(np.diff(frame.frequency_mhz))) / 2.0
+    return [
+        (
+            float(frame.frequency_mhz[start] - half_channel),
+            float(frame.frequency_mhz[end - 1] + half_channel),
+        )
+        for start, end in contiguous_regions(excluded)
+    ]
+
+
+def _plot_limits(frames: list[AnimationFrame]):
+    frequency = np.concatenate([frame.frequency_mhz for frame in frames])
+    usable_spectra = [
+        frame.spectrum[valid_channels(frame.spectrum, _frame_flags(frame))]
+        for frame in frames
+    ]
+    spectra = np.concatenate(usable_spectra)
+    finite_frequency = frequency[np.isfinite(frequency)]
+    finite_spectra = spectra[np.isfinite(spectra)]
+    if finite_frequency.size == 0 or finite_spectra.size == 0:
+        raise ValueError("Animation frames contain no finite frequency or spectrum values")
+
+    x_limits = (float(np.min(finite_frequency)), float(np.max(finite_frequency)))
     y_low, y_high = np.percentile(finite_spectra, [1.0, 99.0])
     if y_low == y_high:
         padding = max(abs(float(y_low)) * 0.05, 1.0)
@@ -198,19 +286,9 @@ def create_animation(
     output_path: str | Path,
     interval_ms: int = 100,
 ) -> Path:
-    """Render processed frames as a star-chart and HI-spectrum GIF."""
+    """Render processed frames as a star-chart and spectrum GIF."""
     if not frames:
         raise ValueError("No processed SKY scans are available for animation")
-
-    try:
-        from obs.animation_shin import generate_star_chart
-    except ModuleNotFoundError as exc:
-        if exc.name == "starplot":
-            raise RuntimeError(
-                "The starplot package is required to generate the animation. "
-                "Install dependencies from src/requirements.txt."
-            ) from exc
-        raise
 
     output_path = Path(output_path).expanduser()
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -218,7 +296,7 @@ def create_animation(
     longitude_deg = float(location.lon.to_value(u.deg))
     latitude_deg = float(location.lat.to_value(u.deg))
 
-    with tempfile.TemporaryDirectory(prefix="dmd2000-hi-animation-") as temp_dir:
+    with tempfile.TemporaryDirectory(prefix="dmd2000-animation-") as temp_dir:
         chart_path = Path(temp_dir) / "star-chart.png"
         first = frames[0]
         first_chart = generate_star_chart(
@@ -234,13 +312,14 @@ def create_animation(
         chart_artist = sky_axis.imshow(first_chart)
         sky_axis.axis("off")
         title_artist = sky_axis.set_title("")
-        spectrum_line, = spectrum_axis.plot([], [], color="tab:blue")
+        spectrum_line, = spectrum_axis.plot([], [], color="tab:blue", label="Processed MPR")
+        bandpass_spans = []
         spectrum_axis.set_xlim(*x_limits)
         spectrum_axis.set_ylim(*y_limits)
-        spectrum_axis.set_xlabel(r"$V_{\mathrm{LSR}}$ [km/s]")
+        spectrum_axis.set_xlabel("Frequency [MHz]")
         spectrum_axis.set_ylabel("Processed MPR [a.u.]")
         spectrum_axis.grid(alpha=0.2)
-        figure.subplots_adjust(wspace=0.3)
+        figure.subplots_adjust(wspace=0.3, right=0.82)
 
         def update(frame_index):
             frame = frames[frame_index]
@@ -253,13 +332,45 @@ def create_animation(
                 filename=str(chart_path),
             )
             chart_artist.set_data(chart)
-            spectrum_line.set_data(frame.velocity_lsr_kms, frame.spectrum)
+            flags = _frame_flags(frame)
+            display_exclusions = DEFAULT_EXCLUDED_FLAGS & ~ChannelFlag.BANDPASS_EXCLUDED
+            spectrum_line.set_data(
+                frame.frequency_mhz,
+                masked_values(
+                    frame.spectrum,
+                    flags,
+                    excluded_flags=display_exclusions,
+                ),
+            )
+
+            for span in bandpass_spans:
+                span.remove()
+            bandpass_spans.clear()
+            for region_index, (start_mhz, end_mhz) in enumerate(_bandpass_regions(frame)):
+                bandpass_spans.append(
+                    spectrum_axis.axvspan(
+                        start_mhz,
+                        end_mhz,
+                        color="gray",
+                        alpha=0.14,
+                        label="Bandpass Excluded" if region_index == 0 else "_nolegend_",
+                    )
+                )
+
             title_artist.set_text(
                 f"{frame.time:%Y-%m-%d %H:%M:%S} UTC\n"
                 f"(l, b) = ({frame.galactic_l_deg:.1f}°, {frame.galactic_b_deg:.1f}°)"
             )
             spectrum_axis.set_title(frame.scan_id)
-            return chart_artist, spectrum_line, title_artist
+            legend = spectrum_axis.get_legend()
+            if legend is not None:
+                legend.remove()
+            spectrum_axis.legend(
+                loc="upper left",
+                bbox_to_anchor=(1.02, 1.0),
+                borderaxespad=0,
+            )
+            return chart_artist, spectrum_line, title_artist, *bandpass_spans
 
         animation = mpl_animation.FuncAnimation(
             figure,
@@ -280,7 +391,7 @@ def create_animation(
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Create an animated, pipeline-processed HI observation."
+        description="Create an animated, pipeline-processed spectrum."
     )
     parser.add_argument(
         "-d",
@@ -299,7 +410,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=Path,
-        help="Output GIF path (default: <dir>/<obs_id>-hi-animation.gif)",
+        help="Output GIF path (default: <dir>/<obs_id>-animation.gif)",
     )
     parser.add_argument(
         "--interval-ms",
@@ -312,7 +423,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    output_path = args.output or args.dir / f"{args.obs}-hi-animation.gif"
+    output_path = args.output or args.dir / f"{args.obs}-animation.gif"
 
     try:
         observation, _, _, processed_scans = process_observation(
@@ -338,7 +449,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"HI animation failed: {exc}")
         return 1
 
-    print(f"Created {len(frames)}-frame HI animation: {result}")
+    print(f"Created {len(frames)}-frame spectrum animation: {result}")
     return 0
 
 

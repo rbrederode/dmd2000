@@ -33,7 +33,7 @@
                 "step": "BANDPASS_FILTER",
                 "params": {
                     "context": "cal",
-                    "ranges_pct": [[21, 86]]
+                    "ranges_pct": [[21.0, 86.0]]
                 }
             },
             {

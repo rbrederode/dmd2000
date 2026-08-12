@@ -77,11 +77,9 @@
   "targets": [
     {
       "_type": "TargetModel",
-      "sky_coord": {
-        "_type": "SkyCoord",
-        "ra": 9.28,
-        "dec": 15.79,
-        "frame": "icrs"
+      "altaz": {
+                "alt": "49.0",
+                "az": "149.0"
       },
       "pointing": {
         "_type": "enum.IntEnum",
@@ -94,11 +92,9 @@
     },
     {
       "_type": "TargetModel",
-      "sky_coord": {
-        "_type": "SkyCoord",
-        "ra": 9.28,
-        "dec": 15.79,
-        "frame": "icrs"
+      "altaz": {
+                "alt": "49.0",
+                "az": "149.0"
       },
       "pointing": {
         "_type": "enum.IntEnum",
@@ -111,11 +107,9 @@
     },
     {
       "_type": "TargetModel",
-      "sky_coord": {
-        "_type": "SkyCoord",
-        "ra": 9.28,
-        "dec": 15.79,
-        "frame": "icrs"
+      "altaz": {
+                "alt": "49.0",
+                "az": "149.0"
       },
       "pointing": {
         "_type": "enum.IntEnum",
