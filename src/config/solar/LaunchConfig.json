@@ -15,7 +15,8 @@
                 "--entity_id", "dig001",
                 "--tm_host", "192.168.0.7",
                 "--sdp_host", "192.168.0.7",
-                "--local_host", "192.168.0.18"
+                "--local_host", "192.168.0.7",
+                "--cmd_port", "60009"
             ]
         },
         {
@@ -31,7 +32,8 @@
                 "--entity_id", "dig002",
                 "--tm_host", "192.168.0.7",
                 "--sdp_host", "192.168.0.7",
-                "--local_host", "192.168.0.17"
+                "--local_host", "192.168.0.18",
+                "--cmd_port", "60009"
             ]
         },
         {
@@ -75,7 +77,22 @@
                 "--entity_id", "tm001",
                 "--dig_host", "192.168.0.7",
                 "--sdp_host", "127.0.0.1",
-                "--dm_host", "127.0.0.1"
+                "--dm_host", "127.0.0.1",
+                "--ws_host", "127.0.0.1"
+            ]
+        },
+        {
+            "_type": "LaunchModel",
+            "app_name": "ws",
+            "entity_id": "ws001",
+            "env": {},
+            "program": "python",
+            "args": [
+                "-m", "ws.ws",
+                "--profile", "solar",
+                "--dm_host", "127.0.0.1",
+                "--tm_host", "127.0.0.1",
+                "--sim", "calm"
             ]
         }
     ]

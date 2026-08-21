@@ -85,7 +85,7 @@
             "capability": {
                 "_type": "enum.IntEnum",
                 "instance": "Capability",
-                "value": "OPERATE_FULL"
+                "value": "STANDBY"
             },
             "driver_type": {
                 "_type": "enum.IntEnum",
