@@ -9,6 +9,8 @@ import time
 import threading
 
 from api.api import API
+from api import protocol as dmd_protocol
+from api.command import CommandAPI
 from ipc.tcp_server import TCPServer
 from ipc.message import AppMessage, APIMessage
 from ipc.action import Action
@@ -19,6 +21,7 @@ from models.health import HealthState
 from util.availability import get_app_reliability, get_app_availability
 from util.format import fmt_bool
 from util import log
+from util.html_trace import HTMLTrace
 from util.version import get_version_info
 from util.xbase import XBase, XSoftwareFailure
 from util.timer import Timer, TimerManager
@@ -30,9 +33,20 @@ from env.app_processor import AppProcessor
 import logging
 logger = logging.getLogger(__name__)
 
+
+def _should_manage_trace_archives(app_name: str, configured: bool | None) -> bool:
+    """Resolve the archive-manager override, defaulting ownership to TM."""
+
+    if configured is not None:
+        return configured
+    return str(app_name or "").strip().lower() == dmd_protocol.TM
+
+
 class App:
 
-    logs_dir = Path("./logs").expanduser()
+    # Keep dedicated telemetry logs independent of the application's launch
+    # directory, consistent with the consolidated application logs.
+    logs_dir = Path(log.repo_logs_dir)
 
     def __init__(self, app_name: str, app_model: AppModel):
 
@@ -46,9 +60,8 @@ class App:
 
         self.app_model = app_model if app_model is not None else AppModel(app_name=app_name)
         self.app_model.app_name = app_name
-        
+
         self.app_model.version = version_info
-        self.app_model.app_running = True
         
         self.queue = Queue()                     # Event queue for the application
         self.status_update_event = events.StatusUpdateEvent()  # Reusable status update event
@@ -62,11 +75,24 @@ class App:
         self.add_args(self.arg_parser)
         self.app_model.arguments = vars(self.get_args())
 
-        # Set log level based on verbose argument
-        if self.get_args().verbose:
-            logging.getLogger().setLevel(logging.DEBUG)
-        else:
-            logging.getLogger().setLevel(logging.INFO)
+        # Debug is application-wide.  The command API and all processor
+        # threads therefore share the state held by the AppModel and update
+        # the root logger rather than a processor module logger.
+        self.app_model.app_debug = bool(
+            self.app_model.app_debug or self.get_args().verbose
+        )
+        logging.getLogger().setLevel(
+            logging.DEBUG if self.app_model.app_debug else logging.INFO
+        )
+
+        if self.get_args().cmd_host:
+            self.app_model.app_cmd_host = self.get_args().cmd_host
+
+        if self.get_args().cmd_port:
+            self.app_model.app_cmd_port = self.get_args().cmd_port
+
+        if self.app_model.app_cmd_host is None or self.app_model.app_cmd_port is None:
+            raise XSoftwareFailure("App requires both cmd host and port to be specified in the app model or via command line arguments")
 
         self.app_model.num_processors = max(1, self.get_args().num_processors)
         self.processors = []                    # List to hold processor threads
@@ -77,6 +103,17 @@ class App:
         self.app_model.health = HealthState.UNKNOWN
         self._last_heartbeat = None
         self._lock = threading.Lock()
+        self.trace = HTMLTrace(
+            output_dir=Path(log.repo_logs_dir) / "trace",
+            app_name=self.app_model.app_name,
+            app_version=self.app_model.version,
+            manage_trace_archives=_should_manage_trace_archives(
+                self.app_model.app_name,
+                self.get_args().manage_trace_archives,
+            ),
+        )
+        if self.app_model.app_tracing:
+            self.trace.start("Application startup")
         self.avail_logger = self.get_availability_logger()
         self.report_availability()
 
@@ -147,6 +184,17 @@ class App:
     def set_last_err(self, err_msg: str, err_dt: datetime=None) -> str:
         self.app_model.last_err_msg = err_msg
         self.app_model.last_err_dt = err_dt if err_dt is not None else datetime.now(timezone.utc)
+
+        # Write the last error message to the trace file if tracing is enabled
+        trace = getattr(self, "trace", None)
+        if trace is not None:
+            try:
+                trace.log_last_error_msg(err_msg, self.app_model.last_err_dt)
+            except Exception as e:
+                # Failure to write diagnostic output must not interfere with
+                # recording or returning the application's actual error.
+                logger.warning("App %s failed to write last-error message to trace file: %s", self.app_model.app_name,e)
+
         return err_msg
 
     def add_args(self, arg_parser):
@@ -156,18 +204,33 @@ class App:
         """
         arg_parser.add_argument("--verbose", "-v",action="store_true", help="Enable verbose logging")
         arg_parser.add_argument("--num_processors", "-np", type=int, required=False, help="Number of processor threads to create", default=4)
-        arg_parser.add_argument("--profile", type=str, required=False, help="Configuration profile to use e.g. default, alston etc. See ./config directory for existing profiles", default="default") 
+        arg_parser.add_argument("--profile", type=str, required=False, help="Configuration profile to use e.g. default, alston etc. See ./config directory for existing profiles.", default="default")
         arg_parser.add_argument("--entity_id", type=str, required=False, help="Alphanumeric entity ID to uniquely identify a dish or digitiser instance <[A-Z][a-z][0-9]+> e.g. dsh001", default="<undefined>")
         arg_parser.add_argument("--headless",type=fmt_bool,nargs="?",const=True,required=False,default=False,help="Disable displays and UI interactions for apps that support them. Accepts true/false.")
-        arg_parser.add_argument("--queue_high_watermark", type=int, required=False, help="Queue size at which app-specific overload handling starts; 0 derives from processor count", default=0)
-        arg_parser.add_argument("--queue_low_watermark", type=int, required=False, help="Queue size at which app-specific overload handling stops; 0 derives from processor count", default=0)
+        arg_parser.add_argument("--queue_high_watermark", type=int, required=False, help="Queue size at which app-specific overload handling starts; 0 derives from processor count.", default=0)
+        arg_parser.add_argument("--queue_low_watermark", type=int, required=False, help="Queue size at which app-specific overload handling stops; 0 derives from processor count.", default=0)
+        arg_parser.add_argument("--cmd_host", type=str, required=False, help="Command host to listen for TCP/IP command messages such as trace or debug ON/OFF, or resync. Defaults to 127.0.0.1 if not specified.")
+        arg_parser.add_argument("--cmd_port", type=int, required=False, help="Command port to listen for TCP/IP command messages such as trace or debug ON/OFF, or resync. Generally in the range 60001-60010.")
+        arg_parser.add_argument(
+            "--manage_trace_archives",
+            type=fmt_bool,
+            nargs="?",
+            const=True,
+            default=None,
+            help=(
+                "Manage rotated trace archives in the shared trace directory. "
+                "Defaults to true for TM and false for other apps; accepts true/false."
+            ),
+        )
 
     def start(self):
         """Starts the application."""
+        self.app_model.app_running = True
 
         self.queue.put(InitEvent(self.app_model.app_name))  # Start with an initialisation event
         self.start_processors()
         self.start_status_thread()
+        self.start_cmd_server()
 
         logger.info(f"App {self.app_model.app_name} started")
 
@@ -216,7 +279,7 @@ class App:
                 else:
                     self.status_update_event.enqueue(self.queue)
                     
-                time.sleep(30)  # Sleep briefly to avoid busy-waiting
+                time.sleep(30)  # Sleep main thread to avoid busy-waiting, work is done in the processor threads
 
             except Exception as e:
                 logger.error(self.set_last_err(f"App {self.app_model.app_name} encountered an error: {e}"))
@@ -226,11 +289,20 @@ class App:
 
         self.app_model.app_running = False # Stops status thread
         self.stop_timer_manager()
+        self.stop_cmd_server()
         self.stop_processors()
         self.stop_status_thread()
 
         if not self.queue.empty():
             self.queue.queue.clear()
+
+        trace = getattr(self, "trace", None)
+        if trace is not None:
+            try:
+                trace.stop("Application shutdown")
+                trace.stop_archive_manager()
+            except Exception as e:
+                logger.exception(self.set_last_err(f"App {self.app_model.app_name} failed to stop tracing: {e}"))
 
         logger.info(f"App {self.app_model.app_name} stopped")
         self.app_model.health = HealthState.UNKNOWN
@@ -287,7 +359,43 @@ class App:
             Timer.manager.stop()
             Timer.manager = None
             logger.info(f"App {self.app_model.app_name} stopped timer manager")
-        
+
+    def start_cmd_server(self):
+        """Starts a TCP server to listen for command messages."""
+        if self.app_model.app_cmd_host is None or self.app_model.app_cmd_port is None:
+            raise XSoftwareFailure("App requires both cmd host and port to be specified in the app model or via command line arguments")
+
+        self.cmd_api = CommandAPI()
+        self.cmd_endpoint = TCPServer(
+            description=dmd_protocol.CMD,
+            queue=self.get_queue(),
+            host=self.app_model.app_cmd_host,
+            port=self.app_model.app_cmd_port,
+        )
+        self.register_interface(
+            dmd_protocol.CMD,
+            self.cmd_api,
+            self.cmd_endpoint,
+            InterfaceType.APP_APP,
+        )
+
+        try:
+            self.cmd_endpoint.start()
+        except Exception:
+            self.deregister_interface(dmd_protocol.CMD)
+            self.cmd_endpoint = None
+            self.cmd_api = None
+            raise
+
+    def stop_cmd_server(self):
+        """Stops the TCP server listening for command messages."""
+        if hasattr(self, "cmd_endpoint") and self.cmd_endpoint is not None:
+            self.cmd_endpoint.stop()
+            self.cmd_endpoint = None
+        if dmd_protocol.CMD in getattr(self, "interfaces", {}):
+            self.deregister_interface(dmd_protocol.CMD)
+        self.cmd_api = None
+
     def register_interface(self, system_name: str, api: API, endpoint, interface_type: InterfaceType = InterfaceType.UNKNOWN):
         """Registers an interface with the application.
             : param system_name: The name of the system the interface is for
@@ -308,7 +416,12 @@ class App:
         if endpoint is None:
             raise XSoftwareFailure(self.set_last_err(f"App {self.app_model.app_name} endpoint must be provided.\n{self.app_model.to_dict()}"))
 
-        logger.info(f"App {self.app_model.app_name} registered interface for system '{system_name}' with API version {api.get_api_version()} at endpoint {endpoint}")
+        if hasattr(endpoint, "host") and hasattr(endpoint, "port"):
+            endpoint_description = f"{endpoint.host}:{endpoint.port}"
+        else:
+            endpoint_description = str(endpoint)
+
+        logger.info(f"App {self.app_model.app_name} registered interface for system '{system_name}' with API version {api.get_api_version()} at endpoint {endpoint_description}")
 
         self.interfaces[system_name] = (api, endpoint, interface_type)
         self.app_model.interfaces.append(system_name)

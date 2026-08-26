@@ -7,6 +7,7 @@ import _thread
 from datetime import datetime, timezone
 from gpiozero import LED
 
+from api import protocol as dmd_protocol
 from api import tm_dig, sdp_dig
 from dig.temp import Temperature
 from env.app import App
@@ -24,7 +25,7 @@ from sdr.facade import SDR
 from util import log, util
 from util.format import fmt_bool
 from util.timer import Timer, TimerManager
-from util.xbase import XStreamUnableToExtract, XSoftwareFailure, XHardwareFailure, XAPIValidationFailed
+from util.xbase import XStreamUnableToExtract, XSoftwareFailure, XHardwareFailure, XAPIValidationFailed, XInvalidTransition
 
 logger = logging.getLogger("dig.dig")
 
@@ -35,6 +36,8 @@ class Digitiser(App):
     def __init__(self, app_name: str = "dig"):
 
         self.dig_model = DigitiserModel()
+        self.sdr = None
+        self.temp_sensor = None
 
         super().__init__(app_name=app_name, app_model = self.dig_model.app)
 
@@ -70,6 +73,8 @@ class Digitiser(App):
 
         self._scan_samples_generation = 0
         self._scan_samples_generation_lock = threading.Lock()
+        self._sdr_disconnect_advice_sent = False
+        self._sdr_disconnect_advice_lock = threading.Lock()
         self._idle_poweroff_seconds = 300
         self._last_active_dt = datetime.now(timezone.utc)
         self._shutdown_requested = False
@@ -87,63 +92,72 @@ class Digitiser(App):
 
         arg_parser.add_argument("--local_host", type=str, required=True, help="Localhost (ip4 address) on which the digitiser is running e.g. 192.168.0.1", default="0.0.0.0")
     
+    def _load_digitiser_config(self, input_dir: str, filename: str, dig_id: str) -> DigitiserModel:
+        """ Loads the digitiser configuration from disk.
+            :param input_dir: Directory containing the configuration file
+            :param filename: Name of the configuration file
+            :param dig_id: ID of the digitiser for which to load configuration
+            :return: Matching DigitiserModel, or None when it cannot be found
+        """
+        try:
+            dig_store = DigitiserList.load_from_disk(input_dir=input_dir, filename=filename)
+        except FileNotFoundError:
+            msg = f"Digitiser could not load configuration from directory {input_dir} file {filename}"
+            logger.warning(self.set_last_err(msg))
+            return None
+
+        # DigitiserList is a model containing the actual list in dig_list; it is
+        # not itself a sequence and therefore does not implement len().
+        if dig_store is None or not dig_store.dig_list:
+            msg = f"Digitiser configuration for {dig_id} not found in directory {input_dir} file {filename}"
+            logger.warning(self.set_last_err(msg))
+            return None
+
+        dig_config = dig_store.get_dig_by_id(dig_id)
+        if dig_config is None:
+            msg = f"Digitiser configuration for {dig_id} not found in directory {input_dir} file {filename}"
+            logger.warning(self.set_last_err(msg))
+
+        return dig_config
+
+    def _reinitialise_sdr(self) -> None:
+        """ Re-initialises the Software Defined Radio (internal) interface.
+            Disconnects the existing SDR interface to ensure it is properly closed before re-initialising.
+        """
+        if self.sdr is not None:
+            self.sdr.close()
+            self.sdr = None
+
+        self.sdr = SDR(sdr_type=self.dig_model.sdr_type, sdr_config=self.dig_model.sdr_config)
+        self.dig_model.sdr_eeprom = self.sdr.get_eeprom_info() or {}
+        self.dig_model.sdr_connected = self.sdr.get_comms_status()
+
+    def _reinitialise_temp_sensor(self) -> None:
+        """ Re-initialises the Digitiser Assembly temperature sensor interface.
+            Disconnects the existing temperature sensor interface to ensure it is properly closed before re-initialising.
+        """
+        if self.temp_sensor is not None:
+            self.temp_sensor.stop()
+            self.temp_sensor = None
+
+        if self.dig_model.temp_type is not None and self.dig_model.temp_type.lower() != "none":
+            
+            logger.info(f"Digitiser configuring temperature sensor type={self.dig_model.temp_type} config={self.dig_model.temp_config}")
+            self.temp_sensor = Temperature(device=self.dig_model.temp_type, sensor_config=self.dig_model.temp_config)
+
+            self.dig_model.temp_connected = self.temp_sensor.get_comms_status()
+            if self.temp_sensor.get_comms_status() == CommunicationStatus.ESTABLISHED:
+                logger.info("Digitiser successfully connected to temperature sensor.")
+            else:
+                logger.info("Digitiser temperature sensor configured; waiting for background connection.")
+            
     def process_init(self) -> Action:
         """ Processes initialisation event on startup once all app processors are running.
             Runs in single threaded mode and switches to multi-threading mode after this method completes.
         """
         logger.debug(f"Digitiser initialisation event")
 
-        action = Action()
-
-        # Config files located in ./config/<profile>/<model>.json
-        input_dir = f"./config/{self.get_args().profile}"
-        filename = "DigitiserList.json"
-
-        try:
-            dig_store = DigitiserList.load_from_disk(input_dir=input_dir, filename=filename)
-        except FileNotFoundError:
-            dig_store = None
-
-        if dig_store is not None:
-            dig_config = dig_store.get_dig_by_id(self.dig_model.dig_id)
-            if dig_config is not None:
-                for key in self.dig_model.schema.schema.keys():
-                    if key == "app":
-                        continue
-                    setattr(self.dig_model, key, getattr(dig_config, key))
-                self.dig_model.dig_id = self.get_args().entity_id
-                logger.info(f"Digitiser loaded configuration for {self.dig_model.dig_id} from directory {input_dir} file {filename}")
-            else:
-                msg = f"Digitiser configuration for {self.dig_model.dig_id} not found in directory {input_dir} file {filename}"
-                logger.warning(self.set_last_err(msg))
-        else:
-            msg = f"Digitiser could not load Digitiser configuration from directory {input_dir} file {filename}"
-            logger.warning(self.set_last_err(msg))
-
-        # Initialise the Software Defined Radio (internal) interface
-        self.sdr = SDR(sdr_type=self.dig_model.sdr_type, sdr_config=self.dig_model.sdr_config)
-        self.dig_model.sdr_eeprom = self.sdr.get_eeprom_info() or {}
-        self.dig_model.sdr_connected = self.sdr.get_comms_status()
-
-        # Initialise the Digitiser Assembly temperature sensor interface
-        self.temp_sensor = None
-        if self.dig_model.temp_type is not None and self.dig_model.temp_type.lower() != "none":
-
-            logger.info(f"Digitiser configuring temperature sensor type={self.dig_model.temp_type} config={self.dig_model.temp_config}")
-            
-            self.temp_sensor = Temperature(device=self.dig_model.temp_type, sensor_config=self.dig_model.temp_config)
-            self.dig_model.temp_connected = self.temp_sensor.get_comms_status()
-            
-            if self.temp_sensor.get_comms_status() == CommunicationStatus.ESTABLISHED:
-                logger.info("Digitiser successfully connected to temperature sensor.")
-            else:
-                logger.info("Digitiser temperature sensor configured; waiting for background connection.")
-            
-            # Poll the temperature sensor every 5 seconds. The Temperature class returns
-            # None until its background reader has a fresh cached value.
-            action.set_timer_action(Action.Timer(name=f"temp_sensor_poll", timer_action=5000, echo_data=None))
-        else:
-            self.dig_model.temp_connected = CommunicationStatus.DISABLED
+        action = self.process_resync()  # Load configuration from disk and re-initialise the SDR and temperature sensor interfaces
         
         # Start timer to periodically checks comms e.g. SDR, Bandpass filter relays, temp sensors etc
         action.set_timer_action(Action.Timer(name=f"comms_retry", timer_action=5000))
@@ -151,6 +165,45 @@ class Digitiser(App):
         # Connect client endpoints to interfaces
         self.tm_endpoint.connect()
         self.sdp_endpoint.connect()
+
+        return action
+
+    def process_resync(self) -> Action:
+        """ Processes resync event to resync digitiser configuration.
+        """
+        logger.info(f"Digitiser resync configuration")
+
+        if self.dig_model.scanning:
+            msg = f"Digitiser cannot resync while scanning for observation {self.dig_model.scanning.get('obs_id', 'None')}"
+            logger.error(self.set_last_err(msg))
+            raise XInvalidTransition(msg)
+
+        action = Action()
+
+        # Config files located in ./config/<profile>/<model>.json
+        input_dir = f"./config/{self.get_args().profile}"
+        filename = "DigitiserList.json"
+        dig_config = self._load_digitiser_config(input_dir=input_dir, filename=filename, dig_id=self.dig_model.dig_id)
+
+        if dig_config is not None:
+            
+            for key in self.dig_model.schema.schema.keys():
+                # Only update the properties that are relevant for resyncing the digitiser configuration
+                if key in ["bpf_type", "bpf_config", "temp_type", "temp_config", "sdr_type", "sdr_config", "temp_max"]:
+                    setattr(self.dig_model, key, getattr(dig_config, key))
+            
+            logger.info(f"Digitiser loaded configuration for {self.dig_model.dig_id} from directory {input_dir} file {filename}")
+
+        self._reinitialise_sdr()            # Re-initialise the Software Defined Radio (internal) interface
+        self._reinitialise_temp_sensor()    # Re-initialise the Digitiser Assembly temperature sensor interface
+
+        if self.temp_sensor:            
+            # Poll the temperature sensor every 5 seconds. The Temperature class returns
+            # None until its background reader has a fresh cached value.
+            action.set_timer_action(Action.Timer(name="temp_sensor_poll", timer_action=5000, echo_data=None))
+        else:
+            self.dig_model.temp_connected = CommunicationStatus.DISABLED
+            action.set_timer_action(Action.Timer(name="temp_sensor_poll", timer_action=Action.Timer.TIMER_STOP))
 
         return action
 
@@ -202,7 +255,7 @@ class Digitiser(App):
                 action.set_timer_action(Action.Timer(name=f"tm_req_timer:{dt}", timer_action=Action.Timer.TIMER_STOP))
                 action.set_timer_action(Action.Timer(name=f"tm_adv_timer:{dt}", timer_action=Action.Timer.TIMER_STOP))
             
-            if api_call.get('status') == tm_dig.STATUS_ERROR:
+            if api_call.get('status') == dmd_protocol.STATUS_ERROR:
                 msg = f"Digitiser received negative acknowledgement from TM for api call\n{json.dumps(api_call, indent=2)}"
                 logger.error(self.set_last_err(msg))
 
@@ -223,7 +276,7 @@ class Digitiser(App):
                     msg = f"Digitiser busy scanning for observation {obs_id} and cannot process unrelated API call until observation is complete"               
                     logger.error(self.set_last_err(msg) + f"\n{json.dumps(api_call, indent=2)}")
                     
-                    action.set_msg_to_remote(self._construct_rsp_to_tm(tm_dig.STATUS_ERROR, msg, None, api_msg, api_call))
+                    action.set_msg_to_remote(self._construct_rsp_to_tm(dmd_protocol.STATUS_ERROR, msg, None, api_msg, api_call))
                     return action
             
             self.set_bpf_power_state(True)  # Ensure bandpass filter is powered on before handing calls to handlers
@@ -240,10 +293,10 @@ class Digitiser(App):
             status, message, value, payload = util.unpack_result(result)
 
             # If api call was successfully processed by the handler method
-            if status == tm_dig.STATUS_SUCCESS:
+            if status == dmd_protocol.STATUS_SUCCESS:
 
                 # If the API call is a "set" action for the "scanning" property
-                if api_call['action_code'] == tm_dig.ACTION_CODE_SET and api_call.get('property') == tm_dig.PROPERTY_SCANNING:
+                if api_call['action_code'] == dmd_protocol.ACTION_CODE_SET and api_call.get('property') == tm_dig.PROPERTY_SCANNING:
 
                     logger.info(f"Digitiser scanning state changed to: {value}")
                     scan_generation = self._advance_scan_samples_generation()
@@ -347,7 +400,7 @@ class Digitiser(App):
                 action.set_timer_action(Action.Timer(name=f"sdp_req_timer:{dt}", timer_action=Action.Timer.TIMER_STOP))
                 action.set_timer_action(Action.Timer(name=f"sdp_adv_timer:{dt}", timer_action=Action.Timer.TIMER_STOP))
             
-            if api_call.get('status') == tm_dig.STATUS_ERROR:
+            if api_call.get('status') == dmd_protocol.STATUS_ERROR:
                 message = f"Digitiser received negative acknowledgement from SDP for api call\n{json.dumps(api_call, indent=2)}"
                 logger.error(self.set_last_err(message))
 
@@ -376,11 +429,16 @@ class Digitiser(App):
                 logger.debug(f"Digitiser dropping stale samples from {event.name} generation {scan_generation}; current generation is {self._current_scan_samples_generation()}.")
                 return action
 
+            if (status == dmd_protocol.STATUS_ERROR and self.dig_model.sdr_connected != CommunicationStatus.ESTABLISHED):
+                tm_adv = self._construct_sdr_disconnect_adv_to_tm(message)
+                if tm_adv is not None:
+                    action.set_msg_to_remote(tm_adv)
+
             # If the digitiser is set to scan samples
             if self.dig_model.scanning:
 
                 # Start the same scan_samples timer immediately if it was successful, else wait 1000 milliseconds before retrying
-                wait = 0 if status == tm_dig.STATUS_SUCCESS else 1000 
+                wait = 0 if status == dmd_protocol.STATUS_SUCCESS else 1000
                 action.set_timer_action(Action.Timer(name=event.name, timer_action=wait, echo_data=scan_generation)) 
 
             if self.dig_model.sdp_connected == CommunicationStatus.ESTABLISHED and payload is not None:
@@ -466,6 +524,8 @@ class Digitiser(App):
                 self.dig_model.sdr_connected = self.sdr.get_comms_status()
 
                 if self.dig_model.sdr_connected == CommunicationStatus.ESTABLISHED:
+                    with self._sdr_disconnect_advice_lock:
+                        self._sdr_disconnect_advice_sent = False
                     logger.info("Digitiser successfully connected to SDR device.")
             else:
                 self.dig_model.sdr_connected = self.sdr.get_comms_status()
@@ -589,7 +649,7 @@ class Digitiser(App):
         if hasattr(self.sdr, prop_name) and not self.dig_model.sdr_connected == CommunicationStatus.ESTABLISHED:
             message = f"Digitiser SDR not connected, cannot set property {prop_name} to {prop_value}"
             logger.error(self.set_last_err(message))
-            return tm_dig.STATUS_ERROR, message, None, None
+            return dmd_protocol.STATUS_ERROR, message, None, None
 
         try:
             # If the property setter exists on the SDR
@@ -612,27 +672,34 @@ class Digitiser(App):
             elif not hasattr(self.sdr, prop_name) and not hasattr(self, prop_name) and not prop_name[4:] in self.dig_model.schema.schema:
                 message = f"Digitiser unknown property {prop_name} with value {prop_value}"
                 logger.error(self.set_last_err(message))
-                return tm_dig.STATUS_ERROR, message, None, None
+                return dmd_protocol.STATUS_ERROR, message, None, None
 
             # Else the property exists but is not callable
             else:
                 message = f"Digitiser property setter for {prop_name} with value {prop_value} is not callable"
                 logger.error(self.set_last_err(message))
-                return tm_dig.STATUS_ERROR, message, None, None
+                return dmd_protocol.STATUS_ERROR, message, None, None
         
         except Exception as e:
             if isinstance(e, XHardwareFailure):
                 self.dig_model.sdr_connected = CommunicationStatus.NOT_ESTABLISHED
             message = f"Digitiser failed to set property {prop_name} to {prop_value}: {str(e)}"
             logger.error(self.set_last_err(message))
-            return tm_dig.STATUS_ERROR, message, None, None
+            return dmd_protocol.STATUS_ERROR, message, None, None
 
         message = f"Digitiser set property {prop_name[4:]} to {prop_value}"
         logger.info(message)
-        return tm_dig.STATUS_SUCCESS, message, prop_value, None
+        return dmd_protocol.STATUS_SUCCESS, message, prop_value, None
 
     def set_scanning(self, value):
         """Update scanning state and reset the stream when acquisition stops."""
+        if value and value != self.dig_model.scanning:
+            advice_lock = getattr(self, "_sdr_disconnect_advice_lock", None)
+            if advice_lock is None:
+                self._sdr_disconnect_advice_sent = False
+            else:
+                with advice_lock:
+                    self._sdr_disconnect_advice_sent = False
         self.dig_model.scanning = value
         if not value:
             discarded = self.sdr.stream_reset()
@@ -651,7 +718,7 @@ class Digitiser(App):
         if hasattr(self.sdr, prop_name) and not self.dig_model.sdr_connected == CommunicationStatus.ESTABLISHED:
             message = f"Digitiser SDR not connected, cannot get value for property {prop_name}"
             logger.error(self.set_last_err(message))
-            return tm_dig.STATUS_ERROR, message, None, None
+            return dmd_protocol.STATUS_ERROR, message, None, None
 
         # Else if the property getter exists on the SDR and is callable
         elif hasattr(self.sdr, prop_name) and callable(getattr(self.sdr, prop_name)):
@@ -669,13 +736,13 @@ class Digitiser(App):
         elif not hasattr(self.sdr, prop_name) and not hasattr(self, prop_name) and not prop_name[4:] in self.dig_model.schema.schema:
             message = f"Digitiser unknown property {prop_name}"
             logger.error(self.set_last_err(message))
-            return tm_dig.STATUS_ERROR, message, None, None
+            return dmd_protocol.STATUS_ERROR, message, None, None
 
         # Else the property exists but is not callable
         else:
             message = f"Digitiser property getter for {prop_name} is not callable"
             logger.error(self.set_last_err(message))
-            return tm_dig.STATUS_ERROR, message, None, None
+            return dmd_protocol.STATUS_ERROR, message, None, None
 
         try:  # Call the getter method
             value = getter() if callable(getter) else getter
@@ -684,9 +751,9 @@ class Digitiser(App):
                 self.dig_model.sdr_connected = CommunicationStatus.NOT_ESTABLISHED
             message = f"Digitiser failed to get property {prop_name}: {str(e)}"
             logger.error(self.set_last_err(message))
-            return tm_dig.STATUS_ERROR, message, None, None
+            return dmd_protocol.STATUS_ERROR, message, None, None
 
-        return tm_dig.STATUS_SUCCESS, f"Digitiser get {prop_name} value {value}", value, None
+        return dmd_protocol.STATUS_SUCCESS, f"Digitiser get {prop_name} value {value}", value, None
   
     def handle_method_call(self, api_call):
         """ Handles method api calls.
@@ -698,7 +765,7 @@ class Digitiser(App):
         if hasattr(self.sdr, method) and not self.dig_model.sdr_connected == CommunicationStatus.ESTABLISHED:
             message = f"Digitiser SDR not connected, cannot call method {method}"
             logger.error(self.set_last_err(message))
-            return tm_dig.STATUS_ERROR, message, None, None
+            return dmd_protocol.STATUS_ERROR, message, None, None
 
         allowed_keys = {"sample_rate", "time_in_secs"}
         args = {k: v for k, v in api_call.get('params', {}).items() if k in allowed_keys}
@@ -717,7 +784,7 @@ class Digitiser(App):
         else:
             message = f"Digitiser method {method} not found"
             logger.error(self.set_last_err(message))
-            return tm_dig.STATUS_ERROR, message, None, None
+            return dmd_protocol.STATUS_ERROR, message, None, None
 
         try:  # Call the method
             if method in (tm_dig.METHOD_GET_AUTO_GAIN, tm_dig.METHOD_SET_AUTO_GAIN):
@@ -729,16 +796,16 @@ class Digitiser(App):
                 self.dig_model.sdr_connected = CommunicationStatus.NOT_ESTABLISHED
             message = f"Digitiser method {method} failed with exception: {str(e)}"
             logger.error(self.set_last_err(message))
-            return tm_dig.STATUS_ERROR, message, None, None
+            return dmd_protocol.STATUS_ERROR, message, None, None
 
         if method == tm_dig.METHOD_SET_AUTO_GAIN and result is not None:
             self.dig_model.gain = float(result[0] if isinstance(result, tuple) else result)
 
         # Check whether result is a tuple of (value, payload) or just a value
         if isinstance(result, tuple):
-            return tm_dig.STATUS_SUCCESS, f"Digitiser method {method} invoked on SDR", result[0], result[1]
+            return dmd_protocol.STATUS_SUCCESS, f"Digitiser method {method} invoked on SDR", result[0], result[1]
         else:
-            return tm_dig.STATUS_SUCCESS, f"Digitiser method {method} invoked on SDR", result, None
+            return dmd_protocol.STATUS_SUCCESS, f"Digitiser method {method} invoked on SDR", result, None
 
     def _call_auto_gain_with_load_disabled(self, call, args):
         """Run auto-gain against the sky/input path, restoring the prior load state."""
@@ -756,24 +823,57 @@ class Digitiser(App):
                 logger.info("Digitiser restoring LOAD relay state after auto gain measurement.")
                 self.set_load_active(True)
 
-    def _construct_status_adv_to_tm(self) -> APIMessage:
+    def _construct_status_adv_to_tm(
+        self,
+        status=None,
+        message="DIG status update",
+        obs_data=None,
+    ) -> APIMessage:
         """ Constructs a status advice message for the Telescope Manager. """
 
         tm_adv = APIMessage(api_version=self.tm_api.get_api_version())
+        api_call = {
+            "msg_type": "adv",
+            "action_code": "set",
+            "property": dmd_protocol.PROPERTY_STATUS,
+            "value": self.dig_model.to_dict(),
+            "message": message,
+        }
+        if status is not None:
+            api_call["status"] = status
+        if obs_data is not None:
+            api_call["obs_data"] = obs_data
+
         tm_adv.set_json_api_header(
             api_version=self.tm_api.get_api_version(), 
             dt=datetime.now(timezone.utc), 
             from_system=self.dig_model.app.app_name, 
             to_system="tm", 
             entity=self.dig_model.dig_id,
-            api_call={
-                "msg_type": "adv", 
-                "action_code": "set", 
-                "property": tm_dig.PROPERTY_STATUS, 
-                "value": self.dig_model.to_dict(), 
-                "message": "DIG status update"
-            })
+            api_call=api_call,
+        )
         return tm_adv
+
+    def _construct_sdr_disconnect_adv_to_tm(self, message: str) -> APIMessage | None:
+        """Construct one error advice for an SDR disconnect during a scan."""
+        scanning = self.dig_model.scanning
+        if (
+            not isinstance(scanning, dict)
+            or scanning.get("obs_id") is None
+            or self.dig_model.tm_connected != CommunicationStatus.ESTABLISHED
+        ):
+            return None
+
+        with self._sdr_disconnect_advice_lock:
+            if self._sdr_disconnect_advice_sent:
+                return None
+            self._sdr_disconnect_advice_sent = True
+
+        return self._construct_status_adv_to_tm(
+            status=dmd_protocol.STATUS_ERROR,
+            message=message,
+            obs_data=dict(scanning),
+        )
 
     def _construct_adv_to_sdp(self, status, message, value, payload: bytes) -> APIMessage:
         """ Constructs an advice message to the Science Data Processor with the given sample payload. """

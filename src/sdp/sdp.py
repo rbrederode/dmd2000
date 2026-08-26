@@ -10,6 +10,7 @@ import re
 import time
 import threading
 
+from api import protocol as dmd_protocol
 from api import sdp_dig, tm_sdp
 from env.app import App
 from ipc.message import APIMessage
@@ -29,7 +30,7 @@ from models.target import TargetConfig
 from obs.scan import Scan
 from sdp.pipeline.pipeline_factory import ProcessingPipelineFactory
 from util import log, util
-from util.xbase import XBase, XStreamUnableToExtract, XSoftwareFailure
+from util.xbase import XBase, XStreamUnableToExtract, XSoftwareFailure, XInvalidTransition
 
 #SAMPLES_DIR = '/Volumes/DATA SDD/Alston Radio Telescope/Samples/Home'  # Directory to store samples
 SAMPLES_DIR = '/Users/r.brederode/samples'  # Directory to store samples
@@ -92,20 +93,8 @@ class SDP(App):
 
         arg_parser.add_argument("--scan_store_dir", type=str, required=False, help="Directory to store captured scan samples", default=SAMPLES_DIR)
 
-    def process_init(self) -> Action:
-        """ Processes initialisation event on startup once all app processors are running.
-            Runs in single threaded mode and switches to multi-threading mode after this method completes.
-        """
-        logger.debug(f"SDP initialisation event")
-
-        action = Action()
-
-        # Load Digitiser configuration from disk
-        # Config file is located in ./config/<profile>/<model>.json
-        # Config file defines initial list of digitisers to be processed by the SDP
-        input_dir = f"./config/{self.get_args().profile}"
-        filename = "DigitiserList.json"
-
+    def _load_digitiser_store(self, input_dir:str, filename:str) -> DigitiserList:
+        
         try:
             dig_store = self.sdp_model.dig_store.load_from_disk(input_dir=input_dir, filename=filename)
         except FileNotFoundError:
@@ -113,16 +102,15 @@ class SDP(App):
             message = f"Science Data Processor could not load Digitiser configuration from directory {input_dir} file {filename}. File not found."
             logger.warning(self.set_last_err(message))
 
-        if dig_store is not None:
-            self.sdp_model.dig_store = dig_store
-            logger.info(f"Science Data Processor loaded {len(self.sdp_model.dig_store.dig_list)} digitiser configurations from directory {input_dir} file {filename}")
-        else:
-            self.sdp_model.dig_store = DigitiserList()
-            logger.info(f"Science Data Processor using default Digitiser configuration as file not found in directory {input_dir} file {filename}")
+        if dig_store is not None and len(dig_store.dig_list) == 0:
+            message = f"Science Data Processor did not find any configured digitisers in directory {input_dir} file {filename}"
+            logger.error(self.set_last_err(message))
+        elif dig_store is not None and len(dig_store.dig_list) > 0:
+            logger.info(f"Science Data Processor loaded {len(dig_store.dig_list)} digitiser configurations from directory {input_dir} file {filename}")
 
-        # Load processing pipeline factory configuration from disk
-        filename = "PipelineConfig.json"
+        return dig_store
 
+    def _load_pipeline_config(self, input_dir:str, filename:str) -> PipelineConfig:
         try:
             pipeline_config = self.sdp_model.pipeline_config.load_from_disk(input_dir=input_dir, filename=filename)
         except FileNotFoundError:
@@ -131,17 +119,62 @@ class SDP(App):
             logger.warning(self.set_last_err(message))
 
         if pipeline_config is not None:
-            self.sdp_model.pipeline_config = pipeline_config
-            logger.info(f"Science Data Processor loaded processing pipeline factory configuration from directory {input_dir} file {filename}:\n{self.sdp_model.pipeline_config}")
-        else:
-            self.sdp_model.pipeline_config = PipelineConfig()
-            logger.info(f"Science Data Processor using default processing pipeline factory configuration as file not found in directory {input_dir} file {filename}:\n{self.sdp_model.pipeline_config}")
+            step_count = sum(len(steps) for steps in pipeline_config.steps_map.values())
+            if step_count == 0:
+                message = f"Science Data Processor did not find any configured pipeline processing steps in directory {input_dir} file {filename}"
+                logger.error(self.set_last_err(message))
+            else:
+                logger.info(f"Science Data Processor loaded {step_count} pipeline processing steps from directory {input_dir} file {filename}:\n{pipeline_config}")
 
-        SDP.pipeline_factory = ProcessingPipelineFactory(pipeline_config=self.sdp_model.pipeline_config)
+        return pipeline_config
+    
+    def process_init(self) -> Action:
+        """ Processes initialisation event on startup once all app processors are running.
+            Runs in single threaded mode and switches to multi-threading mode after this method completes.
+        """
+        logger.debug(f"SDP initialisation event")
+
+        action = self.process_resync()
 
         # Start server endpoints and connect client endpoints to interfaces
         self.tm_endpoint.start()
         self.dig_endpoint.start()
+
+        return action
+
+    def process_resync(self) -> Action:
+        """ Processes resync event to resync digitiser and pipeline configuration.
+        """
+        logger.debug(f"Science Data Processor resync configuration")
+
+        action = Action()
+
+        # Do not allow resync if there are scans in progress
+        if self.sdp_model.scans_wip > 0:
+            message = f"Science Data Processor cannot resync while {self.sdp_model.scans_wip} scans are in progress."
+            logger.warning(self.set_last_err(message))
+            raise XInvalidTransition(self.set_last_err(message))
+
+        # Load Digitiser configuration from disk
+        # Config file is located in ./config/<profile>/<model>.json
+        # Config file defines initial list of digitisers to be processed by the SDP
+        input_dir = f"./config/{self.get_args().profile}"
+        filename = "DigitiserList.json"
+        self.sdp_model.dig_store = self._load_digitiser_store(input_dir=input_dir, filename=filename)
+
+        if self.sdp_model.dig_store is None:
+            self.sdp_model.dig_store = DigitiserList()
+            logger.warning(f"Science Data Processor using default Digitiser configuration.")
+
+        # Load processing pipeline factory configuration from disk
+        filename = "PipelineConfig.json"
+        self.sdp_model.pipeline_config = self._load_pipeline_config(input_dir=input_dir, filename=filename)
+
+        if self.sdp_model.pipeline_config is None:
+            self.sdp_model.pipeline_config = PipelineConfig()
+            logger.info(f"Science Data Processor using default processing pipeline factory configuration as file not found in directory {input_dir} file {filename}:\n{self.sdp_model.pipeline_config}")
+
+        SDP.pipeline_factory = ProcessingPipelineFactory(pipeline_config=self.sdp_model.pipeline_config)
 
         return action
 
@@ -207,7 +240,7 @@ class SDP(App):
         digitiser: DigitiserModel = entity
         dig_id = digitiser.dig_id
         
-        status, message = sdp_dig.STATUS_SUCCESS, "Acknowledged"
+        status, message = dmd_protocol.STATUS_SUCCESS, "Acknowledged"
         action = Action()
 
         # If we are receiving samples from the digitiser, load them into the current scan
@@ -246,7 +279,7 @@ class SDP(App):
                     msg = f"Science Data Processor received samples from {digitiser.dig_id} that do not match the SDP scan configuration."
                     logger.warning(self.set_last_err(msg + f"\n{diff}"))
                     
-                    status, message = sdp_dig.STATUS_SUCCESS, msg
+                    status, message = dmd_protocol.STATUS_SUCCESS, msg
                     dig_rsp = self._construct_rsp_to_dig(status, message, api_msg, api_call)
                     action.set_msg_to_remote(dig_rsp)
                     return action
@@ -337,10 +370,10 @@ class SDP(App):
                             iq=iq_samples,
                             read_start=read_start,
                             read_end=read_end):
-                        status = sdp_dig.STATUS_SUCCESS
+                        status = dmd_protocol.STATUS_SUCCESS
                         message = f"Science Data Processor loaded samples into scan id: {match.scan_model.scan_id}"
                     else:
-                        status = sdp_dig.STATUS_ERROR
+                        status = dmd_protocol.STATUS_ERROR
                         message = f"Science Data Processor failed to load samples into scan id: {match.scan_model.scan_id}"
                         if match.scan_model.load_failures >= 3:
                             message = f"Science Data Processor aborting scan id: {match.scan_model.scan_id} has exceeded maximum load failures: {match.scan_model.load_failures}"
@@ -403,7 +436,7 @@ class SDP(App):
                 action.set_timer_action(Action.Timer(name=f"tm_adv_timer_retry:{dt}", timer_action=Action.Timer.TIMER_STOP))
                 action.set_timer_action(Action.Timer(name=f"tm_adv_timer_final:{dt}", timer_action=Action.Timer.TIMER_STOP))
             
-            if api_call.get('status') == tm_sdp.STATUS_ERROR:
+            if api_call.get('status') == dmd_protocol.STATUS_ERROR:
                 message = f"Science Data Processor received negative acknowledgement from TM for api call\n{json.dumps(api_call, indent=2)}"
                 logger.error(self.set_last_err(message))
 
@@ -478,14 +511,14 @@ class SDP(App):
         if (
             entity is not None
             and api_call is not None
-            and api_call.get('msg_type') == sdp_dig.MSG_TYPE_ADV
+            and api_call.get('msg_type') == dmd_protocol.MSG_TYPE_ADV
             and api_call.get('action_code') == sdp_dig.ACTION_CODE_SAMPLES
         ):
             message = (f"Science Data Processor is overloaded; acknowledging and dropping samples from " + \
                        f"{entity.dig_id} to recover. {self.get_queue_overload_reason()}")
             self._log_overload_sample_drop(message)
             action = Action()
-            action.set_msg_to_remote(self._construct_rsp_to_dig(sdp_dig.STATUS_SUCCESS, message, api_msg, api_call))
+            action.set_msg_to_remote(self._construct_rsp_to_dig(dmd_protocol.STATUS_SUCCESS, message, api_msg, api_call))
             return action
 
         return None
@@ -752,14 +785,14 @@ class SDP(App):
             else:
                 message = f"Science Data Processor unknown property {prop_name} get request"
                 logger.error(self.set_last_err(message))
-                return tm_sdp.STATUS_ERROR, message, None, None
+                return dmd_protocol.STATUS_ERROR, message, None, None
         
         except XSoftwareFailure as e:
             message = f"Science Data Processor failed to get property {prop_name}: {e}"
             logger.exception(self.set_last_err(message))
-            return tm_sdp.STATUS_ERROR, message, None, None
+            return dmd_protocol.STATUS_ERROR, message, None, None
 
-        return tm_sdp.STATUS_SUCCESS, f"Science Data Processor get property {prop_name} value {value}", value, None
+        return dmd_protocol.STATUS_SUCCESS, f"Science Data Processor get property {prop_name} value {value}", value, None
 
     def handle_field_set(self, api_call):
         """ Handles field set api calls.
@@ -777,20 +810,20 @@ class SDP(App):
                 method = getattr(self, "set_" + prop_name)
                 result = method(prop_value) if prop_value is not None else method()
                 if result is True:
-                    return tm_sdp.STATUS_SUCCESS, f"Science Data Processor set property {prop_name} to {prop_value}", prop_value, None
+                    return dmd_protocol.STATUS_SUCCESS, f"Science Data Processor set property {prop_name} to {prop_value}", prop_value, None
                 else:
-                    return tm_sdp.STATUS_ERROR, f"Science Data Processor failed to set property {prop_name} to {prop_value}", None, None
+                    return dmd_protocol.STATUS_ERROR, f"Science Data Processor failed to set property {prop_name} to {prop_value}", None, None
             else:
                 message = f"Science Data Processor unknown property {prop_name} with value {prop_value}"
                 logger.error(self.set_last_err(message))
-                return tm_sdp.STATUS_ERROR, message, None, None
+                return dmd_protocol.STATUS_ERROR, message, None, None
         
         except XSoftwareFailure as e:
             message = f"Science Data Processor failed to set property {prop_name} to {prop_value}: {e}"
             logger.exception(self.set_last_err(message))
-            return tm_sdp.STATUS_ERROR, message, None, None
+            return dmd_protocol.STATUS_ERROR, message, None, None
 
-        return tm_sdp.STATUS_SUCCESS, f"Science Data Processor set property {prop_name} to {prop_value}", prop_value, None
+        return dmd_protocol.STATUS_SUCCESS, f"Science Data Processor set property {prop_name} to {prop_value}", prop_value, None
 
     def _diff_dig_metadata(self, digitiser: DigitiserModel, meta_dict: dict) -> str:
         """ Compares digitiser model attributes against incoming sample metadata values.
@@ -819,7 +852,7 @@ class SDP(App):
             api_call={
                 "msg_type": "adv", 
                 "action_code": "set", 
-                "property": tm_sdp.PROPERTY_STATUS, 
+                "property": dmd_protocol.PROPERTY_STATUS,
                 "value": self.sdp_model.to_dict(), 
                 "message": "SDP status update"
             })

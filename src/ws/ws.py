@@ -6,6 +6,7 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
+from api import protocol as dmd_protocol
 from api import ws_dm, tm_ws
 from models.comms import CommunicationStatus, InterfaceType
 from models.ws import WeatherData, WeatherStationModel
@@ -71,6 +72,20 @@ class WeatherStation(App):
     def process_init(self) -> Action:
         """Initialisation process for the Weather Station application.
         """
+        logger.debug(f"WeatherStation initialisation event")
+
+        action = self.process_resync()
+
+        # Start server endpoints and connect client endpoints to interfaces
+        self.dm_endpoint.connect()
+        self.tm_endpoint.start()
+
+        return action
+
+    def process_resync(self) -> Action:
+        """Reload configuration and replace the physical weather driver."""
+        logger.debug(f"WeatherStation resync configuration")
+
         action = Action()
 
         self._load_model_from_profile()
@@ -81,26 +96,31 @@ class WeatherStation(App):
         if self.get_args().sim is not None:
             self.ws_model.sim_mode = self.get_args().sim
 
-        logging.info("WeatherStation initialising id=%s sim_mode=%s driver_type=%s",
+        logging.info("WeatherStation resync processed for id=%s sim_mode=%s driver_type=%s",
                      self.ws_model.id,
                      self.ws_model.sim_mode,
                      self.ws_model.driver_type.name)
 
-        if self.ws_model.sim_mode.upper() == "OFF":
-            self.weather_driver = create_ws_driver(self.ws_model)
+        self._replace_weather_driver()
 
         poll_interval = self.weather_driver.get_poll_interval_ms() if self.weather_driver is not None else self.ws_model.driver_poll_period
 
         # Start the polling timer to update wind speed at 1Hz intervals
         action.set_timer_action(Action.Timer(
-            name=f"weather_polling_timer", 
-            timer_action=poll_interval)) 
-
-        # Start server endpoints and connect client endpoints to interfaces
-        self.dm_endpoint.connect()
-        self.tm_endpoint.start()
+            name=f"weather_polling_timer",
+            timer_action=poll_interval))
 
         return action
+
+    def stop(self):
+        """Stop the application and release the physical weather driver."""
+        try:
+            super().stop()
+        finally:
+            driver = getattr(self, "weather_driver", None)
+            self.weather_driver = None
+            if driver is not None:
+                driver.close()
 
     def process_dm_connected(self, event) -> Action:
         """ Processes Dish Manager connected events.
@@ -250,7 +270,7 @@ class WeatherStation(App):
             api_call={
                 "msg_type": "adv", 
                 "action_code": "set", 
-                "property": tm_ws.PROPERTY_STATUS, 
+                "property": dmd_protocol.PROPERTY_STATUS,
                 "value": self.ws_model.to_dict(), 
                 "message": "WS status update"
             })
@@ -379,6 +399,17 @@ class WeatherStation(App):
             weather.uv_index = random.uniform(0, 5)     
             weather.cloud_cover = random.uniform(0, 100)
         return weather
+
+    def _replace_weather_driver(self) -> None:
+        """Close the current driver before creating its configured replacement."""
+        current_driver = self.weather_driver
+        self.weather_driver = None
+
+        if current_driver is not None:
+            current_driver.close()
+
+        if self.ws_model.sim_mode.upper() == "OFF":
+            self.weather_driver = create_ws_driver(self.ws_model)
 
 def user_input_thread(ws):
     while True:
