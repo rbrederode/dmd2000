@@ -20,11 +20,14 @@ def make_ready_driver(pointing_altaz, mode=DishMode.STANDBY_FP):
 
 def test_equivalent_wrapped_azimuth_is_stationary():
     driver = make_ready_driver({"alt": 87.2, "az": 359.9})
+    previous_pointing_dt = driver.dsh_model.pointing_altaz_dt
     driver._get_current_altaz = lambda: (87.2, -0.1)
 
     driver.get_current_altaz()
 
     assert driver.dsh_model.pointing_altaz["az"] == pytest.approx(359.9)
+    assert driver.dsh_model.pointing_altaz_dt is not None
+    assert driver.dsh_model.pointing_altaz_dt != previous_pointing_dt
     assert driver.dsh_model.velocity_altaz == pytest.approx({"alt": 0.0, "az": 0.0})
     assert driver.dsh_model.last_err_msg is None
 

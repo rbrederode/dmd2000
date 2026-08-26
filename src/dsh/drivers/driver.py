@@ -294,8 +294,13 @@ class DishDriver:
                 logger.info(f"DishDriver {self.dsh_model.dsh_id} reset failure count {self.get_failure_count()} to 0 after successful AltAz read.")
                 self.dsh_model.reset_failures()
 
-        now = Time(datetime.now(timezone.utc))
+        pointing_altaz_dt = datetime.now(timezone.utc)
+        now = Time(pointing_altaz_dt)
         altaz = AltAz(obstime=now, location=self.location, alt=alt*u.deg, az=az*u.deg)
+
+        # Timestamp every successful pointing measurement, including readings
+        # where the Alt/Az values have not changed since the previous poll.
+        self.dsh_model.pointing_altaz_dt = pointing_altaz_dt
 
         previous_alt = self.dsh_model.pointing_altaz.get("alt", None) if self.dsh_model.pointing_altaz else None
         previous_az = self.dsh_model.pointing_altaz.get("az", None) if self.dsh_model.pointing_altaz else None
@@ -306,7 +311,7 @@ class DishDriver:
         if first_altaz:
             self.dsh_model.pointing_altaz = {"alt": altaz.alt.degree, "az": altaz.az.degree}
             self.dsh_model.velocity_altaz = {"alt": 0.0, "az": 0.0} # No velocity on first reading
-            self.dsh_model.last_update = datetime.now(timezone.utc)
+            self.dsh_model.last_update = pointing_altaz_dt
 
         else:
             alt_delta = altaz.alt.degree - previous_alt
@@ -322,7 +327,7 @@ class DishDriver:
             # Update the dish model with the current pointing altaz 
             self.dsh_model.pointing_altaz = {"alt": altaz.alt.degree, "az": altaz.az.degree}
             self.dsh_model.velocity_altaz = {"alt": alt_delta, "az": az_delta}
-            self.dsh_model.last_update = datetime.now(timezone.utc)
+            self.dsh_model.last_update = pointing_altaz_dt
 
             # If we were NOT expecting the dish to be moving, log an error
             if self.dsh_model.pointing_state not in [PointingState.SLEW, PointingState.TRACK, PointingState.SCAN, PointingState.UNKNOWN]:

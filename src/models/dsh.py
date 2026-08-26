@@ -117,6 +117,7 @@ class DishModel(BaseModel):
         "pointing_state": And(PointingState, lambda v: isinstance(v, PointingState)),
         "desired_altaz": Or(None, dict, lambda v: v is None or isinstance(v, (dict, SkyCoord))),  # Desired alt-az position of dish
         "pointing_altaz": Or(None, dict, lambda v: v is None or isinstance(v, (dict, SkyCoord))), # Current alt-az pointing direction of dish
+        "pointing_altaz_dt": Or(None, And(datetime, lambda v: isinstance(v, datetime))),          # Datetime corresponding to the current pointing_altaz measurement
         "velocity_altaz": Or(None, dict, lambda v: v is None or isinstance(v, dict)),             # Current velocity of dish in Altitude and Azimuth (degrees per second)
         "target": Or(None, lambda v: v is None or isinstance(v, BaseModel)),                      # Current target model assigned to the dish
         "tgt_id": Or(None, And(str, lambda v: isinstance(v, str))),                               # Current target id assigned to the dish in the form {obs_id}_{obs.tgt_idx}
@@ -187,6 +188,7 @@ class DishModel(BaseModel):
             "pointing_state": PointingState.UNKNOWN,
             "desired_altaz": None,
             "pointing_altaz": None,
+            "pointing_altaz_dt": None,
             "velocity_altaz": None,
             "target": None,
             "tgt_id": None,

@@ -1436,9 +1436,9 @@ class TelescopeManager(App):
 
         read_start = scan.read_start
         read_end = scan.read_end
-        ref_dt = dsh_mgr.last_update
+        ref_dt = dsh_model.pointing_altaz_dt
         if not all(isinstance(value, datetime) for value in (read_start, read_end, ref_dt)):
-            logger.debug(f"Telescope Manager could not attach a target reference to scan {scan.scan_id}: scan or Dish Manager timestamps are unavailable.")
+            logger.debug(f"Telescope Manager could not attach a target reference to scan {scan.scan_id}: scan or dish pointing timestamps are unavailable.")
             return False
 
         def as_utc(value: datetime) -> datetime:

@@ -10,10 +10,16 @@ from tm.tm import TelescopeManager
 
 
 def _manager_with_dish(ref_dt, pointing_altaz):
-    dish = DishModel(dsh_id="dish001", pointing_altaz=pointing_altaz)
+    dish = DishModel(
+        dsh_id="dish001",
+        pointing_altaz=pointing_altaz,
+        pointing_altaz_dt=ref_dt,
+    )
     dsh_mgr = DishManagerModel(
         dish_store=DishList(dish_list=[dish]),
-        last_update=ref_dt,
+        # Deliberately unrelated to the pointing measurement timestamp. Target
+        # references must use DishModel.pointing_altaz_dt instead.
+        last_update=ref_dt + timedelta(days=1),
     )
     manager = TelescopeManager.__new__(TelescopeManager)
     manager.stop = lambda: None
@@ -32,6 +38,20 @@ def test_scan_model_target_ref_round_trip():
 
     assert restored.tgt_ref_dt == ref_dt
     assert restored.tgt_ref_altaz == {"alt": 35.25, "az": 182.5}
+
+
+def test_dish_model_pointing_altaz_datetime_round_trip():
+    pointing_dt = datetime(2026, 8, 24, 12, 0, 30, tzinfo=timezone.utc)
+    dish = DishModel(
+        dsh_id="dish001",
+        pointing_altaz={"alt": 35.25, "az": 182.5},
+        pointing_altaz_dt=pointing_dt,
+    )
+
+    restored = DishModel.from_dict(dish.to_dict())
+
+    assert restored.pointing_altaz == {"alt": 35.25, "az": 182.5}
+    assert restored.pointing_altaz_dt == pointing_dt
 
 
 @pytest.mark.parametrize("offset_seconds", [0, 30, 60])
