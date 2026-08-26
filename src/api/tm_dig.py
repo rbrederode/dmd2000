@@ -4,6 +4,7 @@ import datetime
 from datetime import timezone
 from typing import Any, Dict
 from api.api import API
+import api.protocol as dmd_protocol
 from ipc.message import Message, AppMessage, APIMessage
 from util.xbase import XBase, XStreamUnableToExtract, XStreamUnableToEncode, XAPIValidationFailed, XAPIUnsupportedVersion
 
@@ -13,40 +14,24 @@ logger = logging.getLogger(__name__)
 API_VERSION = "2.0" # Version of the API implemented in this module.
 LEGACY_SUPPORTED_VERSIONS = ["1.0","1.1"] # Requires translator methods to/from API_VERSION
 
-# Allowable api msg types 
-MSG_TYPE_REQ = "req"  # Request an action to be taken e.g. get or set a property that either succeeds or fails
-MSG_TYPE_ADV = "adv"  # Advise that an action must be taken e.g. system is shutting down, so shutdown (no ifs or buts)
-MSG_TYPE_RSP = "rsp"  # Response to a request or advice message
-
-MSG_TYPES =  (
-    MSG_TYPE_REQ,   # Request an action to be taken e.g. get or set a property that either succeeds or fails
-    MSG_TYPE_ADV,   # Advise that an action must be taken e.g. system is shutting down, so shutdown (no ifs or buts)
-    MSG_TYPE_RSP    # Response to a request or advice message
-)
+MSG_TYPES = dmd_protocol.MSG_TYPES
+STATUS    = dmd_protocol.STATUS
 
 # Allowable api msg actions 
-ACTION_CODE_GET = "get"
-ACTION_CODE_SET = "set"
 ACTION_CODE_METHOD = "method"
-
-ACTION_CODES = (
-    ACTION_CODE_GET,      # Get the value of a property
-    ACTION_CODE_SET,      # Set the value of a property
-    ACTION_CODE_METHOD    # Call a method on the subsystem
+ACTION_CODES = dmd_protocol.ACTION_CODES + (
+    ACTION_CODE_METHOD,   # Call a method on the subsystem
 )
 
 # Allowable origins (from) and destinations (to) of api msg calls
-TM  = "tm"   # Telescope Manager
-DIG = "dig"  # Digitiser
-
 FROM = (
-    TM,
-    DIG
+    dmd_protocol.TM,
+    dmd_protocol.DIG,
 )
 
 TO = (
-    DIG,
-    TM
+    dmd_protocol.DIG,
+    dmd_protocol.TM,
 )
 
 # Allowable properties to get or set
@@ -57,11 +42,8 @@ PROPERTY_BANDWIDTH       = 'bandwidth'        # Bandwidth in Hz
 PROPERTY_GAIN            = 'gain'             # Gain in dB
 PROPERTY_FREQ_CORRECTION = 'freq_correction'  # Frequency correction in ppm
 PROPERTY_SCANNING        = 'scanning'         # Scanning status True/False or Observation Id (same as True)
-PROPERTY_STATUS          = 'status'           # Status update interval in seconds
 PROPERTY_SDP_COMMS       = 'sdp_comms'        # SDP communication status (established/not established)
-PROPERTY_DEBUG           = 'debug'            # Enable/disable debug mode (on/off)
-
-PROPERTIES = (
+PROPERTIES = dmd_protocol.PROPERTIES + (
     PROPERTY_LOAD_ACTIVE,
     PROPERTY_CENTER_FREQ,
     PROPERTY_SAMPLE_RATE,
@@ -69,9 +51,7 @@ PROPERTIES = (
     PROPERTY_GAIN,
     PROPERTY_FREQ_CORRECTION,
     PROPERTY_SCANNING,
-    PROPERTY_STATUS,
     PROPERTY_SDP_COMMS,
-    PROPERTY_DEBUG,
 )
 
 # Allowable methods to call on the subsystem 
@@ -93,15 +73,6 @@ METHODS = (
     METHOD_GET_AUTO_GAIN,
     METHOD_SET_AUTO_GAIN,
     METHOD_GET_GAIN_GAUSSIANITY,
-)
-
-# Allowable status codes for responses
-STATUS_SUCCESS   = "success"
-STATUS_ERROR     = "error"
-
-STATUS = (
-    STATUS_SUCCESS,
-    STATUS_ERROR
 )
 
 # Allowable msg fields and types defining their format     
@@ -223,11 +194,11 @@ class TM_DIG(API):
         for field in conditional_fields:
             # Switch based on the field and its conditions
             if field == "property":
-                if api_call.get('action_code') in (ACTION_CODE_GET, ACTION_CODE_SET) and 'property' not in api_call:
+                if api_call.get('action_code') in (dmd_protocol.ACTION_CODE_GET, dmd_protocol.ACTION_CODE_SET) and 'property' not in api_call:
                     raise XAPIValidationFailed(f"Message of type '{msg_type}' with action_code '{api_call.get('action_code')}' missing required field 'property'")
             elif field == "value":
-                if api_call.get('action_code') == ACTION_CODE_SET and 'value' not in api_call:
-                    raise XAPIValidationFailed(f"Message of type '{msg_type}' with action_code '{ACTION_CODE_SET}' missing required field 'value'")
+                if api_call.get('action_code') == dmd_protocol.ACTION_CODE_SET and 'value' not in api_call:
+                    raise XAPIValidationFailed(f"Message of type '{msg_type}' with action_code '{dmd_protocol.ACTION_CODE_SET}' missing required field 'value'")
             elif field == "method":
                 if api_call.get('action_code') == ACTION_CODE_METHOD and 'method' not in api_call:
                     raise XAPIValidationFailed(f"Message of type '{msg_type}' with action_code '{ACTION_CODE_METHOD}' missing required field 'method'")

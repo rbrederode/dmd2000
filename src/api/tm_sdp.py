@@ -4,6 +4,7 @@ import datetime
 from datetime import timezone
 from typing import Any, Dict
 from api.api import API
+import api.protocol as dmd_protocol
 from ipc.message import Message, AppMessage, APIMessage
 from util.xbase import XBase, XStreamUnableToExtract, XStreamUnableToEncode, XAPIValidationFailed, XAPIUnsupportedVersion
 
@@ -13,43 +14,22 @@ logger = logging.getLogger(__name__)
 API_VERSION = "1.0" # Version of the API implemented in this module.
 LEGACY_SUPPORTED_VERSIONS = [] # Requires translator methods to/from API_VERSION
 
-# Allowable api msg types 
-MSG_TYPE_REQ = "req"  # Request an action to be taken e.g. get or set a property that either succeeds or fails
-MSG_TYPE_ADV = "adv"  # Advise that an action must be taken e.g. system is shutting down, so shutdown (no ifs or buts)
-MSG_TYPE_RSP = "rsp"  # Response to a request or advice message
-
-MSG_TYPES =  (
-    MSG_TYPE_REQ,   # Request an action to be taken e.g. get or set a property that either succeeds or fails
-    MSG_TYPE_ADV,   # Advise that an action must be taken e.g. system is shutting down, so shutdown (no ifs or buts)
-    MSG_TYPE_RSP    # Response to a request or advice message
-)
-
-# Allowable api msg actions 
-ACTION_CODE_GET = "get"
-ACTION_CODE_SET = "set"
-
-ACTION_CODES = (
-    ACTION_CODE_GET,      # Get the value of a property
-    ACTION_CODE_SET,      # Set the value of a property
-)
+MSG_TYPES    = dmd_protocol.MSG_TYPES
+ACTION_CODES = dmd_protocol.ACTION_CODES
+STATUS       = dmd_protocol.STATUS
 
 # Allowable origins (from) and destinations (to) of api msg calls
-TM  = "tm"   # Telescope Manager
-SDP = "sdp"  # SDP
-
 FROM = (
-    TM,
-    SDP
+    dmd_protocol.TM,
+    dmd_protocol.SDP,
 )
 
 TO = (
-    SDP,
-    TM
+    dmd_protocol.SDP,
+    dmd_protocol.TM,
 )
 
 # Allowable properties to get or set on the system
-PROPERTY_DEBUG          = 'debug'            # Enable/disable debug mode (on/off)
-PROPERTY_STATUS         = 'status'           # Get system status
 PROPERTY_SCAN_CONFIG    = 'scan_config'      # Set scan configuration (e.g. center frequency etc.) for a digitiser
 PROPERTY_SCAN_COMPLETE  = 'scan_complete'    # Notify Telescope Manager that a scan has completed
 PROPERTY_OBS_RESET      = 'obs_reset'        # Notify Science Data Processor to reset observation data
@@ -59,23 +39,12 @@ PROPERTY_SPECTRAL_RESOLUTION = 'spectral_resolution'  # Number of spectral bins 
 PROPERTY_CHANNELS       = 'channels'         # Legacy name for spectral_resolution
 PROPERTY_SCAN_DURATION  = 'scan_duration'    # Scan duration in seconds (part of scan_config)
 
-PROPERTIES = (
-    PROPERTY_DEBUG,
-    PROPERTY_STATUS,
+PROPERTIES = dmd_protocol.PROPERTIES + (
     PROPERTY_SCAN_CONFIG,
     PROPERTY_SCAN_COMPLETE,
     PROPERTY_OBS_COMPLETE,
     PROPERTY_OBS_RESET,
     PROPERTY_SIGNAL_DISPLAY,
-)
-
-# Allowable status codes for responses
-STATUS_SUCCESS   = "success"
-STATUS_ERROR     = "error"
-
-STATUS = (
-    STATUS_SUCCESS,
-    STATUS_ERROR
 )
 
 # Allowable msg fields and types defining their format     
@@ -189,11 +158,11 @@ class TM_SDP(API):
         for field in conditional_fields:
             # Switch based on the field and its conditions
             if field == "property":
-                if api_call.get('action_code') in (ACTION_CODE_GET, ACTION_CODE_SET) and 'property' not in api_call:
+                if api_call.get('action_code') in (dmd_protocol.ACTION_CODE_GET, dmd_protocol.ACTION_CODE_SET) and 'property' not in api_call:
                     raise XAPIValidationFailed(f"Message of type '{msg_type}' with action_code '{api_call.get('action_code')}' missing required field 'property'")
             elif field == "value":
-                if api_call.get('action_code') == ACTION_CODE_SET and 'value' not in api_call:
-                    raise XAPIValidationFailed(f"Message of type '{msg_type}' with action_code '{ACTION_CODE_SET}' missing required field 'value'")
+                if api_call.get('action_code') == dmd_protocol.ACTION_CODE_SET and 'value' not in api_call:
+                    raise XAPIValidationFailed(f"Message of type '{msg_type}' with action_code '{dmd_protocol.ACTION_CODE_SET}' missing required field 'value'")
   
         # Validate each field's value against its expected type and format
         for field, value in api_call.items():

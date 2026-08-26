@@ -3,7 +3,9 @@ import re
 import datetime
 from datetime import timezone
 from typing import Any, Dict
+
 from api.api import API
+import api.protocol as dmd_protocol
 from ipc.message import Message, AppMessage, APIMessage
 from util.xbase import XBase, XStreamUnableToExtract, XStreamUnableToEncode, XAPIValidationFailed, XAPIUnsupportedVersion
 
@@ -13,45 +15,21 @@ logger = logging.getLogger(__name__)
 API_VERSION = "1.0" # Version of the API implemented in this module.
 LEGACY_SUPPORTED_VERSIONS = [] # Requires translator methods to/from API_VERSION
 
-# Allowable api msg types 
-MSG_TYPE_REQ = "req"  # Request an action to be taken e.g. get or set a property that either succeeds or fails
-MSG_TYPE_ADV = "adv"  # Advise that an action must be taken e.g. system is shutting down, so shutdown (no ifs or buts)
-MSG_TYPE_RSP = "rsp"  # Response to a request or advice message
+MSG_TYPES    = dmd_protocol.MSG_TYPES
+STATUS       = dmd_protocol.STATUS
 
-MSG_TYPES =  (
-    MSG_TYPE_REQ,   # Request an action to be taken e.g. get or set a property that either succeeds or fails
-    MSG_TYPE_ADV,   # Advise that an action must be taken e.g. system is shutting down, so shutdown (no ifs or buts)
-    MSG_TYPE_RSP    # Response to a request or advice message
-)
-
-# Allowable api msg actions 
 ACTION_CODE_SAMPLES = "samples"     # Sending IQ data samples
-
-ACTION_CODES = (
-    ACTION_CODE_SAMPLES,      # Sending IQ data samples
+ACTION_CODES = dmd_protocol.ACTION_CODES + (
+    ACTION_CODE_SAMPLES,      
 )
-
-# Allowable origins (from) and destinations (to) of api msg calls
-DIG = "dig"  # Digitiser 
-SDP = "sdp"  # Science Data Processor
 
 FROM = (
-    DIG,
-    SDP
+    dmd_protocol.DIG,
+    dmd_protocol.SDP
 )
-
 TO = (
-    DIG,
-    SDP
-)
-
-# Allowable status codes for responses
-STATUS_SUCCESS   = "success"
-STATUS_ERROR     = "error"
-
-STATUS = (
-    STATUS_SUCCESS,
-    STATUS_ERROR
+    dmd_protocol.DIG,
+    dmd_protocol.SDP
 )
 
 # Meta data properties 
@@ -68,7 +46,7 @@ PROPERTY_READ_START      = 'read_start'       # Epoch seconds corresponding to s
 PROPERTY_READ_END        = 'read_end'         # Epoch seconds corresponding to end timestamp of sample read
 PROPERTY_SCANNING        = 'scanning'         # Scanning parameters (obs_id, tgt_idx, freq_scan) to allow SDP to match samples to the correct scan configuration and discard samples that do not match these parameters
 
-PROPERTIES = (
+PROPERTIES = dmd_protocol.PROPERTIES + (
     PROPERTY_DIG_ID,
     PROPERTY_LOAD,
     PROPERTY_CENTER_FREQ,
