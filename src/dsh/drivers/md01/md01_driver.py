@@ -266,6 +266,7 @@ class MD01Driver(DishDriver):
         logger.debug(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} sending command to MD01 controller:\n{md01_cmd}")
         self.last_command_time = time.time()
         sock.sendall(cmd_data)
+        self._trace_md01_message("TX", md01_cmd)
 
         time.sleep(0.01) # Seconds, to ensure message is ready, just in case
 
@@ -338,7 +339,30 @@ class MD01Driver(DishDriver):
         md01_rsp = MD01Msg()
         md01_rsp.from_data(bytes(rsp_data))
         logger.debug(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} received response from MD01 controller:\n{md01_rsp}")
+        self._trace_md01_message("RX", md01_rsp)
         return md01_rsp
+
+    def _trace_md01_message(self, direction: str, msg: MD01Msg) -> None:
+        """Trace controller traffic without allowing diagnostics to affect I/O."""
+        trace = getattr(self, "trace", None)
+        if trace is None:
+            return
+
+        dish_id = getattr(getattr(self, "dsh_model", None), "dsh_id", "unknown")
+        interface = (
+            f"MD01 {dish_id} "
+            f"({self.md01_config.host}:{self.md01_config.port})"
+        )
+        try:
+            trace.log_message(direction, msg, interface)
+        except Exception as e:
+            logger.warning(
+                "MD01Driver for controller %s %s failed to trace %s message: %s",
+                self.md01_config.host,
+                self.md01_config.port,
+                direction,
+                e,
+            )
 
     def _get_md01_altaz(self) -> Tuple[float, float]:
         """Returns the current altitude and azimuth of the dish as a tuple of decimal numbers [degrees]."""
