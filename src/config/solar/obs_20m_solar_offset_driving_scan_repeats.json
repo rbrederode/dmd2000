@@ -7,7 +7,7 @@
   "longitude": -2.305533,
   "total_integration_time": 1200,
   "estimated_slewing_time": 0,
-  "estimated_observation_duration": "00:10:00",
+  "estimated_observation_duration": "00:20:00",
   "scheduling_block_start": {
     "_type": "relativetime",
     "value": "+00:00:10"
@@ -33,7 +33,7 @@
         "value": "LOAD"
       },
       "gain": 40.0,
-      "center_freq": 1410000000,
+      "center_freq": 1413000000,
       "bandwidth": 1000000,
       "sample_rate": 2400000,
       "integration_time": 60,
@@ -49,7 +49,7 @@
         "value": "H3T_1420"
       },
       "gain": 40.0,
-      "center_freq": 1410000000,
+      "center_freq": 1413000000,
       "bandwidth": 1000000,
       "sample_rate": 2400000,
       "integration_time": 600,
@@ -65,7 +65,7 @@
         "value": "H3T_1420"
       },
       "gain": 40.0,
-      "center_freq": 1410000000,
+      "center_freq": 1413000000,
       "bandwidth": 1000000,
       "sample_rate": 2400000,
       "integration_time": 600,
@@ -120,8 +120,8 @@
       "scan": {
         "_type": "OffsetScan",
         "offset": 30.0,
-        "rate": 0.1,
-        "angle": 270.0
+        "rate": -0.1,
+        "angle": 90.0
       },
       "tgt_idx": 2,
       "obs_id": "ODT-{{NOW}}-dish002-20m"
