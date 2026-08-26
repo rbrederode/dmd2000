@@ -48,6 +48,7 @@ logger = logging.getLogger(__name__)
 FIG_SIZE = (14, 7) # Default figure size for plots
 WATERFALL_PERCENTILES = (1.0, 99.0)
 WATERFALL_LIMIT_SMOOTHING = 0.25
+OVERLAY_FONT_SIZE = 8
 
 
 class SignalDisplay:
@@ -185,7 +186,7 @@ class SignalDisplay:
         self.load_line, = self.sig[0].plot([], [], color="black", label="Load (BSL)")
         self.spr_rfi_line, = self.sig[0].plot([], [], color="tab:red", marker="x", linestyle="none", label="_nolegend_")
         self.load_rfi_line, = self.sig[0].plot([], [], color="black", marker="x", linestyle="none", label="_nolegend_")
-        self.sig[0].legend(loc="lower right")
+        self.sig[0].legend(loc="lower right", fontsize=OVERLAY_FONT_SIZE)
 
         self.cal_line, = self.sig[1].plot([], [], color="orange", label="Signal (CAL)")
         self.mpr_line, = self.sig[1].plot([], [], color="magenta", linewidth=1.5, label="Mean Power (MPR)")
@@ -196,8 +197,16 @@ class SignalDisplay:
         self.baseline_line.set_data([], [])
         self.qa_signal_start_line = self.sig[1].axvline(x=0, color="purple", linestyle="--", label="Signal Start (MPR)")
         self.qa_signal_end_line = self.sig[1].axvline(x=0, color="purple", linestyle="--", label="Signal End (MPR)")
-        self.qa_text = self.sig[1].text(0.02, 0.98, "", transform=self.sig[1].transAxes, ha="left", va="top")
-        self.sig[1].legend(loc="lower right")
+        self.qa_text = self.sig[1].text(
+            0.02,
+            0.98,
+            "",
+            transform=self.sig[1].transAxes,
+            ha="left",
+            va="top",
+            fontsize=OVERLAY_FONT_SIZE,
+        )
+        self.sig[1].legend(loc="lower right", fontsize=OVERLAY_FONT_SIZE)
 
         self.pwr_im = self.sig[2].imshow(
             np.zeros((self.scan.scan_model.duration, self.scan.scan_model.spectral_resolution)),
@@ -222,7 +231,7 @@ class SignalDisplay:
         self.mean_tpwr_line = self.sig[4].axhline(y=0, color="red", linestyle="--", label="_nolegend_")
         self.mean_tpwr_line.set_visible(False)
         self.mean_tpwr_line.set_ydata([np.nan, np.nan])
-        self.sig[4].legend(loc="lower right")
+        self.sig[4].legend(loc="lower right", fontsize=OVERLAY_FONT_SIZE)
 
     def set_scan(self, scan: Scan, load: Scan | None):
         """Bind a scan and optional matching load scan to this display and initialise all plot artists.
@@ -384,12 +393,12 @@ class SignalDisplay:
         legend0 = self.sig[0].get_legend()
         if legend0 is not None:
             legend0.remove()
-        self.sig[0].legend(loc="lower right")
+        self.sig[0].legend(loc="lower right", fontsize=OVERLAY_FONT_SIZE)
 
         legend1 = self.sig[1].get_legend()
         if legend1 is not None:
             legend1.remove()
-        self.sig[1].legend(loc="lower right")
+        self.sig[1].legend(loc="lower right", fontsize=OVERLAY_FONT_SIZE)
 
         self.sig[0].relim()
         self.sig[0].autoscale_view(scalex=False, scaley=True)
@@ -421,9 +430,6 @@ class SignalDisplay:
         usable_count = int(np.count_nonzero(valid_channels(self.scan.mpr, mpr_flags)))
         usable_line = f"Usable: {usable_count}/{self.scan.mpr.size} channels"
         cal_flags = self._flags_for(self.scan, "cal", self.scan.cal)[l_sec - 1, :]
-        _, _, filled_count = reconstructed_total_power(self.scan.cal[l_sec - 1, :], cal_flags)
-        filled_count = int(filled_count)
-        filled_line = f"RFI filled: {filled_count} {'channel' if filled_count == 1 else 'channels'}"
         rfi_flagged_count = int(
             np.count_nonzero(channels_with_flag(cal_flags, ChannelFlag.RFI_DETECTED))
         )
@@ -457,7 +463,6 @@ class SignalDisplay:
 
                 qa_lines = [
                     usable_line,
-                    filled_line,
                     f"RFI Frac: {rfi_flagged_count} channels, {cal_qa.rfi_fraction:.2%}"
                     if cal_qa is not None and cal_qa.rfi_fraction is not None else "",
                     f"Baseline: {mpr_qa.baseline:.2f}" if mpr_qa.baseline is not None else "",
@@ -470,7 +475,7 @@ class SignalDisplay:
                 ]
                 self.qa_text.set_text("\n".join(qa_lines))
         else:
-            self.qa_text.set_text(f"QA metrics not configured\n{usable_line}\n{filled_line}")
+            self.qa_text.set_text(f"QA metrics not configured\n{usable_line}")
             self.baseline_line.set_visible(False)
             self.baseline_line.set_data([], [])
             self.qa_signal_start_line.set_visible(False)
@@ -479,7 +484,7 @@ class SignalDisplay:
         legend1 = self.sig[1].get_legend()
         if legend1 is not None:
             legend1.remove()
-        self.sig[1].legend(loc="lower right")
+        self.sig[1].legend(loc="lower right", fontsize=OVERLAY_FONT_SIZE)
 
     def _update_waterfall(self):
         """Update the waterfall image contents from the current calibrated scan data."""
@@ -564,7 +569,7 @@ class SignalDisplay:
         legend3 = self.sig[3].get_legend()
         if legend3 is not None:
             legend3.remove()
-        self.sig[3].legend(loc="lower right")
+        self.sig[3].legend(loc="lower right", fontsize=OVERLAY_FONT_SIZE)
 
     def _update_total_power_axis(self, l_sec: int):
         """Update the total-power timeline and show the mean line once the scan is complete.
@@ -597,7 +602,7 @@ class SignalDisplay:
             legend4 = self.sig[4].get_legend()
             if legend4 is not None:
                 legend4.remove()
-            self.sig[4].legend(loc="lower right")
+            self.sig[4].legend(loc="lower right", fontsize=OVERLAY_FONT_SIZE)
         else:
             self.mean_tpwr_line.set_visible(False)
             self.mean_tpwr_line.set_label("_nolegend_")

@@ -124,7 +124,15 @@ class DishDisplay:
 
     def _create_figure(self):
         """Create the figure, axes, static formatting, and persistent attribute artists."""
-        self.fig = plt.figure(num=f"Dish {self.driver.dsh_model.dsh_id}", figsize=FIG_SIZE)
+        # A resync can replace the driver and recreate this display before the
+        # GUI backend has fully disposed of the old named figure.  Explicitly
+        # clear a reused figure so old axes, labels, and plot artists cannot be
+        # drawn underneath the new display.
+        self.fig = plt.figure(
+            num=f"Dish {self.driver.dsh_model.dsh_id}",
+            figsize=FIG_SIZE,
+            clear=True,
+        )
 
         self.axes = [None] * 5  # Initialize axes for the subplots
         self.axes[0] = self.fig.add_subplot(self.gs0[0])  # Attributes such as pointing state and dish mode
