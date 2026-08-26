@@ -29,6 +29,10 @@ class DishDriver:
         self._rlock = threading.RLock()  
 
         self.dsh_model = dsh_model      
+        # The owning application can inject its trace writer after driver
+        # construction. Keeping this out of driver constructors preserves
+        # compatibility with dynamically loaded dish drivers.
+        self.trace = None
         self.location = EarthLocation(lat=self.dsh_model.latitude*u.deg, lon=self.dsh_model.longitude*u.deg, height=self.dsh_model.height*u.m)
 
         # History of pointing and desired AltAz for plotting
@@ -48,6 +52,10 @@ class DishDriver:
     ##############################################################################
     # Public Interface Methods
     ##############################################################################
+
+    def set_trace(self, trace) -> None:
+        """Attach the owning application's optional trace writer."""
+        self.trace = trace
     
     def get_location(self) -> EarthLocation:
         return self.location
@@ -349,9 +357,13 @@ class DishDriver:
                 # If the dish pointing AltAz is within resolution of the desired AltAz
                 if self._is_within_pointing_resolution(alt, az, desired_alt, desired_az):
 
-                    # Transition from SLEW to READY or stay in original pointing state
-                    self.dsh_model.pointing_state = PointingState.READY if self.dsh_model.pointing_state == PointingState.SLEW else self.dsh_model.pointing_state
-                    self.dsh_model.last_update = datetime.now(timezone.utc)
+                    # Transition from SLEW to READY and set the target acquisition datetime to now
+                    if self.dsh_model.pointing_state == PointingState.SLEW:
+                        self.dsh_model.pointing_state = PointingState.READY
+                        
+                        now = datetime.now(timezone.utc)
+                        self.dsh_model.tgt_acq_dt = now
+                        self.dsh_model.last_update = now
                 
                 # If in TRACK, Dish has drifted off target, not a major issue as tracking can catch up on the next movement
                 elif self.dsh_model.pointing_state == PointingState.TRACK:
@@ -417,6 +429,12 @@ class DishDriver:
             :return: True if the weather alarm is on, False if it is off.
         """
         return self.dsh_model.weather_alarm
+
+    def set_last_err(self, message: str):
+        """ Set the last error message in the DishModel.
+            :param message: The error message to set.
+        """
+        return self.dsh_model.set_last_err(message)
     
     def set_weather_alarm(self, alarm_on: bool):
         """ Set the weather alarm status in the DishModel.
@@ -459,6 +477,7 @@ class DishDriver:
 
         self.dsh_model.tgt_id = tgt_id
         self.dsh_model.target = target
+        self.dsh_model.tgt_acq_dt = None
         self.dsh_model.last_update = datetime.now(timezone.utc)
 
         if self.dsh_model.pointing_state != PointingState.READY:
@@ -558,12 +577,15 @@ class DishDriver:
     def set_shutdown_mode(self):
         """
             Sets the dish to shutdown mode for planned power loss or by UPS trigger. 
+            Stows the dish first when it is in a powered operational mode.
+            STARTUP transitions directly to SHUTDOWN because a dish must enter
+            full-power mode before it can stow.
             After successful shutdown, the dish mode is set to SHUTDOWN.
             Failures during shutdown will result in exceptions being raised.
             :raises NotImplementedError: If the method is not implemented by a subclass
         """
-        # First instruct the dish to stow
-        self.set_stow_mode()
+        if self.dsh_model.mode in (DishMode.STANDBY_FP, DishMode.CONFIG, DishMode.OPERATE):
+            self.set_stow_mode()
 
         # Delegate to subclass implementation
         try:
@@ -934,7 +956,9 @@ class DishDriver:
                     f"(Alt: {current_alt}, Az: {current_az}); slew command not required."
                 )
                 self.dsh_model.pointing_state = PointingState.READY
-                self.dsh_model.last_update = datetime.now(timezone.utc)
+                now = datetime.now(timezone.utc)
+                self.dsh_model.tgt_acq_dt = now
+                self.dsh_model.last_update = now
                 return
   
         # Delegate to subclass implementation
@@ -978,12 +1002,17 @@ class DishDriver:
             desired_altaz = body_coord.transform_to(frame)
 
         elif target.pointing == PointingType.DRIFT_SCAN:
-            # Drift scan target
-            alt = target.altaz.get("alt")
-            az = target.altaz.get("az")
-            alt_q = alt if hasattr(alt, 'unit') else float(alt) * u.deg
-            az_q = az if hasattr(az, 'unit') else float(az) * u.deg
-            desired_altaz = AltAz(obstime=time, location=self.location, alt=alt_q, az=az_q)
+
+            if target.altaz is None or target.altaz.get("alt") is None or target.altaz.get("az") is None:
+                message = f"DishDriver {self.dsh_model.dsh_id} cannot calculate desired AltAz for DRIFT_SCAN target without valid altaz parameters.\n{self._diagnostic_snapshot()}"
+                raise XStreamUnableToExtract(self.dsh_model.set_last_err(message))
+            else:
+                # Drift scan target
+                alt = target.altaz.get("alt")
+                az = target.altaz.get("az")
+                alt_q = alt if hasattr(alt, 'unit') else float(alt) * u.deg
+                az_q = az if hasattr(az, 'unit') else float(az) * u.deg
+                desired_altaz = AltAz(obstime=time, location=self.location, alt=alt_q, az=az_q)
 
         elif target.pointing == PointingType.OFFSET_SCAN:
 

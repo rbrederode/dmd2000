@@ -69,9 +69,13 @@ class ScanModel(BaseModel):
         "filter_bank": Or(None, And(FilterBank, lambda v: isinstance(v, FilterBank))), # Filterbank parameters for this scan (optional, can be used to specify filterbank creation parameters on a per-scan basis)
         "files_prefix": Or(None, And(str, lambda v: isinstance(v, str))),           # Prefix of filenames containing scan data (e.g. "ODT-2026-03-11T2100Z-dish002-7-0-0-dig002-g23.0-du60-bw2.05-cf1420.07-ch2048")
         "files_directory": Or(None, And(str, lambda v: isinstance(v, str))),        # Directory where the scan data is stored (e.g. "~/samples")
-        "target_alt_pec_rms": Or(None, And(Or(int, float), lambda v: v >= 0.0)),   # Target-level RMS periodic error correction in altitude (degrees)
-        "target_az_pec_rms": Or(None, And(Or(int, float), lambda v: v >= 0.0)),     # Target-level RMS periodic error correction in azimuth (degrees)
-        "target_pec_last_update": Or(None, And(datetime, lambda v: isinstance(v, datetime))),  # Timestamp of the PEC value copied from the Dish Manager
+        "tgt_acq_dt": Or(None, And(datetime, lambda v: isinstance(v, datetime))),   # Timestamp when the dish started tracking or scanning the target
+        "tgt_acq_altaz": Or(None, And(dict, lambda v: isinstance(v.get("alt"), (int, float)) and isinstance(v.get("az"), (int, float)))),  # Actual dish Alt/Az when the target was acquired (degrees)
+        "tgt_ref_dt": Or(None, And(datetime, lambda v: isinstance(v, datetime))),   # Timestamp of an additional dish Alt/Az reference point during the scan
+        "tgt_ref_altaz": Or(None, And(dict, lambda v: isinstance(v.get("alt"), (int, float)) and isinstance(v.get("az"), (int, float)))),  # Additional actual dish Alt/Az reference point during the scan (degrees)
+        "tgt_alt_pec_rms": Or(None, And(Or(int, float), lambda v: v >= 0.0)),       # Target-level RMS periodic error correction in altitude (degrees)
+        "tgt_az_pec_rms": Or(None, And(Or(int, float), lambda v: v >= 0.0)),        # Target-level RMS periodic error correction in azimuth (degrees)
+        "tgt_pec_last_update": Or(None, And(datetime, lambda v: isinstance(v, datetime))),  # Timestamp of the PEC value copied from the Dish Manager
         "ws_id": Or(None, And(str, lambda v: isinstance(v, str))),                  # Weather station id used to contextualise this scan
         "ws_sec": Or(None, And(int, lambda v: v >= 0)),                             # Rolling weather summary window in seconds
         "wind_avg": Or(None, And(Or(int, float), lambda v: v >= 0.0)),              # Rolling average wind speed in m/s
@@ -114,9 +118,13 @@ class ScanModel(BaseModel):
         "filter_bank": None,
         "files_prefix": None,
         "files_directory": None,
-        "target_alt_pec_rms": None,
-        "target_az_pec_rms": None,
-        "target_pec_last_update": None,
+        "tgt_acq_dt": None,
+        "tgt_acq_altaz": None,
+        "tgt_ref_dt": None,
+        "tgt_ref_altaz": None,
+        "tgt_alt_pec_rms": None,
+        "tgt_az_pec_rms": None,
+        "tgt_pec_last_update": None,
         "ws_id": None,
         "ws_sec": None,
         "wind_avg": None,
@@ -199,7 +207,10 @@ class ScanModel(BaseModel):
         return f"ScanModel(scan_id={self.scan_id}, dig_id={self.dig_id}, type={self.scan_type.name}, status={self.status.name}, " + \
                f"center_freq={self.center_freq}, duration={self.duration}, sample_rate={self.sample_rate}, " + \
                f"spectral_resolution={self.spectral_resolution},  gain={self.gain}, " + \
-               f"start_idx={self.start_idx}, created={self.created}, read_start={self.read_start}, read_end={self.read_end}, " + \
+               f"start_idx={self.start_idx}, created={self.created}, tgt_acq_dt={self.tgt_acq_dt}, " + \
+               f"tgt_acq_altaz={self.tgt_acq_altaz}, " + \
+               f"tgt_ref_dt={self.tgt_ref_dt}, tgt_ref_altaz={self.tgt_ref_altaz}, " + \
+               f"read_start={self.read_start}, read_end={self.read_end}, " + \
                f"last_update={self.last_update})"   
 
 if __name__ == "__main__":

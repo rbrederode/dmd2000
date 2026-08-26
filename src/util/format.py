@@ -54,6 +54,15 @@ def fmt_angle(value, precision=2) -> str:
     """Format an angle value for display, preserving missing values."""
     return "None" if value is None else f"{float(value):.{precision}f}"
 
+def fmt_pointing_value(value) -> str:
+    """Format a coordinate (e.g. alt/az) for stable, machine-readable pointing rows."""
+    if value is None:
+        return "None"
+    try:
+        return f"{float(value):.6f}"
+    except (TypeError, ValueError):
+        return str(value)
+
 def fmt_image_link(dir: str, filename: str, width: int = 8) -> str:
     """Build the image hyperlink cell for a scan row when metadata is available."""
     if not dir or not filename:
