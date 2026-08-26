@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from api import protocol as dmd_protocol
 from api import tm_dm
 from models.dsh import DishModel, DishMode, PointingState
 from models.obs import ObsState, ObsTransition
@@ -35,10 +36,10 @@ def make_telescope_manager(dish, observation=None):
 
 def target_response(target, obs_data=None):
     api_call = {
-        "msg_type": tm_dm.MSG_TYPE_RSP,
-        "action_code": tm_dm.ACTION_CODE_SET,
+        "msg_type": dmd_protocol.MSG_TYPE_RSP,
+        "action_code": dmd_protocol.ACTION_CODE_SET,
         "property": tm_dm.PROPERTY_TARGET,
-        "status": tm_dm.STATUS_SUCCESS,
+        "status": dmd_protocol.STATUS_SUCCESS,
         "value": target.to_dict(),
     }
     if obs_data is not None:

@@ -44,9 +44,19 @@ class FakeSocket:
         self.closed = True
 
 
+class RecordingTrace:
+    def __init__(self):
+        self.messages = []
+
+    def log_message(self, direction, message, interface):
+        self.messages.append((direction, message, interface, bytes(message.msg_data)))
+
+
 def make_driver():
     driver = MD01Driver.__new__(MD01Driver)
     driver.md01_config = SimpleNamespace(host="192.0.2.1", port=23)
+    driver.dsh_model = SimpleNamespace(dsh_id="dish001")
+    driver.trace = None
     driver.last_command_time = 0
     driver._last_set_command_data = None
     driver._rate_limit_wait = lambda command: None
@@ -71,6 +81,42 @@ def test_set_command_consumes_position_response(monkeypatch):
     assert fake_socket.sent == command.to_data()
     assert fake_socket.recv_sizes == [12]
     assert fake_socket.closed
+
+
+def test_md01_traces_command_after_send_and_decoded_response(monkeypatch):
+    fake_socket = FakeSocket([MD01_RESPONSE])
+    monkeypatch.setattr(
+        "dsh.drivers.md01.md01_driver.socket.socket",
+        lambda *args, **kwargs: fake_socket,
+    )
+    driver = make_driver()
+    driver.trace = RecordingTrace()
+    command = MD01Msg()
+    command.set_cmd(MD01Msg.CMD_STATUS)
+
+    with monkeypatch.context() as patch:
+        original_to_data = command.to_data
+        call_count = 0
+
+        def counted_to_data():
+            nonlocal call_count
+            call_count += 1
+            return original_to_data()
+
+        patch.setattr(command, "to_data", counted_to_data)
+        response = driver._send_md01_command(command)
+
+    assert call_count == 1
+    assert [(entry[0], entry[1]) for entry in driver.trace.messages] == [
+        ("TX", command),
+        ("RX", response),
+    ]
+    assert driver.trace.messages[0][3] == fake_socket.sent
+    assert driver.trace.messages[1][3] == MD01_RESPONSE
+    assert all(
+        entry[2] == "MD01 dish001 (192.0.2.1:23)"
+        for entry in driver.trace.messages
+    )
 
 
 def test_md01_response_can_arrive_in_multiple_tcp_reads(monkeypatch):

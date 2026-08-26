@@ -167,7 +167,9 @@ def test_signal_display_masks_spectra_marks_rfi_and_shades_bandpass():
     assert display.mpr_rfi_line.get_label() == "_nolegend_"
     assert len(display.bandpass_spans) == 4  # Two excluded regions on each spectrum axis.
     assert "Usable: 3/6 channels" in display.qa_text.get_text()
-    assert "RFI filled: 1 channel" in display.qa_text.get_text()
+    assert "RFI filled" not in display.qa_text.get_text()
+    assert display.qa_text.get_fontsize() == 8
+    assert all(text.get_fontsize() == 8 for text in display.sig[1].get_legend().get_texts())
     waterfall_mask = np.ma.getmaskarray(display.pwr_im.get_array())
     np.testing.assert_array_equal(waterfall_mask[0], [False, False, False, True, False, False])
     assert np.all(waterfall_mask[1])

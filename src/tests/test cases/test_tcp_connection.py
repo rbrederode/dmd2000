@@ -1,9 +1,11 @@
 import errno
 import queue
 import socket
+from datetime import timezone
 from unittest import mock
 
 from ipc.tcp_client import TCPClient
+from ipc.tcp_server import TCPServer
 from util.timer import Timer
 
 
@@ -92,3 +94,28 @@ def test_stale_disconnect_does_not_close_newer_socket():
     assert client.connected
     client._destroy_socket.assert_not_called()
     client._schedule_retry.assert_not_called()
+
+
+def test_tcp_connection_events_use_timezone_aware_utc_timestamps():
+    client_socket = FakeSocket(connect_result=0)
+    client = make_client(client_socket)
+    client.sel = mock.MagicMock()
+    client._process_connection = TCPClient._process_connection.__get__(client)
+
+    client._process_connection()
+
+    client_event = client.event_q.get_nowait()
+    assert client_event.timestamp.tzinfo is timezone.utc
+
+    accepted_socket = mock.MagicMock()
+    listening_socket = mock.MagicMock()
+    listening_socket.accept.return_value = (accepted_socket, ("127.0.0.1", 50002))
+    server = TCPServer.__new__(TCPServer)
+    server.description = "test"
+    server.sel = mock.MagicMock()
+    server.event_q = queue.Queue()
+
+    server._process_connection(listening_socket)
+
+    server_event = server.event_q.get_nowait()
+    assert server_event.timestamp.tzinfo is timezone.utc

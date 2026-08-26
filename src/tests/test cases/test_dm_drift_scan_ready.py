@@ -1,5 +1,6 @@
 import threading
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 from dsh.dm import DM
 from env.events import TimerEvent
@@ -48,18 +49,20 @@ def test_md01_drift_scan_reports_ready_once_after_slew():
     )
     ready_updates = []
 
-    def record_status(action, target_id, target, status, message):
+    def record_status(action, target_id, target, status, message, dish_id=None):
         ready_updates.append(
             {
                 "target_id": target_id,
                 "target": target,
                 "status": status,
                 "message": message,
+                "dish_id": dish_id,
             }
         )
         return action
 
     dish_manager._send_status_adv_to_tm = record_status
+    dish_manager._log_pointing = Mock()
     event = TimerEvent(
         id="md01-poll",
         name="driver_timer_dish002_SlewingMD01Driver",
@@ -71,3 +74,5 @@ def test_md01_drift_scan_reports_ready_once_after_slew():
     assert len(ready_updates) == 1
     assert ready_updates[0]["target_id"] == "obs-md01-drift-0"
     assert ready_updates[0]["status"] == "success"
+    assert ready_updates[0]["dish_id"] == "dish002"
+    assert dish_manager._log_pointing.call_count == 2

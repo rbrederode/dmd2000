@@ -1,5 +1,6 @@
 from types import MethodType
 
+from api import protocol as dmd_protocol
 from api import tm_dig
 from dig.dig import Digitiser
 from models.comms import CommunicationStatus
@@ -57,7 +58,7 @@ def test_set_auto_gain_temporarily_disables_load_and_restores_it():
         {"method": tm_dig.METHOD_SET_AUTO_GAIN, "params": {"time_in_secs": 0.5}}
     )
 
-    assert status == tm_dig.STATUS_SUCCESS
+    assert status == dmd_protocol.STATUS_SUCCESS
     assert value == 34.0
     assert payload is None
     assert digitiser.sdr.load_states_seen == [False]
@@ -73,7 +74,7 @@ def test_set_auto_gain_restores_load_after_hardware_failure():
         {"method": tm_dig.METHOD_SET_AUTO_GAIN, "params": {"time_in_secs": 0.5}}
     )
 
-    assert status == tm_dig.STATUS_ERROR
+    assert status == dmd_protocol.STATUS_ERROR
     assert "auto gain failed" in message
     assert value is None
     assert payload is None

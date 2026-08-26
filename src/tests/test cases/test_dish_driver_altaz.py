@@ -1,13 +1,15 @@
 import pytest
+from astropy.coordinates import AltAz
+import astropy.units as u
 
 from dsh.drivers.driver import DishDriver
 from models.dsh import DishMode, DishModel, PointingState
 
 
-def make_ready_driver(pointing_altaz):
+def make_ready_driver(pointing_altaz, mode=DishMode.STANDBY_FP):
     model = DishModel(
         dsh_id="dish-test",
-        mode=DishMode.STANDBY_FP,
+        mode=mode,
         pointing_state=PointingState.READY,
         pointing_altaz=pointing_altaz,
     )
@@ -80,3 +82,18 @@ def test_stationary_slew_still_rejects_position_beyond_one_step():
     driver.get_current_altaz()
 
     assert driver.dsh_model.pointing_state == PointingState.UNKNOWN
+
+
+def test_slew_records_acquisition_when_dish_is_already_on_target():
+    driver = make_ready_driver(
+        {"alt": 80.0, "az": 10.0},
+        mode=DishMode.OPERATE,
+    )
+    target_altaz = AltAz(alt=80.0 * u.deg, az=10.0 * u.deg)
+
+    driver.slew(target_altaz)
+
+    assert driver.dsh_model.pointing_state == PointingState.READY
+    assert driver.dsh_model.tgt_acq_dt is not None
+    assert driver.dsh_model.last_update == driver.dsh_model.tgt_acq_dt
+    assert driver.dsh_model.pointing_altaz == {"alt": 80.0, "az": 10.0}
