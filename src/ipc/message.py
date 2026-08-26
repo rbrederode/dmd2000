@@ -192,10 +192,10 @@ class AppMessage(Message):
 
         if self.json_header_dict is None:
             return super().__str__() + \
-                    "JSON App header: None\n"
+                    "App header: None\n"
         else:
             return super().__str__() + \
-                   f"JSON App header (length={self.json_header_length}): {json.dumps(self.json_header_dict, indent=4)}\n\n"
+                   f"App header (length={self.json_header_length}): {json.dumps(self.json_header_dict, indent=4)}\n\n"
 
 class APIMessage(AppMessage):
     """ 
@@ -576,10 +576,10 @@ class APIMessage(AppMessage):
 
         if self.json_api_header_dict is None:
             return super().__str__() + \
-                     "JSON API header: None\n"
+                     "API header: None\n"
         else:
             return super().__str__() + \
-                   f"JSON API header (length={self.json_api_header_length}): {json.dumps(self.json_api_header_dict, indent=4)}\n\n"
+                   f"API header (length={self.json_api_header_length}): {json.dumps(self.json_api_header_dict, indent=4)}\n\n"
 
 # --- Pytest test functions below ---
 

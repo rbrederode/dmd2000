@@ -127,7 +127,7 @@ class TCPClient:
             data=message.Message(),
         )
 
-        event = events.ConnectEvent(local_sap=self, remote_conn=self.client_socket, remote_addr=(self.host, self.port), timestamp=datetime.now())
+        event = events.ConnectEvent(local_sap=self, remote_conn=self.client_socket, remote_addr=(self.host, self.port), timestamp=datetime.now(timezone.utc))
         self.event_q.put(event)
 
         logging.info(f"TCP Client {self.description} connected to host {self.host} port {self.port}")
@@ -171,7 +171,7 @@ class TCPClient:
                     local_sap=self,
                     remote_conn=None,
                     remote_addr=(self.host, self.port),
-                    timestamp=datetime.now(),
+                    timestamp=datetime.now(timezone.utc),
                 )
                 self.event_q.put(event)
 
@@ -232,7 +232,7 @@ class TCPClient:
                 msg.from_data(self.recv_msg.msg_data)
 
                 event = events.DataEvent(
-                    local_sap=self, remote_conn=client_socket, remote_addr=(self.host, self.port), data=msg.msg_data, timestamp=datetime.now())
+                    local_sap=self, remote_conn=client_socket, remote_addr=(self.host, self.port), data=msg.msg_data, timestamp=datetime.now(timezone.utc))
                 self.event_q.put(event)
                 self.recv_msg = message.Message()  # Reset for next message
 

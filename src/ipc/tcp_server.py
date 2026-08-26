@@ -8,7 +8,7 @@ import time
 import struct
 import traceback
 from queue import Queue
-from datetime import datetime
+from datetime import datetime, timezone
 
 from ipc import message
 from env import events
@@ -108,7 +108,7 @@ class TCPServer:
         # Register the connection with the selector for read events and associate the state with it
         # This allows the selector to monitor this particular connection for incoming data
         self.sel.register(client_socket, selectors.EVENT_READ, data=state)
-        event = events.ConnectEvent(self, client_socket, addr, datetime.now())
+        event = events.ConnectEvent(self, client_socket, addr, datetime.now(timezone.utc))
         # Add the event to the queue for further processing
         self.event_q.put(event)
 
@@ -130,7 +130,7 @@ class TCPServer:
 
         finally:
             # Create a disconnect event and add it to the queue
-            event = events.DisconnectEvent(self, client_socket, peername if peername else "", datetime.now())
+            event = events.DisconnectEvent(self, client_socket, peername if peername else "", datetime.now(timezone.utc))
             self.event_q.put(event)
 
         logger.debug(f"{event}")
@@ -191,7 +191,7 @@ class TCPServer:
 
                 event = events.DataEvent(
                     self, client_socket, peername,
-                    msg.msg_data, datetime.now()
+                    msg.msg_data, datetime.now(timezone.utc)
                 )
 
                 self.event_q.put(event)
