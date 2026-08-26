@@ -8,8 +8,10 @@ logger = logging.getLogger(__name__)
 
 class Processor(threading.Thread):
 
-    _mutex = threading.RLock()      # Mutex for single-threaded mode 
-    _single_threaded = False        # Global threading mode flag, default is free-threaded
+    _state_changed = threading.Condition()
+    _single_threaded = False
+    _single_thread_owner = None
+    _active_processors = set()
     _instances = weakref.WeakSet()  # Track live processors for compatibility helpers
 
     def __init__(self, name=None, event_q=None):
@@ -29,22 +31,69 @@ class Processor(threading.Thread):
 
     def stop(self):
         self._running = False
+        with Processor._state_changed:
+            Processor._state_changed.notify_all()
 
     @staticmethod
     def single_thread():
-        Processor._mutex.acquire() # Need to own mutex to change threading mode
-        if Processor._single_threaded: # Already in single-threaded mode
-            Processor._mutex.release() # Release nested mutex (we only need to own it once)
-        else:
-            Processor._single_threaded = True # Set mode to single-threaded, and retain ownership of the mutex
+        """Prevent new events from starting and wait for busy processors to finish.
+
+        When called from a processor event, the calling processor remains active
+        and becomes the sole processor allowed to continue until free_thread().
+        """
+        owner = threading.current_thread()
+
+        with Processor._state_changed:
+            if Processor._single_threaded and Processor._single_thread_owner is owner:
+                return
+
+            while Processor._single_threaded:
+                Processor._state_changed.wait()
+
+            Processor._single_threaded = True
+            Processor._single_thread_owner = owner
+
+            while any(processor is not owner for processor in Processor._active_processors):
+                Processor._state_changed.wait()
 
     @staticmethod
     def free_thread():
-        Processor._mutex.acquire() # Need to own mutex to change threading mode
-        if Processor._single_threaded:
-            Processor._single_threaded = False # Switch mode to free-threaded
-            Processor._mutex.release() # Release nested mutex
-        Processor._mutex.release() # Release overall ownership of mutex
+        """Leave single-threaded mode and allow waiting processors to continue."""
+        owner = threading.current_thread()
+
+        with Processor._state_changed:
+            if not Processor._single_threaded:
+                return
+
+            if Processor._single_thread_owner is not owner:
+                logger.warning("Processor free_thread called by a thread that does not own single-threaded mode")
+                return
+
+            Processor._single_threaded = False
+            Processor._single_thread_owner = None
+            Processor._state_changed.notify_all()
+
+    def _begin_event_processing(self) -> bool:
+        """Wait for the processing gate and register this processor as active."""
+        with Processor._state_changed:
+            while (
+                self._running
+                and Processor._single_threaded
+                and Processor._single_thread_owner is not self
+            ):
+                Processor._state_changed.wait()
+
+            if not self._running:
+                return False
+
+            Processor._active_processors.add(self)
+            return True
+
+    def _end_event_processing(self):
+        """Register completion of the current event and wake barrier waiters."""
+        with Processor._state_changed:
+            Processor._active_processors.discard(self)
+            Processor._state_changed.notify_all()
 
     def put_queue(self, event_q: Queue):
         self._event_q = event_q
@@ -67,27 +116,16 @@ class Processor(threading.Thread):
         logger.debug(f"Processor {self.name} started running")
 
         while self._running:
-
-            acquired_mutex = False
-
-            # If in single-threaded mode, other threads will block here until mutex is free
-            if Processor._single_threaded:
-                Processor._mutex.acquire()
-                acquired_mutex = True
-
-            # Check if we should stop running the processor / thread
-            if not self._running:
-                if acquired_mutex:
-                    Processor._mutex.release()
-                    self.free_thread() # Ensure other threads can unblock to stop running
-                    
-                logger.debug(f"Processor {self.name} received stop signal, exiting")
-                break
-
+            processing_event = False
             try:
                 self._event = self._event_q.get(timeout=1)  # Wait for an event for up to 1 second
                 self._event_timestamp = time.time()
 
+                if not self._begin_event_processing():
+                    self._event_q.task_done()
+                    break
+
+                processing_event = True
                 try:
                     self.process_event(self._event)
                 finally:
@@ -98,9 +136,9 @@ class Processor(threading.Thread):
             except Exception as e:
                 logger.exception(f"Processor: Exception occurred while processing event {self._event} in processor {self.name}: {e}")
             finally:
-                if acquired_mutex:
-                    Processor._mutex.release()
-                
+                if processing_event:
+                    self._end_event_processing()
+
                 self._event = None
                 self._event_timestamp = None
 

@@ -120,6 +120,7 @@ class DishModel(BaseModel):
         "velocity_altaz": Or(None, dict, lambda v: v is None or isinstance(v, dict)),             # Current velocity of dish in Altitude and Azimuth (degrees per second)
         "target": Or(None, lambda v: v is None or isinstance(v, BaseModel)),                      # Current target model assigned to the dish
         "tgt_id": Or(None, And(str, lambda v: isinstance(v, str))),                               # Current target id assigned to the dish in the form {obs_id}_{obs.tgt_idx}
+        "tgt_acq_dt": Or(None, And(datetime, lambda v: isinstance(v, datetime))),                 # Datetime when the dish acquired the current target
         "tgt_pec": And(list, lambda v: isinstance(v, list)),                                      # Current periodic error correction (PEC) list of PECModel instances 
         "capability": And(Capability, lambda v: isinstance(v, Capability)),
         "driver_type": And(DriverType, lambda v: isinstance(v, DriverType)),                      # Dish driver type e.g. "ASCOM", "INDI", "MD-01", "MD-02"
@@ -189,6 +190,7 @@ class DishModel(BaseModel):
             "velocity_altaz": None,
             "target": None,
             "tgt_id": None,
+            "tgt_acq_dt": None,
             "tgt_pec": [],
             "capability": Capability.UNKNOWN,
             "driver_type": DriverType.UNKNOWN,
@@ -267,8 +269,9 @@ class DishModel(BaseModel):
         """ Set the last dish model error message and timestamp.
         """
         self.last_err_msg = message
-        self.last_err_dt = datetime.now(timezone.utc)
-        self.last_update = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc)
+        self.last_err_dt = now
+        self.last_update = now
         return message
 
 class DishList(BaseModel):
@@ -327,6 +330,7 @@ class DishManagerModel(BaseModel):
             "app": AppModel(
                 app_name="dshmgr",
                 app_running=False,
+                app_cmd_port=60003,
                 num_processors=0,
                 queue_size=0,
                 interfaces=[],

@@ -42,6 +42,7 @@ class ScienceDataProcessorModel(BaseModel):
             "app": AppModel(
                 app_name="sdp",
                 app_running=False,
+                app_cmd_port=60004,
                 num_processors=0,
                 queue_size=0,
                 interfaces=[],
