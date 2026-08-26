@@ -118,6 +118,17 @@ class ModbusWeatherStationDriver(WeatherStationDriver):
         self.config: ModbusConfig = ws_model.driver_config
         self.instrument = self._build_instrument()
 
+    def _close(self) -> None:
+        """Close the serial port owned by the MinimalModbus instrument."""
+        instrument = self.instrument
+        self.instrument = None
+
+        serial_port = getattr(instrument, "serial", None)
+        close = getattr(serial_port, "close", None)
+        if callable(close):
+            close()
+            logger.info("Modbus weather station %s closed serial port %s.", self.ws_model.id, self.config.port)
+
     def _build_instrument(self):
         try:
             import minimalmodbus
@@ -190,6 +201,9 @@ class ModbusWeatherStationDriver(WeatherStationDriver):
     def _read_scaled_register(self, register: Optional[int], scale: float, offset: float) -> Optional[float]:
         if register is None:
             return None
+
+        if self.instrument is None:
+            raise RuntimeError("Modbus weather station driver is closed")
 
         raw_value = self.instrument.read_register(
             registeraddress=register,

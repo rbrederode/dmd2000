@@ -73,6 +73,9 @@ class FixedVoltageReader:
     def read_voltage(self) -> float:
         return float(self.voltage)
 
+    def close(self) -> None:
+        """The mock reader owns no external resources."""
+
 
 class ADS1115WeatherStationDriver(WeatherStationDriver):
     """Weather station driver for ADS1115 analogue voltage inputs."""
@@ -99,6 +102,33 @@ class ADS1115WeatherStationDriver(WeatherStationDriver):
                 channel=self.config.precipitation_channel,
                 mock_voltage=self.config.mock_precipitation_voltage,
             )
+
+    def _close(self) -> None:
+        """Close each voltage reader and its associated I2C resource."""
+        readers = (self.wind_reader, self.precipitation_reader)
+        self.wind_reader = None
+        self.precipitation_reader = None
+
+        first_error = None
+        closed_reader_ids = set()
+        for reader in readers:
+            if reader is None or id(reader) in closed_reader_ids:
+                continue
+
+            closed_reader_ids.add(id(reader))
+            close = getattr(reader, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception as exc:
+                    logger.exception("Failed to close ADS1115 weather station voltage reader")
+                    if first_error is None:
+                        first_error = exc
+
+        if first_error is not None:
+            raise first_error
+
+        logger.info("ADS1115 weather station %s closed.", self.ws_model.id)
 
     def _build_voltage_reader(self, channel: int, mock_voltage: float):
         if self.config.adc_backend == "mock":
