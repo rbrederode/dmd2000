@@ -1,0 +1,99 @@
+{
+    "_type": "LaunchConfigModel",
+    "profile": "solar",
+    "launches": [
+        {
+            "_type": "LaunchModel",
+            "app_name": "dig",
+            "entity_id": "dig001",
+            "env": {
+            },
+            "program": "python",
+            "args": [
+                "-m", "dig.dig",
+                "--profile", "solar",
+                "--entity_id", "dig001",
+                "--tm_host", "192.168.0.7",
+                "--sdp_host", "192.168.0.7",
+                "--local_host", "192.168.0.7",
+                "--cmd_port", "60009"
+            ]
+        },
+        {
+            "_type": "LaunchModel",
+            "app_name": "dig",
+            "entity_id": "dig002",
+            "env": {
+            },
+            "program": "python",
+            "args": [
+                "-m", "dig.dig",
+                "--profile", "solar",
+                "--entity_id", "dig002",
+                "--tm_host", "192.168.0.7",
+                "--sdp_host", "192.168.0.7",
+                "--local_host", "192.168.0.18",
+                "--cmd_port", "60009"
+            ]
+        },
+        {
+            "_type": "LaunchModel",
+            "app_name": "dm",
+            "entity_id": "dm001",
+            "env": {},
+            "program": "python",
+            "args": [
+                "-m", "dsh.dm",
+                "--profile", "solar",
+                "--entity_id", "dm001",
+                "--tm_host", "127.0.0.1",
+                "--ws_host", "127.0.0.1"
+            ]
+        },
+        {
+            "_type": "LaunchModel",
+            "app_name": "sdp",
+            "entity_id": "sdp001",
+            "env": {},
+            "program": "python",
+            "args": [
+                "-m", "sdp.sdp",
+                "--profile", "solar",
+                "--entity_id", "sdp001",
+                "--tm_host", "127.0.0.1",
+                "--dig_host", "192.168.0.7",
+                "--scan_store_dir", "~/samples/solar"
+            ]
+        },
+        {
+            "_type": "LaunchModel",
+            "app_name": "tm",
+            "entity_id": "tm001",
+            "env": {},
+            "program": "python",
+            "args": [
+                "-m", "tm.tm",
+                "--profile", "solar",
+                "--entity_id", "tm001",
+                "--dig_host", "192.168.0.7",
+                "--sdp_host", "127.0.0.1",
+                "--dm_host", "127.0.0.1",
+                "--ws_host", "127.0.0.1"
+            ]
+        },
+        {
+            "_type": "LaunchModel",
+            "app_name": "ws",
+            "entity_id": "ws001",
+            "env": {},
+            "program": "python",
+            "args": [
+                "-m", "ws.ws",
+                "--profile", "solar",
+                "--dm_host", "127.0.0.1",
+                "--tm_host", "127.0.0.1",
+                "--sim", "calm"
+            ]
+        }
+    ]
+}

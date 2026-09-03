@@ -6,6 +6,7 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
+from api import protocol as dmd_protocol
 from api import ws_dm, tm_ws
 from models.comms import CommunicationStatus, InterfaceType
 from models.ws import WeatherData, WeatherStationModel
@@ -71,6 +72,20 @@ class WeatherStation(App):
     def process_init(self) -> Action:
         """Initialisation process for the Weather Station application.
         """
+        logger.debug(f"WeatherStation initialisation event")
+
+        action = self.process_resync()
+
+        # Start server endpoints and connect client endpoints to interfaces
+        self.dm_endpoint.connect()
+        self.tm_endpoint.start()
+
+        return action
+
+    def process_resync(self) -> Action:
+        """Reload configuration and replace the physical weather driver."""
+        logger.debug(f"WeatherStation resync configuration")
+
         action = Action()
 
         self._load_model_from_profile()
@@ -81,28 +96,31 @@ class WeatherStation(App):
         if self.get_args().sim is not None:
             self.ws_model.sim_mode = self.get_args().sim
 
-        logging.info(
-            "WeatherStation initialising id=%s sim_mode=%s driver_type=%s",
-            self.ws_model.id,
-            self.ws_model.sim_mode,
-            self.ws_model.driver_type.name,
-        )
+        logging.info("WeatherStation resync processed for id=%s sim_mode=%s driver_type=%s",
+                     self.ws_model.id,
+                     self.ws_model.sim_mode,
+                     self.ws_model.driver_type.name)
 
-        if self.ws_model.sim_mode == "off":
-            self.weather_driver = create_ws_driver(self.ws_model)
+        self._replace_weather_driver()
 
         poll_interval = self.weather_driver.get_poll_interval_ms() if self.weather_driver is not None else self.ws_model.driver_poll_period
 
         # Start the polling timer to update wind speed at 1Hz intervals
         action.set_timer_action(Action.Timer(
-            name=f"weather_polling_timer", 
-            timer_action=poll_interval)) 
-
-        # Start server endpoints and connect client endpoints to interfaces
-        self.dm_endpoint.connect()
-        self.tm_endpoint.start()
+            name=f"weather_polling_timer",
+            timer_action=poll_interval))
 
         return action
+
+    def stop(self):
+        """Stop the application and release the physical weather driver."""
+        try:
+            super().stop()
+        finally:
+            driver = getattr(self, "weather_driver", None)
+            self.weather_driver = None
+            if driver is not None:
+                driver.close()
 
     def process_dm_connected(self, event) -> Action:
         """ Processes Dish Manager connected events.
@@ -176,7 +194,7 @@ class WeatherStation(App):
 
         if self.ws_model.dm_connected == CommunicationStatus.ESTABLISHED:
 
-            if self.ws_model.sim_mode == "off":
+            if self.ws_model.sim_mode.upper() == "OFF":
                 weather_data = self._read_weather()
             else:
                 weather_data = self._generate_weather()
@@ -200,18 +218,30 @@ class WeatherStation(App):
 
         if self.ws_model.tm_connected == CommunicationStatus.ESTABLISHED and self.ws_model.dm_connected == CommunicationStatus.ESTABLISHED:
             health_state = HealthState.OK
+
         elif self.ws_model.tm_connected != CommunicationStatus.ESTABLISHED and self.ws_model.dm_connected == CommunicationStatus.ESTABLISHED:
+            message = f"WeatherStation {self.ws_model.id} health status set to DEGRADED: Telescope Manager not connected"
+            self.set_last_err(message)
             health_state = HealthState.DEGRADED
+
         elif self.ws_model.tm_connected == CommunicationStatus.ESTABLISHED and self.ws_model.dm_connected != CommunicationStatus.ESTABLISHED:
+            message = f"WeatherStation {self.ws_model.id} health status set to FAILED: Dish Manager not connected"
+            self.set_last_err(message)
             health_state = HealthState.FAILED
 
-        if self.ws_model.sim_mode == "off" and self.ws_model.driver_type != WeatherStationDriverType.UNKNOWN:
+        if self.ws_model.sim_mode.upper() == "OFF" and self.ws_model.driver_type != WeatherStationDriverType.UNKNOWN:
             failure_count = self.ws_model.driver_failures
             poll_period = self.ws_model.driver_poll_period or 1000
             failure_threshold = max(10, int(60000 / poll_period))
+            
             if failure_count >= failure_threshold:
+                message = f"WeatherStation {self.ws_model.id} health status set to FAILED: Weather driver failures exceeded threshold ({failure_count} >= {failure_threshold})"
+                self.set_last_err(message)
                 health_state = HealthState.FAILED
+
             elif failure_count > 0 and health_state == HealthState.OK:
+                message = f"WeatherStation {self.ws_model.id} health status set to DEGRADED: Weather driver failures ({failure_count}) exceeded 0 but below threshold ({failure_threshold})"
+                self.set_last_err(message)
                 health_state = HealthState.DEGRADED
         
         return health_state
@@ -240,7 +270,7 @@ class WeatherStation(App):
             api_call={
                 "msg_type": "adv", 
                 "action_code": "set", 
-                "property": tm_ws.PROPERTY_STATUS, 
+                "property": dmd_protocol.PROPERTY_STATUS,
                 "value": self.ws_model.to_dict(), 
                 "message": "WS status update"
             })
@@ -271,11 +301,8 @@ class WeatherStation(App):
         try:
             ws_model = WeatherStationModel.load_from_disk(input_dir=input_dir, filename=filename)
         except FileNotFoundError:
-            logger.warning(
-                "WeatherStation could not load configuration from directory %s file %s; using defaults.",
-                input_dir,
-                filename,
-            )
+            message = f"WeatherStation could not load configuration from directory {input_dir} file {filename}. File not found. Using defaults."
+            logger.warning(self.set_last_err(message))
             return
 
         runtime_app = self.ws_model.app
@@ -305,22 +332,22 @@ class WeatherStation(App):
     def _read_weather(self) -> WeatherData:
         
         if self.weather_driver is None:
-            logger.warning(
-                "WeatherStation %s has simulation off but no weather driver instantiated.",
-                self.ws_model.id,
-            )
+            message = f"WeatherStation {self.ws_model.id} has simulation off but no weather driver instantiated."
+            logger.warning(self.set_last_err(message))
             return None
 
         try:
             return self.weather_driver.get_weather_data()
         except Exception as exc:
-            logger.exception("WeatherStation %s failed to read weather driver: %s", self.ws_model.id, exc)
+            message = f"WeatherStation {self.ws_model.id} failed to read weather driver: {exc}"
+            logger.exception(self.set_last_err(message))
             return None
 
     def _generate_weather(self) -> WeatherData:
 
         if self.ws_model.sim_mode not in ["off", "calm", "windy", "stormy"]:
-            logger.error(f"WeatherStation sim mode '{self.ws_model.sim_mode}' is not recognised. Expecting 'off', 'calm', 'windy', or 'stormy'. Defaulting to 'off'.")
+            message = f"WeatherStation sim mode '{self.ws_model.sim_mode}' is not recognised. Expecting 'off', 'calm', 'windy', or 'stormy'. Defaulting to 'off'."
+            logger.error(self.set_last_err(message))
             self.ws_model.sim_mode = "off"
 
         if self.ws_model.sim_mode == "off":
@@ -372,6 +399,17 @@ class WeatherStation(App):
             weather.uv_index = random.uniform(0, 5)     
             weather.cloud_cover = random.uniform(0, 100)
         return weather
+
+    def _replace_weather_driver(self) -> None:
+        """Close the current driver before creating its configured replacement."""
+        current_driver = self.weather_driver
+        self.weather_driver = None
+
+        if current_driver is not None:
+            current_driver.close()
+
+        if self.ws_model.sim_mode.upper() == "OFF":
+            self.weather_driver = create_ws_driver(self.ws_model)
 
 def user_input_thread(ws):
     while True:

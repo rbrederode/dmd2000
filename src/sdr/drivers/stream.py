@@ -154,9 +154,40 @@ class SDR:
         self._producer_running = False
         with self._condition:
             self._condition.notify_all()
-        if self._producer_thread is not None:
-            self._producer_thread.join(timeout=2.0)
+        producer_thread = self._producer_thread
+        if producer_thread is not None:
+            producer_thread.join(timeout=2.0)
+            if producer_thread.is_alive():
+                raise XHardwareFailure("Stream SDR producer did not stop within 2 seconds.")
         self._producer_thread = None
+
+    def stream_reset(self) -> int:
+        """Stop streaming and discard samples retained from the previous scan.
+
+        The producer is stopped before the ring is cleared so an in-flight
+        hardware read cannot repopulate the ring with pre-reset samples. The
+        read counter remains unchanged because SDP uses it to identify scan
+        ranges.
+
+        :return: Number of buffered samples discarded.
+        """
+        self._stop_stream()
+
+        with self._condition:
+            discarded = self.available
+            self.read_pos = self.write_pos
+            self.available = 0
+            self.total_samples_dropped += discarded
+            self._last_logged_dropped_samples = self.total_samples_dropped
+            self._last_metadata_end = None
+            self._condition.notify_all()
+
+        logger.info(
+            "Stream SDR reset stopped the producer and discarded %d buffered samples (backend=%s).",
+            discarded,
+            self.stream_backend,
+        )
+        return discarded
 
     def _producer_loop(self):
         while self._producer_running:
@@ -406,10 +437,12 @@ class SDR:
         return self.driver.get_gain_gaussianity(sample_rate=sample_rate, time_in_secs=time_in_secs)
 
     def get_auto_gain(self, sample_rate=None, time_in_secs=1, p_threshold=0.05):
-        return self.driver.get_auto_gain(sample_rate=sample_rate, time_in_secs=time_in_secs, p_threshold=p_threshold)
+        with self._driver_lock:
+            return self.driver.get_auto_gain(sample_rate=sample_rate, time_in_secs=time_in_secs, p_threshold=p_threshold)
 
     def set_auto_gain(self, sample_rate=None, time_in_secs=1, p_threshold=0.05):
-        return self.driver.set_auto_gain(sample_rate=sample_rate, time_in_secs=time_in_secs, p_threshold=p_threshold)
+        with self._driver_lock:
+            return self.driver.set_auto_gain(sample_rate=sample_rate, time_in_secs=time_in_secs, p_threshold=p_threshold)
 
     def get_center_freq(self):
         return self.driver.get_center_freq()

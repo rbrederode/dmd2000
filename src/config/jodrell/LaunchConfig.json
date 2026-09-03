@@ -63,7 +63,6 @@
                 "--dig_host", "192.168.50.1",
                 "--sdp_host", "192.168.50.1",
                 "--dm_host", "192.168.50.1",
-                "-o", "config/jodrell/obs_1hr_pulsar_drift_scan_airspy.json",
                 "--headless"
             ]
         }

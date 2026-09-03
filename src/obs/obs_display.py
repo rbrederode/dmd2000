@@ -5,13 +5,38 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.gridspec import GridSpec
-from matplotlib.ticker import MultipleLocator
+from matplotlib.ticker import AutoMinorLocator, MaxNLocator
+from sdp.channel_mask import (
+    ChannelFlag,
+    channels_with_flag,
+    contiguous_regions,
+    empty_channel_flags,
+    masked_values,
+    reconstructed_total_power,
+    valid_channels,
+)
 
 logger = logging.getLogger(__name__)
 
 mpl.rcParams["figure.raise_window"] = False
 
 FIG_SIZE = (14, 8)
+SCAN_COLOURS = (
+    "tab:blue",
+    "tab:orange",
+    "tab:green",
+    "tab:red",
+    "tab:purple",
+    "tab:brown",
+    "tab:pink",
+    "tab:gray",
+    "tab:cyan",
+)
+
+
+def _scan_colours(count: int) -> list[str]:
+    """Return readable categorical colours without yellow or olive tones."""
+    return [SCAN_COLOURS[idx % len(SCAN_COLOURS)] for idx in range(count)]
 
 
 class ObsDisplay:
@@ -87,8 +112,10 @@ class ObsDisplay:
             return
 
         freq_spans = []
-        cmap = mpl.colormaps["plasma"]
-        colours = cmap(np.linspace(0, 1, len(self.scans)))
+        colours = _scan_colours(len(self.scans))
+        shaded_regions = set()
+        bandpass_label_added = False
+        rfi_label_added = False
 
         for idx, scan in enumerate(self.scans):
             start_mhz = (scan.scan_model.center_freq - scan.scan_model.sample_rate / 2.0) / 1e6
@@ -97,9 +124,48 @@ class ObsDisplay:
             freq_spans.extend([start_mhz, end_mhz])
 
             y = scan.mpr if scan.mpr is not None else np.zeros(scan.scan_model.spectral_resolution)
+            mpr_flags = getattr(scan, "mpr_flags", None)
+            if not isinstance(mpr_flags, np.ndarray) or mpr_flags.shape != y.shape:
+                mpr_flags = empty_channel_flags(y.shape)
+            usable = valid_channels(y, mpr_flags)
+            usable_count = int(np.count_nonzero(usable))
             scan_id_parts = str(scan.scan_model.scan_id).split("-")
-            label = f"Scan {'-'.join(scan_id_parts[-2:])}" if len(scan_id_parts) >= 2 else f"Scan {scan.scan_model.scan_id}"
-            self.ax_freq.plot(freq_axis, y, color=colours[idx], linewidth=1.5, label=label)
+            scan_label = f"Scan {'-'.join(scan_id_parts[-2:])}" if len(scan_id_parts) >= 2 else f"Scan {scan.scan_model.scan_id}"
+            label = f"{scan_label} ({usable_count}/{y.size} usable)"
+            self.ax_freq.plot(freq_axis, masked_values(y, mpr_flags), color=colours[idx], linewidth=1.5, label=label)
+
+            rfi = channels_with_flag(mpr_flags, ChannelFlag.RFI_DETECTED)
+            rfi &= np.isfinite(y)
+            rfi_indices = np.flatnonzero(rfi)
+            usable_indices = np.flatnonzero(usable)
+            if rfi_indices.size > 0 and usable_indices.size > 0:
+                marker_values = np.interp(rfi_indices, usable_indices, y[usable_indices])
+                self.ax_freq.plot(
+                    freq_axis[rfi_indices],
+                    marker_values,
+                    color="tab:red",
+                    marker="x",
+                    linestyle="none",
+                    label="RFI Flagged" if not rfi_label_added else "_nolegend_",
+                )
+                rfi_label_added = True
+
+            bandpass = channels_with_flag(mpr_flags, ChannelFlag.BANDPASS_EXCLUDED)
+            for start, end in contiguous_regions(bandpass):
+                region_start = start_mhz + (end_mhz - start_mhz) * start / y.size
+                region_end = start_mhz + (end_mhz - start_mhz) * end / y.size
+                region_key = (round(region_start, 9), round(region_end, 9))
+                if region_key in shaded_regions:
+                    continue
+                self.ax_freq.axvspan(
+                    region_start,
+                    region_end,
+                    color="gray",
+                    alpha=0.12,
+                    label="Bandpass Excluded" if not bandpass_label_added else "_nolegend_",
+                )
+                shaded_regions.add(region_key)
+                bandpass_label_added = True
 
         if self.freq_min_mhz is not None and self.freq_max_mhz is not None:
             self.ax_freq.set_xlim(self.freq_min_mhz, self.freq_max_mhz)
@@ -117,8 +183,10 @@ class ObsDisplay:
         self.ax_vel.set_title("Integrated Total Power")
         self.ax_vel.set_xlabel("Integrated Scans")
         self.ax_vel.set_ylabel("Power [a.u.]")
-        self.ax_vel.grid(True, alpha=0.25)
-        self.ax_vel.xaxis.set_major_locator(MultipleLocator(1))
+        self.ax_vel.xaxis.set_major_locator(MaxNLocator(nbins="auto", integer=True))
+        self.ax_vel.xaxis.set_minor_locator(AutoMinorLocator())
+        self.ax_vel.grid(True, which="major", alpha=0.25)
+        self.ax_vel.grid(True, which="minor", axis="x", alpha=0.12)
 
         if not self.scans:
             self.ax_vel.text(
@@ -131,15 +199,22 @@ class ObsDisplay:
             )
             return
 
-        cmap = mpl.colormaps["plasma"]
-        colours = cmap(np.linspace(0, 1, len(self.scans)))
+        colours = _scan_colours(len(self.scans))
         max_secs = 0
 
         for idx, scan in enumerate(self.scans):
             if scan.cal is None or scan.get_loaded_seconds() <= 0:
                 continue
 
-            tpw_sum = np.sum(scan.cal[:scan.get_loaded_seconds(), :], axis=1)
+            loaded_seconds = scan.get_loaded_seconds()
+            cal_values = scan.cal[:loaded_seconds, :]
+            cal_flags = getattr(scan, "cal_flags", None)
+            if cal_flags is None:
+                cal_flags = empty_channel_flags(scan.cal.shape)
+            tpw_sum, _, _ = reconstructed_total_power(
+                cal_values,
+                cal_flags[:loaded_seconds, :],
+            )
             if tpw_sum.size == 0:
                 continue
 
@@ -147,8 +222,10 @@ class ObsDisplay:
             scan_id_parts = str(scan.scan_model.scan_id).split("-")
             label = f"Scan {'-'.join(scan_id_parts[-2:])}" if len(scan_id_parts) >= 2 else f"Scan {scan.scan_model.scan_id}"
             self.ax_vel.plot(time_axis, tpw_sum, color=colours[idx], linewidth=1.5, label=label)
-            mean_tpw = float(np.mean(tpw_sum))
-            self.ax_vel.axhline(mean_tpw, color=colours[idx], linestyle="--", linewidth=1.0, alpha=0.9)
+            finite_tpw = tpw_sum[np.isfinite(tpw_sum)]
+            if finite_tpw.size > 0:
+                mean_tpw = float(np.mean(finite_tpw))
+                self.ax_vel.axhline(mean_tpw, color=colours[idx], linestyle="--", linewidth=1.0, alpha=0.9)
             max_secs = max(max_secs, time_axis[-1])
 
         if max_secs > 0:
@@ -164,3 +241,19 @@ class ObsDisplay:
         self._plot_velocity_panel()
         self.fig.canvas.draw_idle()
         plt.show(block=False)
+
+    def save_integrated_total_power(self, output_path: str) -> str:
+        """Save the Integrated Total Power panel as a standalone PNG."""
+        output_fig, output_axes = plt.subplots(figsize=(14, 4.5))
+        display_axes = self.ax_vel
+
+        try:
+            self.ax_vel = output_axes
+            self._plot_velocity_panel()
+            output_fig.tight_layout()
+            output_fig.savefig(output_path, dpi=150, bbox_inches="tight")
+        finally:
+            self.ax_vel = display_axes
+            plt.close(output_fig)
+
+        return output_path

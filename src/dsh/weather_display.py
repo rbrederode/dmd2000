@@ -85,7 +85,13 @@ class WeatherDisplay:
         self._create_figure()
 
     def _create_figure(self):
-        self.fig = plt.figure(num=f"Weather Station {self.ws.ws_id}", figsize=FIG_SIZE)
+        # A resync recreates the display with the same named figure.  Clear any
+        # figure still retained by the GUI backend before adding new artists.
+        self.fig = plt.figure(
+            num=f"Weather Station {self.ws.ws_id}",
+            figsize=FIG_SIZE,
+            clear=True,
+        )
         self.attr_ax = self.fig.add_subplot(self.gs[0])
         plot_gs = GridSpecFromSubplotSpec(2, 1, subplot_spec=self.gs[1], hspace=0.50)
         self.wind_ax = self.fig.add_subplot(plot_gs[0])
@@ -248,7 +254,7 @@ class WeatherDisplay:
     def _close_figure(self):
         if self.fig is not None:
             try:
-                plt.close(num=f"Weather {self.ws.ws_id}")
+                plt.close(num=f"Weather Station {self.ws.ws_id}")
             except Exception as exc:
                 logger.debug(f"Weather display for {self.ws.ws_id} failed to close figure: {exc}")
 

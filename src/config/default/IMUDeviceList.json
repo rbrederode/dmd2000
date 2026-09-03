@@ -11,32 +11,64 @@
             },
             "driver_config": {
                 "_type": "WitMotionConfig",
-                "device": "auto",
+                "device": "/dev/tty.usbserial-1120",
                 "baudrate": 9600,
-                "refresh_rate": 1,
+                "refresh_rate": 10,
                 "last_update": {
                     "_type": "datetime",
                     "value": "2026-05-15T00:00:00+00:00"
                 }
             },
             "imu_id": "imu001",
-            "az_offset": 0.0,
-            "alt_offset": 0.0,
+            "az_offset": 0.120849609375,
+            "alt_offset": -0.0714111328125,
             "alt_vector": "roll",
             "az_vector": "yaw",
             "imu_connected": {
                 "_type": "enum.IntEnum",
                 "instance": "CommunicationStatus",
-                "value": "NOT_ESTABLISHED"
+                "value": "ESTABLISHED"
             },
             "last_update": {
                 "_type": "datetime",
-                "value": "2026-05-15T00:00:00+00:00"
+                "value": "2026-06-28T13:07:09.924943+00:00"
+            }
+        },
+        {
+            "_type": "IMUDeviceModel",
+            "driver_type": {
+                "_type": "enum.IntEnum",
+                "instance": "IMUDriverType",
+                "value": "BNO085"
+            },
+            "driver_config": {
+                "_type": "BNO085Config",
+                "i2c_bus": 3,
+                "address": 74,
+                "refresh_rate": 1,
+                "last_update": {
+                    "_type": "datetime",
+                    "value": "2026-07-10T00:00:00+00:00"
+                }
+            },
+            "imu_id": "imu002",
+            "az_offset": 292.3381494878554,
+            "alt_offset": 4.229965164819632,
+            "alt_vector": "pitch",
+            "az_vector": "yaw",
+            "imu_connected": {
+                "_type": "enum.IntEnum",
+                "instance": "CommunicationStatus",
+                "value": "ESTABLISHED"
+            },
+            "last_update": {
+                "_type": "datetime",
+                "value": "2026-07-10T14:40:57.374452+00:00"
             }
         }
     ],
     "last_update": {
         "_type": "datetime",
-        "value": "2026-05-15T00:00:00+00:00"
+        "value": "2026-07-10T14:40:57.375242+00:00"
     }
 }

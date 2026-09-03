@@ -90,9 +90,15 @@ build_run_cmd() {
 
     printf '%s' "printf \"\\033]0;%s\\007\" $title_quoted; cd $session_dir_quoted"
 
-    venv_activate="$REPO_ROOT/venv/bin/activate"
-    if [ -f "$venv_activate" ]; then
-        printf ' && source %q' "$venv_activate"
+    if [ -f "$REPO_ROOT/.python-version" ]; then
+        # Let pyenv resolve the repository-local Python instead of inheriting an
+        # activated environment from the Terminal process that opens this window.
+        printf ' && unset PYENV_VERSION VIRTUAL_ENV'
+    else
+        venv_activate="$REPO_ROOT/venv/bin/activate"
+        if [ -f "$venv_activate" ]; then
+            printf ' && source %q' "$venv_activate"
+        fi
     fi
 
     if [ "${#EXPORT_ENVS[@]}" -gt 0 ]; then

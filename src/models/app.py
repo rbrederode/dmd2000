@@ -10,8 +10,12 @@ class AppModel(BaseModel):
 
     schema = Schema({
         "_type": And(str, lambda v: v == "AppModel"),
-        "app_name": And(str, lambda v: isinstance(v, str)),                             # Name of the application e.g. "sdp", "tm", "dsh_mgr"
+        "app_name": And(str, lambda v: isinstance(v, str)),                             # Name of the application e.g. "sdp", "tm", "dm", "dig", "ws"
         "app_running": And(bool, lambda v: isinstance(v, bool)),                        # Is the application currently running
+        "app_tracing": And(bool, lambda v: isinstance(v, bool)),                        # Is the application currently tracing API messages
+        "app_debug": And(bool, lambda v: isinstance(v, bool)),                          # Is application-wide debug logging enabled
+        "app_cmd_host": Or(None, And(str, lambda v: isinstance(v, str))),               # Command host for commands such as trace ON/OFF, debug or resync
+        "app_cmd_port": Or(None, And(int, lambda v: v > 0)),                            # Command port for commands such as trace ON/OFF, debug or resync
         "version": And(str, lambda v: isinstance(v, str)),                              # Display version string e.g. "v1.2.3-45"
         "health": And(HealthState, lambda v: isinstance(v, HealthState)),               # Health state of the application (see HealthState enum)
         "num_processors": And(int, lambda v: v >= 0),                                   # Number of processor instances (threads) used by the application
@@ -36,6 +40,10 @@ class AppModel(BaseModel):
             "_type": "AppModel",
             "app_name": "app",
             "app_running": False,
+            "app_tracing": False,
+            "app_debug": False,
+            "app_cmd_host": "127.0.0.1",
+            "app_cmd_port": None,
             "version": "",
             "health": HealthState.UNKNOWN,
             "num_processors": 0,
@@ -63,6 +71,8 @@ if __name__ == "__main__":
     app001 = AppModel(
         app_name="app001",
         app_running=True,
+        app_tracing=True,
+        version="v1.0.0",
         num_processors=2,
         queue_size=0,
         interfaces=["tm", "sdp"],

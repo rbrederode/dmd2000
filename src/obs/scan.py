@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from models.pipeline import StepConfig, StepType
 from models.qa import ScanQA, QA
 from models.scan import ScanDataSource, ScanModel, ScanState, ScanType
+from sdp.channel_mask import ChannelFlag, empty_channel_flags, masked_mean
 from sdp.pipeline.steps.dc_spike import DCSpike
 from util import gen_file_prefix
 from util.xbase import XSoftwareFailure 
@@ -91,6 +92,10 @@ class Scan:
             self.spr = None  # Summed power spectrum for each second in the duration of the scan
             self.cal = None  # Calibrated power spectrum for each second in the duration of the scan
             self.mpr = None  # Mean power spectrum over duration of the scan
+            self.spr_flags = None  # Per-second channel-quality flags for spr
+            self.cal_flags = None  # Per-second channel-quality flags for cal
+            self.mpr_flags = None  # Duration-averaged channel-quality flags for mpr
+            self.mpr_valid_counts = None  # Number of usable seconds contributing to each mpr channel
 
             self.mean_real = 0.0  # Mean of real value of the raw samples (I)
             self.mean_imag = 0.0  # Mean of imaginary value of the raw samples (Q)
@@ -167,6 +172,10 @@ class Scan:
             self.spr = np.zeros((self.scan_model.duration, self.scan_model.spectral_resolution), dtype=np.float64)     # float64 for summed pwr for each temporal bin
             self.cal = np.zeros((self.scan_model.duration, self.scan_model.spectral_resolution), dtype=np.float64)     # float64 for calibrated spectrum for each temporal bin
             self.mpr = np.ones((self.scan_model.spectral_resolution,), dtype=np.float64)               # float64 for mean power spectrum over duration for each channel (fft bin)
+            self.spr_flags = empty_channel_flags((self.scan_model.duration, self.scan_model.spectral_resolution))
+            self.cal_flags = empty_channel_flags((self.scan_model.duration, self.scan_model.spectral_resolution))
+            self.mpr_flags = empty_channel_flags((self.scan_model.spectral_resolution,))
+            self.mpr_valid_counts = np.zeros((self.scan_model.spectral_resolution,), dtype=np.uint16)
 
             fb_config = getattr(self.scan_model, "filter_bank", None)
             if fb_config is not None and getattr(fb_config, "enabled", False):
@@ -416,6 +425,53 @@ class Scan:
         with self._rlock:
             self.pipeline = pipeline
 
+    @staticmethod
+    def _pipeline_context(pipeline: str, sec: int, channel_flags: np.ndarray) -> dict:
+        """Build a pipeline context for a one-based scan second.
+
+        ``sec`` remains one-based because it is also used for operator-facing
+        scan timing and QA indices. ``channel_flags`` is the already-resolved
+        writable NumPy view for that second (or the scan-wide MPR view).
+        """
+
+        return {
+            "pipeline": pipeline,
+            "sec": sec,
+            "channel_flags": channel_flags,
+        }
+
+    def _update_mpr(self, loaded_mask: np.ndarray, sec: int) -> None:
+        """Rebuild MPR from usable calibrated samples and update its flag metadata."""
+
+        if not np.any(loaded_mask):
+            self.mpr.fill(0.0)
+            self.mpr_flags.fill(0)
+            self.mpr_valid_counts.fill(0)
+            return
+
+        cal_values = self.cal[loaded_mask, :]
+        cal_flags = self.cal_flags[loaded_mask, :]
+        usable_mean, valid_counts = masked_mean(cal_values, cal_flags, axis=0)
+
+        # MPR is a derived product. Where no samples are usable, retain the
+        # ordinary mean for inspection while marking that channel unusable.
+        unmasked_mean = np.mean(cal_values, axis=0)
+        no_valid_samples = valid_counts == 0
+        usable_mean[no_valid_samples] = unmasked_mean[no_valid_samples]
+        self.mpr = usable_mean
+        self.mpr_valid_counts[:] = valid_counts
+
+        # A reason is attached to MPR only when it applies to every contributing
+        # temporal sample. Partial exclusions are represented by valid_counts.
+        common_flags = np.bitwise_and.reduce(cal_flags, axis=0)
+        self.mpr_flags[:] = common_flags
+        missing_reason = no_valid_samples & (self.mpr_flags == 0)
+        self.mpr_flags[missing_reason] |= int(ChannelFlag.CALIBRATION_INVALID)
+
+        if self.pipeline:
+            mpr_context = self._pipeline_context("mpr", sec, self.mpr_flags)
+            self.mpr = self.pipeline.process(signal=self.mpr, context=mpr_context)
+
     def set_load_scan(self, load_scan: "Scan"):
         """
         Associate a load scan with this sky scan
@@ -493,8 +549,16 @@ class Scan:
 
         spr = np.sum(pwr, axis=0)  # Sum power across all rows for this second
 
-        spr = self.pipeline.process(signal=spr, context={"pipeline": "spr", "sec": sec}) if self.pipeline else spr                # Push the summed power spectrum through the spr pipeline
-        cal = self.pipeline.process(signal=spr.copy(), context={"pipeline": "cal", "sec": sec}) if self.pipeline else spr.copy()  # Push the summed power spectrum through the cal pipeline
+        # Public scan seconds are one-based; array rows are zero-based.
+        sec_idx = sec - 1
+        self.spr_flags[sec_idx, :].fill(0)
+        spr_context = self._pipeline_context("spr", sec, self.spr_flags[sec_idx, :])
+        spr = self.pipeline.process(signal=spr, context=spr_context) if self.pipeline else spr
+
+        # Calibration inherits any flags raised while producing the SPR.
+        np.copyto(self.cal_flags[sec_idx, :], self.spr_flags[sec_idx, :])
+        cal_context = self._pipeline_context("cal", sec, self.cal_flags[sec_idx, :])
+        cal = self.pipeline.process(signal=spr.copy(), context=cal_context) if self.pipeline else spr.copy()
 
         mean_real = np.mean(np.abs(iq.real)) * 100
         mean_imag = np.mean(np.abs(iq.imag)) * 100
@@ -503,7 +567,7 @@ class Scan:
         # has been explicitly enabled for this scan.
         with self._rlock:
             if self.retain_iq and self.raw is not None:
-                row_start = (sec - 1) * self.get_rows_per_sec()   # Calculate the starting row index (zero based) using sec (1-based index)
+                row_start = sec_idx * self.get_rows_per_sec()   # Calculate the starting row index (zero based) using sec (1-based index)
                 self.raw[row_start:row_start + iq.shape[0],:] = iq
 
             # Keep only the latest per-second power block in memory when IQ retention is enabled.
@@ -512,17 +576,16 @@ class Scan:
             if fb is not None:
                 self._fb_store_rows(sec, fb)
 
-            self.spr[sec - 1,:] = spr  # sec is 1-based index, so adjust for 0-based array index
-            self.cal[sec - 1,:] = cal  # sec is 1-based index, so adjust for 0-based array index
+            self.spr[sec_idx,:] = spr
+            self.cal[sec_idx,:] = cal
 
             # Build the mean spectrum from the loaded calibrated rows, including the
             # current second that was just written above.
             loaded_mask = np.array(self.loaded_secs, dtype=bool)
-            loaded_mask[sec - 1] = True
-            mpr = np.mean(self.cal[loaded_mask, :], axis=0) if np.any(loaded_mask) else np.zeros((self.scan_model.spectral_resolution,), dtype=np.float64)
-            self.mpr = self.pipeline.process(signal=mpr, context={"pipeline": "mpr", "sec": sec}) if self.pipeline else mpr
+            loaded_mask[sec_idx] = True
+            self._update_mpr(loaded_mask, sec)
 
-            self.loaded_secs[sec - 1] = True  # Mark this second as loaded only after mpr is populated
+            self.loaded_secs[sec_idx] = True  # Mark this second as loaded only after mpr is populated
             self.data_source = ScanDataSource.RAW if self.retain_iq else ScanDataSource.SPR
             self.mean_real = mean_real
             self.mean_imag = mean_imag
@@ -543,8 +606,8 @@ class Scan:
                 {"read_start": None, "read_end": None, "gap": None}
                 for _ in range(int(self.scan_model.duration))]
 
-        if sec - 1 < len(self.scan_model.sample_times):
-            self.scan_model.sample_times[sec - 1] = {
+        if sec_idx < len(self.scan_model.sample_times):
+            self.scan_model.sample_times[sec_idx] = {
                 "read_start": read_start,
                 "read_end": read_end,
                 "gap": gap,}
@@ -585,19 +648,22 @@ class Scan:
             return False
 
         spr = np.asarray(spr, dtype=np.float64)
-        cal = self.pipeline.process(signal=spr.copy(), context={"pipeline": "cal", "sec": sec}) if self.pipeline else spr.copy()
+        sec_idx = sec - 1
+        self.spr_flags[sec_idx, :].fill(0)
+        np.copyto(self.cal_flags[sec_idx, :], self.spr_flags[sec_idx, :])
+        cal_context = self._pipeline_context("cal", sec, self.cal_flags[sec_idx, :])
+        cal = self.pipeline.process(signal=spr.copy(), context=cal_context) if self.pipeline else spr.copy()
 
         with self._rlock:
-            self.spr[sec - 1, :] = spr
-            self.cal[sec - 1, :] = cal
+            self.spr[sec_idx, :] = spr
+            self.cal[sec_idx, :] = cal
             self.pwr = None
 
             loaded_mask = np.array(self.loaded_secs, dtype=bool)
-            loaded_mask[sec - 1] = True
-            mpr = np.mean(self.cal[loaded_mask, :], axis=0) if np.any(loaded_mask) else np.zeros((self.scan_model.spectral_resolution,), dtype=np.float64)
-            self.mpr = self.pipeline.process(signal=mpr.copy(), context={"pipeline": "mpr", "sec": sec}) if self.pipeline else mpr
+            loaded_mask[sec_idx] = True
+            self._update_mpr(loaded_mask, sec)
 
-            self.loaded_secs[sec - 1] = True
+            self.loaded_secs[sec_idx] = True
             self.data_source = ScanDataSource.SPR
 
         if read_start is not None:
@@ -631,6 +697,8 @@ class Scan:
 
         with self._rlock:
             self.cal.fill(0.0)  # Clear the calibrated spectrum array before re-processing
+            self.cal_flags.fill(0)
+            self.mpr_flags.fill(0)
 
             if self.data_source == ScanDataSource.RAW:
                 rows_per_sec = self.get_rows_per_sec() if self.scan_model.duration > 0 else 0
@@ -641,8 +709,13 @@ class Scan:
 
                     pwr = np.abs(np.fft.fftshift(np.fft.fft(self.raw[row_start:row_end, :], axis=1), axes=1)) ** 2
                     signal = np.sum(pwr, axis=0)
-                    self.spr[sec, :] = self.pipeline.process(signal=signal, context={"pipeline": "spr", "sec": sec + 1}) if self.pipeline else signal
-                    self.cal[sec, :] = self.pipeline.process(signal=self.spr[sec, :].copy(), context={"pipeline": "cal", "sec": sec + 1}) if self.pipeline else self.spr[sec, :].copy()
+                    self.spr_flags[sec, :].fill(0)
+                    spr_context = self._pipeline_context("spr", sec + 1, self.spr_flags[sec, :])
+                    self.spr[sec, :] = self.pipeline.process(signal=signal, context=spr_context) if self.pipeline else signal
+
+                    np.copyto(self.cal_flags[sec, :], self.spr_flags[sec, :])
+                    cal_context = self._pipeline_context("cal", sec + 1, self.cal_flags[sec, :])
+                    self.cal[sec, :] = self.pipeline.process(signal=self.spr[sec, :].copy(), context=cal_context) if self.pipeline else self.spr[sec, :].copy()
 
                     # Expose the last power block processed without retaining scan-wide power data.
                     self.pwr = pwr
@@ -654,16 +727,17 @@ class Scan:
             elif self.data_source == ScanDataSource.SPR:
                 for sec in loaded_sec_indices:
                     signal = self.spr[sec, :]
-                    self.cal[sec, :] = self.pipeline.process(signal=signal.copy(), context={"pipeline": "cal", "sec": sec + 1}) if self.pipeline else signal.copy()
+                    np.copyto(self.cal_flags[sec, :], self.spr_flags[sec, :])
+                    cal_context = self._pipeline_context("cal", sec + 1, self.cal_flags[sec, :])
+                    self.cal[sec, :] = self.pipeline.process(signal=signal.copy(), context=cal_context) if self.pipeline else signal.copy()
             else:
                 logger.warning(f"Scan {self.scan_model.scan_id} - No raw IQ or summed power data available to process.")
                 return False
 
-            valid_cal_rows = self.cal[loaded_sec_indices, :]
-            self.mpr = np.mean(valid_cal_rows, axis=0) if valid_cal_rows.shape[0] > 0 else np.zeros((self.scan_model.channels,), dtype=np.float64)
             loaded_count = len(loaded_sec_indices)
-            if loaded_count > 0:
-                self.mpr = self.pipeline.process(signal=self.mpr.copy(), context={"pipeline": "mpr", "sec": loaded_count}) if self.pipeline else self.mpr
+            loaded_mask = np.zeros(self.scan_model.duration, dtype=bool)
+            loaded_mask[loaded_sec_indices] = True
+            self._update_mpr(loaded_mask, loaded_count)
 
             if loaded_count == 0:
                 self.set_status(ScanState.EMPTY)

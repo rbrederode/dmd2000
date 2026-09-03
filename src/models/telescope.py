@@ -34,6 +34,31 @@ class TelescopeModel:
         self.dig_store = DigitiserList(list_id="diglist001")        # Digitiser store (just a list of digitisers)
         self.sdp = ScienceDataProcessorModel(sdp_id="sdp001")       # Science Data Processor (App) model
         self.wtr_stn = WeatherStationModel(id="ws001")              # Weather Station (App) model
+
+    def get_app_model_by_name(self, app_name: str) -> AppModel:
+        """Return the application model identified by its UI application name."""
+
+        requested = str(app_name or "").strip().lower()
+        if not requested:
+            raise ValueError("No application name was specified")
+
+        fixed_apps = {
+            "tm": self.tel_mgr,
+            "dm": self.dsh_mgr,
+            "sdp": self.sdp,
+            "ws": self.wtr_stn,
+        }
+        if requested in fixed_apps:
+            model = fixed_apps[requested]
+            if model is None:
+                raise ValueError(f"Application '{app_name}' is unavailable")
+            return model.app
+
+        for digitiser in self.dig_store.dig_list:
+            if requested == digitiser.dig_id.strip().lower():
+                return digitiser.app
+
+        raise ValueError(f"Unknown application name '{app_name}'")
     
     def save_to_disk(self):
         # Implement disk saving logic here

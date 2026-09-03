@@ -46,11 +46,17 @@ logger = logging.getLogger(__name__)
 
 class MD01Driver(DishDriver):
 
+    COMMAND_ATTEMPTS = 2
+
     def __init__(self, dsh_model: DishModel=None):
         super().__init__(dsh_model)
 
         self.md01_config: MD01Config = dsh_model.driver_config
         self.last_command_time = 0  # Track last command timestamp for rate limiting
+        # Full encoded packet of the last SET command that received a valid
+        # acknowledgement. Comparing packets applies the MD01's actual
+        # position quantisation instead of comparing floating-point inputs.
+        self._last_set_command_data = None
 
     def _get_rotation_speed(self) -> float:
         """ Get the rotation speed of the dish from the MD01 configuration.
@@ -163,21 +169,12 @@ class MD01Driver(DishDriver):
             Do not set the dish model attributes here, that is done in the base class.
         """
 
-        # Check if we need to do a flip
-        if self.do_flip(alt, az, tracking=True):
-            # Flip to 180-alt, az+180
-            flip_alt = 180 - alt
-            flip_az = (az + 180) % 360
-
-            logger.debug(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} tracking with flip to Alt: {flip_alt} deg, Az: {flip_az} deg.")
-            alt, az = flip_alt, flip_az
-
-        elif self.can_reach(alt, az):
-            logger.debug(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} tracking without flip to Alt: {alt} deg, Az: {az} deg.")
-
-        # Neither original nor flipped position is reachable
-        else:
+        # This MD01 mount does not support flipped coordinates. Always command the
+        # requested encoder position so it remains consistent with desired_altaz.
+        if not self.can_reach(alt, az):
             raise XInvalidTransition(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} cannot reach Alt: {alt} deg, Az: {az} deg due to dish limits: {self.md01_config.min_alt}-{self.md01_config.max_alt} deg altitude.")
+
+        logger.debug(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} tracking to Alt: {alt} deg, Az: {az} deg.")
     
         self._set_md01_altaz(alt, az)
 
@@ -194,22 +191,12 @@ class MD01Driver(DishDriver):
             Do not set the dish model attributes here, that is done in the base class.
         """
 
-        # Check if we need to do a flip
-        if self.do_flip(alt, az, tracking=False):
-            # Flip to 180-alt, az+180
-            flip_alt = 180 - alt
-            flip_az = (az + 180) % 360
-
-            alt, az = flip_alt, flip_az
-            logger.debug(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} slewing with flip to Alt: {alt} deg, Az: {az} deg.")
-        
-        # Still need to check if we can reach the original position (non-flipped)
-        elif self.can_reach(alt, az):
-            logger.debug(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} slewing without flip to Alt: {alt} deg, Az: {az} deg.")
-
-        # Neither original nor flipped position is reachable
-        else:
+        # This MD01 mount does not support flipped coordinates. Always command the
+        # requested encoder position so it remains consistent with desired_altaz.
+        if not self.can_reach(alt, az):
             raise XInvalidTransition(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} cannot reach Alt: {alt} deg, Az: {az} deg due to dish limits: {self.md01_config.min_alt}-{self.md01_config.max_alt} deg altitude.")
+
+        logger.debug(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} slewing to Alt: {alt} deg, Az: {az} deg.")
     
         self._set_md01_altaz(alt, az)
         
@@ -241,10 +228,27 @@ class MD01Driver(DishDriver):
         """
             Sends a command to the MD-01 rotator and returns the response.
                 :param md01_cmd: The command to send as MD01Msg object.
-                :return: The response from the MD-01 as MD01Msg object (or None if no response).
+                :return: The response from the MD-01 as an MD01Msg object.
             :raises XTimeoutWaitingForResponse if no response is received when expected.
             :raises XCommsFailure if there is a communication failure.
         """
+        for attempt in range(1, self.COMMAND_ATTEMPTS + 1):
+            try:
+                return self._send_md01_command_once(md01_cmd)
+            except XTimeoutWaitingForResponse:
+                if attempt >= self.COMMAND_ATTEMPTS:
+                    raise
+
+                logger.warning(
+                    f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} "
+                    f"received no valid response for {md01_cmd.get_cmd()} on attempt {attempt}/"
+                    f"{self.COMMAND_ATTEMPTS}; retrying."
+                )
+
+        raise AssertionError("MD01 command retry loop exited unexpectedly")
+
+    def _send_md01_command_once(self, md01_cmd: MD01Msg) -> MD01Msg:
+        """Send one MD01 command attempt and return its decoded response."""
         # Enforce rate limiting between commands
         self._rate_limit_wait(md01_cmd)  
         
@@ -261,28 +265,104 @@ class MD01Driver(DishDriver):
         cmd_data = md01_cmd.to_data()
         logger.debug(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} sending command to MD01 controller:\n{md01_cmd}")
         self.last_command_time = time.time()
-        sock.send(cmd_data)
-
-        # If SET command, no response is expected
-        if md01_cmd.cmd == MD01Msg.CMD_SET:
-            sock.close()
-            return None
+        sock.sendall(cmd_data)
+        self._trace_md01_message("TX", md01_cmd)
 
         time.sleep(0.01) # Seconds, to ensure message is ready, just in case
+
+        # Every MD01 command, including SET, returns a 12-byte position
+        # response. Consume that response before closing the connection so it
+        # cannot remain buffered in the serial-to-Ethernet adapter and become
+        # prefixed to the response for the next command.
+        rsp_data = bytearray()
+        discarded_data = bytearray()
+        try:
+            while True:
+                # The serial-to-Ethernet adapter can prefix a response with
+                # command-mode traffic (for example, b"AT+ENTM\r"). Find the
+                # first complete, structurally valid MD01 response rather than
+                # treating the first 12 TCP bytes as a position packet.
+                start_idx = rsp_data.find(MD01Msg.START_BYTE)
+                if start_idx < 0:
+                    discarded_data.extend(rsp_data)
+                    rsp_data.clear()
+                elif start_idx > 0:
+                    discarded_data.extend(rsp_data[:start_idx])
+                    del rsp_data[:start_idx]
+
+                if len(rsp_data) >= 12:
+                    candidate = bytes(rsp_data[:12])
+                    position_indices = (1, 2, 3, 4, 6, 7, 8, 9)
+                    if (
+                        candidate[-1:] == MD01Msg.END_BYTE
+                        and all(candidate[idx] <= 9 for idx in position_indices)
+                    ):
+                        rsp_data = bytearray(candidate)
+                        break
+
+                    # This 0x57 was not the start of a valid response. Discard
+                    # it and continue searching for the next start marker.
+                    discarded_data.append(rsp_data[0])
+                    del rsp_data[0]
+                    continue
+
+                chunk = sock.recv(12 - len(rsp_data))
+                if not chunk:
+                    break
+                rsp_data.extend(chunk)
+        except socket.timeout as e:
+            raise XTimeoutWaitingForResponse(
+                f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} "
+                f"timed-out waiting for rsp after sending command {md01_cmd}."
+            ) from e
+        finally:
+            sock.close()
         
-        # Read response data (bytes) from MD01 controller
-        rsp_data = sock.recv(1024)
-        sock.close()
-        
-        if len(rsp_data) == 0:
+        if len(rsp_data) == 0 and not discarded_data:
             raise XTimeoutWaitingForResponse(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} timed-out waiting for rsp." + \
                 f" No data received after sending command {md01_cmd}.")
+
+        if len(rsp_data) != 12:
+            raise XTimeoutWaitingForResponse(
+                f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} did not receive a valid "
+                f"12-byte MD01 response after sending command {md01_cmd}. "
+                f"Discarded data: {bytes(discarded_data)!r}; remaining data: {bytes(rsp_data)!r}."
+            )
+
+        if discarded_data:
+            logger.warning(
+                f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} discarded "
+                f"{len(discarded_data)} unexpected byte(s) before MD01 response: {bytes(discarded_data)!r}"
+            )
         
         # Decode response data (bytes) to MD01Msg
         md01_rsp = MD01Msg()
-        md01_rsp.from_data(rsp_data)
+        md01_rsp.from_data(bytes(rsp_data))
         logger.debug(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} received response from MD01 controller:\n{md01_rsp}")
+        self._trace_md01_message("RX", md01_rsp)
         return md01_rsp
+
+    def _trace_md01_message(self, direction: str, msg: MD01Msg) -> None:
+        """Trace controller traffic without allowing diagnostics to affect I/O."""
+        trace = getattr(self, "trace", None)
+        if trace is None:
+            return
+
+        dish_id = getattr(getattr(self, "dsh_model", None), "dsh_id", "unknown")
+        interface = (
+            f"MD01 {dish_id} "
+            f"({self.md01_config.host}:{self.md01_config.port})"
+        )
+        try:
+            trace.log_message(direction, msg, interface)
+        except Exception as e:
+            logger.warning(
+                "MD01Driver for controller %s %s failed to trace %s message: %s",
+                self.md01_config.host,
+                self.md01_config.port,
+                direction,
+                e,
+            )
 
     def _get_md01_altaz(self) -> Tuple[float, float]:
         """Returns the current altitude and azimuth of the dish as a tuple of decimal numbers [degrees]."""
@@ -318,8 +398,19 @@ class MD01Driver(DishDriver):
         md01_cmd = MD01Msg()
         md01_cmd.set_cmd(MD01Msg.CMD_SET)
         md01_cmd.set_position(talt, taz)
-        
+
+        command_data = md01_cmd.to_data()
+        if command_data == getattr(self, "_last_set_command_data", None):
+            logger.debug(
+                f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} "
+                f"skipping duplicate quantised SET command for Alt: {talt}, Az: {taz}."
+            )
+            return
+
         self._send_md01_command(md01_cmd)
+        # Cache only an acknowledged command. If both attempts time out, the
+        # position remains eligible to be sent on the next driver cycle.
+        self._last_set_command_data = command_data
 
     def _stop_md01(self):
         """Stops any movement of the telescope 
@@ -327,6 +418,9 @@ class MD01Driver(DishDriver):
         """
         md01_cmd = MD01Msg()
         md01_cmd.set_cmd(MD01Msg.CMD_STOP)
+        # A later SET to the same coordinates must not be suppressed after a
+        # stop, even if this STOP's response is lost after reaching the mount.
+        self._last_set_command_data = None
         rsp = self._send_md01_command(md01_cmd)
 
     def _offset_corr(self, alt, az):
@@ -482,6 +576,3 @@ if __name__ == "__main__":
     
     alt, az = md01_driver._get_md01_altaz()
     print(f"After Slew - Current Altitude: {alt} degrees, Azimuth: {az} degrees")
-
-
-

@@ -28,22 +28,6 @@ def fmt_duration(seconds: float) -> str:
     minutes, remaining_seconds = divmod(remainder, 60)
     return f"{hours:02d}:{minutes:02d}:{remaining_seconds:02d}"
 
-def parse_duration(value: str) -> int:
-    """Parse a duration string in HH:MM:SS format into seconds."""
-    parts = str(value).strip().split(":")
-    if len(parts) != 3:
-        raise ValueError(f"Duration must be in HH:MM:SS format, got {value!r}.")
-
-    try:
-        hours, minutes, seconds = [int(part) for part in parts]
-    except ValueError as exc:
-        raise ValueError(f"Duration must contain integer HH:MM:SS fields, got {value!r}.") from exc
-
-    if hours < 0 or minutes < 0 or seconds < 0 or minutes > 59 or seconds > 59:
-        raise ValueError(f"Duration fields are out of range in {value!r}.")
-
-    return (hours * 3600) + (minutes * 60) + seconds
-
 def fmt_cell(value, width) -> str:
     """Format a single table cell to a fixed width. """
     return f"{str(value):<{width}}"
@@ -69,6 +53,15 @@ def fmt_percent(value: float | None, precision: int = 0) -> str:
 def fmt_angle(value, precision=2) -> str:
     """Format an angle value for display, preserving missing values."""
     return "None" if value is None else f"{float(value):.{precision}f}"
+
+def fmt_pointing_value(value) -> str:
+    """Format a coordinate (e.g. alt/az) for stable, machine-readable pointing rows."""
+    if value is None:
+        return "None"
+    try:
+        return f"{float(value):.6f}"
+    except (TypeError, ValueError):
+        return str(value)
 
 def fmt_image_link(dir: str, filename: str, width: int = 8) -> str:
     """Build the image hyperlink cell for a scan row when metadata is available."""

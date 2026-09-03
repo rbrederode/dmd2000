@@ -34,3 +34,16 @@ def test_resolve_entity_ids_supports_single_and_multiple_inputs():
 def test_resolve_entity_ids_requires_at_least_one_entity():
     with pytest.raises(ValueError):
         resolve_entity_ids([], None)
+
+
+@pytest.mark.parametrize("profile", ["gqrx", "jodrell", "patio", "rtlstream"])
+def test_tm_launch_config_does_not_load_observation_file(profile):
+    config = LaunchConfigModel.load_from_disk(
+        input_dir=f"src/config/{profile}",
+        filename="LaunchConfig.json",
+    )
+    tm = config.get_launch_by_entity_id("tm001")
+
+    assert tm is not None
+    assert "-o" not in tm.args
+    assert "--observation_file" not in tm.args

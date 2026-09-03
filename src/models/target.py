@@ -282,18 +282,25 @@ class TargetScanSet(BaseModel):
     def get_scan_by_index(self, freq_scan: int, scan_iter: int) -> ScanModel:
         """Retrieve a scan by its frequency scan and scan iteration indices."""
 
-        if freq_scan is None or freq_scan < 0 or freq_scan >= self.freq_scans:
+        if freq_scan is None or freq_scan < 0:
             return None
 
-        if scan_iter is None or scan_iter < 0 or scan_iter >= self.scan_iterations:
+        if scan_iter is None or scan_iter < 0:
             return None
 
-        # Total scans = freq_scans * scan_iterations
-        idx = freq_scan * self.scan_iterations + scan_iter
-        if idx < 0 or idx >= len(self.scans):
-            return None
-
-        return self.scans[idx] 
+        # Persisted physical scans can have sparse iteration numbers when the
+        # same observation ID is reused or a scan is retried. Look up the
+        # explicit model indices instead of treating them as list offsets.
+        return next(
+            (
+                scan
+                for scan in self.scans
+                if scan is not None
+                and scan.freq_scan == freq_scan
+                and scan.scan_iter == scan_iter
+            ),
+            None,
+        )
 
     def get_scan_by_id(self, scan_id: str) -> ScanModel:
         """Retrieve a scan by its unique scan_id."""

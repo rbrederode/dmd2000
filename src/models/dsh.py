@@ -25,11 +25,11 @@ from util.xbase import XInvalidTransition, XAPIValidationFailed, XSoftwareFailur
 
 # Pointing States are only relevant when the dish is in OPERATE mode
 class PointingState(enum.IntEnum):
-    READY = 0
-    SLEW = 1
-    TRACK = 2
-    SCAN = 3
-    UNKNOWN = 4
+    READY = 0               # Dish is pointing in a stationary direction and is ready to slew, track or scan i.e. receive pointing commands
+    SLEW = 1                # Dish moves to the commanded alt-az position at maximum speed. SLEW is also used when settling onto a target. 
+    TRACK = 2               # Dish is tracking a target within the pointing accuracy limits of the dish. The target may be moving across the sky.
+    SCAN = 3                # Dish is scanning across the sky e.g. offset or five-point scan. The target may be moving across the sky.
+    UNKNOWN = 4             # Pointing state is unknown
 
 class DishMode(enum.IntEnum):
     STARTUP = 0             # Transitional: Reported when power is restored to the dish, perform initial checks and generally auto-transition to STANDBY
@@ -117,9 +117,11 @@ class DishModel(BaseModel):
         "pointing_state": And(PointingState, lambda v: isinstance(v, PointingState)),
         "desired_altaz": Or(None, dict, lambda v: v is None or isinstance(v, (dict, SkyCoord))),  # Desired alt-az position of dish
         "pointing_altaz": Or(None, dict, lambda v: v is None or isinstance(v, (dict, SkyCoord))), # Current alt-az pointing direction of dish
+        "pointing_altaz_dt": Or(None, And(datetime, lambda v: isinstance(v, datetime))),          # Datetime corresponding to the current pointing_altaz measurement
         "velocity_altaz": Or(None, dict, lambda v: v is None or isinstance(v, dict)),             # Current velocity of dish in Altitude and Azimuth (degrees per second)
         "target": Or(None, lambda v: v is None or isinstance(v, BaseModel)),                      # Current target model assigned to the dish
         "tgt_id": Or(None, And(str, lambda v: isinstance(v, str))),                               # Current target id assigned to the dish in the form {obs_id}_{obs.tgt_idx}
+        "tgt_acq_dt": Or(None, And(datetime, lambda v: isinstance(v, datetime))),                 # Datetime when the dish acquired the current target
         "tgt_pec": And(list, lambda v: isinstance(v, list)),                                      # Current periodic error correction (PEC) list of PECModel instances 
         "capability": And(Capability, lambda v: isinstance(v, Capability)),
         "driver_type": And(DriverType, lambda v: isinstance(v, DriverType)),                      # Dish driver type e.g. "ASCOM", "INDI", "MD-01", "MD-02"
@@ -186,9 +188,11 @@ class DishModel(BaseModel):
             "pointing_state": PointingState.UNKNOWN,
             "desired_altaz": None,
             "pointing_altaz": None,
+            "pointing_altaz_dt": None,
             "velocity_altaz": None,
             "target": None,
             "tgt_id": None,
+            "tgt_acq_dt": None,
             "tgt_pec": [],
             "capability": Capability.UNKNOWN,
             "driver_type": DriverType.UNKNOWN,
@@ -263,6 +267,15 @@ class DishModel(BaseModel):
                 return pec
         return None
 
+    def set_last_err(self, message: str):
+        """ Set the last dish model error message and timestamp.
+        """
+        self.last_err_msg = message
+        now = datetime.now(timezone.utc)
+        self.last_err_dt = now
+        self.last_update = now
+        return message
+
 class DishList(BaseModel):
     """A class representing a list of dishes."""
 
@@ -319,6 +332,7 @@ class DishManagerModel(BaseModel):
             "app": AppModel(
                 app_name="dshmgr",
                 app_running=False,
+                app_cmd_port=60003,
                 num_processors=0,
                 queue_size=0,
                 interfaces=[],

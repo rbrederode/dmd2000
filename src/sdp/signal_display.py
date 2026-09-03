@@ -29,6 +29,16 @@ with warnings.catch_warnings():
 
 from util import gen_file_prefix
 from util.matplotlib_window import get_figure_visibility
+from sdp.channel_mask import (
+    DEFAULT_EXCLUDED_FLAGS,
+    ChannelFlag,
+    channels_with_flag,
+    contiguous_regions,
+    empty_channel_flags,
+    masked_values,
+    reconstructed_total_power,
+    valid_channels,
+)
 
 # Disable automatic window raising (backend-specific)
 mpl.rcParams["figure.raise_window"] = False
@@ -36,6 +46,9 @@ mpl.rcParams["figure.raise_window"] = False
 logger = logging.getLogger(__name__)
 
 FIG_SIZE = (14, 7) # Default figure size for plots
+WATERFALL_PERCENTILES = (1.0, 99.0)
+WATERFALL_LIMIT_SMOOTHING = 0.25
+OVERLAY_FONT_SIZE = 8
 
 
 class SignalDisplay:
@@ -69,11 +82,17 @@ class SignalDisplay:
     def _reset_artist_refs(self):
         """Reset cached matplotlib artist references for a new scan lifecycle."""
         self.pwr_im = None
+        self.bandpass_im = None
         self.total_power_line = None
         self.spr_line = None
         self.load_line = None
         self.cal_line = None
         self.mpr_line = None
+        self.spr_rfi_line = None
+        self.load_rfi_line = None
+        self.cal_rfi_line = None
+        self.mpr_rfi_line = None
+        self.bandpass_spans = []
         self.qa_text = None
         self.baseline_line = None
         self.signal_start_line = None
@@ -85,6 +104,7 @@ class SignalDisplay:
         self.q_bar = None
         self.sat_33_line = None
         self.sat_66_line = None
+        self._waterfall_limits = None
 
     def _create_figure(self):
         """Create the matplotlib figure and all subplot axes for this digitiser display."""
@@ -164,22 +184,42 @@ class SignalDisplay:
         """Create persistent artists for the current scan so later updates can mutate them in place."""
         self.spr_line, = self.sig[0].plot([], [], color="red", label="Signal (SPR)")
         self.load_line, = self.sig[0].plot([], [], color="black", label="Load (BSL)")
-        self.sig[0].legend(loc="lower right")
+        self.spr_rfi_line, = self.sig[0].plot([], [], color="tab:red", marker="x", linestyle="none", label="_nolegend_")
+        self.load_rfi_line, = self.sig[0].plot([], [], color="black", marker="x", linestyle="none", label="_nolegend_")
+        self.sig[0].legend(loc="lower right", fontsize=OVERLAY_FONT_SIZE)
 
         self.cal_line, = self.sig[1].plot([], [], color="orange", label="Signal (CAL)")
         self.mpr_line, = self.sig[1].plot([], [], color="magenta", linewidth=1.5, label="Mean Power (MPR)")
+        self.cal_rfi_line, = self.sig[1].plot([], [], color="tab:red", marker="x", linestyle="none", label="_nolegend_")
+        self.mpr_rfi_line, = self.sig[1].plot([], [], color="purple", marker="x", linestyle="none", label="_nolegend_")
         self.baseline_line, = self.sig[1].plot([], [], color="tab:blue", linestyle="--", linewidth=1.5, label="Noise Baseline (MPR)")
         self.baseline_line.set_visible(False)
         self.baseline_line.set_data([], [])
         self.qa_signal_start_line = self.sig[1].axvline(x=0, color="purple", linestyle="--", label="Signal Start (MPR)")
         self.qa_signal_end_line = self.sig[1].axvline(x=0, color="purple", linestyle="--", label="Signal End (MPR)")
-        self.qa_text = self.sig[1].text(0.02, 0.98, "", transform=self.sig[1].transAxes, ha="left", va="top")
-        self.sig[1].legend(loc="lower right")
+        self.qa_text = self.sig[1].text(
+            0.02,
+            0.98,
+            "",
+            transform=self.sig[1].transAxes,
+            ha="left",
+            va="top",
+            fontsize=OVERLAY_FONT_SIZE,
+        )
+        self.sig[1].legend(loc="lower right", fontsize=OVERLAY_FONT_SIZE)
 
         self.pwr_im = self.sig[2].imshow(
             np.zeros((self.scan.scan_model.duration, self.scan.scan_model.spectral_resolution)),
             aspect="auto",
             extent=self.extent,
+        )
+        waterfall_cmap = self.pwr_im.get_cmap().with_extremes(bad=(0.65, 0.65, 0.65, 0.35))
+        self.pwr_im.set_cmap(waterfall_cmap)
+        self.bandpass_im = self.sig[2].imshow(
+            np.zeros((self.scan.scan_model.duration, self.scan.scan_model.spectral_resolution, 4)),
+            aspect="auto",
+            extent=self.extent,
+            zorder=2,
         )
 
         self.i_bar = self.sig[3].bar(0, 0, color="blue", label="_nolegend_")[0]
@@ -191,7 +231,7 @@ class SignalDisplay:
         self.mean_tpwr_line = self.sig[4].axhline(y=0, color="red", linestyle="--", label="_nolegend_")
         self.mean_tpwr_line.set_visible(False)
         self.mean_tpwr_line.set_ydata([np.nan, np.nan])
-        self.sig[4].legend(loc="lower right")
+        self.sig[4].legend(loc="lower right", fontsize=OVERLAY_FONT_SIZE)
 
     def set_scan(self, scan: Scan, load: Scan | None):
         """Bind a scan and optional matching load scan to this display and initialise all plot artists.
@@ -254,33 +294,111 @@ class SignalDisplay:
 
         self.load = load
 
+    @staticmethod
+    def _flags_for(scan, product: str, values: np.ndarray) -> np.ndarray:
+        """Return flags matching a spectrum, supporting scans saved before flags existed."""
+        flags = getattr(scan, f"{product}_flags", None) if scan is not None else None
+        if not isinstance(flags, np.ndarray) or flags.shape != values.shape:
+            return empty_channel_flags(values.shape)
+        return flags
+
+    def _set_rfi_markers(self, line, values: np.ndarray, flags: np.ndarray, label: str) -> None:
+        """Mark RFI frequencies at the local usable level so spikes do not affect autoscaling."""
+        rfi = channels_with_flag(flags, ChannelFlag.RFI_DETECTED) & np.isfinite(values)
+        usable = valid_channels(values, flags)
+        rfi_indices = np.flatnonzero(rfi)
+        usable_indices = np.flatnonzero(usable)
+        if rfi_indices.size > 0 and usable_indices.size > 0:
+            marker_values = np.interp(rfi_indices, usable_indices, values[usable_indices])
+            line.set_data(self.freq_axis[rfi_indices], marker_values)
+            line.set_label(label)
+        else:
+            line.set_data([], [])
+            line.set_label("_nolegend_")
+
+    def _update_bandpass_spans(self, flags: np.ndarray) -> None:
+        """Shade contiguous bandpass-excluded frequency ranges on spectrum axes."""
+        for span in self.bandpass_spans:
+            try:
+                span.remove()
+            except (ValueError, AttributeError):
+                pass
+        self.bandpass_spans = []
+
+        channels = flags.shape[0]
+        if channels == 0:
+            return
+        excluded = channels_with_flag(flags, ChannelFlag.BANDPASS_EXCLUDED)
+        for region_index, (start, end) in enumerate(contiguous_regions(excluded)):
+            freq_start = self.extent[0] + (self.extent[1] - self.extent[0]) * start / channels
+            freq_end = self.extent[0] + (self.extent[1] - self.extent[0]) * end / channels
+            for axes in (self.sig[0], self.sig[1]):
+                self.bandpass_spans.append(
+                    axes.axvspan(
+                        freq_start,
+                        freq_end,
+                        color="gray",
+                        alpha=0.14,
+                        label="Bandpass Excluded" if region_index == 0 else "_nolegend_",
+                    )
+                )
+
     def _update_spectrum_axes(self, l_sec: int):
         """Update the SPR, BSL, and CAL line plots for the latest loaded second.
 
         Parameters:
             l_sec: The latest loaded second number for the current scan, starting at 1.
         """
-        self.spr_line.set_data(self.freq_axis, self.scan.spr[l_sec - 1, :])
+        spr_values = self.scan.spr[l_sec - 1, :]
+        spr_flags = self._flags_for(self.scan, "spr", self.scan.spr)[l_sec - 1, :]
+        display_exclusions = DEFAULT_EXCLUDED_FLAGS & ~ChannelFlag.BANDPASS_EXCLUDED
+        self.spr_line.set_data(
+            self.freq_axis,
+            masked_values(spr_values, spr_flags, excluded_flags=display_exclusions),
+        )
+        self._set_rfi_markers(self.spr_rfi_line, spr_values, spr_flags, "RFI (SPR)")
         if self.load is not None and self.load.mpr is not None:
-            self.load_line.set_data(self.freq_axis, self.load.mpr)
+            load_flags = self._flags_for(self.load, "mpr", self.load.mpr)
+            self.load_line.set_data(
+                self.freq_axis,
+                masked_values(self.load.mpr, load_flags, excluded_flags=display_exclusions),
+            )
             self.load_line.set_label("Load (BSL)")
             self.load_line.set_visible(True)
+            self._set_rfi_markers(self.load_rfi_line, self.load.mpr, load_flags, "RFI (BSL)")
+            self.load_rfi_line.set_visible(True)
         else:
             self.load_line.set_data([], [])
             self.load_line.set_label("_nolegend_")
             self.load_line.set_visible(False)
-        self.cal_line.set_data(self.freq_axis, self.scan.cal[l_sec - 1, :])
-        self.mpr_line.set_data(self.freq_axis, self.scan.mpr)
+            self.load_rfi_line.set_data([], [])
+            self.load_rfi_line.set_label("_nolegend_")
+            self.load_rfi_line.set_visible(False)
+        cal_values = self.scan.cal[l_sec - 1, :]
+        cal_flag_matrix = self._flags_for(self.scan, "cal", self.scan.cal)
+        cal_flags = cal_flag_matrix[l_sec - 1, :]
+        mpr_flags = self._flags_for(self.scan, "mpr", self.scan.mpr)
+        self.cal_line.set_data(
+            self.freq_axis,
+            masked_values(cal_values, cal_flags, excluded_flags=display_exclusions),
+        )
+        self.mpr_line.set_data(
+            self.freq_axis,
+            masked_values(self.scan.mpr, mpr_flags, excluded_flags=display_exclusions),
+        )
+        self._set_rfi_markers(self.cal_rfi_line, cal_values, cal_flags, "RFI (CAL)")
+        self._set_rfi_markers(self.mpr_rfi_line, self.scan.mpr, mpr_flags, "RFI (MPR)")
+        self._update_bandpass_spans(cal_flags)
 
         legend0 = self.sig[0].get_legend()
         if legend0 is not None:
             legend0.remove()
-        self.sig[0].legend(loc="lower right")
+        self.sig[0].legend(loc="lower right", fontsize=OVERLAY_FONT_SIZE)
 
         legend1 = self.sig[1].get_legend()
         if legend1 is not None:
             legend1.remove()
-        self.sig[1].legend(loc="lower right")
+        self.sig[1].legend(loc="lower right", fontsize=OVERLAY_FONT_SIZE)
 
         self.sig[0].relim()
         self.sig[0].autoscale_view(scalex=False, scaley=True)
@@ -292,7 +410,12 @@ class SignalDisplay:
         if self.mpr_line is None:
             return
 
-        self.mpr_line.set_data(self.freq_axis, self.scan.mpr)
+        mpr_flags = self._flags_for(self.scan, "mpr", self.scan.mpr)
+        display_exclusions = DEFAULT_EXCLUDED_FLAGS & ~ChannelFlag.BANDPASS_EXCLUDED
+        self.mpr_line.set_data(
+            self.freq_axis,
+            masked_values(self.scan.mpr, mpr_flags, excluded_flags=display_exclusions),
+        )
         self.sig[1].relim()
         self.sig[1].autoscale_view(scalex=False, scaley=True)
 
@@ -303,6 +426,13 @@ class SignalDisplay:
             l_sec: The latest loaded second number for the current scan, starting at 1.
         """
         show_qa_legend = self.scan.scan_qa is not None
+        mpr_flags = self._flags_for(self.scan, "mpr", self.scan.mpr)
+        usable_count = int(np.count_nonzero(valid_channels(self.scan.mpr, mpr_flags)))
+        usable_line = f"Usable: {usable_count}/{self.scan.mpr.size} channels"
+        cal_flags = self._flags_for(self.scan, "cal", self.scan.cal)[l_sec - 1, :]
+        rfi_flagged_count = int(
+            np.count_nonzero(channels_with_flag(cal_flags, ChannelFlag.RFI_DETECTED))
+        )
         self.baseline_line.set_label("Noise Baseline (MPR)" if show_qa_legend else "_nolegend_")
         self.qa_signal_start_line.set_label("Signal Start (MPR)" if show_qa_legend else "_nolegend_")
         self.qa_signal_end_line.set_label("Signal End (MPR)" if show_qa_legend else "_nolegend_")
@@ -332,7 +462,9 @@ class SignalDisplay:
                     self.baseline_line.set_data([], [])
 
                 qa_lines = [
-                    f"RFI Frac: {cal_qa.rfi_fraction:.2%}" if cal_qa is not None and cal_qa.rfi_fraction is not None else "",
+                    usable_line,
+                    f"RFI Frac: {rfi_flagged_count} channels, {cal_qa.rfi_fraction:.2%}"
+                    if cal_qa is not None and cal_qa.rfi_fraction is not None else "",
                     f"Baseline: {mpr_qa.baseline:.2f}" if mpr_qa.baseline is not None else "",
                     f"Noise: {mpr_qa.noise_db:.2f} dB" if mpr_qa.noise_db is not None else "",
                     f"Signal (sum): {mpr_qa.signal_pwr_db:.2f} dB" if mpr_qa.signal_pwr_db is not None else "",
@@ -343,7 +475,7 @@ class SignalDisplay:
                 ]
                 self.qa_text.set_text("\n".join(qa_lines))
         else:
-            self.qa_text.set_text("QA metrics not configured")
+            self.qa_text.set_text(f"QA metrics not configured\n{usable_line}")
             self.baseline_line.set_visible(False)
             self.baseline_line.set_data([], [])
             self.qa_signal_start_line.set_visible(False)
@@ -352,13 +484,80 @@ class SignalDisplay:
         legend1 = self.sig[1].get_legend()
         if legend1 is not None:
             legend1.remove()
-        self.sig[1].legend(loc="lower right")
+        self.sig[1].legend(loc="lower right", fontsize=OVERLAY_FONT_SIZE)
 
     def _update_waterfall(self):
         """Update the waterfall image contents from the current calibrated scan data."""
         if self.pwr_im is not None:
-            self.pwr_im.set_data(self.scan.cal)
-            self.pwr_im.autoscale()
+            cal_flags = self._flags_for(self.scan, "cal", self.scan.cal)
+            display_exclusions = DEFAULT_EXCLUDED_FLAGS & ~ChannelFlag.BANDPASS_EXCLUDED
+            waterfall = masked_values(
+                self.scan.cal,
+                cal_flags,
+                excluded_flags=display_exclusions,
+            )
+            waterfall_mask = np.ma.getmaskarray(waterfall).copy()
+            loaded_rows = np.asarray(getattr(self.scan, "loaded_secs", []), dtype=bool)
+            if loaded_rows.shape == (waterfall.shape[0],):
+                unloaded_rows = ~loaded_rows
+            else:
+                loaded_seconds = min(int(self.scan.get_loaded_seconds()), waterfall.shape[0])
+                unloaded_rows = np.arange(waterfall.shape[0]) >= loaded_seconds
+            waterfall_mask[unloaded_rows, :] = True
+            self.pwr_im.set_data(np.ma.array(self.scan.cal, mask=waterfall_mask, copy=False))
+
+            # Derive the colour scale from science-usable samples only. The
+            # display mask deliberately leaves bandpass channels visible under
+            # their grey overlay, but those channels must not influence the
+            # waterfall contrast.
+            limit_mask = ~valid_channels(self.scan.cal, cal_flags)
+            limit_mask |= np.broadcast_to(unloaded_rows[:, None], waterfall.shape)
+            limit_values = np.asarray(self.scan.cal)[~limit_mask]
+            limits = self._percentile_limits(limit_values)
+            if limits is not None:
+                observation_complete = not np.any(unloaded_rows)
+                if self._waterfall_limits is None or observation_complete:
+                    self._waterfall_limits = limits
+                else:
+                    alpha = WATERFALL_LIMIT_SMOOTHING
+                    self._waterfall_limits = tuple(
+                        previous + alpha * (current - previous)
+                        for previous, current in zip(self._waterfall_limits, limits)
+                    )
+                self.pwr_im.set_norm(
+                    mpl.colors.Normalize(
+                        vmin=self._waterfall_limits[0],
+                        vmax=self._waterfall_limits[1],
+                        clip=True,
+                    )
+                )
+
+            if self.bandpass_im is not None:
+                bandpass = channels_with_flag(cal_flags, ChannelFlag.BANDPASS_EXCLUDED)
+                bandpass &= ~waterfall_mask
+                overlay = np.zeros((*self.scan.cal.shape, 4), dtype=np.float32)
+                overlay[bandpass] = (0.5, 0.5, 0.5, 0.28)
+                self.bandpass_im.set_data(overlay)
+
+    @staticmethod
+    def _percentile_limits(values: np.ndarray) -> tuple[float, float] | None:
+        """Return robust P1-P99 colour limits, with safe degenerate-data handling."""
+        finite = np.asarray(values)[np.isfinite(values)]
+        if finite.size == 0:
+            return None
+
+        if finite.size >= 2:
+            vmin, vmax = np.percentile(finite, WATERFALL_PERCENTILES)
+        else:
+            vmin = vmax = float(finite[0])
+
+        if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin >= vmax:
+            vmin, vmax = float(np.min(finite)), float(np.max(finite))
+        if vmin >= vmax:
+            padding = max(abs(vmin) * 1e-6, 1e-12)
+            vmin -= padding
+            vmax += padding
+        return float(vmin), float(vmax)
 
     def _update_saturation_axis(self):
         """Update the SDR saturation bars and legend text for the latest I/Q values."""
@@ -370,7 +569,7 @@ class SignalDisplay:
         legend3 = self.sig[3].get_legend()
         if legend3 is not None:
             legend3.remove()
-        self.sig[3].legend(loc="lower right")
+        self.sig[3].legend(loc="lower right", fontsize=OVERLAY_FONT_SIZE)
 
     def _update_total_power_axis(self, l_sec: int):
         """Update the total-power timeline and show the mean line once the scan is complete.
@@ -378,20 +577,32 @@ class SignalDisplay:
         Parameters:
             l_sec: The latest loaded second number for the current scan, starting at 1.
         """
-        total_power = np.sum(self.scan.cal[:l_sec, :], axis=1)
+        cal_flags = getattr(self.scan, "cal_flags", None)
+        if cal_flags is None:
+            cal_flags = empty_channel_flags(self.scan.cal.shape)
+        total_power, _, _ = reconstructed_total_power(
+            self.scan.cal[:l_sec, :],
+            cal_flags[:l_sec, :],
+        )
         time_axis = np.arange(l_sec) + 1
         self.total_power_line.set_data(time_axis, total_power)
 
         if l_sec == self.scan.scan_model.duration:
-            avg_tpwr = np.mean(np.sum(self.scan.cal, axis=1))
-            self.mean_tpwr_line.set_visible(True)
-            self.mean_tpwr_line.set_ydata([avg_tpwr, avg_tpwr])
-            self.mean_tpwr_line.set_label(f"Mean {avg_tpwr:.3e}")
+            finite_total_power = total_power[np.isfinite(total_power)]
+            if finite_total_power.size > 0:
+                avg_tpwr = float(np.mean(finite_total_power))
+                self.mean_tpwr_line.set_visible(True)
+                self.mean_tpwr_line.set_ydata([avg_tpwr, avg_tpwr])
+                self.mean_tpwr_line.set_label(f"Mean {avg_tpwr:.3e}")
+            else:
+                self.mean_tpwr_line.set_visible(False)
+                self.mean_tpwr_line.set_ydata([np.nan, np.nan])
+                self.mean_tpwr_line.set_label("_nolegend_")
 
             legend4 = self.sig[4].get_legend()
             if legend4 is not None:
                 legend4.remove()
-            self.sig[4].legend(loc="lower right")
+            self.sig[4].legend(loc="lower right", fontsize=OVERLAY_FONT_SIZE)
         else:
             self.mean_tpwr_line.set_visible(False)
             self.mean_tpwr_line.set_label("_nolegend_")
@@ -541,7 +752,7 @@ class SignalDisplay:
         Parameters:
             axes: Matplotlib axis to configure.
         """
-        axes.set_title("Waterfall Plot of Spectrum")
+        axes.set_title("Waterfall Plot of Spectrum (P1-P99)")
         axes.set_xlabel("Frequency [MHz]")
         axes.set_ylabel("Integrated Scans" if self._is_integrated_scan() else "Time [sec]")
         axes.set_aspect("auto")

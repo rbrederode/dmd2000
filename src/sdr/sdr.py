@@ -56,6 +56,11 @@ class SDR:
     def close(self):
         return self.driver.close()
 
+    def stream_reset(self) -> int:
+        """Reset a streaming backend; non-streaming backends have no buffer."""
+        reset = getattr(self.driver, "stream_reset", None)
+        return reset() if callable(reset) else 0
+
     def __getattr__(self, name: str):
         if name.startswith("_"):
             raise AttributeError(name)

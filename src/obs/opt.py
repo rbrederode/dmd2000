@@ -1,9 +1,11 @@
 import argparse
+import csv
 from contextlib import contextmanager
 from datetime import timedelta
 import os
 import logging
 import re
+from pathlib import Path
 from queue import Queue
 
 import numpy as np
@@ -11,6 +13,7 @@ from astropy.time import Time
 
 from models.obs import ObsModel
 from models.scan import ScanState, ScanType
+from sdp.channel_mask import empty_channel_flags, reconstructed_total_power
 try:
     from obs.obs import Observation
     from obs.obs_display import ObsDisplay
@@ -21,6 +24,36 @@ from util.format import fmt_cell, fmt_float, fmt_hyperlink, fmt_target_coords, f
 
 logger = logging.getLogger(__name__)
 FILTERBANK_STORAGE_DTYPE = np.dtype("float32")
+
+def _mpr_total_power(scan) -> float | None:
+    """Return the total power in a scan's duration-averaged MPR spectrum."""
+    mpr = getattr(scan, "mpr", None)
+    if mpr is None:
+        return None
+
+    try:
+        mpr_values = np.asarray(mpr, dtype=np.float64)
+    except (TypeError, ValueError):
+        return None
+
+    if mpr_values.size == 0:
+        return None
+
+    mpr_flags = getattr(scan, "mpr_flags", None)
+    if mpr_flags is None:
+        mpr_flags = empty_channel_flags(mpr_values.shape)
+
+    total_power, measured_count, filled_count = reconstructed_total_power(mpr_values, mpr_flags)
+    if int(measured_count) + int(filled_count) == 0:
+        return None
+
+    total_power = float(total_power)
+    return total_power if np.isfinite(total_power) else None
+
+def _fmt_mpr_total_power(scan) -> str:
+    """Format MPR total power compactly across a wide numeric range."""
+    total_power = _mpr_total_power(scan)
+    return "" if total_power is None else f"{total_power:.4e}"
 
 @contextmanager
 def redirect_root_logging(log_path: str):
@@ -69,7 +102,8 @@ def print_sky_scans(obs: ObsModel, sky_q: Queue | None = None, blacklist: list[s
         Parameters:
             obs:         Observation model containing the scan metadata to print.
             sky_q:       Optional queue of processed SKY ``Scan`` objects used to look up
-                         QA values such as SNR, FWHM, and dynamic range.
+                         MPR total power and QA values such as SNR, FWHM, and
+                         dynamic range.
             blacklist:   Optional list of full scan IDs currently marked as excluded.
             scan_filter: Optional predicate receiving a ``ScanModel`` and returning
                          ``True`` when the row should be printed. 
@@ -94,6 +128,7 @@ def print_sky_scans(obs: ObsModel, sky_q: Queue | None = None, blacklist: list[s
     ]
 
     if sky_q is not None and len(sky_q.queue) > 0:
+        columns.append(("MPR Total", 13))
         columns.append(("SNR (dB)", 10))
         columns.append(("FWHM", 10))
         columns.append(("DR (dB)", 10))
@@ -154,9 +189,12 @@ def print_sky_scans(obs: ObsModel, sky_q: Queue | None = None, blacklist: list[s
                     snr_db = getattr(mpr_qa, "snr_db", None)
                     fwhm = getattr(mpr_qa, "fwhm", None)
                     dr_db = getattr(mpr_qa, "dynamic_range_db", None)
+                    row.append(_fmt_mpr_total_power(latest_scan))
                     row.append(fmt_float(snr_db, precision=2))
                     row.append(fmt_float(fwhm, precision=2))
                     row.append(fmt_float(dr_db, precision=2))
+                else:
+                    row.extend(["", "", "", ""])
 
             print(" ".join(fmt_cell(value, width) for value, (_, width) in zip(row, columns)))
 
@@ -253,6 +291,7 @@ def print_aggregated_scans(obs: ObsModel, sky_q: Queue | None = None, int_arrays
         ("Spec Res", 8),
         ("Duration", 8),
         ("Image", 8),
+        ("MPR Total", 13),
         ("SNR (dB)", 10),
         ("FWHM", 10),
         ("DR (dB)", 10),
@@ -308,6 +347,7 @@ def print_aggregated_scans(obs: ObsModel, sky_q: Queue | None = None, int_arrays
             str(scan_model.spectral_resolution),
             fmt_float(integrated_secs if integrated_secs is not None else scan_model.duration, precision=0, suffix=" s"),
             _scan_image_link(scan_model, 8),
+            _fmt_mpr_total_power(scan),
             fmt_float(snr_db, precision=2),
             fmt_float(fwhm, precision=2),
             fmt_float(dr_db, precision=2),
@@ -775,6 +815,117 @@ def _collapse_integrated_arrays(int_data_arrays: dict, scan_type: ScanType | Non
 
     return collapsed
 
+
+def save_aggregated_power_csv(obs_id: str, scans, output_dir: str) -> str:
+    """Save the data plotted in the Integrated Total Power panel.
+
+    Each row identifies a synthesized SKY scan and contains the total calibrated
+    power for one integrated-scan position.
+
+    Returns:
+        The path of the written ``<obs_id>-sky-apr.csv`` file.
+    """
+    output_dir = os.path.expanduser(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = os.path.join(output_dir, f"{obs_id}-sky-apr.csv")
+
+    sorted_scans = sorted(
+        [scan for scan in scans if getattr(scan, "scan_model", None) is not None],
+        key=lambda scan: (scan.scan_model.center_freq, scan.scan_model.freq_scan),
+    )
+
+    with open(output_path, "w", newline="", encoding="utf-8") as csv_file:
+        writer = csv.writer(csv_file)
+        writer.writerow(["scan_id", "tgt_idx", "freq_scan", "integrated_scan", "aggregated_power"])
+
+        for scan in sorted_scans:
+            if scan.cal is None:
+                continue
+
+            loaded_seconds = min(int(scan.get_loaded_seconds()), scan.cal.shape[0])
+            if loaded_seconds <= 0:
+                continue
+
+            cal_values = scan.cal[:loaded_seconds, :]
+            cal_flags = getattr(scan, "cal_flags", None)
+            if cal_flags is None:
+                cal_flags = empty_channel_flags(scan.cal.shape)
+            aggregated_power, _, _ = reconstructed_total_power(
+                cal_values,
+                cal_flags[:loaded_seconds, :],
+            )
+            for integrated_scan, power in enumerate(aggregated_power, start=1):
+                writer.writerow(
+                    [
+                        scan.scan_model.scan_id,
+                        scan.scan_model.tgt_idx,
+                        scan.scan_model.freq_scan,
+                        integrated_scan,
+                        float(power),
+                    ]
+                )
+
+    logger.info(f"OPT: Saved aggregated SKY power data to {output_path}")
+    return output_path
+
+def process_observation(
+    directory: str,
+    obs_id: str,
+    profile: str = "default",
+    blacklist: list[str] | None = None,
+    retain_sky_scans: bool = False,
+    signal_displays: dict | None = None,
+):
+    """Load and process an observation using the same pipeline as OPT.
+
+    Returns:
+        A tuple of ``(observation, sky_queue, calibration_queue,
+        processed_sky_scans)``. ``processed_sky_scans`` contains physical SKY
+        scans only when ``retain_sky_scans`` is true.
+    """
+    directory = os.path.expanduser(directory)
+    config_dir = Path(__file__).resolve().parents[1] / "config" / profile
+    pipeline_factory = Observation.init_pipeline_factory(input_dir=str(config_dir))
+    observation = Observation.from_disk(
+        dir=directory,
+        obs_id=obs_id,
+        blacklist=blacklist or [],
+        pipeline_factory=pipeline_factory,
+    )
+    if observation is None:
+        raise FileNotFoundError(
+            f"Observation metadata {obs_id}-obs.json was not found in {directory}"
+        )
+
+    sky_queue = Queue()
+    calibration_queue = Queue()
+    retained_scans = [] if retain_sky_scans else None
+    displays = signal_displays or {}
+
+    observation.integrate_cal_scans(
+        dir=directory,
+        sky_q=sky_queue,
+        cal_q=calibration_queue,
+    )
+    observation.synthesise_integrated_scans(
+        sky_q=sky_queue,
+        cal_q=calibration_queue,
+        signal_displays=displays,
+    )
+    observation.integrate_sky_scans(
+        dir=directory,
+        sky_q=sky_queue,
+        cal_q=calibration_queue,
+        processed_scans=retained_scans,
+    )
+    observation.synthesise_integrated_scans(
+        sky_q=sky_queue,
+        cal_q=calibration_queue,
+        signal_displays=displays,
+    )
+
+    return observation, sky_queue, calibration_queue, retained_scans or []
+
 def main():
     """ Parse CLI arguments, load observation metadata, let the user manage the
         blacklist, initialise processing state, and replay scans through the
@@ -823,28 +974,39 @@ def main():
                 break
             blacklist = updated_blacklist
 
-        pipeline_factory = Observation.init_pipeline_factory(input_dir='config/' + args.profile)
-        obs = Observation.from_disk(dir=args.dir, obs_id=args.obs, blacklist=blacklist, pipeline_factory=pipeline_factory)
-        if obs is None:
+        signal_displays = preview_obs.init_signal_displays()
+
+        try:
+            obs, sky_q, cal_q, _ = process_observation(
+                directory=args.dir,
+                obs_id=args.obs,
+                profile=args.profile,
+                blacklist=blacklist,
+                signal_displays=signal_displays,
+            )
+        except FileNotFoundError:
             logger.error(f"OPT: Failed to reload observation metadata for Observation {args.obs} in {args.dir}. Exiting.")
             return
 
-        signal_displays = obs.init_signal_displays()
-
         print(obs.describe_processing_pipeline_factory())
-
-        obs.integrate_cal_scans(dir=args.dir, sky_q=sky_q, cal_q=cal_q)
-        obs.synthesise_integrated_scans(sky_q=sky_q, cal_q=cal_q, signal_displays=signal_displays)
-        obs.integrate_sky_scans(dir=args.dir, sky_q=sky_q, cal_q=cal_q)
-        obs.synthesise_integrated_scans(sky_q=sky_q, cal_q=cal_q, signal_displays=signal_displays)
 
         collapsed_sky_arrays = _collapse_integrated_arrays(obs.int_data_arrays, scan_type=ScanType.SKY)
 
+        sky_scans = [scan for scan in list(sky_q.queue) if scan.get_scan_type() == ScanType.SKY]
+        apr_path = save_aggregated_power_csv(
+            obs_id=obs.obs_model.obs_id,
+            scans=sky_scans,
+            output_dir=args.dir,
+        )
+        print(f"Aggregated SKY power data written to {apr_path}")
+
         obs_display = ObsDisplay(obs_id=obs.obs_model.obs_id)
         obs_display.set_scan(
-            [scan for scan in list(sky_q.queue) if scan.get_scan_type() == ScanType.SKY],
+            sky_scans,
             obs=obs.obs_model,
         )
+        apr_png_path = obs_display.save_integrated_total_power(os.path.splitext(apr_path)[0] + ".png")
+        print(f"Aggregated SKY power plot written to {apr_png_path}")
         obs_display.display()
 
         print_sky_scans(obs=obs.obs_model, sky_q=sky_q, blacklist=blacklist)

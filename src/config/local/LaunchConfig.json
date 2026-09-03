@@ -11,7 +11,7 @@
             },
             "program": "python",
             "args": [
-                "dig/dig.py",
+                "-m", "dig.dig",
                 "--profile", "local",
                 "--entity_id", "dig001",
                 "--tm_host", "127.0.0.1",

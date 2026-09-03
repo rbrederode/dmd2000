@@ -138,6 +138,7 @@ class ProcessingPipelineFactory:
         from sdp.pipeline.steps.tsys import TsysCal
         from sdp.pipeline.steps.rfi import RFIFlag
         from sdp.pipeline.steps.qa import QA
+        from sdp.pipeline.steps.bpf import BandpassFilter
 
         builtin_steps = {
             StepType.NOP.name.lower(): Nop,
@@ -147,6 +148,8 @@ class ProcessingPipelineFactory:
             StepType.TSYS_CAL.name.lower(): TsysCal,
             StepType.RFI_FLAG.name.lower(): RFIFlag,
             StepType.QA.name.lower(): QA,
+            StepType.BANDPASS_FILTER.name.lower(): BandpassFilter,
+            "bpf": BandpassFilter,
         }
         for name, ctor in builtin_steps.items():
             if registry_get(PIPELINE_STEP_NAMESPACE, name) is None:
@@ -171,6 +174,7 @@ class ProcessingPipelineFactory:
         return [
             {
                 "step": config.step,
+                "step_name": config.step.name if isinstance(config.step, StepType) else str(config.step),
                 "params": config.params,
                 "description": self.describe_step(config),
             }

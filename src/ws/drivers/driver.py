@@ -23,6 +23,25 @@ class WeatherStationDriver:
 
         self.ws_model = ws_model
         self._rlock = threading.RLock()
+        self._closed = False
+
+    def close(self) -> None:
+        """Release resources owned by this driver.
+
+        The operation is idempotent and waits for any in-progress sensor read
+        to finish before invoking the implementation-specific cleanup hook.
+        """
+        with self._rlock:
+            if self._closed:
+                return
+
+            try:
+                self._close()
+            finally:
+                self._closed = True
+
+    def _close(self) -> None:
+        """Implementation-specific resource cleanup hook."""
 
     def get_poll_interval_ms(self) -> int:
         return self.ws_model.driver_poll_period or 1000
@@ -36,7 +55,7 @@ class WeatherStationDriver:
             ws_id=self.ws_model.id,
         )
 
-        weather.wind_speed = self.get_windspeed()
+        weather.wind_speed = self.get_wind_speed()
         weather.precipitation = self.get_precipitation()
         weather.wind_direction = self.get_wind_direction()
         weather.temperature = self.get_temperature()
@@ -75,6 +94,8 @@ class WeatherStationDriver:
     def _read_float(self, method_name: str, required: bool) -> Optional[float]:
         try:
             with self._rlock:
+                if self._closed:
+                    raise RuntimeError(f"{type(self).__name__} is closed")
                 value = getattr(self, method_name)()
         except NotImplementedError:
             if required:

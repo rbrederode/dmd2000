@@ -331,6 +331,9 @@ class TelescopeManagerModel(BaseModel):
             "app": AppModel(
                 app_name="tm",
                 app_running=False,
+                app_tracing=True,
+                app_debug=False,
+                app_cmd_port=60002,
                 num_processors=0,
                 queue_size=0,
                 interfaces=[],

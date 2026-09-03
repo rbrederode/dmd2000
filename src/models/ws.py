@@ -512,6 +512,7 @@ class WeatherStationModel(BaseModel):
             "app": AppModel(
                 app_name="ws",
                 app_running=False,
+                app_cmd_port=60005,
                 num_processors=0,
                 queue_size=0,
                 interfaces=[],

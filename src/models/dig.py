@@ -67,6 +67,7 @@ class DigitiserModel(BaseModel):
             "app": AppModel(
                 app_name="dig",
                 app_running=False,
+                app_cmd_port=60006,
                 num_processors=0,
                 queue_size=0,
                 interfaces=[],

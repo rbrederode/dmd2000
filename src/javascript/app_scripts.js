@@ -5,9 +5,9 @@
 * Useful for debugging without manually editing the sheet.
 */
 function testOnEdit() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("OBS DESIGN");;
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("ART");;
   const e = {
-    range: sheet.getRange("B34"),
+    range: sheet.getRange("D16"),
     value: "TRUE"
   };
   onEditHandler(e);
@@ -485,6 +485,37 @@ function onEditHandler(e) {
 
   const ss = SpreadsheetApp.getActive();
   const obsSheet = ss.getSheetByName("DB OBS LIST")
+
+  if (sheetName === "ART") {
+
+    if (col === 2 && row === 16 && e.value === "Resync") {
+      sheet.getRange("C16").clearContent()
+    }
+    
+    if (col === 4 && row === 16 && e.value === "TRUE") {
+      const jsonObj = {};
+
+      const cmd = sheet.getRange("B16").getValue()
+      Logger.log(`Sending command: ${cmd}`)
+
+      jsonObj["_type"] = "Command"
+      jsonObj["app"] = sheet.getRange("A16").getValue()
+      jsonObj["cmd"] = cmd;
+      jsonObj["value"] = sheet.getRange("C16").getValue()
+      jsonObj["user_email"] = userEmail
+      jsonObj["created"] = {
+        "_type": "datetime",
+        "value": new Date().toISOString()
+      }
+      
+      // Reset the checkbox
+      sheet.getRange(row, col).setValue(false);
+      Logger.log(`Reset checkbox reset for row ${row}`);
+      
+      sendWebhook("cmd", JSON.stringify(jsonObj, null, 2));
+      return;
+    }
+  }
 
   // ---------- OBS STORE sheet: Reset Observation ----------
   if (sheetName === "OBS STORE" && col === 10 && row >= 3 && row <= 6 && e.value === "TRUE") {

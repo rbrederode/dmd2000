@@ -111,11 +111,10 @@ class ObservationExecutionTool:
             if event.transition == ObsTransition.START:
 
                 if event.obs.obs_state != ObsState.EMPTY:
-                    logger.warning(
-                        f"Observation Execution Tool ignoring {event.transition.name} transition for "
-                        f"observation {event.obs.obs_id} in unexpected state "
-                        f"{event.obs.obs_state.name}."
-                    )
+                    message = f"Observation Execution Tool ignoring {event.transition.name} transition for " + \
+                              f"observation {event.obs.obs_id} in unexpected state " + \
+                              f"{event.obs.obs_state.name}."
+                    logger.warning(self.tm.set_last_err(message))
                     return action
 
                 # Transition to IDLE where resources can be assigned or released
@@ -128,11 +127,10 @@ class ObservationExecutionTool:
             elif event.transition == ObsTransition.ASSIGN_RESOURCES:
 
                 if event.obs.obs_state != ObsState.IDLE:
-                    logger.warning(
-                        f"Observation Execution Tool ignoring {event.transition.name} transition for "
-                        f"observation {event.obs.obs_id} in unexpected state "
-                        f"{event.obs.obs_state.name}."
-                    )
+                    message = f"Observation Execution Tool ignoring {event.transition.name} transition for " + \
+                              f"observation {event.obs.obs_id} in unexpected state " + \
+                              f"{event.obs.obs_state.name}."
+                    logger.warning(self.tm.set_last_err(message))
                     return action
 
                 event.obs.obs_state = ObsState.IDLE
@@ -149,11 +147,10 @@ class ObservationExecutionTool:
             elif event.transition == ObsTransition.RELEASE_RESOURCES:
 
                 if event.obs.obs_state != ObsState.IDLE:
-                    logger.warning(
-                        f"Observation Execution Tool ignoring {event.transition.name} transition for "
-                        f"observation {event.obs.obs_id} in unexpected state "
-                        f"{event.obs.obs_state.name}."
-                    )
+                    message = f"Observation Execution Tool ignoring {event.transition.name} transition for " + \
+                              f"observation {event.obs.obs_id} in unexpected state " + \
+                              f"{event.obs.obs_state.name}."
+                    logger.warning(self.tm.set_last_err(message))
                     return action
 
                 event.obs.obs_state = ObsState.IDLE
@@ -178,11 +175,10 @@ class ObservationExecutionTool:
             elif event.transition == ObsTransition.CONFIGURE_RESOURCES:
 
                 if event.obs.obs_state not in (ObsState.IDLE, ObsState.CONFIGURING, ObsState.READY):
-                    logger.warning(
-                        f"Observation Execution Tool ignoring CONFIGURE_RESOURCES transition for "
-                        f"observation {event.obs.obs_id} in unexpected state "
-                        f"{event.obs.obs_state.name}."
-                    )
+                    message = f"Observation Execution Tool ignoring CONFIGURE_RESOURCES transition for " + \
+                              f"observation {event.obs.obs_id} in unexpected state " + \
+                              f"{event.obs.obs_state.name}."
+                    logger.warning(self.tm.set_last_err(message))
                     return action
 
                 event.obs.obs_state = ObsState.CONFIGURING
@@ -207,49 +203,47 @@ class ObservationExecutionTool:
             elif event.transition == ObsTransition.READY:
                 
                 if event.obs.obs_state == ObsState.SCANNING:
-                    logger.info(
-                        f"Observation Execution Tool ignoring duplicate READY transition for "
-                        f"observation {event.obs.obs_id} because it is already SCANNING."
-                    )
+                    logger.info(f"Observation Execution Tool ignoring duplicate READY transition for " + \
+                                f"observation {event.obs.obs_id} because it is already SCANNING.")
                     return action
 
                 if event.obs.obs_state not in (ObsState.CONFIGURING, ObsState.READY):
-                    logger.warning(
-                        f"Observation Execution Tool ignoring READY transition for "
-                        f"observation {event.obs.obs_id} in unexpected state "
-                        f"{event.obs.obs_state.name}."
-                    )
+                    message = f"Observation Execution Tool ignoring READY transition for " + \
+                              f"observation {event.obs.obs_id} in unexpected state " + \
+                              f"{event.obs.obs_state.name}."
+                    logger.warning(self.tm.set_last_err(message))
                     return action
 
                 event.obs.obs_state = ObsState.READY
 
                 # Attempt to start scanning, returns true if scanning successfully requested, false otherwise
-                if self.start_scanning(event.obs, action):
+                if self.start_obs_scanning(event.obs, action):
                     action.set_obs_transition(obs=event.obs, transition=ObsTransition.SCAN_STARTED)
+                else:
+                    message = f"Observation Execution Tool aborting observation {event.obs.obs_id} " + \
+                              f"because the Digitiser start scanning request could not be sent."
+                    logger.warning(self.tm.set_last_err(message))
+                    action.set_obs_transition(obs=event.obs, transition=ObsTransition.ABORT)
 
             elif event.transition == ObsTransition.SCAN_STARTED:
                 
                 if event.obs.obs_state == ObsState.CONFIGURING:
-                    logger.warning(
-                        f"Observation Execution Tool received SCAN_STARTED for observation "
-                        f"{event.obs.obs_id} while it was still CONFIGURING. "
-                        "Promoting to READY to absorb a stale configuration event."
-                    )
+                    message = f"Observation Execution Tool received SCAN_STARTED for observation " + \
+                              f"{event.obs.obs_id} while it was still CONFIGURING. " + \
+                              "Promoting to READY to absorb a stale configuration event."
+                    logger.warning(self.tm.set_last_err(message))
                     event.obs.obs_state = ObsState.READY
 
                 elif event.obs.obs_state == ObsState.SCANNING:
-                    logger.info(
-                        f"Observation Execution Tool ignoring duplicate SCAN_STARTED transition "
-                        f"for observation {event.obs.obs_id} because it is already SCANNING."
-                    )
+                    logger.info(f"Observation Execution Tool ignoring duplicate SCAN_STARTED transition " + \
+                                f"for observation {event.obs.obs_id} because it is already SCANNING.")
                     return action
 
                 elif event.obs.obs_state != ObsState.READY:
-                    logger.warning(
-                        f"Observation Execution Tool ignoring SCAN_STARTED transition for "
-                        f"observation {event.obs.obs_id} in unexpected state "
-                        f"{event.obs.obs_state.name}."
-                    )
+                    message = f"Observation Execution Tool ignoring SCAN_STARTED transition for " + \
+                              f"observation {event.obs.obs_id} in unexpected state " + \
+                              f"{event.obs.obs_state.name}."
+                    logger.warning(self.tm.set_last_err(message))
                     return action
 
                 event.obs.obs_state = ObsState.SCANNING
@@ -264,11 +258,10 @@ class ObservationExecutionTool:
             elif event.transition == ObsTransition.SCAN_COMPLETED:
 
                 if event.obs.obs_state != ObsState.SCANNING:
-                    logger.warning(
-                        f"Observation Execution Tool ignoring {event.transition.name} transition for "
-                        f"observation {event.obs.obs_id} in unexpected state "
-                        f"{event.obs.obs_state.name}."
-                    )
+                    message = f"Observation Execution Tool ignoring {event.transition.name} transition for " + \
+                              f"observation {event.obs.obs_id} in unexpected state " + \
+                              f"{event.obs.obs_state.name}."
+                    logger.warning(self.tm.set_last_err(message))
                     return action
 
                 event.obs.obs_state = ObsState.READY
@@ -278,7 +271,7 @@ class ObservationExecutionTool:
 
                 # If the observation is complete, stop scanning and release resources
                 if self.complete_scan(event.obs, action):
-                    self.stop_scanning(event.obs, action)
+                    self.stop_obs_scanning(event.obs, action)
                     action.set_obs_transition(obs=event.obs, transition=ObsTransition.RELEASE_RESOURCES)
                 
                 # If the observation is not complete, prepare for the next scan
@@ -287,18 +280,17 @@ class ObservationExecutionTool:
             elif event.transition == ObsTransition.SCAN_ENDED:
 
                 if event.obs.obs_state != ObsState.SCANNING:
-                    logger.warning(
-                        f"Observation Execution Tool ignoring {event.transition.name} transition for "
-                        f"observation {event.obs.obs_id} in unexpected state "
-                        f"{event.obs.obs_state.name}."
-                    )
+                    message = f"Observation Execution Tool ignoring {event.transition.name} transition for " + \
+                              f"observation {event.obs.obs_id} in unexpected state " + \
+                              f"{event.obs.obs_state.name}."
+                    logger.warning(self.tm.set_last_err(message))
                     return action
 
                 event.obs.obs_state = ObsState.READY
 
                 # If the observation is complete, stop scanning and release resources
                 if self.complete_scan(event.obs, action):
-                    self.stop_scanning(event.obs, action)
+                    self.stop_obs_scanning(event.obs, action)
                     action.set_obs_transition(obs=event.obs, transition=ObsTransition.RELEASE_RESOURCES)
 
                 # If the observation is not complete, prepare for the next scan
@@ -313,7 +305,7 @@ class ObservationExecutionTool:
                 # If resources were assigned and are either configuring, ready or scanning
                 if event.obs.obs_state in [ObsState.CONFIGURING, ObsState.READY, ObsState.SCANNING]:
                     # Stop scanning for this observation
-                    self.stop_scanning(event.obs, action)
+                    self.stop_obs_scanning(event.obs, action)
 
                 # Transition to ABORTED state where resources will be released after a timeout
                 event.obs.obs_state = ObsState.ABORTED
@@ -349,20 +341,21 @@ class ObservationExecutionTool:
 
                     now = datetime.now(timezone.utc)
                     if event.obs.scheduling_block_end is not None and event.obs.scheduling_block_end <= now:
-                        logger.warning(
-                            f"Observation Execution Tool reset observation {event.obs.obs_id}, "
-                            f"but its scheduling block ended at {event.obs.scheduling_block_end}. "
-                            "Resources will not be assigned until the observation is rescheduled."
-                        )
+                        message = f"Observation Execution Tool reset observation {event.obs.obs_id}, " + \
+                                  f"but its scheduling block ended at {event.obs.scheduling_block_end}. " + \
+                                  "Resources will not be assigned until the observation is rescheduled."
+                        logger.warning(self.tm.set_last_err(message))
                         return action
 
                     # Try to assign resources for the next scan if possible
                     action.set_obs_transition(obs=event.obs, transition=ObsTransition.ASSIGN_RESOURCES)
                 else:
-                    logger.warning(f"Observation Execution Tool ignoring reset for observation {event.obs.obs_id} in state {event.obs.obs_state.name}. " + \
-                        "Reset can only be applied to observations in ABORTED, FAULT or IDLE states.")
+                    message = f"Observation Execution Tool ignoring reset for observation {event.obs.obs_id} in state {event.obs.obs_state.name}. " + \
+                              "Reset can only be applied to observations in ABORTED, FAULT or IDLE states."
+                    logger.warning(self.tm.set_last_err(message))
             else:
-                logger.warning(f"Observation Execution Tool received unknown observation event transition: {event.transition}")
+                message = f"Observation Execution Tool received unknown observation event transition: {event.transition}"
+                logger.warning(self.tm.set_last_err(message))
         
         return action
 
@@ -400,10 +393,8 @@ class ObservationExecutionTool:
                 name=f"obs_start_timer", 
                 timer_action=milliseconds_until_start,
                 echo_data=next_obs))
-            logger.info(
-                f"Observation Execution Tool next observation {next_obs.obs_id} "
-                f"starting at {next_obs.scheduling_block_start} in {fmt_duration(seconds_until_start)} HH:MM:SS."
-            )
+            logger.info(f"Observation Execution Tool next observation {next_obs.obs_id} " + \
+                        f"starting at {next_obs.scheduling_block_start} in {fmt_duration(seconds_until_start)} HH:MM:SS.")
             return True
 
         return False
@@ -420,37 +411,46 @@ class ObservationExecutionTool:
 
         if dsh_model is None:
 
-            logger.warning(
-                f"Observation Execution Tool could not find Dish {obs.dsh_id} in Dish Manager model. "
-                f"Cannot assign dish for observation {obs.obs_id}. Aborting observation.")
+            message = (f"Observation Execution Tool could not find Dish {obs.dsh_id} in Dish Manager model. "
+                       f"Cannot assign dish for observation {obs.obs_id}. Aborting observation.")
+
+            logger.warning(self.tm.set_last_err(message))
             action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
             return False
 
         elif dsh_model.capability not in [Capability.OPERATE_FULL, Capability.OPERATE_DEGRADED]:
-            logger.warning(
-                f"Observation Execution Tool found Dish {obs.dsh_id}, but it is not currently operational. Capability {dsh_model.capability.name}. "
-                f"Cannot assign dish for observation {obs.obs_id}. Aborting observation.")
+
+            message = (f"Observation Execution Tool found Dish {obs.dsh_id}, but it is not currently operational. "
+                       f"Capability {dsh_model.capability.name}. Cannot assign dish for observation {obs.obs_id}. Aborting observation.")
+
+            logger.warning(self.tm.set_last_err(message))
             action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
             return False
 
         elif dsh_model.mode not in [DishMode.STANDBY_LP, DishMode.STANDBY_FP, DishMode.OPERATE, DishMode.CONFIG]:
-            logger.warning(
-                f"Observation Execution Tool found Dish {obs.dsh_id}, but it is not in an operational mode. Current mode {dsh_model.mode.name}. "
-                f"Cannot assign dish for observation {obs.obs_id}. Aborting observation.")
+
+            message = (f"Observation Execution Tool found Dish {obs.dsh_id}, but it is not in an operational mode. "
+                       f"Current mode {dsh_model.mode.name}. Cannot assign dish for observation {obs.obs_id}. Aborting observation.")
+            
+            logger.warning(self.tm.set_last_err(message))
             action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
             return False
 
         if self.telmodel.dsh_mgr.tm_connected != CommunicationStatus.ESTABLISHED:
-            logger.warning(
-                f"Observation Execution Tool is not connected to Dish Manager. "
-                f"Cannot assign dish for observation {obs.obs_id}. Aborting observation.")
+
+            message = (f"Observation Execution Tool is not connected to Dish Manager. "
+                       f"Cannot assign dish for observation {obs.obs_id}. Aborting observation.")
+
+            logger.warning(self.tm.set_last_err(message))
             action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
             return False
 
         elif self.telmodel.dsh_mgr.app.health not in [HealthState.OK, HealthState.DEGRADED]:
-            logger.warning(
-                f"Observation Execution Tool found Dish Manager, but it is not currently healthy. Health state {self.telmodel.dsh_mgr.app.health.name}. "
-                f"Cannot assign resources to observation {obs.obs_id}. Aborting observation.")
+
+            message = (f"Observation Execution Tool found Dish Manager, but it is not currently healthy. "
+                       f"Health state {self.telmodel.dsh_mgr.app.health.name}. Cannot assign dish for observation {obs.obs_id}. Aborting observation.")
+            
+            logger.warning(self.tm.set_last_err(message))
             action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
             return False
 
@@ -458,33 +458,48 @@ class ObservationExecutionTool:
         dig_model = next((dig for dig in self.telmodel.dig_store.dig_list if dig.dig_id == dsh_model.dig_id), None)
 
         if dig_model is None:
-            logger.warning(
-                f"Observation Execution Tool found Dish {obs.dsh_id}, but it is not associated with a Digitiser. "
-                f"Cannot assign digitiser to observation {obs.obs_id}. Aborting observation.")
+
+            message = (f"Observation Execution Tool could not find Digitiser {dsh_model.dig_id} associated with Dish {obs.dsh_id}. "
+                       f"Cannot assign digitiser for observation {obs.obs_id}. Aborting observation.")
+
+            logger.warning(self.tm.set_last_err(message))
             action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
             return False
 
         elif dig_model.app.health not in [HealthState.OK, HealthState.DEGRADED]:
-            logger.warning(
-                f"Observation Execution Tool found Digitiser {dig_model.dig_id}, but it is not currently healthy. Health state {dig_model.app.health.name}. "
-                f"Cannot assign digitiser to observation {obs.obs_id}. Aborting observation.")
+
+            message = (f"Observation Execution Tool found Digitiser {dig_model.dig_id}, but it is not currently healthy. Health state {dig_model.app.health.name}. "
+                       f"Cannot assign digitiser to observation {obs.obs_id}. Aborting observation.")
+            
+            logger.warning(self.tm.set_last_err(message))
             action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
             return False
 
         sdp = self.telmodel.sdp
         if self.telmodel.sdp.tm_connected != CommunicationStatus.ESTABLISHED:
-            logger.warning(
-                f"Observation Execution Tool is not connected to Science Data Processor. "
-                f"Cannot assign resources to observation {obs.obs_id}. Aborting observation.")
+            
+            message = (f"Observation Execution Tool is not connected to Science Data Processor. "
+                       f"Cannot assign resources to observation {obs.obs_id}. Aborting observation.")
+
+            logger.warning(self.tm.set_last_err(message))
             action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
             return False
 
         elif sdp.app.health not in [HealthState.OK, HealthState.DEGRADED]:
-            logger.warning(
-                f"Observation Execution Tool found Science Data Processor, but it is not currently healthy. Health state {sdp.app.health.name}. "
-                f"Cannot assign resources to observation {obs.obs_id}. Aborting observation.")
+            
+            message = (f"Observation Execution Tool found Science Data Processor, but it is not currently healthy. Health state {sdp.app.health.name}. "
+                       f"Cannot assign resources to observation {obs.obs_id}. Aborting observation.")
+            
+            logger.warning(self.tm.set_last_err(message))
             action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
             return False
+
+        # Snapshot the resolved dish location in the observation metadata. This
+        # keeps archived observations self-contained if the dish model changes.
+        obs.latitude = dsh_model.latitude
+        obs.longitude = dsh_model.longitude
+        obs.height = dsh_model.height
+        obs.last_update = datetime.now(timezone.utc)
 
         with self._rlock:
 
@@ -549,10 +564,9 @@ class ObservationExecutionTool:
             if alloc.state == AllocationState.ACTIVE:
                 released_active_resources = True
 
-            logger.info(
-                f"Observation Execution Tool releasing resource {alloc.resource_type} {alloc.resource_id} "
-                f"allocated to {alloc.allocated_type} {alloc.allocated_id} in state {alloc.state.name} "
-                f"with expiry {alloc.expires}")
+            logger.info(f"Observation Execution Tool releasing resource {alloc.resource_type} {alloc.resource_id} " + \
+                        f"allocated to {alloc.allocated_type} {alloc.allocated_id} in state {alloc.state.name} " + \
+                        f"with expiry {alloc.expires}")
 
             self.telmodel.tel_mgr.allocations.release_allocation(alloc)
             
@@ -570,8 +584,11 @@ class ObservationExecutionTool:
         target_config = obs.get_target_config_by_index(obs.tgt_idx)
 
         if target_config is None:
-            logger.error(f"Observation Execution Tool could not find next target config {obs.tgt_idx} to execute for observation {obs.obs_id}. " + \
-                f"Nothing to configure.")
+
+            message = (f"Observation Execution Tool could not find next target config {obs.tgt_idx} to execute for observation {obs.obs_id}. "
+                       f"Nothing to configure.")
+
+            logger.error(self.tm.set_last_err(message))
             return False
 
         # Get the current target scan set and specific target scan for the observation
@@ -579,8 +596,11 @@ class ObservationExecutionTool:
         target_scan = obs.get_current_tgt_scan()
 
         if target_scan is None:
-            logger.error(f"Observation Execution Tool could not find target scan {obs.tgt_idx}-{obs.tgt_scan} to execute for observation {obs.obs_id}. " + \
-                f"Nothing to configure.")
+            
+            message = (f"Observation Execution Tool could not find target scan {obs.tgt_idx}-{obs.tgt_scan} to execute for observation {obs.obs_id}. "
+                       f"Nothing to configure.")
+
+            logger.error(self.tm.set_last_err(message))
             return False
 
         # Lookup the current target for the observation
@@ -588,6 +608,8 @@ class ObservationExecutionTool:
 
         # Lookup the dish model for this observation
         dsh_model = next((dsh for dsh in self.telmodel.dsh_mgr.dish_store.dish_list if dsh.dsh_id == obs.dsh_id), None)
+
+        on_target = None
 
         if dsh_model is not None and target is not None:
 
@@ -610,6 +632,13 @@ class ObservationExecutionTool:
             else:
                 logger.info(f"Observation Execution Tool found Dish already configured for correct target for observation {obs.obs_id} with index {obs.tgt_idx}-{obs.tgt_scan}. " +
                     f"Dish target ID {dsh_model.tgt_id} matches expected target ID {obs.obs_id}-{obs.tgt_idx}. On Target {on_target}")
+
+                # Matching the target ID only means that the target has been configured. For sky
+                # acquisition the dish must also finish slewing (or enter TRACK/SCAN as
+                # appropriate). A LOAD acquisition does not observe the sky, so it may proceed
+                # while the dish is moving.
+                if not on_target and target_config.feed_type != Feed.LOAD:
+                    already_configured = False
   
             if len(new_dsh_config) > 0:
 
@@ -630,6 +659,12 @@ class ObservationExecutionTool:
             
         # Lookup the digitiser model for this observation
         dig_model = next((dig for dig in self.telmodel.dig_store.dig_list if dig.dig_id == dsh_model.dig_id), None)
+
+        if dig_model is not None and dig_model.tm_connected != CommunicationStatus.ESTABLISHED:
+            already_configured = False
+
+            message = (f"Observation Execution Tool found Digitiser {dig_model.dig_id} is not connected while configuring observation {obs.obs_id}. ")
+            logger.warning(self.tm.set_last_err(message))
 
         # Define digitiser config parameter mappings: (digitiser attribute, source object, source attribute)
         config_params = [
@@ -659,9 +694,21 @@ class ObservationExecutionTool:
                     old_dig_config[dig_attr] = current
                     new_dig_config[dig_attr] = desired
 
-            desired_scanning = {'obs_id': obs.obs_id, 'tgt_idx': obs.tgt_idx, 'freq_scan': target_scan.freq_scan}
+            # Determine if the digitiser is allowed to acquire data based on whether the dish is on target or if the feed type is LOAD
+            acquisition_allowed = (
+                on_target is True
+                or (on_target is False and target_config.feed_type == Feed.LOAD)
+            )
+            # Set the desired scanning metadata to the desired values if acquisition is allowed, otherwise set it to False to indicate that scanning should not occur.
+            desired_scanning = (
+                {'obs_id': obs.obs_id, 'tgt_idx': obs.tgt_idx, 'freq_scan': target_scan.freq_scan}
+                if acquisition_allowed
+                else False
+            )
             # Keep active digitiser sample metadata aligned with the target scan,
-            # even when no other digitiser hardware setting changes.
+            # even when no other digitiser hardware setting changes. Stop an active
+            # digitiser while the dish has the wrong target, or while a sky scan is
+            # waiting to get on target. LOAD acquisition may continue while slewing.
             if dig_model.scanning is not False and dig_model.scanning != desired_scanning:
                 old_dig_config['scanning'] = dig_model.scanning
                 new_dig_config['scanning'] = desired_scanning
@@ -707,10 +754,10 @@ class ObservationExecutionTool:
                 if dig_attr == 'gain':
                     desired = self._resolve_gain_for_config(obs, target_config, target_scan_set, target_scan)
                     if TargetConfig.is_auto_gain_token(desired):
-                        logger.info(
-                            f"Observation Execution Tool deferring Science Data Processor gain update for observation {obs.obs_id} "
-                            f"until Digitiser auto gain token {desired} is resolved."
-                        )
+
+                        logger.info(f"Observation Execution Tool deferring Science Data Processor gain update for observation {obs.obs_id} " + \
+                                    f"until Digitiser auto gain token {desired} is resolved.")
+
                         continue
                 if current != desired:
                     old_scan_config[dig_attr] = current
@@ -753,12 +800,15 @@ class ObservationExecutionTool:
                 logger.info(f"Observation Execution Tool found Science Data Processor already configured for observation {obs.obs_id} with index {obs.tgt_idx}-{obs.tgt_scan}")
 
         if dsh_model is None or dig_model is None or self.telmodel.sdp is None:
-            raise XSoftwareFailure(f"Observation Execution Tool could not configure missing critical resource for observation {obs.obs_id}. " + \
-                f"Dish found: {dsh_model is not None}, Digitiser found: {dig_model is not None}, Science Data Processor found: {self.telmodel.sdp is not None}.")
+
+            message = (f"Observation Execution Tool could not configure missing critical resource for observation {obs.obs_id}. " + \
+                       f"Dish found: {dsh_model is not None}, Digitiser found: {dig_model is not None}, Science Data Processor found: {self.telmodel.sdp is not None}.")
+
+            raise XSoftwareFailure(self.tm.set_last_err(message))
 
         return already_configured
 
-    def start_scanning(self, obs, action) -> bool:
+    def start_obs_scanning(self, obs, action) -> bool:
         """ Process an observation start scanning request.
             Returns true if start scanning was requested, false otherwise.
         """
@@ -772,6 +822,15 @@ class ObservationExecutionTool:
   
         # Lookup the digitiser model for this observation
         dig_model = next((dig for dig in self.telmodel.dig_store.dig_list if dig.dig_id == dsh_model.dig_id), None)
+
+        if dig_model is not None and dig_model.tm_connected != CommunicationStatus.ESTABLISHED:
+
+            message = f"Observation Execution Tool cannot start scanning observation {obs.obs_id} " + \
+                      f"because Digitiser {dig_model.dig_id} is not connected."
+
+            logger.warning(self.tm.set_last_err(message))
+            return False
+
         # If we found a valid digitiser, send it a start scanning instruction
         if dig_model is not None:
 
@@ -801,12 +860,13 @@ class ObservationExecutionTool:
                 action = self.tm.update_dig_configuration(old_dig_config, new_dig_config, action)
 
         if dsh_model is None or dig_model is None:
-            raise XSoftwareFailure(f"Observation Execution Tool could not start scanning on missing critical resource for observation {obs.obs_id}. " + \
-                f"Dish found: {dsh_model is not None}, Digitiser found: {dig_model is not None}.")
+            message = f"Observation Execution Tool could not start scanning on missing critical resource for observation {obs.obs_id}. " + \
+                       f"Dish found: {dsh_model is not None}, Digitiser found: {dig_model is not None}."
+            raise XSoftwareFailure(self.tm.set_last_err(message))
 
         return True
 
-    def stop_scanning(self, obs, action) -> bool:
+    def stop_obs_scanning(self, obs, action) -> bool:
         """ Process an observation stop scanning request. 
             This is used when an observation has completed all scans or is aborted and needs to stop scanning immediately.
             Returns true if stop scanning was requested, false otherwise.
@@ -882,8 +942,9 @@ class ObservationExecutionTool:
             action = self.tm.update_sdp_configuration(old_sdp_config, new_sdp_config, action)
 
         if dsh_model is None or dig_model is None or self.telmodel.sdp is None:
-            raise XSoftwareFailure(f"Observation Execution Tool could not stop scanning on missing critical resource for observation {obs.obs_id}. " + \
-                f"Dish found: {dish_model is not None}, Digitiser found: {dig_model is not None}, SDP found: {self.telmodel.sdp is not None}.")
+            message = f"Observation Execution Tool could not stop scanning on missing critical resource for observation {obs.obs_id}. " + \
+                       f"Dish found: {dsh_model is not None}, Digitiser found: {dig_model is not None}, SDP found: {self.telmodel.sdp is not None}."
+            raise XSoftwareFailure(self.tm.set_last_err(message))
 
         return True
 
@@ -920,8 +981,8 @@ class ObservationExecutionTool:
             # Trigger transition to configure resources (if needed)
             action.set_obs_transition(obs=obs, transition=ObsTransition.CONFIGURE_RESOURCES)
         else:
-            logger.error(f"Observation Execution Tool could not find current target scan set for observation {obs.obs_id} with index {obs.tgt_idx}-{obs.tgt_scan}." + \
-                "Aborting observation.")
+            message = f"Observation Execution Tool could not find current target scan set for observation {obs.obs_id} with index {obs.tgt_idx}-{obs.tgt_scan}. Aborting observation."
+            logger.error(self.tm.set_last_err(message))
             action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
 
         return False

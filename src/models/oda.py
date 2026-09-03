@@ -6,42 +6,9 @@ from schema import Schema, And, Or, Use, SchemaError
 
 from models.base import BaseModel
 from models.obs import ObsModel, ObsState
-from util.format import parse_duration
+from util.convert import duration_to_seconds, datetime_to_dict
 
 # Models comprising the Observation Data Archive (ODA)
-
-def _datetime_dict(value: datetime) -> dict:
-    return {"_type": "datetime", "value": value.isoformat()}
-
-def _normalise_schedule_time(value, now: datetime):
-    """Convert observation-file schedule aliases into serialized datetimes."""
-    if isinstance(value, dict):
-        if value.get("_type") == "relativetime":
-            relative_value = value.get("value", "00:00:00")
-            return _datetime_dict(now + timedelta(seconds=parse_duration(relative_value)))
-
-    return value
-
-def _normalise_observation_schedule(observation_data, now: datetime):
-    """Normalise relative scheduling fields in ObsModel dictionaries before deserialisation."""
-    if isinstance(observation_data, list):
-        for obs in observation_data:
-            _normalise_observation_schedule(obs, now)
-        return observation_data
-
-    if not isinstance(observation_data, dict):
-        return observation_data
-
-    if observation_data.get("_type") == "ObsList":
-        _normalise_observation_schedule(observation_data.get("obs_list", []), now)
-        return observation_data
-
-    if observation_data.get("_type") == "ObsModel":
-        for field_name in ("scheduling_block_start", "scheduling_block_end"):
-            if field_name in observation_data:
-                observation_data[field_name] = _normalise_schedule_time(observation_data[field_name], now)
-
-    return observation_data
 
 class ScanStore(BaseModel):
     """A class representing the scan store."""
@@ -120,8 +87,8 @@ class ObsList(BaseModel):
         return None
 
     @classmethod
-    def from_disk(cls, observation_file: str):
-        """Load an observation definition file and normalise it into an ObsList instance.
+    def from_data(cls, observation_data, now: datetime | None = None):
+        """Normalise loaded observation data into an ObsList instance.
 
         Accepts:
         - an ObsList JSON object
@@ -129,14 +96,8 @@ class ObsList(BaseModel):
         - a raw list of observation dictionaries
         """
 
-        obs_path = Path(observation_file).expanduser()
-        if not obs_path.is_absolute():
-            obs_path = Path.cwd() / obs_path
-
-        with obs_path.open("r", encoding="utf-8") as f:
-            observation_data = json.load(f)
-
-        observation_data = _normalise_observation_schedule(observation_data, datetime.now(timezone.utc))
+        now = now or datetime.now(timezone.utc)
+        observation_data = _normalise_observation_schedule(observation_data, now)
 
         if isinstance(observation_data, dict):
             model_type = observation_data.get("_type")
@@ -148,7 +109,7 @@ class ObsList(BaseModel):
                     "obs_list": [observation_data],
                     "last_update": {
                         "_type": "datetime",
-                        "value": datetime.now(timezone.utc).isoformat()
+                        "value": now.isoformat()
                     }
                 })
 
@@ -158,14 +119,30 @@ class ObsList(BaseModel):
                 "obs_list": observation_data,
                 "last_update": {
                     "_type": "datetime",
-                    "value": datetime.now(timezone.utc).isoformat()
+                    "value": now.isoformat()
                 }
             })
 
         raise ValueError(
-            f"ODA encountered unsupported observation file format in {obs_path}. "
+            "ODA encountered unsupported observation data format. "
             "Expected an ObsList dict, ObsModel dict, or a list of observations."
         )
+
+    @classmethod
+    def from_disk(cls, observation_file: str):
+        """Load an observation definition file and normalise it into an ObsList instance."""
+
+        obs_path = Path(observation_file).expanduser()
+        if not obs_path.is_absolute():
+            obs_path = Path.cwd() / obs_path
+
+        with obs_path.open("r", encoding="utf-8") as f:
+            observation_data = json.load(f)
+
+        try:
+            return cls.from_data(observation_data)
+        except ValueError as exc:
+            raise ValueError(f"{exc} Source file: {obs_path}.") from exc
 
 class ODAModel(BaseModel):
     """A class representing the observation data archive."""
@@ -195,6 +172,49 @@ class ODAModel(BaseModel):
                 kwargs.setdefault(key, value)
 
         super().__init__(**kwargs)
+
+def _normalise_schedule_time(value, now: datetime):
+    """Convert observation-file schedule aliases into serialized datetimes.
+    
+        This function checks if the provided value is a dictionary with a "_type" key of "relativetime". 
+        If so, it converts "relativetime" into an absolute datetime by adding the specified duration to 
+        the current time (now). 
+        
+        The result is returned as a dictionary with a "_type" of "datetime" and an ISO 8601 formatted string.
+    
+    """
+    if isinstance(value, dict):
+        if value.get("_type") == "relativetime":
+            relative_value = value.get("value", "00:00:00")
+            return datetime_to_dict(now + timedelta(seconds=duration_to_seconds(relative_value)))
+
+    return value
+
+def _normalise_observation_schedule(observation_data, now: datetime):
+    """Normalise relative scheduling fields in ObsModel dictionaries before deserialisation.
+    
+        This function processes observation data, which can be a list of observations, a single observation dictionary,
+        or an ObsList dictionary. It normalises any relative scheduling fields (like "scheduling_block_start" and
+        "scheduling_block_end") into absolute datetime dictionaries based on the current time (now).
+    """
+    if isinstance(observation_data, list):
+        for obs in observation_data:
+            _normalise_observation_schedule(obs, now)
+        return observation_data
+
+    if not isinstance(observation_data, dict):
+        return observation_data
+
+    if observation_data.get("_type") == "ObsList":
+        _normalise_observation_schedule(observation_data.get("obs_list", []), now)
+        return observation_data
+
+    if observation_data.get("_type") == "ObsModel":
+        for field_name in ("scheduling_block_start", "scheduling_block_end"):
+            if field_name in observation_data:
+                observation_data[field_name] = _normalise_schedule_time(observation_data[field_name], now)
+
+    return observation_data
 
 if __name__ == "__main__":
     

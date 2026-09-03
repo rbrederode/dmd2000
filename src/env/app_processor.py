@@ -5,8 +5,9 @@ from datetime import datetime, timezone
 import time
 import json
 from api.api import API
+from api import protocol as dmd_protocol
 from ipc.tcp_server import TCPServer
-from ipc.message import AppMessage, APIMessage
+from ipc.message import Message, AppMessage, APIMessage
 from ipc.action import Action
 from models.base import BaseModel
 from models.comms import InterfaceType
@@ -22,29 +23,28 @@ class AppProcessor(Processor):
     def __init__(self, name=None, event_q=None, driver=None):
         super().__init__(name=name, event_q=event_q)
         self.driver = driver
-        self.debug = False
 
     def initialise_app(self):
 
         Processor.single_thread()
+        try:
+            handler_method = "process_init"
 
-        handler_method = "process_init"
-
-        self.performActions(getattr(self.driver, handler_method)())
-        logger.debug(f"AppProcessor {self.name} initialised")
-
-        Processor.free_thread()
+            self.performActions(getattr(self.driver, handler_method)())
+            logger.debug(f"AppProcessor {self.name} initialised")
+        finally:
+            Processor.free_thread()
 
     def process_config_event(self, event: ConfigEvent):
 
         Processor.single_thread()
+        try:
+            handler_method = "process_config"
 
-        handler_method = "process_config"
-
-        self.performActions(getattr(self.driver, handler_method)(event))
-        logger.debug(f"AppProcessor {self.name} config resync'ed")
-
-        Processor.free_thread()
+            self.performActions(getattr(self.driver, handler_method)(event))
+            logger.debug(f"AppProcessor {self.name} config resync'ed")
+        finally:
+            Processor.free_thread()
 
     def process_status_update(self, event: StatusUpdateEvent):
         
@@ -182,9 +182,23 @@ class AppProcessor(Processor):
                 try:
                     # Unpack the event's data into an API message
                     api_msg.from_data(event.data)
-                    api_msg.add_echo_api_header()
 
-                    api, endpoint, interface_type = self.driver.get_interface(api_msg.get_from_system())
+                    # Select the API from the local endpoint on which the bytes
+                    # arrived.  This is important for the generic command
+                    # endpoint: its clients identify themselves as "cmd", but
+                    # command messages are addressed to any application.
+                    interface_name = getattr(event.local_sap, "description", None)
+                    if not interface_name:
+                        # Preserve compatibility with simple endpoints used by
+                        # tests and utilities which predate named local SAPs.
+                        interface_name = api_msg.get_from_system()
+                    api, endpoint, interface_type = self.driver.get_interface(interface_name)
+
+                    # Trace the message as received, before adding local echo metadata
+                    # or translating it to the locally supported API version.
+                    self._trace_message("RX", api_msg, api_msg.get_from_system(), event.timestamp)
+
+                    api_msg.add_echo_api_header()
 
                     # Validate and translate the API message to the driver's API version
                     api_transl_msg = api.translate(api_msg.get_json_api_header())
@@ -206,8 +220,34 @@ class AppProcessor(Processor):
 
                     # Handle debug get/set requests
                     api_call = api_msg.get_api_call()
-                    if api_call['msg_type'] == 'req' and api_call['action_code'] in ('set', 'get') and api_call['property'] in ("debug"):
+                    if api_call.get('msg_type') == dmd_protocol.MSG_TYPE_REQ and api_call.get('action_code') in (dmd_protocol.ACTION_CODE_SET, dmd_protocol.ACTION_CODE_GET) and api_call.get('property') == dmd_protocol.PROPERTY_DEBUG:
                         rsp_msg = self._handle_debug_req(api_msg, api_call)
+                        self.performActions(Action().set_msg_to_remote(rsp_msg), event.local_sap, event.remote_conn, event.remote_addr)
+                        return True
+
+                    # Handle application-wide trace get/set requests
+                    if api_call.get('msg_type') == dmd_protocol.MSG_TYPE_REQ and api_call.get('action_code') in (dmd_protocol.ACTION_CODE_SET, dmd_protocol.ACTION_CODE_GET) and api_call.get('property') == dmd_protocol.PROPERTY_TRACE:
+                        rsp_msg = self._handle_trace_req(api_msg, api_call)
+                        self.performActions(Action().set_msg_to_remote(rsp_msg), event.local_sap, event.remote_conn, event.remote_addr)
+                        return True
+
+                    # Resync is part of the common command API.  Applications
+                    # may opt in by implementing a synchronous
+                    # process_resync() hook.
+                    if api_call.get('msg_type') == dmd_protocol.MSG_TYPE_REQ and api_call.get('action_code') == dmd_protocol.ACTION_CODE_RESYNC:
+                        rsp_msg = self._handle_resync_req(api_msg)
+                        self.performActions(Action().set_msg_to_remote(rsp_msg), event.local_sap, event.remote_conn, event.remote_addr)
+                        return True
+
+                    # Only generic commands are accepted on the command port;
+                    # never dispatch unrecognised input into an application
+                    # handler such as process_cmd_msg().
+                    if interface_name == dmd_protocol.CMD:
+                        rsp_msg = self._construct_rsp_msg(
+                            api_msg,
+                            dmd_protocol.STATUS_ERROR,
+                            "Unsupported command request",
+                        )
                         self.performActions(Action().set_msg_to_remote(rsp_msg), event.local_sap, event.remote_conn, event.remote_addr)
                         return True
 
@@ -221,7 +261,7 @@ class AppProcessor(Processor):
 
                         # If no entity match (or entity unknown), respond with an error
                         if not entity_match:
-                            logger.warning(f"AppProcessor {self.name} received API message for unknown Entity {api_msg.get_entity()}. Expected Entity {entity_id}!\n{event}")
+                            logger.warning(f"AppProcessor {self.name} received API message for unknown Entity {api_msg.get_entity()} received from {event.remote_addr}. Expected Entity {entity_id}!\n{event}")
                             rsp_msg = self._construct_rsp_msg(api_msg, 'error', f"Received API message for unknown entity {driver_app_name}:{api_msg.get_entity()}. Check configuration!")
                             self.performActions(Action().set_msg_to_remote(rsp_msg), event.local_sap, event.remote_conn, event.remote_addr)
                             return True
@@ -272,6 +312,8 @@ class AppProcessor(Processor):
 
             elif isinstance(event, events.ConnectEvent):
 
+                self._trace_connection(event, connected=True)
+
                 api, endpoint, interface_type = self.driver.get_interface(event.local_sap.description)
 
                 # Ensure the connection is coming from a known entity for ENTITY_DRIVER interfaces
@@ -303,6 +345,8 @@ class AppProcessor(Processor):
                 return True
                 
             elif isinstance(event, events.DisconnectEvent):
+
+                self._trace_connection(event, connected=False)
                 
                 api, endpoint, interface_type = self.driver.get_interface(event.local_sap.description)
 
@@ -447,6 +491,7 @@ class AppProcessor(Processor):
             if endpoint == local_sap and remote_conn is not None:
 
                 endpoint.send(msg_to_send, remote_conn)  # Send the message on the originating connection (socket)
+                self._trace_message("TX", msg_to_send, dest_system)
 
             elif interface_type in [InterfaceType.ENTITY_DRIVER]:
                 entity_id = msg.get_entity()
@@ -461,8 +506,10 @@ class AppProcessor(Processor):
                     conn, addr = self.driver.entity_connection_map[entity_id]
 
                 endpoint.send(msg_to_send, conn)         # Send the message on the entity connection (socket)
+                self._trace_message("TX", msg_to_send, dest_system)
             else:
                 endpoint.send(msg_to_send)               # Send the message on the registered endpoint's default connection (socket)
+                self._trace_message("TX", msg_to_send, dest_system)
         
             action.msgs_to_remote.remove(msg)  # Remove the msg from the list                
             
@@ -494,48 +541,161 @@ class AppProcessor(Processor):
             action.obs_transitions.remove(obs_transition)  # Remove the observation transition action from the list
             logger.debug(f"AppProcessor {self.name} processed observation transition action: {obs_transition}")
 
-    def _handle_debug_req(self, api_msg: APIMessage, api_call: dict) -> APIMessage:
-        
-        prop_name = api_call['action_code'] + '_' + api_call['property']
-        prop_value = api_call['value']
+    def _trace_message(self, direction: str, msg: Message, interface: str, timestamp=None):
+        """Write an API message to the application's trace when enabled."""
 
+        app_model = getattr(self.driver, 'app_model', None)
+        if app_model is None or not getattr(app_model, 'app_tracing', False):
+            return
+
+        try:
+            trace = getattr(self.driver, 'trace', None)
+            if trace is None:
+                raise RuntimeError("application has no trace manager")
+
+            trace.log_message(direction, msg, interface, timestamp)
+        except Exception as e:
+            # Tracing is diagnostic and must never prevent message processing.
+            logger.warning(
+                "AppProcessor %s failed to trace %s message on interface %s: %s",
+                self.name,
+                direction,
+                interface,
+                e,
+            )
+
+    def _trace_connection(self, event, connected: bool) -> None:
+        """Write a connection lifecycle event to the trace when enabled."""
+
+        app_model = getattr(self.driver, "app_model", None)
+        if app_model is None or not getattr(app_model, "app_tracing", False):
+            return
+
+        try:
+            trace = getattr(self.driver, "trace", None)
+            if trace is None:
+                raise RuntimeError("application has no trace manager")
+
+            trace.log_connection(
+                connected,
+                event.local_sap,
+                event.remote_addr,
+                event.timestamp,
+            )
+        except Exception as e:
+            # Tracing is diagnostic and must never prevent event processing.
+            logger.warning(
+                "AppProcessor %s failed to trace %s event on interface %s: %s",
+                self.name,
+                "connect" if connected else "disconnect",
+                getattr(event.local_sap, "description", event.local_sap),
+                e,
+            )
+
+    def _handle_trace_req(self, api_msg: APIMessage, api_call: dict) -> APIMessage:
+        """Handle application-wide trace get and set requests."""
+
+        action_code = api_call.get('action_code')
+        prop_value = api_call.get('value')
         status = 'success'
 
-        if prop_name in ('set_debug') and prop_value in ('on'):
-
-            self.debug = True
-            logger.setLevel(logging.DEBUG)
-            logger.info(f"AppProcessor {self.name} set debug level to ON")
-            message = f"Debug level set to ON"
-
-        elif prop_name in ('set_debug') and prop_value in ('off'):
-            
-            self.debug = False
-            logger.setLevel(logging.INFO)
-            logger.info(f"AppProcessor {self.name} set debug level to OFF")
-            message = f"Debug level set to OFF"
-
-        elif prop_name in ('get_debug'):
-            
-            logger.info(f"AppProcessor {self.name} debug level is { 'ON' if self.debug else 'OFF' }")
-            message = f"Debug level is { 'ON' if self.debug else 'OFF' }"
-
+        if action_code == 'set' and prop_value == 'ON':
+            try:
+                self.driver.trace.start("Enabled by API request")
+                self.driver.app_model.app_tracing = True
+                message = "Tracing set to ON"
+            except Exception as e:
+                status = 'error'
+                message = f"Failed to enable tracing: {e}"
+                logger.exception(self.driver.set_last_err(message))
+        elif action_code == 'set' and prop_value == 'OFF':
+            try:
+                self.driver.trace.stop("Disabled by API request")
+                self.driver.app_model.app_tracing = False
+                message = "Tracing set to OFF"
+            except Exception as e:
+                status = 'error'
+                message = f"Failed to disable tracing: {e}"
+                logger.exception(self.driver.set_last_err(message))
+        elif action_code == 'get':
+            message = f"Tracing is {'ON' if self.driver.app_model.app_tracing else 'OFF'}"
         else:
-
             status = 'error'
-            message = f"Unknown property or value: {prop_name}={prop_value}"
+            message = f"Unknown trace action or value: {action_code}={prop_value}"
             logger.warning(f"AppProcessor {self.name} {message}")
-        
-        rsp_msg = APIMessage(api_msg.get_json_api_header())
-        rsp_msg.switch_from_to()
-        
-        api_call = rsp_msg.get_api_call()
-        api_call['status'] = status
-        api_call['message'] = message
-        api_call['value'] = 'ON' if self.debug else 'OFF'
 
-        rsp_msg.set_api_call(api_call)
+        rsp_msg = self._construct_rsp_msg(api_msg, status, message)
+        rsp_call = rsp_msg.get_api_call()
+        rsp_call['property'] = 'trace'
+        rsp_call['value'] = 'ON' if self.driver.app_model.app_tracing else 'OFF'
+        rsp_msg.set_api_call(rsp_call)
+
         return rsp_msg
+
+    def _handle_debug_req(self, api_msg: APIMessage, api_call: dict) -> APIMessage:
+        """Handle application-wide debug get and set requests."""
+
+        action_code = api_call.get('action_code')
+        prop_value = api_call.get('value')
+        if isinstance(prop_value, str):
+            prop_value = prop_value.upper()
+        status = dmd_protocol.STATUS_SUCCESS
+
+        if action_code == dmd_protocol.ACTION_CODE_SET and prop_value in ('ON', 'OFF'):
+            debug_enabled = prop_value == 'ON'
+            self.driver.app_model.app_debug = debug_enabled
+            logging.getLogger().setLevel(
+                logging.DEBUG if debug_enabled else logging.INFO
+            )
+            message = f"Debug level set to {prop_value}"
+            logger.info("AppProcessor %s %s", self.name, message)
+        elif action_code == dmd_protocol.ACTION_CODE_GET:
+            debug_enabled = bool(self.driver.app_model.app_debug)
+            message = f"Debug level is {'ON' if debug_enabled else 'OFF'}"
+            logger.info("AppProcessor %s %s", self.name, message)
+        else:
+            status = dmd_protocol.STATUS_ERROR
+            message = f"Unknown debug action or value: {action_code}={prop_value}"
+            logger.warning("AppProcessor %s %s", self.name, message)
+
+        rsp_msg = self._construct_rsp_msg(api_msg, status, message)
+        rsp_call = rsp_msg.get_api_call()
+        rsp_call['property'] = dmd_protocol.PROPERTY_DEBUG
+        rsp_call['value'] = 'ON' if self.driver.app_model.app_debug else 'OFF'
+        rsp_msg.set_api_call(rsp_call)
+        return rsp_msg
+
+    def _handle_resync_req(self, api_msg: APIMessage) -> APIMessage:
+        """Invoke an application's optional configuration resync hook."""
+
+        handler = getattr(self.driver, "process_resync", None)
+        if handler is None or not callable(handler):
+            return self._construct_rsp_msg(
+                api_msg,
+                dmd_protocol.STATUS_ERROR,
+                "Application does not support configuration resync",
+            )
+
+        Processor.single_thread()
+        try:
+            action = handler()
+            if action is not None:
+                self.performActions(action)
+            return self._construct_rsp_msg(
+                api_msg,
+                dmd_protocol.STATUS_SUCCESS,
+                "Application configuration resynchronised",
+            )
+        except Exception as e:
+            message = f"Failed to resynchronise application configuration: {e}"
+            logger.exception(self.driver.set_last_err(message))
+            return self._construct_rsp_msg(
+                api_msg,
+                dmd_protocol.STATUS_ERROR,
+                message,
+            )
+        finally:
+            Processor.free_thread()
         
 if __name__ == "__main__":
     import queue

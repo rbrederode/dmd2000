@@ -54,6 +54,9 @@ class VoltageReader:
     def read_voltage(self) -> float:
         raise NotImplementedError
 
+    def close(self) -> None:
+        """Release resources owned by the voltage reader, if any."""
+
 
 class MockVoltageReader(VoltageReader):
     """Simple test reader for development off-target."""
@@ -102,8 +105,10 @@ class ADS1115VoltageReader(VoltageReader):
         if channel not in (0, 1, 2, 3):
             raise ValueError(f"ADS1115 channel must be 0-3, got {channel}")
 
-        ads = ADS.ADS1115(i2c, address=address)
-        ads.gain = 1  # +-4.096 V, suitable for a 0-3.3 V converter output
+        self.i2c = i2c
+        self.ads = ADS.ADS1115(i2c, address=address)
+        self.ads.gain = 1  # +-4.096 V, suitable for a 0-3.3 V converter output
+        self._closed = False
 
         channel_map = {
             0: getattr(ADS, "P0", Pin.A0),
@@ -111,10 +116,27 @@ class ADS1115VoltageReader(VoltageReader):
             2: getattr(ADS, "P2", Pin.A2),
             3: getattr(ADS, "P3", Pin.A3),
         }
-        self.chan = AnalogIn(ads, channel_map[channel])
+        self.chan = AnalogIn(self.ads, channel_map[channel])
 
     def read_voltage(self) -> float:
+        if self._closed:
+            raise RuntimeError("ADS1115 voltage reader is closed")
         return float(self.chan.voltage)
+
+    def close(self) -> None:
+        """Release the I2C bus created for this voltage reader."""
+        if self._closed:
+            return
+
+        self._closed = True
+        i2c = self.i2c
+        self.chan = None
+        self.ads = None
+        self.i2c = None
+
+        deinit = getattr(i2c, "deinit", None)
+        if callable(deinit):
+            deinit()
 
 
 def build_voltage_reader(config: WindConfig) -> VoltageReader:

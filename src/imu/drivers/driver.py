@@ -15,7 +15,7 @@ from util.registry import (
 logger = logging.getLogger(__name__)
 
 class IMUDriver:
-    """Base interface for physical IMU drivers.
+    """Base interface for physical IMU devices. Each device needs a corresponding driver.
 
     Concrete IMU drivers must implement:
     - `_connect()`: open the physical/logical device and start sampling.
@@ -100,6 +100,13 @@ def create_imu_driver(imu_model: IMUDeviceModel) -> Optional[IMUDriver]:
 
         ctor = WitMotionDriver
         registry_register(IMU_DRIVER_NAMESPACE, "witmotion", ctor)
+        return ctor(imu_model=imu_model)
+
+    if imu_model.driver_type == IMUDriverType.BNO085:
+        from imu.drivers.bno085 import BNO085Driver
+
+        ctor = BNO085Driver
+        registry_register(IMU_DRIVER_NAMESPACE, "bno085", ctor)
         return ctor(imu_model=imu_model)
 
     driver_identifier = None

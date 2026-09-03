@@ -10,6 +10,7 @@ from queue import Queue
 from models.obs import ObsModel
 from models.scan import ScanModel, ScanType, ScanState
 from obs.scan import Scan
+from sdp.channel_mask import empty_channel_flags, reconstructed_total_power, valid_channels
 from sdp.pipeline.pipeline_factory import ProcessingPipelineFactory, PipelineConfig
 from sdp.signal_display import SignalDisplay
 from util.format import fmt_cell, fmt_float, fmt_target_coords, fmt_hyperlink, fmt_image_link
@@ -153,11 +154,25 @@ class Observation:
             logger.warning(f"Observation could not find entry for Scan {scan.scan_model.scan_id} in integrated data arrays, skipping integration for this scan.")
             return
 
-        self.int_data_arrays[(tgt_idx, freq_scan, scan_iter)]["int_spr"] += np.sum(scan.spr, axis=0)           # Note: summing multiple rows (seconds) to get a single spectrum per scan iteration
-        self.int_data_arrays[(tgt_idx, freq_scan, scan_iter)]["int_mpr"] += np.sum(scan.mpr, axis=0)           # Note: summing a single integrated row per scan iteration
-        self.int_data_arrays[(tgt_idx, freq_scan, scan_iter)]["int_tpw"] += np.sum(scan.cal, axis=1).tolist()  # Extending the list by summing across channels to get total power per second
+        self.int_data_arrays[(tgt_idx, freq_scan, scan_iter)]["int_spr"] += np.sum(scan.spr, axis=0)  # Sum temporal rows into one spectrum.
 
-        self.int_data_arrays[(tgt_idx, freq_scan, scan_iter)]["secs"] += scan.get_loaded_duration()
+        mpr_flags = getattr(scan, "mpr_flags", None)
+        if mpr_flags is None:
+            mpr_flags = empty_channel_flags(scan.mpr.shape)
+        usable_mpr = valid_channels(scan.mpr, mpr_flags)
+        self.int_data_arrays[(tgt_idx, freq_scan, scan_iter)]["int_mpr"] += np.where(usable_mpr, scan.mpr, 0.0)
+
+        cal_flags = getattr(scan, "cal_flags", None)
+        if cal_flags is None:
+            cal_flags = empty_channel_flags(scan.cal.shape)
+        loaded_seconds = min(int(scan.get_loaded_seconds()), scan.cal.shape[0])
+        total_power, _, _ = reconstructed_total_power(
+            scan.cal[:loaded_seconds, :],
+            cal_flags[:loaded_seconds, :],
+        )
+        self.int_data_arrays[(tgt_idx, freq_scan, scan_iter)]["int_tpw"] += total_power.tolist()
+
+        self.int_data_arrays[(tgt_idx, freq_scan, scan_iter)]["secs"] += loaded_seconds
         self.int_data_arrays[(tgt_idx, freq_scan, scan_iter)]["scans"] += 1
 
     def integrate_cal_scans(self, dir: str, sky_q: "Queue" = None, cal_q: "Queue" = None):
@@ -201,13 +216,21 @@ class Observation:
                 self._update_integrated_data_arrays(scan=scan)
                 scan.__del__()  # Explicitly release memory as quickly as possible 
 
-    def integrate_sky_scans(self, dir: str, sky_q: "Queue" = None, cal_q: "Queue" = None):
+    def integrate_sky_scans(
+        self,
+        dir: str,
+        sky_q: "Queue" = None,
+        cal_q: "Queue" = None,
+        processed_scans: list["Scan"] | None = None,
+    ):
         """ Iterate over sky scan iterations for each target and aggregate their summed power spectra into integrated data arrays.
 
             Parameters:
                 dir:        Directory containing the scan files.
                 sky_q:      Optional SKY queue passed into the pipeline factory.
                 cal_q:      Optional calibration queue passed into the pipeline factory.
+                processed_scans: Optional list that retains each processed physical
+                    SKY scan for callers such as observation visualisations.
         """
 
         if self.obs_model is None:
@@ -243,7 +266,10 @@ class Observation:
                     continue
 
                 self._update_integrated_data_arrays(scan=scan)
-                scan.__del__()  # Explicitly release memory as quickly as possible 
+                if processed_scans is not None:
+                    processed_scans.append(scan)
+                else:
+                    scan.__del__()  # Explicitly release memory as quickly as possible
 
     def synthesise_integrated_scans(self, sky_q: "Queue" = None, cal_q: "Queue" = None, signal_displays: dict = None):
         """ Synthesise integrated scans for each target and frequency scan combination by averaging the integrated summed power spectra across scan iterations.
@@ -500,7 +526,7 @@ class Observation:
             return "No processing pipeline factory configured."
 
         context_columns =   [("Context", 8), ("Name", 24), ("Input", 30), ("Usage", 90), ("Output", 6),]
-        step_columns =      [("Dig ID", 8), ("Context", 8), ("Step Name", 12), ("Step Description", 96),]
+        step_columns =      [("Dig ID", 8), ("Context", 8), ("Step Name", 20), ("Step Description", 96),]
 
         lines = []
 
@@ -530,7 +556,7 @@ class Observation:
                 break
 
         for item in self.pipeline_factory.describe_steps_for_dig(dig_id):
-            row = [dig_id or "default", item["params"].get("context", ""), item["step"].name, item["description"],]
+            row = [dig_id or "default", item["params"].get("context", ""), item["step_name"], item["description"],]
             lines.append(" ".join(fmt_cell(value, width) for value, (_, width) in zip(row, step_columns)))
 
         lines.append("")
