@@ -502,15 +502,13 @@ class DishDriver:
         if not isinstance(capability, Capability):
             message = "DishDriver set_dish_capability requires a valid Capability enumeration value."
             raise ValueError(self.dsh_model.set_last_err(message))
-        
+
+        # If transitioning from an operational capability to a non-operational capability, stop the dish immediately to prevent damage or unsafe operation.
+        if self.dsh_model.capability in [Capability.OPERATE_DEGRADED, Capability.OPERATE_FULL] and capability not in [Capability.OPERATE_DEGRADED, Capability.OPERATE_FULL]:
+            self.stop()
+
         self.dsh_model.capability = capability
         self.dsh_model.last_update = datetime.now(timezone.utc)
-
-        # STANDBY is a movement inhibit. Latch the capability before issuing
-        # the hardware stop so it remains non-operational even if the
-        # controller cannot be reached.
-        if capability == Capability.STANDBY:
-            self.stop()
 
     def set_startup_mode(self):
         """
