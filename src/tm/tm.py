@@ -32,7 +32,7 @@ from models.comms import CommunicationStatus, InterfaceType
 from models.dig import DigitiserModel
 from models.dsh import DishManagerModel, Feed, Capability, DishMode, PointingState
 from models.fil import FilterBank
-from models.obs import ObsModel, ObsTransition, ObsState
+from models.obs import ACTIVE_OBSERVATION_STATES, ObsModel, ObsTransition, ObsState
 from models.oda import ODAModel, ObsList, ScanStore
 from models.health import HealthState
 from models.scan import ScanModel, ScanState
@@ -53,7 +53,7 @@ logger = logging.getLogger("tm.tm")
 
 class TelescopeManager(App):
 
-    AUTO_GAIN_TIMEOUT_MS = 30000
+    AUTO_GAIN_TIMEOUT_MS = 30*1000 # Max time (ms) allowance for a Digitiser to resolve a single AUTO gain request
 
     telmodel = TelescopeModel()
 
@@ -203,7 +203,7 @@ class TelescopeManager(App):
                 message = f"Telescope Manager received digitiser configuration update with no digitiser ID specified in the new configuration: {event.new_config}"
                 logger.error(self.set_last_err(message))
                 return action
-            
+
             # Extract DIG specific properties (all properties except scan-only fields)
             old_dig_config = {k: v for k, v in (event.old_config or {}).items() 
                 if k not in (tm_sdp.PROPERTY_SCAN_DURATION, tm_sdp.PROPERTY_SPECTRAL_RESOLUTION, tm_sdp.PROPERTY_CHANNELS)}
@@ -400,7 +400,7 @@ class TelescopeManager(App):
 
     @staticmethod
     def _set_tgt_acquisition(obs, dish) -> bool:
-        """Set the target acquisition time and actual Alt/Az for an observation.
+        """Set the target acquisition datetime and actual Alt/Az for an observation.
 
         Acquisition values are copied to every scan for the acquired target and
         are not replaced by later Dish Manager status updates.
@@ -461,6 +461,11 @@ class TelescopeManager(App):
         dsh_id = api_msg.get("entity", None) 
         dsh_model = self.telmodel.dsh_mgr.get_dish_by_id(dsh_id) if dsh_id is not None and dsh_id != "" else None
 
+        # Identify the related observation if the API message contains an obs_data field with an obs_id
+        obs_data = api_call.get('obs_data', None)
+        obs_id = obs_data.get('obs_id', None) if obs_data is not None and isinstance(obs_data, dict) else None
+        obs = self.telmodel.oda.obs_store.get_obs_by_id(obs_id) if obs_id is not None else None
+
         # If the Dish ID is specified in the API message but not found in the Dish Manager model, raise an exception
         if dsh_id is not None and dsh_model is None:
             message = f"Telescope Manager received Dish Manager API message for unknown dish {dsh_id}.\n{api_call}"
@@ -472,20 +477,13 @@ class TelescopeManager(App):
             msg_type = api_call.get('msg_type', 'message')
             message_kind = "response" if msg_type == dmd_protocol.MSG_TYPE_RSP else "advice" if msg_type == dmd_protocol.MSG_TYPE_ADV else "message"
             message_scope = f"for dish {dsh_id}" if dsh_id is not None else "for the Dish Manager"
-            logger.error(
-                f"Telescope Manager received error {message_kind} from Dish Manager {message_scope}.\n{api_call}"
-            )
+            logger.error(f"Telescope Manager received error {message_kind} from Dish Manager {message_scope}.\n{api_call}")
 
-            # Not that the dsh_model can be None for some error messages (e.g. a status update message)
+            # Note that the dsh_model can be None for some error messages (e.g. a status update message)
             if dsh_model is not None:
                 dsh_model.mode = DishMode.UNKNOWN # Set dish mode to UNKNOWN to force safe recovery
                 dsh_model.last_err_msg = api_call['message'] if 'message' in api_call else dsh_model.last_err_msg
                 dsh_model.last_err_dt = datetime.fromisoformat(dt) if dt is not None else datetime.now(timezone.utc)
-            
-            # If the message contains additional observation data, trigger the observation workflow
-            obs_data = api_call.get('obs_data', None)
-            obs_id = obs_data.get('obs_id', None) if obs_data is not None and isinstance(obs_data, dict) else None
-            obs = self.telmodel.oda.obs_store.get_obs_by_id(obs_id) if obs_id is not None else None
                 
             # If the related observation was identified, trigger the workflow to move to ABORT
             if obs is not None:
@@ -516,12 +514,54 @@ class TelescopeManager(App):
                     # temporary transition from every pointing state and keeps sky acquisition
                     # gated until an authoritative Dish Manager status update arrives.
                     target_acquired = isinstance(api_call.get('obs_data'), dict)
-                    dsh_model.pointing_state = PointingState.READY if target_acquired else PointingState.UNKNOWN
-                
+                    if target_acquired:
+                        dsh_model.pointing_state = PointingState.READY
+                    else:
+                        dsh_model.pointing_state = PointingState.UNKNOWN
+
+                        # If slew information is provided, record the estimated target acquisition datetime in the Dish Manager model. 
+                        # This is used to determine when the dish is expected to acquire the target and can be used to extend the observation timeout.
+                        slew = api_call.get('slew', None)
+                        if slew is not None and isinstance(slew, dict):
+
+                            estimated_tgt_acq_dt = slew.get("estimated_tgt_acq_dt", None)
+
+                            dsh_model.tgt_acq_dt = (
+                                datetime.fromisoformat(estimated_tgt_acq_dt.replace("Z", "+00:00"))
+                                if estimated_tgt_acq_dt is not None else None
+                            )
+
+                    # A target acknowledgement must wake the configuration workflow even when the dish
+                    # has not yet acquired the target and the response therefore has no obs_data. This is
+                    # especially important for LOAD scans, which may proceed while the dish is moving.
+                    if obs is None:
+                        obs_id = dsh_model.target.obs_id
+                        obs = self.telmodel.oda.obs_store.get_obs_by_id(obs_id) if obs_id is not None else None
+
             # If the api call is a status update message, update the Dish Manager model
             elif api_call.get('property','') == dmd_protocol.PROPERTY_STATUS:
                 logger.debug(f"Telescope Manager received Dish Manager STATUS update: {api_call['value']}")
                 self.telmodel.dsh_mgr = DishManagerModel.from_dict(api_call['value']) if api_call['value'] is not None else None
+
+                # The status payload replaces the complete Dish Manager model, so
+                # refresh the local dish reference before reading acquisition data.
+                # The previous reference still points at the pre-update model and
+                # may contain the estimated, rather than actual, acquisition time.
+                updated_dishes = (
+                    self.telmodel.dsh_mgr.dish_store.dish_list
+                    if self.telmodel.dsh_mgr is not None
+                    and self.telmodel.dsh_mgr.dish_store is not None
+                    else []
+                )
+                dsh_model = next(
+                    (dish for dish in updated_dishes if dish.dsh_id == dsh_id),
+                    None,
+                )
+
+                # A successful Dish Manager status advice with observation data is emitted immediately after READY transitions to TRACK or SCAN. 
+                # Preserve this transition epoch before the acquisition workflow starts configuring the digitiser/SDP scans.
+                if obs is not None:
+                    self._set_tgt_acquisition(obs, dsh_model)
 
                 msg = api_call.get('message')
                 if msg is not None and "weather alarm" in msg.lower():
@@ -530,41 +570,96 @@ class TelescopeManager(App):
                     active_dsh_alarms = [dsh for dsh in self.telmodel.dsh_mgr.dish_store.dish_list if dsh.weather_alarm == True]
 
                     for dsh in active_dsh_alarms:
-                        obs = self.telmodel.oda.obs_store.get_obs_by_dsh_id(dsh.dsh_id)
-                        if obs is not None:
+                        affected_observations = [
+                            obs
+                            for obs in self.telmodel.oda.obs_store.obs_list
+                            if obs.dsh_id == dsh.dsh_id
+                            and obs.obs_state in ACTIVE_OBSERVATION_STATES
+                        ]
+                        for obs in affected_observations:
                             message = f"Telescope Manager detected active weather alarm on dish {dsh.dsh_id} for observation {obs.obs_id}. Aborting affected observation for safe recovery."
                             logger.error(self.set_last_err(message))
                             action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
+            # If the api call is a response to a pointing request, update the scan model with the pointing reference points
+            elif api_call.get('property','') == tm_dm.PROPERTY_POINTING:
+                echo_data = api_msg.get("echo_data")
+                if (isinstance(echo_data, dict) and echo_data.get("client") == "APIMessage"):
+                    echo_data = echo_data.get("echo_data")
 
-            # If the status update message contains additional observation data, trigger the observation workflow
-            obs_data = api_call.get('obs_data', None)
-            obs_id = obs_data.get('obs_id', None) if obs_data is not None and isinstance(obs_data, dict) else None
+                scan_id = echo_data.get("scan_id") if isinstance(echo_data, dict) else None
+                pointing_data = api_call.get("value")
 
-            # A target acknowledgement must wake the configuration workflow even when the dish
-            # has not yet acquired the target and the response therefore has no obs_data. This is
-            # especially important for LOAD scans, which may proceed while the dish is moving.
-            if (
-                obs_id is None
-                and api_call.get('property', '') == tm_dm.PROPERTY_TARGET
-                and dsh_model is not None
-                and dsh_model.target is not None
+                obs = scan = None
+                obs_store = self.telmodel.oda.obs_store
+                if isinstance(scan_id, str):
+                    # Scan ids end with target/frequency/iteration indices;
+                    # everything before those three fields is the observation
+                    # id. Looking up that observation directly prevents scans
+                    # with identical indices in older observations from being
+                    # selected.
+                    scan_id_parts = scan_id.rsplit("-", 3)
+                    if len(scan_id_parts) == 4:
+                        obs = obs_store.get_obs_by_id(scan_id_parts[0])
+                        scan = obs.get_target_scan_by_id(scan_id) if obs is not None else None
+
+                if scan is None:
+                    logger.warning("Telescope Manager could not associate Dish Manager pointing response with scan id %s.", scan_id)
+                elif not isinstance(pointing_data, list) or len(pointing_data) != 2:
+                    logger.warning("Telescope Manager received invalid pointing response for scan %s: expected two pointing records.",scan_id)
+                else:
+                    pointing_refs = []
+                    for point in pointing_data:
+                        pointing_ref = self._normalise_scan_pointing_ref(point)
+                        if pointing_ref is None:
+                            pointing_refs = []
+                            break
+                        pointing_refs.append(pointing_ref)
+
+                    if len(pointing_refs) == 2:
+                        scan.pointing_refs = pointing_refs
+                        scan.last_update = datetime.now(timezone.utc)
+                        self._save_scan_metadata(scan)
+                        logger.info("Telescope Manager added start and end pointing references to scan %s metadata.",scan_id)
+                    else:
+                        logger.warning("Telescope Manager did not update scan %s metadata because the pointing response contained an invalid record.", scan_id)
+
+            # Dish configuration is staged: for example, a dish must enter CONFIG
+            # mode before OET can send its target. Every successful observation-
+            # associated configuration response must therefore wake the workflow
+            # so it can evaluate and send the next stage. Status advice can also
+            # report target acquisition and must prompt the same re-evaluation.
+            # Pointing GET responses are scan-metadata replies, not configuration
+            # progress, and are intentionally excluded.
+            property_name = api_call.get('property', '')
+            configuration_progress = (
+                (
+                    api_call.get('msg_type') == dmd_protocol.MSG_TYPE_RSP
+                    and property_name in {
+                        tm_dm.PROPERTY_MODE,
+                        tm_dm.PROPERTY_CAPABILITY,
+                        tm_dm.PROPERTY_TARGET,
+                    }
+                )
+                or property_name == dmd_protocol.PROPERTY_STATUS
+            )
+            abort_queued = any(
+                transition.get_obs() is obs
+                and transition.get_transition() == ObsTransition.ABORT
+                for transition in action.obs_transitions
+            )
+            configure_queued = any(
+                transition.get_obs() is obs
+                and transition.get_transition() == ObsTransition.CONFIGURE_RESOURCES
+                for transition in action.obs_transitions
+            )
+            if (configuration_progress
+                and obs is not None
+                and obs.obs_state == ObsState.CONFIGURING
+                and not abort_queued
+                and not configure_queued
             ):
-                obs_id = dsh_model.target.obs_id
-
-            obs = self.telmodel.oda.obs_store.get_obs_by_id(obs_id) if obs_id is not None else None
-
-            # A successful Dish Manager status advice with observation data is
-            # emitted immediately after READY transitions to TRACK or SCAN.
-            # Preserve that transition epoch before the acquisition workflow
-            # starts configuring the digitiser/SDP scans.
-            if obs is not None and api_call.get('property', '') == dmd_protocol.PROPERTY_STATUS:
-                updated_dish = self.telmodel.dsh_mgr.get_dish_by_id(dsh_id) if dsh_id is not None else None
-                self._set_tgt_acquisition(obs, updated_dish)
-                    
-            # If the observation is still in CONFIGURING state, trigger the workflow to attempt to move to READY
-            if obs is not None and obs.obs_state == ObsState.CONFIGURING:
-                logger.info(f"Telescope Manager received Dish Manager observation update{f' for observation {obs_id}' if obs_id is not None else ''}.")
-                action.set_obs_transition(obs=obs, transition=ObsTransition.CONFIGURE_RESOURCES)    
+                logger.info("Telescope Manager received Dish Manager configuration progress for observation %s via property %s.", obs.obs_id, property_name)
+                action.set_obs_transition(obs=obs, transition=ObsTransition.CONFIGURE_RESOURCES)
 
             # Update the last update timestamp on the Dish Manager model
             self.telmodel.dsh_mgr.last_update = datetime.fromisoformat(dt) if dt else datetime.now(timezone.utc)
@@ -729,8 +824,15 @@ class TelescopeManager(App):
             obs = self.telmodel.oda.obs_store.get_obs_by_id(obs_id) if obs_id is not None else None
                 
             # If the related observation was identified, trigger the workflow to move to ABORT
-            if obs is not None:
+            if obs is not None and obs.obs_state in ACTIVE_OBSERVATION_STATES:
                 action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
+            elif obs is not None:
+                logger.info(
+                    "Telescope Manager ignoring Digitiser error for observation %s "
+                    "because it is no longer active (state %s).",
+                    obs.obs_id,
+                    obs.obs_state.name,
+                )
 
         # If the api call does not indicate that an error occured
         elif api_call.get('status','') != dmd_protocol.STATUS_ERROR:
@@ -990,7 +1092,6 @@ class TelescopeManager(App):
                     # If we identified the scan within the observation, update its metadata on disk
                     if scan is not None:
                         scan.update_from_model(completed_scan)
-                        self._apply_target_ref_to_scan(obs, scan)
                         self._apply_target_pec_to_scan(obs, scan)
                         self._apply_weather_summary_to_scan(obs, scan)
 
@@ -1007,6 +1108,32 @@ class TelescopeManager(App):
                             filetype="meta") + ".json"
 
                         scan.save_to_disk(output_dir=self.telmodel.get_scan_store_dir(), filename=filename)
+
+                        # Ask the Dish Manager for the two pointing samples
+                        # nearest the scan's first and last digitiser reads.
+                        # The scan id is echoed by DM so the response can be
+                        # associated with this scan without another lookup by
+                        # timestamp.
+                        if (isinstance(completed_scan.read_start, datetime) and isinstance(completed_scan.read_end, datetime)):
+                            pointing_req = self._construct_req_to_dm(
+                                entity=obs.dsh_id,
+                                property=tm_dm.PROPERTY_POINTING,
+                                value=BaseModel._serialise([
+                                    completed_scan.read_start,
+                                    completed_scan.read_end,
+                                ]),
+                                message="",
+                                action_code=dmd_protocol.ACTION_CODE_GET,
+                            )
+                            pointing_req.set_echo_data({"scan_id": scan_id})
+                            action.set_msg_to_remote(pointing_req)
+                            action.set_timer_action(Action.Timer(
+                                name=f"{obs.dsh_id}_req_timer_retry:{pointing_req.get_timestamp()}",
+                                timer_action=self._get_request_timeout_ms(pointing_req),
+                                echo_data=pointing_req,
+                            ))
+                        else:
+                            logger.warning("Telescope Manager cannot request pointing for scan %s because read_start or read_end is unavailable.", scan_id)
 
                     status, message = dmd_protocol.STATUS_SUCCESS, f"Telescope Manager processed SCAN_COMPLETE for observation {obs_id} scan {scan_id}"
                     logger.info(message)
@@ -1143,9 +1270,32 @@ class TelescopeManager(App):
             obs: ObsModel = event.user_ref if isinstance(event.user_ref, ObsModel) else None
 
             if obs is not None and obs.obs_state == ObsState.CONFIGURING:
-                message = f"Telescope Manager observation {obs.obs_id} configuration timeout occurred, aborting observation"
-                logger.warning(self.set_last_err(message))
-                action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
+                dsh_mgr = getattr(getattr(self, "telmodel", None), "dsh_mgr", None)
+                dish = (dsh_mgr.get_dish_by_id(obs.dsh_id) if dsh_mgr is not None and obs.dsh_id is not None else None)
+
+                estimated_tgt_acq_dt = dish.tgt_acq_dt if dish is not None else None
+                if (isinstance(estimated_tgt_acq_dt, datetime) and estimated_tgt_acq_dt.tzinfo is None):
+                    estimated_tgt_acq_dt = estimated_tgt_acq_dt.replace(tzinfo=timezone.utc)
+
+                # The dish target-acquisition timestamp initially contains the
+                # estimate returned by Dish Manager and is later replaced by the
+                # actual acquisition time. Wait while that timestamp is future.
+                now = datetime.now(timezone.utc)
+                if (isinstance(estimated_tgt_acq_dt, datetime) and estimated_tgt_acq_dt > now):
+                    delta_ms = int((estimated_tgt_acq_dt - now).total_seconds() * 1000)
+
+                    message = f"Telescope Manager observation {obs.obs_id} configuration timeout occurred, but estimated target acquisition time is in the future" + \
+                         f" ({estimated_tgt_acq_dt})" + f" (delta: {delta_ms} ms)" + ", restarting observation configuring timer to wait for target acquisition."
+                    
+                    logger.info(message)
+                    action.set_timer_action(Action.Timer(
+                        name=f"obs_configuring_timer:{obs.obs_id}",
+                        timer_action=delta_ms + obs.timeout_ms_config, # Allow additional time for the Telescope Manager to be notified
+                        echo_data=obs))
+                else:
+                    message = f"Telescope Manager observation {obs.obs_id} configuration timeout occurred, aborting observation"
+                    logger.warning(self.set_last_err(message))
+                    action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
 
         # Handle observation scanning timeout timer event
         elif event.name.startswith("obs_scanning_timer"):
@@ -1442,54 +1592,63 @@ class TelescopeManager(App):
         scan.tgt_az_pec_rms = float(tgt_pec.az_rms)
         scan.tgt_pec_last_update = tgt_pec.last_update
 
-    def _apply_target_ref_to_scan(self, obs, scan: ScanModel) -> bool:
-        """Attach the latest in-scan Dish Manager Alt/Az snapshot to a scan."""
-        if obs is None or scan is None or scan.load:
-            return False
+    @staticmethod
+    def _normalise_scan_pointing_ref(point) -> dict | None:
+        """Validate and normalise one Dish Manager pointing response record."""
+        if not isinstance(point, dict):
+            return None
 
-        dsh_mgr = self.telmodel.dsh_mgr
-        if dsh_mgr is None or obs.dsh_id is None:
-            return False
-
-        dsh_model = dsh_mgr.get_dish_by_id(obs.dsh_id)
-        if dsh_model is None:
-            logger.debug(f"Telescope Manager could not find dish {obs.dsh_id} to attach a target reference to scan {scan.scan_id}.")
-            return False
-
-        read_start = scan.read_start
-        read_end = scan.read_end
-        ref_dt = dsh_model.pointing_altaz_dt
-        if not all(isinstance(value, datetime) for value in (read_start, read_end, ref_dt)):
-            logger.debug(f"Telescope Manager could not attach a target reference to scan {scan.scan_id}: scan or dish pointing timestamps are unavailable.")
-            return False
-
-        def as_utc(value: datetime) -> datetime:
-            return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
-
-        read_start_utc = as_utc(read_start)
-        read_end_utc = as_utc(read_end)
-        ref_dt_utc = as_utc(ref_dt)
-        if not read_start_utc <= ref_dt_utc <= read_end_utc:
-            logger.debug(
-                f"Telescope Manager did not attach Dish Manager target reference {ref_dt_utc.isoformat()} "
-                f"to scan {scan.scan_id}: reference is outside scan interval "
-                f"{read_start_utc.isoformat()} to {read_end_utc.isoformat()}."
-            )
-            return False
-
-        pointing_altaz = dsh_model.pointing_altaz
+        pointing_altaz = point.get("pointing_altaz")
         if not isinstance(pointing_altaz, dict):
-            return False
-
+            return None
         alt = pointing_altaz.get("alt")
         az = pointing_altaz.get("az")
         if not isinstance(alt, (int, float)) or not isinstance(az, (int, float)):
-            return False
+            return None
 
-        scan.tgt_ref_dt = ref_dt_utc
-        scan.tgt_ref_altaz = {"alt": float(alt), "az": float(az)}
-        scan.last_update = datetime.now(timezone.utc)
-        return True
+        def parse_datetime(value) -> datetime | None:
+            if isinstance(value, dict) and value.get("_type") == "datetime":
+                value = value.get("value")
+            if isinstance(value, datetime):
+                parsed = value
+            elif isinstance(value, str):
+                try:
+                    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                except ValueError:
+                    return None
+            else:
+                return None
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc)
+
+        recorded_datetime = parse_datetime(point.get("datetime"))
+        if recorded_datetime is None:
+            return None
+
+        return {
+            "datetime": recorded_datetime,
+            "pointing_altaz": {"alt": float(alt), "az": float(az)},
+        }
+
+    def _save_scan_metadata(self, scan: ScanModel) -> None:
+        """Write the current scan model to its standard metadata file."""
+        filename = util.gen_file_prefix(
+            dt=scan.read_start,
+            entity_id=scan.dig_id,
+            gain=scan.gain,
+            duration=scan.duration,
+            sample_rate=scan.sample_rate,
+            center_freq=scan.center_freq,
+            spectral_resolution=scan.spectral_resolution,
+            instance_id=scan.scan_id,
+            scan_type=scan.scan_type,
+            filetype="meta",
+        ) + ".json"
+        scan.save_to_disk(
+            output_dir=self.telmodel.get_scan_store_dir(),
+            filename=filename,
+        )
 
     def _select_weather_summary_for_dish(self, dsh_model) -> WeatherSummary:
         """Select the most appropriate weather summary for a dish."""
@@ -1623,7 +1782,7 @@ class TelescopeManager(App):
 
         return sdp_req
 
-    def _construct_req_to_dm(self, entity=None, property=None, value=None, message=None) -> APIMessage:
+    def _construct_req_to_dm(self, entity=None, property=None, value=None, message=None, action_code=dmd_protocol.ACTION_CODE_SET) -> APIMessage:
         """ Constructs a request message to the Dish Manager.
         """
 
@@ -1637,7 +1796,7 @@ class TelescopeManager(App):
                 entity=entity if entity else "<undefined>",
                 api_call={
                     "msg_type": "req", 
-                    "action_code": "set", 
+                    "action_code": action_code,
                     "property": property, 
                     "value": value if value is not None else 0, 
                     "message": message if message else ""

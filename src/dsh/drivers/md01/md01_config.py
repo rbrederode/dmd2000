@@ -19,9 +19,12 @@ class MD01Config(BaseModel):
         "offset_az": And(float, lambda v: -360.0 <= v <= 360.0),            # Azimuth offset in degrees
         "min_alt": And(float, lambda v: -90.0 <= v <= 90.0),                # Minimum allowable altitude in degrees
         "max_alt": And(float, lambda v: -90.0 <= v <= 90.0),                # Maximum allowable altitude in degrees
+        "min_az": And(float, lambda v: -180.0 <= v <= 540.0),               # Minimum allowable MD01 azimuth in degrees
+        "max_az": And(float, lambda v: -180.0 <= v <= 540.0),               # Maximum allowable MD01 azimuth in degrees
         "resolution": And(float, lambda v: v >= 0.0),                       # Degrees per step resolution of the dish
         "rotation_speed": And(float, lambda v: v >= 0.0),                   # Rotation speed in degrees per second 
         "rate_limit": And(float, lambda v: v >= 0.0),                       # Minimum time in seconds between commands
+        "short_way": And(bool, lambda v: isinstance(v, bool)),              # Whether to take the short way around for azimuth movements
         "last_update": And(datetime, lambda v: isinstance(v, datetime)),
     })
 
@@ -40,9 +43,12 @@ class MD01Config(BaseModel):
             "offset_az": 0.0,
             "min_alt": 10.0,
             "max_alt": 85.0,
+            "min_az": -180.0,
+            "max_az": 540.0,
             "resolution": 0.1,
             "rotation_speed": 2.5,
             "rate_limit": 1.0,
+            "short_way": False,
             "last_update": datetime.now(timezone.utc),
         }
 
@@ -52,6 +58,13 @@ class MD01Config(BaseModel):
                 kwargs.setdefault(key, value)
 
         super().__init__(**kwargs)
+
+    def _validate_schema(self):
+        super()._validate_schema()
+        if self._data["min_az"] > self._data["max_az"]:
+            raise XAPIValidationFailed(
+                "MD01Config min_az must be less than or equal to max_az"
+            )
 
 if __name__ == "__main__":
 
@@ -71,12 +84,14 @@ if __name__ == "__main__":
         offset_az=0.0,
         min_alt=0.0,
         max_alt=90.0,
+        min_az=-180.0,
+        max_az=540.0,
         rotation_speed=2.5,      # degrees / sec
         resolution=0.1,          # degrees / step
         rate_limit=1.0,          # msgs / sec
+        short_way=False,
         last_update=datetime.now(timezone.utc)
     )
     print("MD01Config created successfully:", md01_cfg.to_dict())
     
     print("="*40)
-

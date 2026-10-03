@@ -66,6 +66,9 @@ def test_already_on_target_response_includes_immediate_acquisition_status():
         def get_pointing_state(self):
             return self.dsh_model.pointing_state
 
+        def estimate_slew_duration(self):
+            return 0
+
     manager = make_dish_manager()
     manager.dm_model.tm_connected = CommunicationStatus.ESTABLISHED
     manager.dm_model.to_dict = lambda: {
@@ -99,14 +102,17 @@ def test_already_on_target_response_includes_immediate_acquisition_status():
         api_call=api_call,
     )
 
+    response_started_at = datetime.now(timezone.utc)
     action = manager.process_tm_msg(
         event=None,
         api_msg=request.get_json_api_header(),
         api_call=api_call,
         payload=bytearray(),
     )
+    response_completed_at = datetime.now(timezone.utc)
 
     assert len(action.msgs_to_remote) == 2
+    target_response = action.msgs_to_remote[0].get_api_call()
     status_call = action.msgs_to_remote[1].get_api_call()
     acquired_dish = status_call["value"]["dish_store"]["dish_list"][0]
     assert status_call["property"] == dmd_protocol.PROPERTY_STATUS
@@ -116,3 +122,88 @@ def test_already_on_target_response_includes_immediate_acquisition_status():
     }
     assert acquired_dish["tgt_acq_dt"]["value"] == acquired_at.isoformat()
     assert acquired_dish["pointing_altaz"] == {"alt": 80.0, "az": 10.0}
+    assert target_response["slew"]["estimated_duration"] == 0
+    estimated_tgt_acq_dt = datetime.fromisoformat(
+        target_response["slew"]["estimated_tgt_acq_dt"]
+    )
+    assert response_started_at <= estimated_tgt_acq_dt <= response_completed_at
+    assert dish.tgt_acq_dt == acquired_at
+    tm_dm.TM_DM().validate(action.msgs_to_remote[0].get_json_api_header())
+    action.msgs_to_remote[0].to_data()
+
+
+def test_slew_estimate_is_persisted_in_dish_status_model():
+    dish = DishModel(
+        dsh_id="dish003",
+        mode=DishMode.CONFIG,
+        pointing_state=PointingState.READY,
+        pointing_altaz={"alt": 0.0, "az": 359.0},
+    )
+
+    class SlewingDriver:
+        dsh_model = dish
+
+        def set_target_tuple(self, target_id, target):
+            self.dsh_model.tgt_id = target_id
+            self.dsh_model.target = target
+            self.dsh_model.tgt_acq_dt = None
+
+        def set_dish_mode(self, mode):
+            self.dsh_model.mode = mode
+            self.dsh_model.pointing_state = PointingState.SLEW
+
+        def get_pointing_state(self):
+            return self.dsh_model.pointing_state
+
+        def estimate_slew_duration(self):
+            return 144
+
+    manager = make_dish_manager()
+    manager.dm_model.to_dict = lambda: {
+        "dish_store": {"dish_list": [dish.to_dict()]},
+        "weather_store": {"weather_data": []},
+    }
+    manager.dish_drivers = {dish.dsh_id: SlewingDriver()}
+    manager._get_dish_lock = lambda _dish_id: threading.RLock()
+
+    target = TargetModel(
+        obs_id="obs002",
+        tgt_idx=8,
+        id="Polaris",
+        pointing=PointingType.SIDEREAL_TRACK,
+        altaz={"alt": 52.8, "az": 0.8},
+    )
+    api_call = {
+        "msg_type": dmd_protocol.MSG_TYPE_REQ,
+        "action_code": dmd_protocol.ACTION_CODE_SET,
+        "property": tm_dm.PROPERTY_TARGET,
+        "value": target.to_dict(),
+        "obs_data": {"obs_id": target.obs_id, "target_id": "obs002-8"},
+    }
+    request = APIMessage()
+    request.set_json_api_header(
+        api_version="1.0",
+        dt=datetime.now(timezone.utc),
+        from_system=dmd_protocol.TM,
+        to_system=dmd_protocol.DM,
+        entity=dish.dsh_id,
+        api_call=api_call,
+    )
+
+    action = manager.process_tm_msg(
+        event=None,
+        api_msg=request.get_json_api_header(),
+        api_call=api_call,
+        payload=bytearray(),
+    )
+
+    assert len(action.msgs_to_remote) == 1
+    target_response = action.msgs_to_remote[0].get_api_call()
+    response_estimate = datetime.fromisoformat(
+        target_response["slew"]["estimated_tgt_acq_dt"]
+    )
+    status_dish = manager.dm_model.to_dict()["dish_store"]["dish_list"][0]
+
+    assert target_response["slew"]["estimated_duration"] == 144
+    assert dish.tgt_acq_dt == response_estimate
+    assert status_dish["tgt_acq_dt"]["value"] == response_estimate.isoformat()

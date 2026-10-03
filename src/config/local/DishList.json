@@ -50,6 +50,8 @@
                 "offset_az": 0.0,
                 "min_alt": 0.0,
                 "max_alt": 90.0,
+                "min_az": -180.0,
+                "max_az": 540.0,
                 "close_enough": 0.1,
                 "last_update": {
                     "_type": "datetime",
@@ -161,6 +163,8 @@
                 "offset_az": 0.0,
                 "min_alt": 0.0,
                 "max_alt": 90.0,
+                "min_az": -180.0,
+                "max_az": 540.0,
                 "close_enough": 0.1,
                 "last_update": {
                     "_type": "datetime",

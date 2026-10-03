@@ -1,6 +1,6 @@
 {
     "_type": "LaunchConfigModel",
-    "profile": "jodrell",
+    "profile": "alston",
     "launches": [
         {
             "_type": "LaunchModel",
@@ -14,9 +14,26 @@
                 "-m", "dig.dig",
                 "--profile", "alston",
                 "--entity_id", "dig001",
-                "--tm_host", "192.168.0.7",
-                "--sdp_host", "192.168.0.7",
-                "--local_host", "192.168.0.36"
+                "--tm_host", "192.168.0.2",
+                "--sdp_host", "192.168.0.2",
+                "--local_host", "192.168.0.2"
+            ]
+        },
+        {
+            "_type": "LaunchModel",
+            "app_name": "dig",
+            "entity_id": "dig003",
+            "env": {
+                "GPIOZERO_PIN_FACTORY": "mock"
+            },
+            "program": "python",
+            "args": [
+                "-m", "dig.dig",
+                "--profile", "alston",
+                "--entity_id", "dig003",
+                "--tm_host", "192.168.0.2",
+                "--sdp_host", "192.168.0.2",
+                "--local_host", "192.168.0.2"
             ]
         },
         {
@@ -29,8 +46,8 @@
                 "-m", "dsh.dm",
                 "--profile", "alston",
                 "--entity_id", "dm001",
-                "--tm_host", "192.168.0.7",
-                "--ws_host", "192.168.0.7"
+                "--tm_host", "192.168.0.2",
+                "--ws_host", "127.0.0.1"
             ]
         },
         {
@@ -43,8 +60,8 @@
                 "-m", "sdp.sdp",
                 "--profile", "alston",
                 "--entity_id", "sdp001",
-                "--tm_host", "192.168.0.7",
-                "--dig_host", "192.168.0.7",
+                "--tm_host", "192.168.0.2",
+                "--dig_host", "192.168.0.2",
                 "--scan_store_dir", "~/samples/md01_test"
             ]
         },
@@ -58,9 +75,34 @@
                 "-m", "tm.tm",
                 "--profile", "alston",
                 "--entity_id", "tm001",
-                "--dig_host", "192.168.0.7",
-                "--sdp_host", "192.168.0.7",
-                "--dm_host", "127.0.0.1"
+                "--dig_host", "192.168.0.2",
+                "--sdp_host", "192.168.0.2",
+                "--dm_host", "192.168.0.2",
+                "--ws_host", "192.168.0.2"
+            ]
+        },
+        {
+            "_type": "LaunchModel",
+            "app_name": "mdsim",
+            "entity_id": "mdsim",
+            "env": {},
+            "program": "python",
+            "args": [
+                "dsh/drivers/md01/md01_simulator.py", "--host", "127.0.0.1"
+            ]
+        },
+        {
+            "_type": "LaunchModel",
+            "app_name": "ws",
+            "entity_id": "ws001",
+            "env": {},
+            "program": "python",
+            "args": [
+                "-m", "ws.ws",
+                "--profile", "local",
+                "--dm_host", "127.0.0.1",
+                "--tm_host", "192.168.0.2",
+                "--sim", "calm"
             ]
         }
     ]

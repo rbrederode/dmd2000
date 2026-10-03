@@ -5,19 +5,19 @@
   "f/d_ratio": 2.00,
   "latitude": 53.234090,    
   "longitude": -2.305533,
-  "total_integration_time": 8100,
+  "total_integration_time": 1000,
   "estimated_slewing_time": 0,
-  "estimated_observation_duration": "02:16:00",
+  "estimated_observation_duration": "00:05:00",
   "scheduling_block_start": {
     "_type": "relativetime",
     "value": "+00:00:10"
   },
   "scheduling_block_end": {
     "_type": "relativetime",
-    "value": "02:15:10"
+    "value": "00:05:10"
   },
   "dsh_id": "dish003",
-  "obs_id": "ODT-{{NOW}}-dish003-2h",
+  "obs_id": "ODT-{{NOW}}-dish003-Test",
   "obs_state": {
     "_type": "enum.IntEnum",
     "instance": "ObsState",
@@ -36,26 +36,10 @@
       "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
-      "integration_time": 10,
+      "integration_time": 15,
       "spectral_resolution": 2048,
       "tgt_idx": 0,
-      "obs_id": "ODT-{{NOW}}-dish003-2h"
-    },
-    {
-      "_type": "TargetConfig",
-      "feed_type": {
-        "_type": "enum.IntEnum",
-        "instance": "Feed",
-        "value": "LOAD"
-      },
-      "gain": 37.0,
-      "center_freq": 1420000000,
-      "bandwidth": 1000000,
-      "sample_rate": 2048000,
-      "integration_time": 60,
-      "spectral_resolution": 2048,
-      "tgt_idx": 1,
-      "obs_id": "ODT-{{NOW}}-dish003-2h"
+      "obs_id": "ODT-{{NOW}}-dish003-Test"
     },
     {
       "_type": "TargetConfig",
@@ -68,96 +52,321 @@
       "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
-      "integration_time": 8100,
+      "integration_time": 15,
       "spectral_resolution": 2048,
-      "tgt_idx": 2,
-      "obs_id": "ODT-{{NOW}}-dish003-2h"
+      "tgt_idx": 1,
+      "obs_id": "ODT-{{NOW}}-dish003-Test"
     },
     {
       "_type": "TargetConfig",
       "feed_type": {
         "_type": "enum.IntEnum",
         "instance": "Feed",
-        "value": "LOAD"
+        "value": "H3T_1420"
       },
       "gain": 37.0,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
-      "integration_time": 60,
+      "integration_time": 15,
+      "spectral_resolution": 2048,
+      "tgt_idx": 2,
+      "obs_id": "ODT-{{NOW}}-dish003-Test"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": 37.0,
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 2048000,
+      "integration_time": 15,
       "spectral_resolution": 2048,
       "tgt_idx": 3,
-      "obs_id": "ODT-{{NOW}}-dish003-2h"
+      "obs_id": "ODT-{{NOW}}-dish003-Test"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": 37.0,
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 2048000,
+      "integration_time": 15,
+      "spectral_resolution": 2048,
+      "tgt_idx": 4,
+      "obs_id": "ODT-{{NOW}}-dish003-Test"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": 37.0,
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 2048000,
+      "integration_time": 15,
+      "spectral_resolution": 2048,
+      "tgt_idx": 5,
+      "obs_id": "ODT-{{NOW}}-dish003-Test"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": 37.0,
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 2048000,
+      "integration_time": 15,
+      "spectral_resolution": 2048,
+      "tgt_idx": 6,
+      "obs_id": "ODT-{{NOW}}-dish003-Test"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": 37.0,
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 2048000,
+      "integration_time": 15,
+      "spectral_resolution": 2048,
+      "tgt_idx": 7,
+      "obs_id": "ODT-{{NOW}}-dish003-Test"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": 37.0,
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 2048000,
+      "integration_time": 15,
+      "spectral_resolution": 2048,
+      "tgt_idx": 8,
+      "obs_id": "ODT-{{NOW}}-dish003-Test"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": 37.0,
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 2048000,
+      "integration_time": 15,
+      "spectral_resolution": 2048,
+      "tgt_idx": 9,
+      "obs_id": "ODT-{{NOW}}-dish003-Test"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": 37.0,
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 2048000,
+      "integration_time": 15,
+      "spectral_resolution": 2048,
+      "tgt_idx": 10,
+      "obs_id": "ODT-{{NOW}}-dish003-Test"
     }
   ],
   "targets": [
     {
       "_type": "TargetModel",
-      "sky_coord": {
-        "_type": "SkyCoord",
-        "ra": 118.89,
-        "dec": 20.78,
-        "frame": "icrs"
-      },
-      "pointing": {
-        "_type": "enum.IntEnum",
-        "instance": "PointingType",
-        "value": "SIDEREAL_TRACK"
-      },
       "tgt_idx": 0,
-      "obs_id": "ODT-{{NOW}}-dish003-2h",
-      "id": "Sun"
-    },
-    {
-      "_type": "TargetModel",
-      "sky_coord": {
-        "_type": "SkyCoord",
-        "ra": 118.89,
-        "dec": 20.78,
-        "frame": "icrs"
+      "obs_id": "ODT-{{NOW}}-dish003-Test",
+      "id": "Stow Position: AltAz (90,0)",
+      "altaz": {
+        "alt": 90.0,
+        "az": 0.0
       },
       "pointing": {
         "_type": "enum.IntEnum",
         "instance": "PointingType",
-        "value": "SIDEREAL_TRACK"
-      },
+        "value": "DRIFT_SCAN"
+      }
+    },
+    {
+      "_type": "TargetModel",
       "tgt_idx": 1,
-      "obs_id": "ODT-{{NOW}}-dish003-2h",
-      "id": "Sun"
-    },
-    {
-      "_type": "TargetModel",
-      "sky_coord": {
-        "_type": "SkyCoord",
-        "ra": 118.89,
-        "dec": 20.78,
-        "frame": "icrs"
+      "obs_id": "ODT-{{NOW}}-dish003-Test",
+      "id": "Azimuth Motor Test: AltAz (90, 90)",
+      "altaz": {
+        "alt": 90.0,
+        "az": 90.0
       },
       "pointing": {
         "_type": "enum.IntEnum",
         "instance": "PointingType",
-        "value": "SIDEREAL_TRACK"
-      },
+        "value": "DRIFT_SCAN"
+      }
+    },
+    {
+      "_type": "TargetModel",
       "tgt_idx": 2,
-      "obs_id": "ODT-{{NOW}}-dish003-2h",
-      "id": "Sun"
+      "obs_id": "ODT-{{NOW}}-dish003-Test",
+      "id": "Elevation Motor Test: AltAz (45, 90)",
+      "altaz": {
+        "alt": 45.0,
+        "az": 90.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "DRIFT_SCAN"
+      }
     },
     {
       "_type": "TargetModel",
+      "tgt_idx": 3,
+      "obs_id": "ODT-{{NOW}}-dish003-Test",
+      "id": "Stow Position: AltAz (90,0)",
+      "altaz": {
+        "alt": 90.0,
+        "az": 0.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "DRIFT_SCAN"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 4,
+      "obs_id": "ODT-{{NOW}}-dish003-Test",
+      "id": "Due South: AltAz (45,180)",
+      "altaz": {
+        "alt": 45.0,
+        "az": 180.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "DRIFT_SCAN"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 5,
+      "obs_id": "ODT-{{NOW}}-dish003-Test",
+      "id": "Due West: AltAz (45,270)",
+      "altaz": {
+        "alt": 45.0,
+        "az": 270.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "DRIFT_SCAN"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 6,
+      "obs_id": "ODT-{{NOW}}-dish003-Test",
+      "id": "Almost Due North: AltAz (45,359)",
+      "altaz": {
+        "alt": 45.0,
+        "az": 359.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "DRIFT_SCAN"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 7,
+      "obs_id": "ODT-{{NOW}}-dish003-Test",
+      "id": "Horizontal: AltAz (0,359)",
+      "altaz": {
+        "alt": 0.0,
+        "az": 359.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "DRIFT_SCAN"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 8,
+      "obs_id": "ODT-{{NOW}}-dish003-Test",
+      "id": "Polaris",
       "sky_coord": {
         "_type": "SkyCoord",
-        "ra": 118.89,
-        "dec": 20.78,
+        "ra": 37.95,
+        "dec": 89.26,
         "frame": "icrs"
       },
       "pointing": {
         "_type": "enum.IntEnum",
         "instance": "PointingType",
         "value": "SIDEREAL_TRACK"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 9,
+      "obs_id": "ODT-{{NOW}}-dish003-Test",
+      "id": "Sun",
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "NON_SIDEREAL_TRACK"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 10,
+      "obs_id": "ODT-{{NOW}}-dish003-Test",
+      "id": "Sun",
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "OFFSET_SCAN"
       },
-      "tgt_idx": 3,
-      "obs_id": "ODT-{{NOW}}-dish003-2h",
-      "id": "Sun"
+      "scan": {
+        "_type": "OffsetScan",
+        "offset": -30.0,
+        "rate": 0.1,
+        "angle": 90.0
+      }
     }
   ],
   "user_email": "ray.brederode@skao.int",

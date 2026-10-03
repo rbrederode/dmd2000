@@ -2,6 +2,8 @@ import threading
 from datetime import datetime, timezone
 from types import MethodType, SimpleNamespace
 
+import pytest
+
 from api import protocol as dmd_protocol
 from api import tm_dig
 from dig.dig import Digitiser
@@ -84,8 +86,69 @@ def test_stale_scan_read_does_not_abort_the_current_observation():
     assert digitiser._sdr_disconnect_advice_sent is False
 
 
-def test_tm_applies_error_status_model_and_aborts_related_observation():
-    obs = ObsModel(obs_id="obs001", obs_state=ObsState.SCANNING)
+def test_sdr_reconnect_clears_cached_configuration_and_advises_tm(monkeypatch):
+    class DisconnectedSDR:
+        def __init__(self):
+            self.closed = False
+
+        def get_comms_status(self):
+            return CommunicationStatus.NOT_ESTABLISHED
+
+        def close(self):
+            self.closed = True
+
+    class ReconnectedSDR:
+        def __init__(self, **_kwargs):
+            pass
+
+        def get_comms_status(self):
+            return CommunicationStatus.ESTABLISHED
+
+    monkeypatch.setattr("dig.dig.SDR", ReconnectedSDR)
+
+    digitiser = Digitiser.__new__(Digitiser)
+    digitiser.stop = MethodType(lambda self: None, digitiser)
+    digitiser.dig_model = DigitiserModel(
+        dig_id="dig001",
+        center_freq=1_420_000_000.0,
+        bandwidth=1_000_000.0,
+        sample_rate=2_048_000.0,
+        gain=37.0,
+        sdr_connected=CommunicationStatus.NOT_ESTABLISHED,
+        tm_connected=CommunicationStatus.ESTABLISHED,
+    )
+    disconnected_sdr = DisconnectedSDR()
+    digitiser.sdr = disconnected_sdr
+    digitiser.temp_sensor = None
+    digitiser.tm_api = tm_dig.TM_DIG()
+    digitiser._sdr_disconnect_advice_sent = True
+    digitiser._sdr_disconnect_advice_lock = threading.Lock()
+    digitiser._last_active_dt = datetime.now(timezone.utc)
+    digitiser._idle_poweroff_seconds = 300
+
+    action = digitiser.process_timer_event(SimpleNamespace(name="comms_retry"))
+
+    assert digitiser.dig_model.sdr_connected == CommunicationStatus.ESTABLISHED
+    assert digitiser.dig_model.center_freq == 0.0
+    assert digitiser.dig_model.bandwidth == 0.0
+    assert digitiser.dig_model.sample_rate == 0.0
+    assert digitiser.dig_model.gain == 0.0
+    assert digitiser._sdr_disconnect_advice_sent is False
+    assert disconnected_sdr.closed is True
+    assert len(action.msgs_to_remote) == 1
+
+    api_call = action.msgs_to_remote[0].get_api_call()
+    assert api_call["property"] == dmd_protocol.PROPERTY_STATUS
+    assert api_call["value"]["sdr_connected"]["value"] == "ESTABLISHED"
+    assert api_call["value"]["center_freq"] == 0.0
+    assert api_call["value"]["bandwidth"] == 0.0
+    assert api_call["value"]["sample_rate"] == 0.0
+    assert api_call["value"]["gain"] == 0.0
+    assert "cached SDR configuration cleared" in api_call["message"]
+
+
+def _process_tm_digitiser_error(obs_state):
+    obs = ObsModel(obs_id="obs001", obs_state=obs_state)
     failure_dt = datetime(2026, 8, 25, 19, 57, 34, tzinfo=timezone.utc)
     stored_digitiser = DigitiserModel(
         dig_id="dig001",
@@ -129,6 +192,16 @@ def test_tm_applies_error_status_model_and_aborts_related_observation():
         entity=stored_digitiser,
     )
 
+    return action, obs, stored_digitiser, failure_dt
+
+
+@pytest.mark.parametrize(
+    "obs_state",
+    [ObsState.CONFIGURING, ObsState.READY, ObsState.SCANNING],
+)
+def test_tm_applies_error_status_model_and_aborts_active_observation(obs_state):
+    action, obs, stored_digitiser, failure_dt = _process_tm_digitiser_error(obs_state)
+
     assert stored_digitiser.sdr_connected == CommunicationStatus.NOT_ESTABLISHED
     assert stored_digitiser.scanning == {
         "obs_id": "obs001",
@@ -140,3 +213,15 @@ def test_tm_applies_error_status_model_and_aborts_related_observation():
     assert len(action.obs_transitions) == 1
     assert action.obs_transitions[0].get_obs() is obs
     assert action.obs_transitions[0].get_transition() == ObsTransition.ABORT
+
+
+@pytest.mark.parametrize(
+    "obs_state",
+    [ObsState.EMPTY, ObsState.IDLE, ObsState.ABORTED, ObsState.FAULT],
+)
+def test_tm_does_not_abort_non_active_observation_for_digitiser_error(obs_state):
+    action, _obs, stored_digitiser, failure_dt = _process_tm_digitiser_error(obs_state)
+
+    assert stored_digitiser.sdr_connected == CommunicationStatus.NOT_ESTABLISHED
+    assert stored_digitiser.app.last_err_dt == failure_dt
+    assert action.obs_transitions == []

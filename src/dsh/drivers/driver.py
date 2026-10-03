@@ -7,13 +7,15 @@ from datetime import datetime, timezone
 import logging
 import math
 import numpy as np
-from typing import Tuple
+from pathlib import Path
+from typing import Any, Tuple
 import threading
 
 from models.dsh import DishModel, DriverType, PointingState, Capability, DishMode, Feed, PECModel
 from models.target import TargetModel, PointingType
 from models.health import HealthState
 from util.xbase import XInvalidTransition, XSoftwareFailure, XStreamUnableToExtract, XCommsFailure
+from util import log
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +35,7 @@ class DishDriver:
         # construction. Keeping this out of driver constructors preserves
         # compatibility with dynamically loaded dish drivers.
         self.trace = None
+        self.pointing_log_dir = Path(log.repo_logs_dir) / "pointing"
         self.location = EarthLocation(lat=self.dsh_model.latitude*u.deg, lon=self.dsh_model.longitude*u.deg, height=self.dsh_model.height*u.m)
 
         # History of pointing and desired AltAz for plotting
@@ -56,6 +59,210 @@ class DishDriver:
     def set_trace(self, trace) -> None:
         """Attach the owning application's optional trace writer."""
         self.trace = trace
+
+    def set_pointing_log_dir(self, log_dir: str | Path) -> None:
+        """Set the directory containing the Dish Manager pointing logs."""
+        self.pointing_log_dir = Path(log_dir).expanduser()
+
+    @staticmethod
+    def _parse_pointing_datetime(value: Any) -> datetime:
+        """Parse a pointing-query datetime and normalise it to UTC."""
+        if isinstance(value, dict):
+            if value.get("_type") != "datetime" or "value" not in value:
+                raise XStreamUnableToExtract(
+                    "Pointing datetime dictionaries must contain "
+                    "{'_type': 'datetime', 'value': '<ISO-8601 datetime>'}."
+                )
+            value = value["value"]
+
+        if isinstance(value, datetime):
+            parsed = value
+        elif isinstance(value, str):
+            try:
+                parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+            except ValueError as e:
+                raise XStreamUnableToExtract(
+                    f"Invalid pointing datetime {value!r}; expected ISO-8601 format."
+                ) from e
+        else:
+            raise XStreamUnableToExtract(
+                f"Invalid pointing datetime type {type(value).__name__}; "
+                "expected an ISO-8601 string or serialised datetime dictionary."
+            )
+
+        # Pointing log timestamps are UTC. Treat a datetime without an explicit
+        # offset as UTC as well, while preserving the instant of aware values.
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
+    @staticmethod
+    def _parse_pointing_log_line(line: str) -> dict | None:
+        """Parse one pointing log row, ignoring incomplete or malformed rows."""
+        fields = [field.strip() for field in line.split("|")]
+        if len(fields) != 10:
+            return None
+
+        try:
+            recorded_at = datetime.strptime(
+                fields[0], "%Y-%m-%d %H:%M:%S,%f UTC"
+            ).replace(tzinfo=timezone.utc)
+
+            def coordinate(raw: str) -> float | None:
+                return None if raw == "None" else float(raw)
+
+            return {
+                "datetime": recorded_at.isoformat(),
+                "dsh_id": fields[1],
+                "capability": fields[2],
+                "mode": fields[3],
+                "pointing_state": fields[4],
+                "health": fields[5],
+                "pointing_altaz": {
+                    "az": coordinate(fields[6]),
+                    "alt": coordinate(fields[7]),
+                },
+                "desired_altaz": {
+                    "az": coordinate(fields[8]),
+                    "alt": coordinate(fields[9]),
+                },
+                "_recorded_at": recorded_at,
+            }
+        except (TypeError, ValueError):
+            return None
+
+    def _pointing_log_paths(self, requested_at: list[datetime]) -> list[Path]:
+        """Return the active log and, if present, one rollover log.
+
+        Pointing queries are made immediately after a scan.  Consequently the
+        samples are either in the active log or, when a scan crosses the UTC
+        rollover, in the active log and the log for the earliest requested
+        date.  Do not glob all retained logs here: these files are deliberately
+        large and a historical-log search would block the Dish Manager.
+        """
+        log_dir = Path(self.pointing_log_dir)
+        if not log_dir.is_dir():
+            return []
+
+        active_path = log_dir / "dm.log"
+        paths = [active_path] if active_path.is_file() else []
+        if requested_at:
+            rollover_date = min(requested_at).date()
+            rollover_path = log_dir / f"dm.log.{rollover_date.isoformat()}"
+            if rollover_path.is_file() and rollover_path not in paths:
+                paths.append(rollover_path)
+        return paths
+
+    @staticmethod
+    def _read_log_lines_reverse(path: Path, block_size: int = 64 * 1024):
+        """Yield a log's lines newest-first without loading the file in memory."""
+        with path.open("rb") as stream:
+            position = stream.seek(0, 2)
+            remainder = b""
+            while position > 0:
+                read_size = min(block_size, position)
+                position -= read_size
+                stream.seek(position)
+                parts = (stream.read(read_size) + remainder).split(b"\n")
+                remainder = parts[0]
+                for raw_line in reversed(parts[1:]):
+                    if raw_line:
+                        yield raw_line.decode("utf-8", errors="replace")
+            if remainder:
+                yield remainder.decode("utf-8", errors="replace")
+
+    def _read_pointing_log_window(
+        self,
+        requested_at: list[datetime],
+        start: datetime,
+        end: datetime,
+    ) -> list[dict]:
+        """Read only the tail of each relevant log needed to cover a window."""
+        records = []
+        for path in self._pointing_log_paths(requested_at):
+            try:
+                for line in self._read_log_lines_reverse(path):
+                    record = self._parse_pointing_log_line(line)
+                    if record is None or record["dsh_id"] != self.dsh_model.dsh_id:
+                        continue
+
+                    recorded_at = record["_recorded_at"]
+                    if recorded_at < start:
+                        # Logs are chronological.  This is the closest sample
+                        # before the window for this dish, so older rows cannot
+                        # be selected or be nearer to any requested instant.
+                        records.append(record)
+                        break
+                    records.append(record)
+            except OSError as e:
+                # A midnight rollover may rename a file between selection and
+                # opening. The other selected file can still satisfy a query.
+                logger.debug("Could not read pointing log %s: %s", path, e)
+
+        records.sort(key=lambda record: record["_recorded_at"])
+        return records
+
+    def get_pointing_for_time_range(self, value: Any) -> list[dict]:
+        """Return logged pointing data for this dish.
+
+        ``value`` may be either an inclusive range::
+
+            {"from": "2026-09-20T10:00:00Z", "to": "2026-09-20T10:01:00Z"}
+
+        or a list of ISO-8601/serialised datetimes. A range returns every
+        recorded sample in the interval. A datetime list returns the nearest
+        recorded sample for each requested instant and reports the signed
+        offset in seconds.
+        """
+        if isinstance(value, dict) and "from" in value and "to" in value:
+            start = self._parse_pointing_datetime(value["from"])
+            end = self._parse_pointing_datetime(value["to"])
+            if start > end:
+                raise XStreamUnableToExtract(
+                    "Pointing range 'from' datetime must not be later than 'to'."
+                )
+
+            records = self._read_pointing_log_window([start, end], start, end)
+            selected = [
+                record for record in records
+                if start <= record["_recorded_at"] <= end
+            ]
+            for record in selected:
+                record.pop("_recorded_at", None)
+            return selected
+
+        if isinstance(value, list):
+            if not value:
+                return []
+            requested = [self._parse_pointing_datetime(item) for item in value]
+            records = self._read_pointing_log_window(
+                requested,
+                min(requested),
+                max(requested),
+            )
+            if not records:
+                return []
+
+            selected = []
+            for requested_at in requested:
+                nearest = min(
+                    records,
+                    key=lambda record: abs(
+                        (record["_recorded_at"] - requested_at).total_seconds()
+                    ),
+                ).copy()
+                recorded_at = nearest.pop("_recorded_at")
+                nearest["requested_datetime"] = requested_at.isoformat()
+                nearest["offset_seconds"] = (
+                    recorded_at - requested_at
+                ).total_seconds()
+                selected.append(nearest)
+            return selected
+
+        raise XStreamUnableToExtract(
+            "Pointing query value must be either {'from': datetime, 'to': datetime} "
+            "or a list of datetimes."
+        )
     
     def get_location(self) -> EarthLocation:
         return self.location
@@ -130,6 +337,49 @@ class DishDriver:
         # Delegate to subclass implementation
         with self._rlock:
             return self._get_resolution()
+
+    def estimate_slew_duration(self) -> int | None:
+        """Estimate the remaining slew duration in whole seconds.
+
+        Drivers may override this method when their mount has more specific
+        motion characteristics.  The default assumes that the altitude and
+        azimuth axes can move concurrently at the rotation speed reported by
+        the driver.  Positive durations are rounded up so a required
+        sub-second movement is not reported as no slew being required.
+
+        :return: Estimated seconds, zero when already on target, or ``None``
+            when the available driver data cannot produce an estimate.
+        """
+        current = self.dsh_model.pointing_altaz
+        desired = self.dsh_model.desired_altaz
+        if not isinstance(current, dict) or not isinstance(desired, dict):
+            return None
+
+        current_alt = current.get("alt")
+        current_az = current.get("az")
+        desired_alt = desired.get("alt")
+        desired_az = desired.get("az")
+        if any(value is None for value in (current_alt, current_az, desired_alt, desired_az)):
+            return None
+
+        if self._is_within_pointing_resolution(
+            float(current_alt),
+            float(current_az),
+            float(desired_alt),
+            float(desired_az),
+        ):
+            return 0
+
+        rotation_speed = float(self._get_rotation_speed())
+        if not math.isfinite(rotation_speed) or rotation_speed <= 0.0:
+            return None
+
+        altitude_distance = abs(float(desired_alt) - float(current_alt))
+        azimuth_distance = abs(
+            (float(desired_az) - float(current_az) + 180.0) % 360.0 - 180.0
+        )
+        duration = max(altitude_distance, azimuth_distance) / rotation_speed
+        return int(math.ceil(duration))
 
     @staticmethod
     def _truncate_to_resolution(value: float, resolution: float) -> float:

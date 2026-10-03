@@ -9,6 +9,7 @@ from schema import SchemaError
 import re
 import time
 import threading
+from typing import Any
 
 from api import protocol as dmd_protocol
 from api import sdp_dig, tm_sdp
@@ -585,6 +586,25 @@ class SDP(App):
             logger.error(self.set_last_err(message))
             return False
 
+        # Finding a digitiser in the configured store does not mean that the
+        # corresponding entity is connected. Reject the scan before updating
+        # SDP state when the live connection was resolved to a different
+        # digitiser (for example after a configuration change without an SDP
+        # resync). The error response retains the TM request's obs_data, which
+        # allows Telescope Manager to abort the affected observation.
+        connected_entities = getattr(self, "entity_connection_map", {})
+        if (
+            dig.sdp_connected != CommunicationStatus.ESTABLISHED
+            or dig_id not in connected_entities
+        ):
+            message = (
+                f"Science Data Processor cannot set scan config for digitiser {dig_id} "
+                f"and observation {obs_id} because that digitiser is not connected "
+                "to the SDP under the requested entity ID."
+            )
+            logger.error(self.set_last_err(message))
+            return False
+
         user_initiated = obs_id[:3].upper() == "USR" if isinstance(obs_id, str) and len(obs_id) >= 3 else False
 
         # If this is a user-initiated scan config and digitiser already scanning, then decline if the current scanning is an observation-initiated (ODT) scan
@@ -890,7 +910,7 @@ class SDP(App):
         })       
         return dig_rsp
 
-    def _construct_rsp_to_tm(self, status: int, message: str, value: any, api_msg: dict, api_call: dict) -> APIMessage:
+    def _construct_rsp_to_tm(self, status: int, message: str, value: Any | None = None, api_msg: dict | None = None, api_call: dict | None = None) -> APIMessage:
         """ Constructs a Telescope Manager response APIMessage.
         """
         tm_rsp = APIMessage(api_msg=api_msg, api_version=self.tm_api.get_api_version())

@@ -64,6 +64,12 @@ class ObsState(enum.IntEnum):
     FAULT = 9
     """The observation has encountered an error."""
 
+
+ACTIVE_OBSERVATION_STATES = frozenset(
+    (ObsState.CONFIGURING, ObsState.READY, ObsState.SCANNING)
+)
+
+
 class ObsTransition (enum.IntEnum):
     """Python enumerated type for observation workflow transitions."""
 
@@ -172,7 +178,7 @@ class ObsModel(BaseModel):
             "created": None,
             "user_email": "",
             "timeout_ms_scan": MAX_SCAN_DURATION_SEC*2*1000,  # Scan timeout in milliseconds
-            "timeout_ms_config": 240000,                      # Configuration timeout in milliseconds (includes slew time)
+            "timeout_ms_config": 30*1000,                     # Base configuration timeout in milliseconds (excludes slew and auto gain time that gets dynamically added)
 
             "start_dt": datetime.now(timezone.utc),
             "end_dt": datetime.now(timezone.utc),
@@ -229,11 +235,22 @@ class ObsModel(BaseModel):
         if scan_id is None or not isinstance(scan_id, str):
             return None
 
+        # The numeric scan indices are only unique within an observation.  Do
+        # not allow a scan id from another observation to resolve to this
+        # observation merely because its trailing indices happen to match.
+        scan_id_parts = scan_id.rsplit("-", 3)
+        if (
+            self.obs_id is None
+            or len(scan_id_parts) != 4
+            or scan_id_parts[0] != self.obs_id
+        ):
+            return None
+
         # Split the scan_id to extract target, freq_scan and scan_iter indices
         try:
-            tgt_idx = int(scan_id.split("-")[-3])
-            freq_scan = int(scan_id.split("-")[-2])
-            scan_iter = int(scan_id.split("-")[-1])
+            tgt_idx = int(scan_id_parts[1])
+            freq_scan = int(scan_id_parts[2])
+            scan_iter = int(scan_id_parts[3])
 
             scan = self.get_target_scan_by_index(tgt_idx, freq_scan, scan_iter)
             if scan is not None:
@@ -387,7 +404,6 @@ class ObsModel(BaseModel):
 
         try:
             # Convert the observation to a FITS file and save to disk
-            from util.fits_utils import observation_to_fits_hdulist
             hdulist = observation_to_fits_hdulist(self)
             hdulist.writeto(os.path.join(output_dir, filename), overwrite=True)
             return True

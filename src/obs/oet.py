@@ -44,8 +44,8 @@ class ObservationExecutionTool:
         return self._obs_locks[obs_id]
 
     def _get_config_timeout_ms(self, obs) -> int:
-        """Return a configuration timeout long enough for AUTO gain and SDP acknowledgement."""
-        timeout_ms = obs.timeout_ms_config
+        """Return an observation configuration timeout long enough for an AUTO gain and App acknowledgements."""
+        timeout_ms = obs.timeout_ms_config # Base configuration timeout for an observation, excluding slew & auto gain time
 
         target_config = obs.get_target_config_by_index(obs.tgt_idx) if obs is not None else None
         target_scan = obs.get_current_tgt_scan() if obs is not None else None
@@ -61,6 +61,9 @@ class ObservationExecutionTool:
         if waiting_for_auto_gain:
             auto_gain_timeout_ms = getattr(self.tm, "AUTO_GAIN_TIMEOUT_MS", timeout_ms)
             msg_timeout_ms = self.telmodel.tel_mgr.app.msg_timeout_ms
+            # Allow for two attempts at resolving the AUTO gain token
+            # Plus two message timeouts for the OET to receive the resolved gain from the Digitiser and send it to the SDP
+            # Plus a 5 second buffer
             timeout_ms = max(timeout_ms, (auto_gain_timeout_ms * 2) + (msg_timeout_ms * 2) + 5000)
 
         return timeout_ms
@@ -142,11 +145,11 @@ class ObservationExecutionTool:
                     action.set_obs_transition(obs=event.obs, transition=ObsTransition.CONFIGURE_RESOURCES)
                 else:
                     # Resources not available, observation remains in IDLE state waiting for resources to be released by other observations
-                    logger.info(f"Observation {event.obs.obs_id} blocked waiting for resources.")
+                    logger.info(f"Observation {event.obs.obs_id} failed to assign all required resources at this time.")
 
             elif event.transition == ObsTransition.RELEASE_RESOURCES:
 
-                if event.obs.obs_state != ObsState.IDLE:
+                if event.obs.obs_state not in (ObsState.IDLE, ObsState.READY, ObsState.ABORTED):
                     message = f"Observation Execution Tool ignoring {event.transition.name} transition for " + \
                               f"observation {event.obs.obs_id} in unexpected state " + \
                               f"{event.obs.obs_state.name}."
@@ -365,9 +368,18 @@ class ObservationExecutionTool:
         """
 
         now = datetime.now(timezone.utc)
+        pending_start_obs_ids = {
+            transition.get_obs().obs_id
+            for transition in action.obs_transitions
+            if transition.get_transition() == ObsTransition.START
+        }
         empty_obs = [
             obs for obs in self.telmodel.oda.obs_store.obs_list
-            if obs.obs_state == ObsState.EMPTY and obs.scheduling_block_start is not None
+            if (
+                obs.obs_state == ObsState.EMPTY
+                and obs.scheduling_block_start is not None
+                and obs.obs_id not in pending_start_obs_ids
+            )
         ]
 
         due_obs = [
@@ -1036,4 +1048,3 @@ class ObservationExecutionTool:
              f"target ID {target_id}, pointing type {target.pointing.name}, dish pointing state {dish.pointing_state.name}, dish target ID {dish.tgt_id}, dish {dish.dsh_id}")
 
         return on_target
-        

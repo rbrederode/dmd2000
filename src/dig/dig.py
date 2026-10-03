@@ -1,10 +1,11 @@
+from datetime import datetime, timezone
 import logging
 import json
 import numpy as np
 import threading
 import time
+from typing import Any
 import _thread
-from datetime import datetime, timezone
 from gpiozero import LED
 
 from api import protocol as dmd_protocol
@@ -520,13 +521,32 @@ class Digitiser(App):
             action.set_timer_action(Action.Timer(name=f"comms_retry", timer_action=5000))
 
             if self.sdr is None or self.sdr.get_comms_status() != CommunicationStatus.ESTABLISHED:
+                if self.sdr is not None:
+                    self.sdr.close()
                 self.sdr = SDR(sdr_type=self.dig_model.sdr_type, sdr_config=self.dig_model.sdr_config)  # Retry connecting to the SDR
                 self.dig_model.sdr_connected = self.sdr.get_comms_status()
 
                 if self.dig_model.sdr_connected == CommunicationStatus.ESTABLISHED:
                     with self._sdr_disconnect_advice_lock:
                         self._sdr_disconnect_advice_sent = False
-                    logger.info("Digitiser successfully connected to SDR device.")
+
+                    # A newly opened SDR is not guaranteed to retain the hardware
+                    # configuration applied to the previous device instance.  Clear
+                    # the cached values so TM/OET will configure it before the next
+                    # scan instead of treating the replacement SDR as already set up.
+                    self.dig_model.center_freq = 0.0
+                    self.dig_model.bandwidth = 0.0
+                    self.dig_model.sample_rate = 0.0
+                    self.dig_model.gain = 0.0
+
+                    logger.info("Digitiser successfully connected to SDR device; cached SDR configuration cleared.")
+
+                    # Advertise the invalidated configuration immediately so TM does
+                    # not retain the settings associated with the old SDR instance.
+                    if self.dig_model.tm_connected == CommunicationStatus.ESTABLISHED:
+                        action.set_msg_to_remote(self._construct_status_adv_to_tm(
+                            message="Digitiser SDR reconnected; cached SDR configuration cleared."
+                        ))
             else:
                 self.dig_model.sdr_connected = self.sdr.get_comms_status()
 
@@ -919,7 +939,7 @@ class Digitiser(App):
 
         return sdp_adv
 
-    def _construct_rsp_to_tm(self, status: int, message: str, value: any, api_msg: dict, api_call: dict) -> APIMessage:
+    def _construct_rsp_to_tm(self, status: int, message: str, value: Any | None = None, api_msg: dict | None = None, api_call: dict | None = None) -> APIMessage:
         """ Constructs a Telescope Manager response APIMessage. """
 
         tm_rsp = APIMessage(api_msg=api_msg, api_version=self.tm_api.get_api_version())

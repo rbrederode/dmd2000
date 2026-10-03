@@ -2,6 +2,7 @@
 from astropy.time import Time
 from datetime import datetime, timezone
 import logging
+import math
 import pytest
 import socket
 import time
@@ -63,6 +64,48 @@ class MD01Driver(DishDriver):
             :return: The rotation speed in degrees per second.
         """
         return self.md01_config.rotation_speed
+
+    def estimate_slew_duration(self) -> int | None:
+        """Estimate the MD01's remaining slew duration in whole seconds.
+
+        ``_slew`` records the exact encoder position selected by ``do_flip``
+        in ``desired_altaz``.  Measure the literal distance to that position:
+        either the requested coordinates, or ``180 - alt`` and
+        ``(az + 180) % 360`` when the reachable flipped position was selected.
+        """
+        current = self.dsh_model.pointing_altaz
+        desired = self.dsh_model.desired_altaz
+        if not isinstance(current, dict) or not isinstance(desired, dict):
+            return None
+
+        current_alt = current.get("alt")
+        current_az = current.get("az")
+        desired_alt = desired.get("alt")
+        desired_az = desired.get("az")
+        if any(value is None for value in (current_alt, current_az, desired_alt, desired_az)):
+            return None
+
+        current_alt = float(current_alt)
+        current_az = float(current_az)
+        desired_alt = float(desired_alt)
+        desired_az = float(desired_az)
+
+        if self._is_within_pointing_resolution(
+            current_alt,
+            current_az,
+            desired_alt,
+            desired_az,
+        ):
+            return 0
+
+        rotation_speed = float(self._get_rotation_speed())
+        if not math.isfinite(rotation_speed) or rotation_speed <= 0.0:
+            return None
+
+        altitude_distance = abs(desired_alt - current_alt)
+        azimuth_distance = abs(desired_az - current_az)
+        duration = max(altitude_distance, azimuth_distance) / rotation_speed
+        return int(math.ceil(duration))
 
     def _get_min_max_alt(self) -> Tuple[float, float]:
         """ Get the minimum and maximum altitude limits of the dish from the MD01 configuration.
@@ -166,17 +209,21 @@ class MD01Driver(DishDriver):
     def _track(self, alt: float, az: float):
         """
             Track the current target.
-            Do not set the dish model attributes here, that is done in the base class.
+            Record the selected encoder representation in desired_altaz so
+            feedback and subsequent estimates use the same coordinates.
         """
 
-        # This MD01 mount does not support flipped coordinates. Always command the
-        # requested encoder position so it remains consistent with desired_altaz.
-        if not self.can_reach(alt, az):
-            raise XInvalidTransition(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} cannot reach Alt: {alt} deg, Az: {az} deg due to dish limits: {self.md01_config.min_alt}-{self.md01_config.max_alt} deg altitude.")
+        command_alt, command_az = self._select_command_altaz(
+            alt,
+            az,
+            tracking=True,
+        )
+        if not self.can_reach(command_alt, command_az):
+            raise XInvalidTransition(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} cannot reach Alt: {alt} deg, Az: {az} deg due to dish limits: {self.md01_config.min_alt}-{self.md01_config.max_alt} deg altitude and {self.md01_config.min_az}-{self.md01_config.max_az} deg azimuth.")
 
-        logger.debug(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} tracking to Alt: {alt} deg, Az: {az} deg.")
-    
-        self._set_md01_altaz(alt, az)
+        logger.debug(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} tracking to Alt: {command_alt} deg, Az: {command_az} deg.")
+        self._set_md01_altaz(command_alt, command_az)
+        self._record_command_altaz(command_alt, command_az)
 
     def _scan(self, alt: float, az: float):
         """
@@ -188,17 +235,21 @@ class MD01Driver(DishDriver):
     def _slew(self, alt: float, az: float):
         """
             Slew to the specified AltAz position.
-            Do not set the dish model attributes here, that is done in the base class.
+            Record the selected encoder representation in desired_altaz so
+            feedback and subsequent estimates use the same coordinates.
         """
 
-        # This MD01 mount does not support flipped coordinates. Always command the
-        # requested encoder position so it remains consistent with desired_altaz.
-        if not self.can_reach(alt, az):
-            raise XInvalidTransition(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} cannot reach Alt: {alt} deg, Az: {az} deg due to dish limits: {self.md01_config.min_alt}-{self.md01_config.max_alt} deg altitude.")
+        command_alt, command_az = self._select_command_altaz(
+            alt,
+            az,
+            tracking=False,
+        )
+        if not self.can_reach(command_alt, command_az):
+            raise XInvalidTransition(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} cannot reach Alt: {alt} deg, Az: {az} deg due to dish limits: {self.md01_config.min_alt}-{self.md01_config.max_alt} deg altitude and {self.md01_config.min_az}-{self.md01_config.max_az} deg azimuth.")
 
-        logger.debug(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} slewing to Alt: {alt} deg, Az: {az} deg.")
-    
-        self._set_md01_altaz(alt, az)
+        logger.debug(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} slewing to Alt: {command_alt} deg, Az: {command_az} deg.")
+        self._set_md01_altaz(command_alt, command_az)
+        self._record_command_altaz(command_alt, command_az)
         
     def start_scan(self):
         """
@@ -394,6 +445,10 @@ class MD01Driver(DishDriver):
             talt = self.md01_config.min_alt
         if talt > self.md01_config.max_alt:
             talt = self.md01_config.max_alt
+        if taz < self.md01_config.min_az:
+            taz = self.md01_config.min_az
+        if taz > self.md01_config.max_az:
+            taz = self.md01_config.max_az
 
         md01_cmd = MD01Msg()
         md01_cmd.set_cmd(MD01Msg.CMD_SET)
@@ -440,9 +495,16 @@ class MD01Driver(DishDriver):
             or flipping to 180-alt, az+180.
             :param alt: Target altitude in degrees.
             :param az: Target azimuth in degrees.
-            :param tracking: If True, use tracking logic (currently not different).
+            :param tracking: Retained to describe the caller; short-way
+                selection is identical for slewing and tracking so tracking
+                retains the closest equivalent encoder representation.
             :return: True if flip is needed, False otherwise.
         """
+
+        # If short_way is not enabled on the MD01 Controller, then we do not flip, even if it may be closer.
+        if not self.md01_config.short_way:
+            return False
+
         flip_alt = 180-alt
         flip_az = (az+180)%360
 
@@ -460,22 +522,43 @@ class MD01Driver(DishDriver):
         elif flipreach and (not origreach):
             return True
 
-        # For tracking, use original direction (avoid unnecessary flips)
-        elif tracking:
-            return False  
-
         # If both directions are valid, which is the most common case,
         # then we find the closest one (in azimuth driving, not in angular distance)
         # to the current pointing
         elif flipreach and origreach:
 
             (calt, caz) = self._get_md01_altaz()
-            flip_dist = util.get_azimuth_distance(caz, flip_az)
-            orig_dist = util.get_azimuth_distance(caz, az)
+            # The MD01 moves between the numeric encoder coordinates; it does
+            # not wrap directly across 0/360.  Compare those literal axis
+            # distances so this choice matches the commanded movement and its
+            # subsequent duration estimate.
+            flip_dist = abs(flip_az - caz)
+            orig_dist = abs(az - caz)
             if flip_dist < orig_dist:
                 return True
             else:
                 return False
+
+    def _select_command_altaz(self, alt: float, az: float, tracking: bool) -> Tuple[float, float]:
+        """Return the encoder coordinates the configured MD01 will use."""
+        if not self.md01_config.short_way:
+            return alt, az
+
+        if self.do_flip(alt, az, tracking=tracking):
+            flip_alt = 180 - alt
+            flip_az = (az + 180) % 360
+            logger.debug(
+                f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} "
+                f"selected flipped coordinates Alt: {flip_alt} deg, Az: {flip_az} deg."
+            )
+            return flip_alt, flip_az
+
+        return alt, az
+
+    def _record_command_altaz(self, alt: float, az: float) -> None:
+        """Keep acquisition checks and estimates aligned with encoder commands."""
+        self.dsh_model.desired_altaz = {"alt": alt, "az": az}
+        self.dsh_model.last_update = datetime.now(timezone.utc)
 
     def can_reach(self, alt, az):
         """Check if telescope can reach this position. Altitude and azimuth input in degrees.
@@ -489,8 +572,10 @@ class MD01Driver(DishDriver):
 
         (alt, az) = self._offset_corr(alt,az)
         if (alt > self.md01_config.max_alt or alt < self.md01_config.min_alt):
-            alt = round(alt, 2)
-            logger.debug(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} cannot reach altitude {alt} deg.")
+            logger.debug(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} cannot reach altitude {round(alt, 2)} deg.")
+            return False
+        if (az > self.md01_config.max_az or az < self.md01_config.min_az):
+            logger.debug(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} cannot reach azimuth {round(az, 2)} deg.")
             return False
         return True
 
@@ -499,16 +584,25 @@ class MD01Driver(DishDriver):
 # -s to show print output
 
 def test_can_reach(md01_driver):
+    md01_driver.md01_config.min_az = 0.0
+    md01_driver.md01_config.max_az = 360.0
     assert md01_driver.can_reach(45.0, 180.0) == True
     assert md01_driver.can_reach(-10.0, 180.0) == False
     assert md01_driver.can_reach(100.0, 180.0) == False
     assert md01_driver.can_reach(90.0, 360.0) == True
-    assert md01_driver.can_reach(90.0, 361.0) == True
+    assert md01_driver.can_reach(90.0, 361.0) == False
+
+    md01_driver.md01_config.offset_az = 10.0
+    assert md01_driver.can_reach(90.0, 350.0) == True
+    assert md01_driver.can_reach(90.0, 351.0) == False
 
 def test_do_flip(md01_driver):
+    md01_driver.md01_config.short_way = True
+    md01_driver._get_md01_altaz = lambda: (90.0, 0.0)
     assert md01_driver.do_flip(100.0, 180.0) == True
     assert md01_driver.do_flip(45.0, 180.0) == False
     assert md01_driver.do_flip(90.0, 180.0) == True
+    assert md01_driver.do_flip(90.0, 180.0, tracking=True) == True
     assert md01_driver.do_flip(91.0, 180.0) == True
     assert md01_driver.do_flip(89.9, 180.0) == False
     assert md01_driver.do_flip(89.9, 361.0) == False  

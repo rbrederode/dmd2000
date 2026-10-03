@@ -71,8 +71,14 @@ class ScanModel(BaseModel):
         "files_directory": Or(None, And(str, lambda v: isinstance(v, str))),        # Directory where the scan data is stored (e.g. "~/samples")
         "tgt_acq_dt": Or(None, And(datetime, lambda v: isinstance(v, datetime))),   # Timestamp when the dish started tracking or scanning the target
         "tgt_acq_altaz": Or(None, And(dict, lambda v: isinstance(v.get("alt"), (int, float)) and isinstance(v.get("az"), (int, float)))),  # Actual dish Alt/Az when the target was acquired (degrees)
-        "tgt_ref_dt": Or(None, And(datetime, lambda v: isinstance(v, datetime))),   # Timestamp of an additional dish Alt/Az reference point during the scan
-        "tgt_ref_altaz": Or(None, And(dict, lambda v: isinstance(v.get("alt"), (int, float)) and isinstance(v.get("az"), (int, float)))),  # Additional actual dish Alt/Az reference point during the scan (degrees)
+        "pointing_refs": And(list, lambda refs: all(
+            isinstance(ref, dict)
+            and isinstance(ref.get("datetime"), datetime)
+            and isinstance(ref.get("pointing_altaz"), dict)
+            and isinstance(ref["pointing_altaz"].get("alt"), (int, float))
+            and isinstance(ref["pointing_altaz"].get("az"), (int, float))
+            for ref in refs
+        )),  # Ordered dish pointing samples nearest the scan start and end timestamps
         "tgt_alt_pec_rms": Or(None, And(Or(int, float), lambda v: v >= 0.0)),       # Target-level RMS periodic error correction in altitude (degrees)
         "tgt_az_pec_rms": Or(None, And(Or(int, float), lambda v: v >= 0.0)),        # Target-level RMS periodic error correction in azimuth (degrees)
         "tgt_pec_last_update": Or(None, And(datetime, lambda v: isinstance(v, datetime))),  # Timestamp of the PEC value copied from the Dish Manager
@@ -120,8 +126,7 @@ class ScanModel(BaseModel):
         "files_directory": None,
         "tgt_acq_dt": None,
         "tgt_acq_altaz": None,
-        "tgt_ref_dt": None,
-        "tgt_ref_altaz": None,
+        "pointing_refs": [],
         "tgt_alt_pec_rms": None,
         "tgt_az_pec_rms": None,
         "tgt_pec_last_update": None,
@@ -141,6 +146,8 @@ class ScanModel(BaseModel):
         # Backward compatibility for older persisted scan metadata and callers.
         if "spectral_resolution" not in kwargs and "channels" in kwargs:
             kwargs["spectral_resolution"] = kwargs["channels"]
+        if "pointing_refs" not in kwargs:
+            kwargs["pointing_refs"] = []
 
         # Apply defaults if not provided in kwargs
         for key, value in self._defaults.items():
@@ -209,7 +216,7 @@ class ScanModel(BaseModel):
                f"spectral_resolution={self.spectral_resolution},  gain={self.gain}, " + \
                f"start_idx={self.start_idx}, created={self.created}, tgt_acq_dt={self.tgt_acq_dt}, " + \
                f"tgt_acq_altaz={self.tgt_acq_altaz}, " + \
-               f"tgt_ref_dt={self.tgt_ref_dt}, tgt_ref_altaz={self.tgt_ref_altaz}, " + \
+               f"pointing_refs={self.pointing_refs}, " + \
                f"read_start={self.read_start}, read_end={self.read_end}, " + \
                f"last_update={self.last_update})"   
 
