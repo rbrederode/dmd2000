@@ -516,6 +516,21 @@ class ObservationExecutionTool:
         with self._rlock:
 
             granted_all_resources = True    # Flag indicating if all resources were granted
+
+            # An aborted observation retains its allocations so it can be
+            # reset within its scheduling block.  A different observation
+            # requesting one of those resources takes precedence while the
+            # owner is still ABORTED.  Release all allocations belonging to
+            # that owner before creating the new requests, keeping the
+            # handover atomic under the allocation lock.
+            self._release_aborted_resource_owners(
+                requesting_obs=obs,
+                requested_resources=(
+                    (ResourceType.DISH.value, dsh_model.dsh_id),
+                    (ResourceType.DIGITISER.value, dig_model.dig_id),
+                ),
+                action=action,
+            )
         
             # Request new resource allocation for dish resources i.e. get in the queue
             dish_req = self.telmodel.tel_mgr.allocations.request_allocation(
@@ -560,6 +575,47 @@ class ObservationExecutionTool:
                 granted_all_resources = False
 
             return granted_all_resources
+
+    def _release_aborted_resource_owners(
+        self,
+        requesting_obs: ObsModel,
+        requested_resources,
+        action: Action,
+    ) -> None:
+        """Release retained allocations owned by other aborted observations.
+
+        This method is called while ``self._rlock`` is held.  An observation
+        that has already been reset is in IDLE and is deliberately not
+        pre-empted.
+        """
+        allocations = self.telmodel.tel_mgr.allocations
+        aborted_owners = {}
+
+        for resource_type, resource_id in requested_resources:
+            active = allocations.get_active_allocation(
+                resource_type=resource_type,
+                resource_id=resource_id,
+            )
+            if (
+                active is None
+                or active.allocated_type != ResourceType.OBS.value
+                or active.allocated_id == requesting_obs.obs_id
+            ):
+                continue
+
+            obs_store = getattr(getattr(self.telmodel, "oda", None), "obs_store", None)
+            if obs_store is None:
+                continue
+            owner = obs_store.get_obs_by_id(active.allocated_id)
+            if owner is not None and owner.obs_state == ObsState.ABORTED:
+                aborted_owners[owner.obs_id] = owner
+
+        for owner in aborted_owners.values():
+            logger.info(
+                f"Observation {requesting_obs.obs_id} is taking precedence over "
+                f"aborted observation {owner.obs_id}; releasing its retained resources."
+            )
+            self.release_resources(owner, action)
 
     def release_resources(self, obs: ObsModel, action: Action) -> bool:
         """ Process an observation resource release request.

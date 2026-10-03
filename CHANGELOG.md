@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     Active observation states are defined centrally in models.obs.
     Weather alarms only abort active observations.
     Digitiser errors only abort the associated observation when it is still active.
+- Observation Execution Tool now gives precedence to a new incoming observation when resource contention exists between it and a prior aborted observation. The prior aborted observation may be reset while it has the required resources allocated, however needs to relinquish the resources if this has not happened by the time a new observation requests the same resources. 
  
 ## [1.0.0] - 2026-09-03
 

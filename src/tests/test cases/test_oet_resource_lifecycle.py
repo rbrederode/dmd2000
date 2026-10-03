@@ -4,9 +4,13 @@ from types import SimpleNamespace
 import pytest
 
 from env.events import ObsEvent, TimerEvent
+from ipc.action import Action
 from models.app import AppModel
+from models.comms import CommunicationStatus
+from models.dsh import Capability, DishMode
+from models.health import HealthState
 from models.obs import ObsModel, ObsState, ObsTransition
-from models.tm import Allocation, AllocationState, ResourceAllocations
+from models.tm import Allocation, AllocationState, ResourceAllocations, ResourceType
 from obs.oet import ObservationExecutionTool
 from tm.tm import TelescopeManager
 
@@ -68,6 +72,121 @@ def test_release_resources_is_allowed_from_terminal_resource_states(initial_stat
     assert all(
         allocation.state == AllocationState.RELEASED
         for allocation in allocations.alloc_list
+    )
+
+
+def make_resource_assignment_oet(owner_state):
+    now = datetime.now(timezone.utc)
+    owner = ObsModel(
+        obs_id="obs-aborted",
+        obs_state=owner_state,
+        dsh_id="dish001",
+        scheduling_block_start=now - timedelta(minutes=2),
+        scheduling_block_end=now + timedelta(minutes=10),
+    )
+    requester = ObsModel(
+        obs_id="obs-new",
+        obs_state=ObsState.IDLE,
+        dsh_id="dish001",
+        scheduling_block_start=now - timedelta(minutes=1),
+        scheduling_block_end=now + timedelta(minutes=5),
+    )
+    allocations = ResourceAllocations(
+        alloc_list=[
+            Allocation(
+                resource_type=ResourceType.DISH.value,
+                resource_id="dish001",
+                allocated_type=ResourceType.OBS.value,
+                allocated_id=owner.obs_id,
+                state=AllocationState.ACTIVE,
+                expires=owner.scheduling_block_end,
+            ),
+            Allocation(
+                resource_type=ResourceType.DIGITISER.value,
+                resource_id="dig001",
+                allocated_type=ResourceType.OBS.value,
+                allocated_id=owner.obs_id,
+                state=AllocationState.ACTIVE,
+                expires=owner.scheduling_block_end,
+            ),
+        ]
+    )
+    dish = SimpleNamespace(
+        dsh_id="dish001",
+        dig_id="dig001",
+        capability=Capability.OPERATE_FULL,
+        mode=DishMode.STANDBY_FP,
+        latitude=53.0,
+        longitude=-2.0,
+        height=80.0,
+    )
+    digitiser = SimpleNamespace(
+        dig_id="dig001",
+        app=SimpleNamespace(health=HealthState.OK),
+    )
+    telescope = SimpleNamespace(
+        tel_mgr=SimpleNamespace(allocations=allocations),
+        dsh_mgr=SimpleNamespace(
+            dish_store=SimpleNamespace(dish_list=[dish]),
+            tm_connected=CommunicationStatus.ESTABLISHED,
+            app=SimpleNamespace(health=HealthState.OK),
+        ),
+        dig_store=SimpleNamespace(dig_list=[digitiser]),
+        sdp=SimpleNamespace(
+            tm_connected=CommunicationStatus.ESTABLISHED,
+            app=SimpleNamespace(health=HealthState.OK),
+        ),
+        oda=SimpleNamespace(
+            obs_store=SimpleNamespace(
+                obs_list=[owner, requester],
+                get_obs_by_id=lambda obs_id: next(
+                    (obs for obs in (owner, requester) if obs.obs_id == obs_id),
+                    None,
+                ),
+            )
+        ),
+    )
+    oet = ObservationExecutionTool(
+        telescope,
+        SimpleNamespace(set_last_err=lambda message: message),
+    )
+    return oet, owner, requester, allocations
+
+
+def test_new_observation_preempts_resources_retained_by_aborted_observation():
+    oet, owner, requester, allocations = make_resource_assignment_oet(ObsState.ABORTED)
+
+    assert oet.assign_resources(requester, Action()) is True
+
+    owner_allocations = allocations.get_allocations(
+        allocated_type=ResourceType.OBS.value,
+        allocated_id=owner.obs_id,
+        include_expired=True,
+    )
+    assert all(allocation.state == AllocationState.RELEASED for allocation in owner_allocations)
+    assert owner.obs_state == ObsState.ABORTED
+    assert all(
+        allocations.get_active_allocation(resource_type, resource_id).allocated_id
+        == requester.obs_id
+        for resource_type, resource_id in (
+            (ResourceType.DISH.value, "dish001"),
+            (ResourceType.DIGITISER.value, "dig001"),
+        )
+    )
+
+
+def test_new_observation_does_not_preempt_observation_that_was_reset():
+    oet, owner, requester, allocations = make_resource_assignment_oet(ObsState.IDLE)
+
+    assert oet.assign_resources(requester, Action()) is False
+
+    assert all(
+        allocations.get_active_allocation(resource_type, resource_id).allocated_id
+        == owner.obs_id
+        for resource_type, resource_id in (
+            (ResourceType.DISH.value, "dish001"),
+            (ResourceType.DIGITISER.value, "dig001"),
+        )
     )
 
 
