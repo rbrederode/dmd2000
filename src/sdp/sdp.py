@@ -4,7 +4,7 @@ import logging
 import numpy as np
 import os
 from pathlib import Path
-from queue import Queue
+from queue import Empty, Queue
 from schema import SchemaError
 import re
 import time
@@ -68,6 +68,7 @@ class SDP(App):
 
         self.sky_q = Queue()             # Queue of sky scans being processed and displayed
         self.cal_q = Queue()             # Queue of calibration scans to apply to sky scans
+        self.completed_display_q = Queue()  # Completed scans awaiting the GUI thread
         self.signal_displays = {}        # Dictionary to hold SignalDisplay objects for each digitiser
 
         self._rlock = threading.RLock()  # Lock for thread-safe access to shared resources
@@ -980,6 +981,9 @@ class SDP(App):
 
         scan.save_to_disk(output_dir=self.get_args().scan_store_dir, include_iq=False)
 
+        if not self.is_headless():
+            self.completed_display_q.put(scan)
+
         return
 
     def _merge_into_queue(self, scan: Scan, queue: Queue = None):
@@ -1008,6 +1012,58 @@ class SDP(App):
             queue.task_done() # Balance the unfinished task count for the removed item
         except ValueError:
             logger.warning(self.set_last_err(f"Science Data Processor could not find scan while attempting to remove scan {scan} from queue. It may have already been removed."))
+
+    def _update_signal_display(self, scan: Scan):
+        """Bind a scan on the GUI thread, including scans already completed."""
+        dig_id = scan.get_dig_id()
+        if dig_id not in self.signal_displays or self.signal_displays[dig_id] is None:
+            self.signal_displays[dig_id] = self._create_signal_display(dig_id=dig_id)
+
+        display = self.signal_displays[dig_id]
+        if not display.get_is_active():
+            return
+
+        previous = display.get_scan()
+        if previous is not scan and previous and previous.get_status() == ScanState.COMPLETE:
+            display.display()
+            display.save_scan_figure(output_dir=self.get_args().scan_store_dir)
+
+        newest_load = self._newest_equivalent_load_scan(scan, self.cal_q)
+        if newest_load is not None:
+            scan.set_load_scan(newest_load)
+        if previous is not scan:
+            display.set_scan(scan=scan, load=newest_load)
+        else:
+            display.set_load(load=newest_load)
+
+    def _refresh_signal_displays(self):
+        """Consume completed scans before refreshing scans still being processed."""
+        # A one-second scan can enter and leave sky_q between GUI refreshes.
+        # Keep its final products until this thread has displayed and saved them.
+        while True:
+            try:
+                scan = self.completed_display_q.get_nowait()
+            except Empty:
+                break
+            try:
+                self._update_signal_display(scan)
+                display = self.signal_displays[scan.get_dig_id()]
+                if display.get_is_active():
+                    display.display()
+                    display.save_scan_figure(output_dir=self.get_args().scan_store_dir)
+            finally:
+                self.completed_display_q.task_done()
+
+        with self.sky_q.mutex:
+            scans = list(self.sky_q.queue)
+        for scan in scans:
+            self._update_signal_display(scan)
+
+        for display in self.signal_displays.values():
+            if display.get_scan() is not None and display.get_is_active():
+                display.display()
+                if display.get_scan().get_status() == ScanState.COMPLETE:
+                    display.save_scan_figure(output_dir=self.get_args().scan_store_dir)
 
     def _log_overload_sample_drop(self, message: str):
         now = time.monotonic()
@@ -1038,61 +1094,7 @@ def main():
         while True:
             time_start = time.monotonic()
           
-            # For each processing scan in the sky queue, allocate it to a signal display
-            # We are expecting one processing scan per digitiser to be in the sky queue
-            for i in range(sdp.sky_q.qsize()):
-
-                try:
-                    scan = sdp.sky_q.queue[i]
-                except IndexError:
-                    continue  # Scan index not valid, continue to next scan
-
-                dig_id = scan.get_dig_id() # Identify the digitiser associated with the scan
-
-                # If there is no signal display for this digitiser, create a new active signal display
-                if dig_id not in sdp.signal_displays or sdp.signal_displays[dig_id] is None:
-                    logger.info(f"Science Data Processor creating new SignalDisplay for digitiser {dig_id}")
-                    sdp.signal_displays[dig_id] = sdp._create_signal_display(dig_id=dig_id)
-
-                if not (sdp.signal_displays[dig_id].get_is_active()):
-                    continue # Signal display for digitiser has been deactivated, continue to next scan 
-
-                sig_display_scan = sdp.signal_displays[dig_id].get_scan() 
-                
-                # If the scan allocated to the signal display differs from the current scan
-                if sig_display_scan != scan:
-
-                    # If the previous displayed scan completed, update display and save its figure
-                    if sig_display_scan and sig_display_scan.get_status() == ScanState.COMPLETE:    
-                        sdp.signal_displays[dig_id].display()
-                        sdp.signal_displays[dig_id].save_scan_figure(output_dir=sdp.get_args().scan_store_dir)
-
-                    # Find the equivalent load scan for this scan if it exists in the calibration queue
-                    newest_load = sdp._newest_equivalent_load_scan(scan, sdp.cal_q)
-                    logger.debug(
-                        f"Science Data Processor found {'an' if newest_load else 'no'} equivalent load scan "
-                        f"in calibration queue for digitiser {dig_id} and observation {scan.get_obs_id()} "
-                        "to apply to signal display"
-                    )
-
-                    # Set the signal display to the current scan and newest equivalent load scan 
-                    scan.set_load_scan(newest_load) if newest_load else None
-                    sdp.signal_displays[dig_id].set_scan(scan=scan, load=newest_load)
-                else:
-                    # Keep load calibration in sync while the same sky scan remains active.
-                    newest_load = sdp._newest_equivalent_load_scan(scan, sdp.cal_q)
-                    scan.set_load_scan(newest_load) if newest_load else None
-                    sdp.signal_displays[dig_id].set_load(load=newest_load)
-
-            for sig_display in sdp.signal_displays.values():
-                # If the signal display has a scan and is active, display the scan
-                if sig_display.get_scan():
-                    
-                    if sig_display.get_is_active():
-                        sig_display.display()
-                    
-                    if sig_display.get_scan().get_status() == ScanState.COMPLETE:
-                        sig_display.save_scan_figure(output_dir=sdp.get_args().scan_store_dir)
+            sdp._refresh_signal_displays()
 
             time_elapsed = time.monotonic() - time_start
 

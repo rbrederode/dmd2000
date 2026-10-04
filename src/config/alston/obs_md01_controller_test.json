@@ -36,7 +36,7 @@
       "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
-      "integration_time": 15,
+      "integration_time": 10,
       "spectral_resolution": 2048,
       "tgt_idx": 0,
       "obs_id": "ODT-{{NOW}}-dish003-Test"
@@ -52,7 +52,7 @@
       "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
-      "integration_time": 15,
+      "integration_time": 10,
       "spectral_resolution": 2048,
       "tgt_idx": 1,
       "obs_id": "ODT-{{NOW}}-dish003-Test"
@@ -68,7 +68,7 @@
       "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
-      "integration_time": 15,
+      "integration_time": 10,
       "spectral_resolution": 2048,
       "tgt_idx": 2,
       "obs_id": "ODT-{{NOW}}-dish003-Test"
@@ -84,7 +84,7 @@
       "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
-      "integration_time": 15,
+      "integration_time": 10,
       "spectral_resolution": 2048,
       "tgt_idx": 3,
       "obs_id": "ODT-{{NOW}}-dish003-Test"
@@ -100,7 +100,7 @@
       "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
-      "integration_time": 15,
+      "integration_time": 10,
       "spectral_resolution": 2048,
       "tgt_idx": 4,
       "obs_id": "ODT-{{NOW}}-dish003-Test"
@@ -116,7 +116,7 @@
       "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
-      "integration_time": 15,
+      "integration_time": 10,
       "spectral_resolution": 2048,
       "tgt_idx": 5,
       "obs_id": "ODT-{{NOW}}-dish003-Test"
@@ -132,7 +132,7 @@
       "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
-      "integration_time": 15,
+      "integration_time": 10,
       "spectral_resolution": 2048,
       "tgt_idx": 6,
       "obs_id": "ODT-{{NOW}}-dish003-Test"
@@ -148,7 +148,7 @@
       "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
-      "integration_time": 15,
+      "integration_time": 10,
       "spectral_resolution": 2048,
       "tgt_idx": 7,
       "obs_id": "ODT-{{NOW}}-dish003-Test"
@@ -164,7 +164,7 @@
       "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
-      "integration_time": 15,
+      "integration_time": 10,
       "spectral_resolution": 2048,
       "tgt_idx": 8,
       "obs_id": "ODT-{{NOW}}-dish003-Test"
@@ -180,7 +180,7 @@
       "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
-      "integration_time": 15,
+      "integration_time": 10,
       "spectral_resolution": 2048,
       "tgt_idx": 9,
       "obs_id": "ODT-{{NOW}}-dish003-Test"
@@ -196,7 +196,7 @@
       "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 2048000,
-      "integration_time": 15,
+      "integration_time": 10,
       "spectral_resolution": 2048,
       "tgt_idx": 10,
       "obs_id": "ODT-{{NOW}}-dish003-Test"
