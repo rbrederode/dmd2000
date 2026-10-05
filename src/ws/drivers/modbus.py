@@ -61,7 +61,7 @@ class ModbusConfig(BaseModel):
         defaults = {
             "_type": "ModbusConfig",
             "port": "/dev/ttyUSB0",
-            "slave_address": 1,
+            "slave_address": 2,
             "baudrate": 9600,
             "bytesize": 8,
             "parity": "N",
@@ -120,6 +120,11 @@ class ModbusWeatherStationDriver(WeatherStationDriver):
 
     def _close(self) -> None:
         """Close the serial port owned by the MinimalModbus instrument."""
+        
+        # If the instrument is None, it means the driver is already closed or was never initialized properly. 
+        if self.instrument is None:
+            return
+        
         instrument = self.instrument
         self.instrument = None
 
