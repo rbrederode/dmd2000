@@ -131,7 +131,8 @@ def test_recreated_weather_display_clears_reused_named_figure():
     with mock.patch("dsh.weather_display.plt.figure", return_value=figure) as create_figure, \
             mock.patch("dsh.weather_display.GridSpecFromSubplotSpec", return_value=[object(), object()]), \
             mock.patch.object(display, "_init_attribute_axes"), \
-            mock.patch.object(display, "_init_plot_axes"):
+            mock.patch.object(display, "_init_plot_axes"), \
+            mock.patch.object(display, "_init_unit_selector"):
         display._create_figure()
 
     assert create_figure.call_args.kwargs["clear"] is True

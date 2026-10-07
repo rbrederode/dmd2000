@@ -44,7 +44,7 @@
     },
     "driver_config": {
         "_type": "ModbusConfig",
-        "port": "/dev/ttyUSB0",
+        "port": "/dev/cu.usbserial-BG00Y35C",
         "slave_address": 2,
         "baudrate": 9600,
         "bytesize": 8,

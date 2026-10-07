@@ -2,7 +2,9 @@ import sys
 import time
 import random
 import logging
+from logging.handlers import TimedRotatingFileHandler
 import threading
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -19,6 +21,7 @@ from ipc.tcp_server import TCPServer
 from models.app import AppModel, HealthState
 from models.ws import WeatherStationDriverType
 from ws.drivers.driver import create_ws_driver
+from util.format import fmt_number
 
 logger = logging.getLogger("ws.ws")
 
@@ -55,6 +58,7 @@ class WeatherStation(App):
         self.ws_model.tm_connected = CommunicationStatus.NOT_ESTABLISHED
 
         self.weather_driver = None
+        self.weather_logger = self.get_weather_logger()
 
     def add_args(self, arg_parser): 
         """ Specifies the weather station's command line arguments.
@@ -192,16 +196,16 @@ class WeatherStation(App):
 
         action = Action()
 
-        if self.ws_model.dm_connected == CommunicationStatus.ESTABLISHED:
+        if self.ws_model.sim_mode.upper() == "OFF":
+            weather_data = self._read_weather()
+        else:
+            weather_data = self._generate_weather()
 
-            if self.ws_model.sim_mode.upper() == "OFF":
-                weather_data = self._read_weather()
-            else:
-                weather_data = self._generate_weather()
+        self._log_weather(weather_data)
 
-            if weather_data is not None:
-                dm_msg = self._construct_dm_advice_message(weather_data)
-                action.set_msg_to_remote(dm_msg)
+        if weather_data is not None and self.ws_model.dm_connected == CommunicationStatus.ESTABLISHED:
+            dm_msg = self._construct_dm_advice_message(weather_data)
+            action.set_msg_to_remote(dm_msg)
 
         poll_interval = self.weather_driver.get_poll_interval_ms() if self.weather_driver is not None else self.ws_model.driver_poll_period
         action.set_timer_action(Action.Timer(
@@ -209,6 +213,53 @@ class WeatherStation(App):
             timer_action=poll_interval)) 
 
         return action
+
+    def get_weather_logger(self) -> logging.Logger:
+        """Get a weather logger that archives daily UTC logs without deletion."""
+        log_dir = Path(App.logs_dir).expanduser() / "weather"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        weather_logger = logging.getLogger(f"{self.app_model.app_name}.weather")
+        weather_logger.setLevel(logging.INFO)
+        weather_logger.propagate = False
+        for handler in weather_logger.handlers[:]:
+            weather_logger.removeHandler(handler)
+            handler.close()
+
+        handler = TimedRotatingFileHandler(
+            filename=log_dir / f"{self.app_model.app_name}.log",
+            when="midnight",
+            interval=1,
+            backupCount=0,
+            encoding="utf-8",
+            utc=True,
+        )
+        handler.suffix = "%Y-%m-%d"
+        handler.namer = lambda filename: f"{filename}.zip"
+        handler.rotator = self._archive_weather_log
+        formatter = logging.Formatter("%(asctime)s UTC | %(message)s")
+        formatter.converter = time.gmtime
+        handler.setFormatter(formatter)
+        weather_logger.addHandler(handler)
+        return weather_logger
+
+    @staticmethod
+    def _archive_weather_log(source: str, destination: str) -> None:
+        """Compress a completed daily log before removing its uncompressed copy."""
+        with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.write(source, arcname=Path(destination).stem)
+        Path(source).unlink()
+
+    def _log_weather(self, weather: WeatherData | None) -> None:
+        """Log one poll with missing measurements represented as None."""
+        self.weather_logger.info(
+            "%s | %s | %s | %s | %s | %s | %s",
+            self.ws_model.id,
+            self.get_health_state().name,
+            *(fmt_number(getattr(weather, field, None), precision=6) for field in (
+                "wind_speed", "wind_direction", "temperature", "humidity", "pressure",
+            )),
+        )
 
     def get_health_state(self) -> HealthState:
         """ Returns the current health state of this application.

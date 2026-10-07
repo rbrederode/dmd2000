@@ -15,6 +15,7 @@ os.environ.setdefault("MPLCONFIGDIR", str(_mpl_cache))
 import matplotlib as mpl
 import numpy as np
 from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
+from matplotlib.widgets import RadioButtons
 
 with warnings.catch_warnings():
     warnings.filterwarnings(
@@ -68,6 +69,8 @@ class WeatherDisplay:
             raise ValueError(f"WeatherDisplay: No weather station found with id {ws_id}")
 
         self.is_active = True
+        self.wind_unit = "m/s"
+        self.wind_unit_selector = None
 
         self.fig = None
         self.attr_ax = None
@@ -101,6 +104,7 @@ class WeatherDisplay:
         self.fig.suptitle(f"Station Id: {self.ws.ws_id}, Lat: {self.ws.latitude:.2f}°, Lon: {self.ws.longitude:.2f}°", fontsize=12, y=0.96)
         self._init_attribute_axes()
         self._init_plot_axes()
+        self._init_unit_selector()
 
         # Show the GUI window before visibility checks can suppress first refreshes.
         try:
@@ -108,6 +112,27 @@ class WeatherDisplay:
             self.fig.canvas.flush_events()
         except Exception as exc:
             logger.debug(f"Weather display for {self.ws.ws_id} could not show figure window: {exc}")
+
+    def _init_unit_selector(self):
+        unit_ax = self.fig.add_axes([0.07, 0.015, 0.12, 0.06])
+        unit_ax.set_title("Wind units", fontsize=8, loc="left", pad=2)
+        self.wind_unit_selector = RadioButtons(unit_ax, ("m/s", "knots"))
+        for label in self.wind_unit_selector.labels:
+            label.set_fontsize(8)
+        self.wind_unit_selector.on_clicked(self._set_wind_unit)
+
+    def _set_wind_unit(self, unit: str):
+        self.wind_unit = unit
+        self._update_attributes()
+        self._update_plot()
+        self.fig.canvas.draw_idle()
+
+    @property
+    def _wind_unit_factor(self) -> float:
+        return 3600.0 / 1852.0 if self.wind_unit == "knots" else 1.0
+
+    def _format_wind_speed(self, speed: float) -> str:
+        return f"{speed * self._wind_unit_factor:.1f} {self.wind_unit}"
 
     def _init_attribute_axes(self):
         ax = self.attr_ax
@@ -319,11 +344,11 @@ class WeatherDisplay:
         self._set_field("Timeout", "threshold", f"{self.weather_store.threshold_timeout}s", metrics["timeout_triggered"])
         self._set_field("Age", "value", f"{latest_age_sec:.1f}s" if latest_age_sec is not None else "No Data", metrics["timeout_triggered"])
 
-        self._set_field("Wind Avg", "threshold", f"{self.weather_store.threshold_wind_avg:.1f}m/s", metrics["wind_avg_triggered"])
-        self._set_field("Wind Avg", "value", f"{metrics['avg_wind']:.1f}m/s", metrics["wind_avg_triggered"])
+        self._set_field("Wind Avg", "threshold", self._format_wind_speed(self.weather_store.threshold_wind_avg), metrics["wind_avg_triggered"])
+        self._set_field("Wind Avg", "value", self._format_wind_speed(metrics['avg_wind']), metrics["wind_avg_triggered"])
 
-        self._set_field("Wind Gust", "threshold", f"{self.weather_store.threshold_wind_gust:.1f}m/s", metrics["gust_triggered"])
-        self._set_field("Wind Gust", "value", f"{metrics['max_wind']:.1f}m/s", metrics["gust_triggered"])
+        self._set_field("Wind Gust", "threshold", self._format_wind_speed(self.weather_store.threshold_wind_gust), metrics["gust_triggered"])
+        self._set_field("Wind Gust", "value", self._format_wind_speed(metrics['max_wind']), metrics["gust_triggered"])
 
         self._set_field("Gust Count", "threshold", f"{self.weather_store.threshold_wind_count:d}", metrics["gust_count_triggered"])
         gust_count_color = "orange" if 0 < metrics["gust_count"] <= self.weather_store.threshold_wind_count else None
@@ -344,32 +369,38 @@ class WeatherDisplay:
         self._set_field("MTTR", "summary", self._format_duration(self.weather_store.last_mth_alarm_mttr), False)
 
     def _update_plot(self):
+        factor = self._wind_unit_factor
+        self.wind_ax.set_ylabel(f"Wind Speed [{self.wind_unit}]")
+        avg_threshold = self.weather_store.threshold_wind_avg * factor
+        gust_threshold = self.weather_store.threshold_wind_gust * factor
+        self.wind_avg_line.set_ydata([avg_threshold, avg_threshold])
+        self.wind_avg_line.set_label(f"Avg Threshold {avg_threshold:.2f} {self.wind_unit}")
+        self.wind_gust_line.set_ydata([gust_threshold, gust_threshold])
+        self.wind_gust_line.set_label(f"Gust Threshold {gust_threshold:.2f} {self.wind_unit}")
         samples = self.weather_store.get_station_weather(
             ws_id=self.ws.ws_id,
             window_sec=self.weather_store.retention_period,
         )
         if not samples:
             self.wind_line.set_data([], [])
+            self.wind_line.set_label("Wind Speed")
             self.precip_line.set_data([], [])
             self.wind_ax.relim()
             self.wind_ax.autoscale_view()
             self.precip_ax.relim()
             self.precip_ax.autoscale_view()
+            self.wind_ax.legend(loc="upper left", fontsize=8)
             return
 
         t0 = samples[0].obs_time
         times = np.array([(sample.obs_time - t0).total_seconds() for sample in samples], dtype=float)
-        wind = np.array([np.nan if sample.wind_speed is None else sample.wind_speed for sample in samples], dtype=float)
+        wind = np.array([np.nan if sample.wind_speed is None else sample.wind_speed for sample in samples], dtype=float) * factor
         precip = np.array([np.nan if sample.precipitation is None else sample.precipitation for sample in samples], dtype=float)
 
         self.wind_line.set_data(times, wind)
         self.precip_line.set_data(times, precip)
-        self.wind_line.set_label(f"Wind Speed {wind[~np.isnan(wind)][-1]:.2f} m/s" if np.any(~np.isnan(wind)) else "Wind Speed")
+        self.wind_line.set_label(f"Wind Speed {wind[~np.isnan(wind)][-1]:.2f} {self.wind_unit}" if np.any(~np.isnan(wind)) else "Wind Speed")
         self.precip_line.set_label(f"Precipitation {precip[~np.isnan(precip)][-1]:.2f} mm" if np.any(~np.isnan(precip)) else "Precipitation")
-        self.wind_avg_line.set_ydata([self.weather_store.threshold_wind_avg, self.weather_store.threshold_wind_avg])
-        self.wind_avg_line.set_label(f"Avg Threshold {self.weather_store.threshold_wind_avg:.2f} m/s")
-        self.wind_gust_line.set_ydata([self.weather_store.threshold_wind_gust, self.weather_store.threshold_wind_gust])
-        self.wind_gust_line.set_label(f"Gust Threshold {self.weather_store.threshold_wind_gust:.2f} m/s")
         self.precip_thresh_line.set_ydata([self.weather_store.threshold_precipitation, self.weather_store.threshold_precipitation])
         self.precip_thresh_line.set_label(f"Precip Threshold {self.weather_store.threshold_precipitation:.2f} mm")
 

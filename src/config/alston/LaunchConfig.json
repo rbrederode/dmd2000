@@ -47,7 +47,7 @@
                 "--profile", "alston",
                 "--entity_id", "dm001",
                 "--tm_host", "192.168.0.2",
-                "--ws_host", "127.0.0.1"
+                "--ws_host", "192.168.0.2"
             ]
         },
         {
@@ -99,10 +99,10 @@
             "program": "python",
             "args": [
                 "-m", "ws.ws",
-                "--profile", "local",
-                "--dm_host", "127.0.0.1",
+                "--profile", "alston",
+                "--dm_host", "192.168.0.2",
                 "--tm_host", "192.168.0.2",
-                "--sim", "calm"
+                "--sim", "off"
             ]
         }
     ]
