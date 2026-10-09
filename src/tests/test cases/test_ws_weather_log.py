@@ -106,6 +106,23 @@ def test_failed_poll_and_unsupported_measurements_do_not_reuse_old_data(station,
     assert rows(tmp_path)[2][3:8] == ["3.700000", "None", "None", "None", "None"]
 
 
+@pytest.mark.parametrize("no_response", [True, False])
+def test_read_failure_logs_traceback_only_for_unexpected_errors(station, caplog, no_response):
+    minimalmodbus = pytest.importorskip("minimalmodbus")
+    message = "No communication with the instrument (no answer)"
+    error = minimalmodbus.NoResponseError(message) if no_response else RuntimeError(message)
+    station.weather_driver.get_weather_data.side_effect = error
+
+    with caplog.at_level("ERROR", logger="ws.ws"):
+        assert station._read_weather() is None
+
+    records = [record for record in caplog.records if record.name == "ws.ws"]
+    assert len(records) == 1
+    assert records[0].getMessage() == f"WeatherStation ws001 failed to read weather driver: {message}"
+    assert (records[0].exc_info is None) == no_response
+    assert station.app_model.last_err_msg == records[0].getMessage()
+
+
 def test_weather_rollover_compresses_and_preserves_all_archives(station, tmp_path):
     handler = station.weather_logger.handlers[0]
     midnight = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)

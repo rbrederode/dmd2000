@@ -23,6 +23,14 @@ from models.ws import WeatherStationDriverType
 from ws.drivers.driver import create_ws_driver
 from util.format import fmt_number
 
+try:
+    from minimalmodbus import NoResponseError
+except ImportError:
+    # Modbus is optional when using simulation or another weather driver.
+    MODBUS_NO_RESPONSE_ERRORS = ()
+else:
+    MODBUS_NO_RESPONSE_ERRORS = (NoResponseError,)
+
 logger = logging.getLogger("ws.ws")
 
 class WeatherStation(App):
@@ -391,7 +399,10 @@ class WeatherStation(App):
             return self.weather_driver.get_weather_data()
         except Exception as exc:
             message = f"WeatherStation {self.ws_model.id} failed to read weather driver: {exc}"
-            logger.exception(self.set_last_err(message))
+            if isinstance(exc, MODBUS_NO_RESPONSE_ERRORS):
+                logger.error(self.set_last_err(message))
+            else:
+                logger.exception(self.set_last_err(message))
             return None
 
     def _generate_weather(self) -> WeatherData:
@@ -410,7 +421,7 @@ class WeatherStation(App):
             ws_id=self.ws_model.id)
 
         if self.ws_model.sim_mode == "calm":
-            weather.wind_speed = random.uniform(0, 15)
+            weather.wind_speed = random.uniform(0, 7)
             weather.temperature = random.uniform(15, 25)
             weather.humidity = random.uniform(30, 70)
             weather.pressure = random.uniform(1000, 1025)
@@ -420,7 +431,7 @@ class WeatherStation(App):
             weather.uv_index = random.uniform(0, 5)
             weather.cloud_cover = random.uniform(0, 30)
         elif self.ws_model.sim_mode == "windy":
-            weather.wind_speed = random.uniform(16, 25)
+            weather.wind_speed = random.uniform(16, 15)
             weather.temperature = random.uniform(10, 20)
             weather.humidity = random.uniform(40, 80)
             weather.pressure = random.uniform(990, 1015)
@@ -430,7 +441,7 @@ class WeatherStation(App):
             weather.uv_index = random.uniform(0, 7)
             weather.cloud_cover = random.uniform(20, 70)
         elif self.ws_model.sim_mode == "stormy":
-            weather.wind_speed = random.uniform(26, 40)
+            weather.wind_speed = random.uniform(26, 25)
             weather.temperature = random.uniform(5, 15)
             weather.humidity = random.uniform(60, 100)
             weather.pressure = random.uniform(970, 1000)
