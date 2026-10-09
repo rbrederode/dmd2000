@@ -102,6 +102,20 @@
                 "--tm_host", "192.168.0.2",
                 "--sim", "off"
             ]
+        },
+        {
+            "_type": "LaunchModel",
+            "app_name": "ws",
+            "entity_id": "ws002",
+            "env": {},
+            "program": "python",
+            "args": [
+                "-m", "ws.ws",
+                "--profile", "alston",
+                "--dm_host", "192.168.0.2",
+                "--tm_host", "192.168.0.2",
+                "--sim", "off"
+            ]
         }
     ]
 }

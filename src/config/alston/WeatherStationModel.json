@@ -1,6 +1,6 @@
 {
     "_type": "WeatherStationModel",
-    "id": "ws001",
+    "id": "ws002",
     "app": {
         "_type": "AppModel",
         "app_name": "ws",
@@ -44,7 +44,7 @@
     },
     "driver_config": {
         "_type": "ModbusConfig",
-        "port": "/dev/cu.usbserial-BG00Y35C",
+        "port": "/dev/ttyUSB0",
         "slave_address": 2,
         "baudrate": 9600,
         "bytesize": 8,
