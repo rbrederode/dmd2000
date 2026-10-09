@@ -93,7 +93,7 @@
                 "processors": [],
                 "msg_timeout_ms": 10000,
                 "arguments": {
-                    "local_host": "192.168.0.2"
+                    "local_host": "192.168.0.18"
                 },
                 "last_update": {
                     "_type": "datetime",
