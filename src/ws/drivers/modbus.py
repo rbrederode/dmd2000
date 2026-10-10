@@ -14,6 +14,14 @@ except ModuleNotFoundError:
 
 logger = logging.getLogger(__name__)
 
+# POSIX serial buffer operations can raise termios.error rather than OSError.
+try:
+    import termios
+except ImportError:
+    SERIAL_IO_ERRORS = (OSError,)
+else:
+    SERIAL_IO_ERRORS = (OSError, termios.error)
+
 
 class ModbusConfig(BaseModel):
     """Configuration for a Modbus RTU weather station over an RS485/USB converter."""
@@ -207,13 +215,40 @@ class ModbusWeatherStationDriver(WeatherStationDriver):
         if register is None:
             return None
 
-        if self.instrument is None:
-            raise RuntimeError("Modbus weather station driver is closed")
+        import minimalmodbus
 
-        raw_value = self.instrument.read_register(
-            registeraddress=register,
-            number_of_decimals=self.config.register_decimals,
-            functioncode=self.config.function_code,
-            signed=self.config.signed,
-        )
+        # The base driver holds its read lock and rejects reads after close().
+        # Discard a broken connection and reopen on the next scheduled poll,
+        # allowing a disconnected USB adapter time to reappear.
+        try:
+            if self.instrument is None:
+                self.instrument = self._build_instrument()
+                logger.info(
+                    "Modbus weather station %s reopened serial port %s.",
+                    self.ws_model.id, self.config.port,
+                )
+
+            raw_value = self.instrument.read_register(
+                registeraddress=register,
+                number_of_decimals=self.config.register_decimals,
+                functioncode=self.config.function_code,
+                signed=self.config.signed,
+            )
+        except minimalmodbus.ModbusException:
+            # Protocol errors (including no response) also inherit OSError,
+            # but do not imply that the USB serial connection is unusable.
+            raise
+        except SERIAL_IO_ERRORS:
+            logger.warning(
+                "Modbus weather station %s serial port %s unavailable; "
+                "will reopen on the next poll.",
+                self.ws_model.id, self.config.port,
+            )
+            try:
+                self._close()
+            except Exception:
+                # _close clears the instrument reference before closing the
+                # port, so even a cleanup failure cannot retain a stale handle.
+                logger.warning("Error closing failed Modbus serial port", exc_info=True)
+            raise
         return (float(raw_value) * float(scale)) + float(offset)
