@@ -44,7 +44,7 @@
     },
     "driver_config": {
         "_type": "ModbusConfig",
-        "port": "/dev/ttyUSB0",
+        "port": "/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_BG00Y35C-if00-port0",
         "slave_address": 2,
         "baudrate": 9600,
         "bytesize": 8,
