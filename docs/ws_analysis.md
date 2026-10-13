@@ -11,13 +11,41 @@ plain logs and daily ZIP archives directly, without extracting them. Supply
 one or more directories or file paths; directories are scanned without recursion.
 You can also run it as `PYTHONPATH=src python -m ws.analysis ...`.
 
+Input defaults to UTF-8. For older single-byte logs, use `--encoding latin-1`
+(or the known source encoding, such as `cp1252`). This applies to both plain
+logs and ZIP contents; CSV output remains UTF-8. For example, from `src`:
+
+```bash
+python ws/analysis.py ../logs/weather --threshold 5 --encoding latin-1 --output daily_weather.csv
+```
+
+Decoding errors report the file, ZIP member where applicable, and line number.
+The tool does not discard or replace undecodable bytes. Choosing an encoding
+does not change which log row formats the parser supports.
+
 Each CSV row represents one station on one UTC day, sorted by date then station.
 Rerunning replaces the CSV, so changing `--threshold` rebuilds the results from
 the original data. A parse or archive error leaves an existing CSV intact and
-reports the source of the failure. Input files must each be chronological.
+reports the source of the failure. Readings are sorted by recorded UTC time,
+including logs with backward clock jumps; detected jumps produce warnings.
 Exact duplicate timestamp/station/wind records from overlapping inputs count
-once. Memory use is bounded by one day's station summaries and merge buffers;
-input streams remain open during the merge.
+once. Sorting uses a temporary SQLite database on disk to keep memory bounded,
+and opens one input stream at a time. Temporary disk space must accommodate
+the imported readings and sorting; the database is removed when processing ends.
+
+Directory scans ignore hidden files, including macOS `._` metadata sidecars.
+ZIP readers also ignore hidden members and `__MACOSX` metadata. Leading NUL
+padding found in a log is removed with a source/line warning before parsing the
+remaining reading. Padding does not count as a sample and cannot restore lost
+data. Other malformed readings still fail analysis rather than being skipped.
+If you accept omitting malformed readings, add `--skip-invalid-lines`. Each
+skipped row is reported with its source and line number; it does not contribute
+to sample counts or statistics, and it leaves gust state unchanged. Decoding
+errors still stop processing. For example, from `src`:
+
+```bash
+python ws/analysis.py ../logs/weather --threshold 5 --skip-invalid-lines --output daily_weather.csv
+```
 
 The columns are:
 

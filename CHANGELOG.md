@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Weather analysis ignores macOS metadata files, sorts readings on disk to handle backward timestamp jumps, and reports and removes leading NUL padding found in logs. An optional `--skip-invalid-lines` flag warns and omits malformed readings; default processing stops on malformed data.
+- Weather analysis supports a configurable input `--encoding` for older plain logs and ZIP archives, and reports the source file/member and line number on decoding errors.
 - Weather display includes an m/s or knots selector for wind readings, thresholds and plots. Alarm calculations and stored weather measurements remain in m/s.
 - Weather Station records every poll in `logs/weather/ws.log`, including the UTC log timestamp, station ID, health and weather measurements. Logs rotate at midnight UTC into dated ZIP archives, retained without automatic deletion.
 - Weather analysis tool (`src/ws/analysis.py`) reads plain weather logs and ZIP archives to produce a daily summary CSV with one row per station per UTC day. Summaries include sample counts, minimum/maximum/average wind speed, time of maximum wind, readings above a configurable `--threshold`, gust counts, and first/last reading timestamps. Usage is documented in `docs/ws_analysis.md`.

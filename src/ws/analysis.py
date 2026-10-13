@@ -4,8 +4,8 @@ Run from the repository root::
 
     python src/ws/analysis.py logs/weather --threshold 15 --output weather_daily.csv
 
-Inputs can be directories or individual files. Each log must be in timestamp
-order, as produced by the weather logger; files are merged chronologically.
+Inputs can be directories or individual files. Readings are sorted by timestamp
+using a temporary disk database, including logs with backward clock jumps.
 Sample counts include polls with missing wind values. Wind statistics exclude
 missing values, and remain blank when there are no valid wind readings.
 
@@ -16,18 +16,18 @@ The first available above-threshold reading counts as a gust start.
 """
 
 import argparse
+import codecs
 import csv
-import heapq
 import math
 import re
+import sqlite3
 import sys
+import tempfile
 import zipfile
-from contextlib import ExitStack
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
-from io import TextIOWrapper
-from pathlib import Path
-from typing import Iterable, Iterator, TextIO
+from pathlib import Path, PurePosixPath
+from typing import BinaryIO, Iterable, Iterator
 
 
 COLUMNS = (
@@ -46,10 +46,16 @@ class Reading:
     wind: float | None
 
 
-def parse_readings(stream: TextIO, source: str) -> Iterator[Reading]:
+def parse_readings(stream: Iterable[str], source: str, skip_invalid_lines: bool = False) -> Iterator[Reading]:
     """Parse current logs and older rows with a trailing observation timestamp."""
     previous = None
+    clock_jumps = 0
     for line_number, line in enumerate(stream, 1):
+        unpadded = line.lstrip("\x00")
+        if unpadded != line:
+            print(f"Warning: {source}:{line_number}: removed {len(line) - len(unpadded)} "
+                  "leading NUL padding bytes; no readings recovered from the padding.", file=sys.stderr)
+            line = unpadded
         if not line.strip():
             continue
         try:
@@ -63,11 +69,17 @@ def parse_readings(stream: TextIO, source: str) -> Iterator[Reading]:
             if wind is not None and (not math.isfinite(wind) or wind < 0):
                 raise ValueError("wind must be finite and non-negative, or None")
             if previous is not None and timestamp < previous:
-                raise ValueError("log timestamps are not in chronological order")
+                clock_jumps += 1
         except ValueError as exc:
+            if skip_invalid_lines:
+                print(f"Warning: {source}:{line_number}: skipped invalid reading: {exc}", file=sys.stderr)
+                continue
             raise ValueError(f"{source}:{line_number}: {exc}") from exc
         previous = timestamp
         yield Reading(timestamp, fields[1], wind)
+    if clock_jumps:
+        print(f"Warning: {source}: {clock_jumps} backward timestamp jump(s); "
+              "readings will be sorted by recorded UTC time.", file=sys.stderr)
 
 
 def discover_logs(inputs: Iterable[Path]) -> list[Path]:
@@ -77,7 +89,8 @@ def discover_logs(inputs: Iterable[Path]) -> list[Path]:
         supplied = supplied.expanduser()
         if supplied.is_dir():
             paths.update(path.resolve() for path in supplied.iterdir()
-                         if path.is_file() and LOG_NAME.fullmatch(path.name))
+                         if path.is_file() and not path.name.startswith(".")
+                         and LOG_NAME.fullmatch(path.name))
         elif supplied.is_file():
             paths.add(supplied.resolve())
         else:
@@ -87,31 +100,59 @@ def discover_logs(inputs: Iterable[Path]) -> list[Path]:
     return sorted(paths)
 
 
-def read_logs(paths: Iterable[Path]) -> Iterator[Reading]:
-    """Stream and merge plain logs and ZIP members without extracting files."""
-    with ExitStack() as stack:
-        streams = []
-        for path in paths:
-            if path.suffix == ".zip":
-                archive = stack.enter_context(zipfile.ZipFile(path))
-                for member in archive.infolist():
-                    if member.is_dir():
-                        continue
-                    stream = stack.enter_context(TextIOWrapper(archive.open(member), encoding="utf-8"))
-                    streams.append(parse_readings(stream, f"{path}!{member.filename}"))
-            else:
-                stream = stack.enter_context(path.open(encoding="utf-8"))
-                streams.append(parse_readings(stream, str(path)))
-        # Identical records from overlapping inputs are included only once.
-        seen_at_timestamp = set()
-        previous_timestamp = None
-        for reading in heapq.merge(*streams, key=lambda item: item.timestamp):
-            if reading.timestamp != previous_timestamp:
-                seen_at_timestamp.clear()
-                previous_timestamp = reading.timestamp
-            if reading not in seen_at_timestamp:
-                seen_at_timestamp.add(reading)
-                yield reading
+def decode_lines(stream: BinaryIO, source: str, encoding: str) -> Iterator[str]:
+    """Decode strictly, reporting the exact input and line on failure."""
+    for line_number, raw in enumerate(stream, 1):
+        try:
+            yield raw.decode(encoding)
+        except UnicodeDecodeError as exc:
+            raise ValueError(
+                f"{source}:{line_number}: cannot decode using {encoding}: {exc}. "
+                "Use --encoding with the log's encoding (e.g. latin-1 for older "
+                "single-byte logs)."
+            ) from exc
+
+
+def read_logs(paths: Iterable[Path], encoding: str = "utf-8",
+              skip_invalid_lines: bool = False) -> Iterator[Reading]:
+    """Sort on disk, keeping RAM bounded and opening one input at a time."""
+    with tempfile.TemporaryDirectory(prefix="weather-analysis-") as directory:
+        connection = sqlite3.connect(str(Path(directory) / "readings.sqlite"))
+        try:
+            connection.execute("PRAGMA temp_store=FILE")
+            connection.execute("CREATE TABLE readings (timestamp TEXT, station_id TEXT, wind REAL)")
+
+            def load(stream: BinaryIO, source: str) -> None:
+                connection.executemany(
+                    "INSERT INTO readings VALUES (?, ?, ?)",
+                    ((r.timestamp.isoformat(timespec="microseconds"), r.station_id, r.wind)
+                     for r in parse_readings(decode_lines(stream, source, encoding), source, skip_invalid_lines)),
+                )
+
+            for path in paths:
+                if path.suffix == ".zip":
+                    try:
+                        with zipfile.ZipFile(path) as archive:
+                            for member in archive.infolist():
+                                parts = PurePosixPath(member.filename).parts
+                                if member.is_dir() or any(part.startswith(".") or part == "__MACOSX" for part in parts):
+                                    continue
+                                with archive.open(member) as stream:
+                                    load(stream, f"{path}!{member.filename}")
+                    except zipfile.BadZipFile as exc:
+                        raise ValueError(f"{path}: {exc}") from exc
+                else:
+                    with path.open("rb") as stream:
+                        load(stream, str(path))
+            connection.commit()
+            # Exact overlapping timestamp/station/wind records count once.
+            for timestamp, station_id, wind in connection.execute(
+                "SELECT DISTINCT timestamp, station_id, wind FROM readings "
+                "ORDER BY timestamp, station_id, wind"
+            ):
+                yield Reading(datetime.fromisoformat(timestamp), station_id, wind)
+        finally:
+            connection.close()
 
 
 @dataclass
@@ -191,13 +232,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("inputs", nargs="+", type=Path, help="weather log directories, plain logs or ZIP archives")
     parser.add_argument("--threshold", required=True, type=float, help="wind threshold in m/s (strictly exceeded)")
     parser.add_argument("--output", type=Path, default=Path("weather_daily.csv"), help="summary CSV (default: weather_daily.csv)")
+    parser.add_argument("--encoding", default="utf-8", help="input log encoding, e.g. latin-1 (default: utf-8); CSV output is UTF-8")
+    parser.add_argument("--skip-invalid-lines", action="store_true", help="warn and skip malformed readings; default is to stop (decoding errors still stop)")
     args = parser.parse_args(argv)
     # Finish writing a temporary file before replacing an existing summary.
     import os
-    import tempfile
 
     temporary = None
     try:
+        try:
+            codecs.lookup(args.encoding)
+        except LookupError as exc:
+            raise ValueError(f"unknown input encoding: {args.encoding}") from exc
         paths = discover_logs(args.inputs)
         output = args.output.expanduser().resolve()
         if output in paths:
@@ -208,13 +254,13 @@ def main(argv: list[str] | None = None) -> int:
             writer = csv.writer(stream)
             writer.writerow(COLUMNS)
             count = 0
-            for summary in daily_summaries(read_logs(paths), args.threshold):
+            for summary in daily_summaries(read_logs(paths, args.encoding, args.skip_invalid_lines), args.threshold):
                 writer.writerow(summary.row(args.threshold))
                 count += 1
         os.replace(temporary, output)
         print(f"Wrote {count} daily summary rows to {output}")
         return 0
-    except (OSError, ValueError, zipfile.BadZipFile, EOFError) as exc:
+    except (OSError, ValueError, zipfile.BadZipFile, EOFError, sqlite3.Error) as exc:
         print(f"Weather analysis failed: {exc}", file=sys.stderr)
         return 1
     finally:
