@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from unittest import mock
 import time
 import zipfile
@@ -6,6 +7,7 @@ import zipfile
 import pytest
 
 from env.app import App
+from env.events import TimerEvent
 from models.comms import CommunicationStatus
 from models.ws import WeatherData, WeatherStationDriverType, WeatherStationModel
 from ws.ws import WeatherStation
@@ -25,6 +27,10 @@ def station(tmp_path, monkeypatch):
     station.app_model = station.ws_model.app
     station.weather_driver = mock.Mock()
     station.weather_driver.get_poll_interval_ms.return_value = 1500
+    station._poll_deadline = 100.0
+    # Each synthetic event fires at its scheduled deadline unless a test
+    # explicitly supplies a delayed clock or sensor read.
+    monkeypatch.setattr("ws.ws.time.monotonic", lambda: station._poll_deadline)
     station.weather_logger = station.get_weather_logger()
     yield station
     for handler in station.weather_logger.handlers[:]:
@@ -44,6 +50,10 @@ def sample():
 def rows(tmp_path):
     return [line.split(" | ") for line in
             (tmp_path / "weather" / "ws.log").read_text().splitlines()]
+
+
+def poll_event():
+    return TimerEvent(id="test-poll", name="weather_polling_timer")
 
 
 def test_weather_row_has_requested_fields_and_only_utc_log_timestamp(station, tmp_path):
@@ -77,7 +87,7 @@ def test_every_poll_logs_even_without_dish_manager(station, tmp_path, connected,
     station._construct_dm_advice_message = mock.Mock(return_value=object())
 
     for _ in range(2):
-        action = station.process_timer_event(None)
+        action = station.process_timer_event(poll_event())
         assert len(action.msgs_to_remote) == int(connected)
         assert action.timer_actions[0].timer_action == 1500
 
@@ -94,8 +104,8 @@ def test_every_poll_logs_even_without_dish_manager(station, tmp_path, connected,
 def test_failed_poll_and_unsupported_measurements_do_not_reuse_old_data(station, tmp_path):
     station.weather_driver.get_weather_data.side_effect = [sample(), RuntimeError("no answer")]
     station._construct_dm_advice_message = mock.Mock(return_value=object())
-    station.process_timer_event(None)
-    action = station.process_timer_event(None)
+    station.process_timer_event(poll_event())
+    action = station.process_timer_event(poll_event())
     assert rows(tmp_path)[1][3:] == ["None"] * 5
     assert action.msgs_to_remote == []
     assert len(action.timer_actions) == 1
@@ -104,6 +114,108 @@ def test_failed_poll_and_unsupported_measurements_do_not_reuse_old_data(station,
     partial.wind_direction = partial.temperature = partial.humidity = partial.pressure = None
     station._log_weather(partial)
     assert rows(tmp_path)[2][3:8] == ["3.700000", "None", "None", "None", "None"]
+
+
+@pytest.mark.parametrize("event", [
+    None,
+    TimerEvent(id="retry", name="TCPClient-dm", user_callback=lambda _: None),
+    TimerEvent(id="other", name="unrelated-timer"),
+])
+def test_other_timers_do_not_read_log_or_reschedule_weather(station, tmp_path, event):
+    station._generate_weather = mock.Mock()
+    action = station.process_timer_event(event)
+    station.weather_driver.get_weather_data.assert_not_called()
+    station._generate_weather.assert_not_called()
+    assert rows(tmp_path) == []
+    assert action.timer_actions == []
+    assert action.msgs_to_remote == []
+    assert station._poll_deadline == 100.0
+
+
+@pytest.mark.parametrize("interval_ms", [1000, 1500])
+def test_poll_processing_time_does_not_accumulate(station, monkeypatch, interval_ms):
+    station.weather_driver.get_poll_interval_ms.return_value = interval_ms
+    clock = [100.0]
+    monkeypatch.setattr("ws.ws.time.monotonic", lambda: clock[0])
+    station._construct_dm_advice_message = mock.Mock(return_value=object())
+
+    def read():
+        clock[0] += 0.125
+        return sample()
+
+    station.weather_driver.get_weather_data.side_effect = read
+    for index in range(20):
+        clock[0] = 100.0 + index * interval_ms / 1000
+        action = station.process_timer_event(poll_event())
+        assert action.timer_actions[0].timer_action == interval_ms - 125
+        assert station._poll_deadline == 100.0 + (index + 1) * interval_ms / 1000
+
+
+def test_failed_sensor_read_still_preserves_poll_cadence(station, monkeypatch, tmp_path):
+    station.weather_driver.get_poll_interval_ms.return_value = 1000
+    clock = [100.0]
+    monkeypatch.setattr("ws.ws.time.monotonic", lambda: clock[0])
+
+    def read():
+        clock[0] += 0.25
+        raise RuntimeError("sensor unavailable")
+
+    station.weather_driver.get_weather_data.side_effect = read
+    action = station.process_timer_event(poll_event())
+    assert action.timer_actions[0].timer_action == 750
+    assert station._poll_deadline == 101.0
+    assert rows(tmp_path)[0][3:] == ["None"] * 5
+
+
+@pytest.mark.parametrize("start, read_duration, delay_ms, skipped", [
+    (100.75, 0.125, 125, 0),  # Event spent time waiting in the queue.
+    (100.0, 2.25, 750, 2),  # Slow sensor read crosses two deadlines.
+    (102.25, 0.0, 750, 2),  # Event handling itself was delayed.
+    (100.0, 1.0, 1000, 1),  # Finishing exactly at a deadline skips that slot.
+])
+def test_late_polls_skip_elapsed_deadlines_without_catch_up_bursts(
+    station, monkeypatch, caplog, start, read_duration, delay_ms, skipped
+):
+    station.weather_driver.get_poll_interval_ms.return_value = 1000
+    clock = [start]
+    monkeypatch.setattr("ws.ws.time.monotonic", lambda: clock[0])
+    station._construct_dm_advice_message = mock.Mock(return_value=object())
+
+    def read():
+        clock[0] += read_duration
+        return sample()
+
+    station.weather_driver.get_weather_data.side_effect = read
+    with caplog.at_level("WARNING", logger="ws.ws"):
+        action = station.process_timer_event(poll_event())
+    assert station.weather_driver.get_weather_data.call_count == 1
+    assert len(action.timer_actions) == 1
+    assert action.timer_actions[0].timer_action == delay_ms
+    assert station._poll_deadline == 101.0 + skipped
+    if skipped:
+        assert f"skipped {skipped} elapsed polling deadline(s)" in caplog.text
+    else:
+        assert "skipped" not in caplog.text
+
+
+def test_fractional_millisecond_delay_rounds_up(station, monkeypatch):
+    station.weather_driver.get_poll_interval_ms.return_value = 1000
+    station._poll_deadline = 128.0
+    monkeypatch.setattr("ws.ws.time.monotonic", lambda: 128.10025)
+    assert station._next_poll_timer().timer_action == 900
+
+
+def test_resync_resets_deadline_to_new_configured_interval(station, monkeypatch):
+    station._load_model_from_profile = mock.Mock()
+    station._replace_weather_driver = mock.Mock()
+    station.get_args = mock.Mock(return_value=SimpleNamespace(entity_id="<undefined>", sim=None))
+    station.weather_driver.get_poll_interval_ms.return_value = 250
+    monkeypatch.setattr("ws.ws.time.monotonic", lambda: 200.0)
+    action = station.process_resync()
+    assert station._poll_deadline == 200.25
+    assert action.timer_actions[0].name == "weather_polling_timer"
+    assert action.timer_actions[0].timer_action == 250
+    station.weather_driver.get_weather_data.assert_not_called()
 
 
 @pytest.mark.parametrize("no_response", [True, False])

@@ -2,6 +2,7 @@ import sys
 import time
 import random
 import logging
+import math
 from logging.handlers import TimedRotatingFileHandler
 import threading
 import zipfile
@@ -40,6 +41,7 @@ class WeatherStation(App):
     Weather data is needed for safety reasons to perform a wind stow of the dish when wind speeds are too high.
     """
     ws_model = WeatherStationModel(id="ws001")
+    POLL_TIMER_NAME = "weather_polling_timer"
 
     def __init__(self, app_name: str = "ws"):
 
@@ -66,6 +68,7 @@ class WeatherStation(App):
         self.ws_model.tm_connected = CommunicationStatus.NOT_ESTABLISHED
 
         self.weather_driver = None
+        self._poll_deadline = None
         self.weather_logger = self.get_weather_logger()
 
     def add_args(self, arg_parser): 
@@ -115,12 +118,7 @@ class WeatherStation(App):
 
         self._replace_weather_driver()
 
-        poll_interval = self.weather_driver.get_poll_interval_ms() if self.weather_driver is not None else self.ws_model.driver_poll_period
-
-        # Start the polling timer to update wind speed at 1Hz intervals
-        action.set_timer_action(Action.Timer(
-            name=f"weather_polling_timer",
-            timer_action=poll_interval))
+        action.set_timer_action(self._next_poll_timer(reset=True))
 
         return action
 
@@ -198,11 +196,16 @@ class WeatherStation(App):
         return action
 
     def process_timer_event(self, event) -> Action:
-        """ Processes timer events.
-        """
+        """Read weather only for the polling timer, preserving its cadence."""
         logger.debug(f"WeatherStation timer event: {event}")
 
         action = Action()
+
+        if getattr(event, "name", None) != self.POLL_TIMER_NAME:
+            return action
+
+        if self._poll_deadline is None:
+            self._poll_deadline = time.monotonic()
 
         if self.ws_model.sim_mode.upper() == "OFF":
             weather_data = self._read_weather()
@@ -215,12 +218,27 @@ class WeatherStation(App):
             dm_msg = self._construct_dm_advice_message(weather_data)
             action.set_msg_to_remote(dm_msg)
 
-        poll_interval = self.weather_driver.get_poll_interval_ms() if self.weather_driver is not None else self.ws_model.driver_poll_period
-        action.set_timer_action(Action.Timer(
-            name=f"weather_polling_timer", 
-            timer_action=poll_interval)) 
+        action.set_timer_action(self._next_poll_timer())
 
         return action
+
+    def _next_poll_timer(self, reset: bool = False) -> Action.Timer:
+        """Wait only until the next deadline; skip slots elapsed during a read."""
+        interval_ms = (self.weather_driver.get_poll_interval_ms()
+                       if self.weather_driver is not None else self.ws_model.driver_poll_period) or 1000
+        period = interval_ms / 1000.0
+        now = time.monotonic()
+        deadline = now + period if reset or self._poll_deadline is None else self._poll_deadline + period
+        if deadline <= now:
+            skipped = math.floor((now - deadline) / period) + 1
+            deadline += skipped * period
+            logger.warning("WeatherStation %s skipped %d elapsed polling deadline(s).",
+                           self.ws_model.id, skipped)
+        self._poll_deadline = deadline
+        return Action.Timer(
+            name=self.POLL_TIMER_NAME,
+            timer_action=max(1, math.ceil((deadline - now) * 1000)),
+        )
 
     def get_weather_logger(self) -> logging.Logger:
         """Get a weather logger that archives daily UTC logs without deletion."""
