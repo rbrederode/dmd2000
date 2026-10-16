@@ -1,3 +1,4 @@
+from contextlib import ExitStack
 import logging
 import json
 from . import map
@@ -1874,37 +1875,28 @@ class TelescopeManager(App):
             logger.exception(self.set_last_err(message))
 
 def main():
-  
     tm = TelescopeManager()
-    tm.start()
+    with tm.running(), ExitStack() as cleanup:
+        # Webhook inputs remain available in headless mode.
+        webhook_handler = WebhookHandler(event_queue=tm.get_queue(), host='127.0.0.1', port=5001)
+        cleanup.callback(webhook_handler.stop)
+        webhook_handler.start()
+        logger.info("Webhook handler initialized and running on port 5001")
 
-    # Start webhook handler before optional UI handling so webhook inputs still work in headless mode.
-    webhook_handler = WebhookHandler(event_queue=tm.get_queue(), host='127.0.0.1', port=5001)
-    webhook_handler.start()
-    logger.info("Webhook handler initialized and running on port 5001")
+        if tm.is_headless():
+            logger.info("Telescope Manager running in headless mode; skipping ui initialization and updates.")
+            tm.wait_for_stop()
+            return
 
-    if tm.is_headless():
-        logger.info("Telescope Manager running in headless mode; skipping ui initialization and updates.")
-        try:
-            while True:
-                time.sleep(1.0)
-        except KeyboardInterrupt:
-            pass
-        finally:
-            tm.stop()
-        return
-
-    last_odt_config_snapshot = None
-    disabled_ui_drivers = set()
-
-    try:
+        last_odt_config_snapshot = None
+        disabled_ui_drivers = set()
 
         # Iterate through all UI drivers every second (while True) 
         # Instantiate uninitialised UI drivers based on type and config
         # Push Telescope Model updates to initialized UI drivers based on their defined poll period
         # Pull configuration updates from UI drivers and trigger corresponding configuration update events in the Telescope Model
 
-        while True:
+        while not tm.stop_requested:
             now = datetime.now(timezone.utc)
 
             for driver in tm.telmodel.tel_mgr.ui_drivers:
@@ -1992,12 +1984,8 @@ def main():
                             logger.error(f"Error publishing to UI driver {driver.type.name}: {e}")
          
             # Sleep before checking whether drivers are due for an update
-            time.sleep(1) 
+            tm.wait_for_stop(1)
 
-    except KeyboardInterrupt:
-        pass
-    finally:
-        tm.stop()
 
 if __name__ == "__main__":
     main()

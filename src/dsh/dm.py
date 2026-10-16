@@ -1075,23 +1075,15 @@ def test_get_desired_altaz(dm, md01_driver):
 
 def main():
     dm = DM()
-    dm.start()
+    with dm.running():
+        if dm.is_headless():
+            logger.info("Dish Manager running in headless mode; skipping dish and weather displays.")
+            dm.wait_for_stop()
+            return
 
-    if dm.is_headless():
-        logger.info("Dish Manager running in headless mode; skipping dish and weather displays.")
-        try:
-            while True:
-                time.sleep(1.0)
-        except KeyboardInterrupt:
-            pass
-        finally:
-            dm.stop()
-        return
+        display_period_sec = 1.0
 
-    display_period_sec = 1.0
-
-    try:
-        while True:
+        while not dm.stop_requested:
             time_start = time.monotonic()
 
             for dish_id, dish_driver in dm.dish_drivers.items():
@@ -1119,12 +1111,8 @@ def main():
                 display_period_sec = max(1.0, display_period_sec - 2.0)
                 logger.info(f"Dish Manager dish display loop took {time_elapsed:.3f} seconds to execute, shortening display period to {display_period_sec} seconds")
 
-            time.sleep(max(0.0, display_period_sec - time_elapsed)) # Update on an approximately 1 second cadence
+            dm.wait_for_stop(max(0.0, display_period_sec - time_elapsed)) # Update on an approximately 1 second cadence
                 
-    except KeyboardInterrupt:
-        pass
-    finally:
-        dm.stop()
 
 if __name__ == "__main__":
     main()

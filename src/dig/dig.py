@@ -5,7 +5,6 @@ import numpy as np
 import threading
 import time
 from typing import Any
-import _thread
 from gpiozero import LED
 
 from api import protocol as dmd_protocol
@@ -604,15 +603,23 @@ class Digitiser(App):
 
         self._shutdown_requested = True
         logger.critical(f"Digitiser requesting process shutdown: {reason}")
-        _thread.interrupt_main()
+        self.request_stop()
 
     def stop(self):
         """ Stops the digitiser application and cleans up resources. """
         
-        if getattr(self, "temp_sensor", None) is not None:
-            self.temp_sensor.stop()
-            self.temp_sensor = None
-        super().stop()
+        try:
+            if getattr(self, "temp_sensor", None) is not None:
+                self.temp_sensor.stop()
+                self.temp_sensor = None
+        finally:
+            try:
+                super().stop()
+            finally:
+                sdr = getattr(self, "sdr", None)
+                self.sdr = None
+                if sdr is not None:
+                    sdr.close()
 
     def process_status_event(self, event) -> Action:
         """ Processes status update events from the application. This method is called periodically by the App 
@@ -1046,17 +1053,8 @@ class Digitiser(App):
 
 def main():
     digitiser = Digitiser()
-    digitiser.start() 
-
-    try:
-        while True:
-             time.sleep(1)
-
-    except KeyboardInterrupt:
-        pass
-    finally:
-        digitiser.stop()
-        digitiser.sdr.close()
+    with digitiser.running():
+        digitiser.wait_for_stop()
 
 if __name__ == "__main__":
     main()

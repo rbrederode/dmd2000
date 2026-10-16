@@ -1075,23 +1075,15 @@ class SDP(App):
 
 def main():
     sdp = SDP()
-    sdp.start()
+    with sdp.running():
+        if sdp.is_headless():
+            logger.info("Science Data Processor running in headless mode; skipping signal displays.")
+            sdp.wait_for_stop()
+            return
 
-    if sdp.is_headless():
-        logger.info("Science Data Processor running in headless mode; skipping signal displays.")
-        try:
-            while True:
-                time.sleep(1.0)
-        except KeyboardInterrupt:
-            pass
-        finally:
-            sdp.stop()
-        return
+        display_period_sec = 1.0
 
-    display_period_sec = 1.0  # Initial display period in seconds
-
-    try:
-        while True:
+        while not sdp.stop_requested:
             time_start = time.monotonic()
           
             sdp._refresh_signal_displays()
@@ -1108,12 +1100,8 @@ def main():
                 display_period_sec = max(1.0, display_period_sec - 2.0)
                 logger.info(f"Science Data Processor - Signal display loop took {time_elapsed:.3f} seconds to execute, shortening display period to {display_period_sec} seconds")
 
-            time.sleep(max(0.0, display_period_sec - time_elapsed))  # Update displays on an approximately 1 second cadence
+            sdp.wait_for_stop(max(0.0, display_period_sec - time_elapsed))  # Update displays on an approximately 1 second cadence
                 
-    except KeyboardInterrupt:
-        pass
-    finally:
-        sdp.stop()
 
 if __name__ == "__main__":
     main()

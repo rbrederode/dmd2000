@@ -502,15 +502,10 @@ def user_input_thread(ws):
 
 def main():
     ws = WeatherStation()
-    ws.start()
-
-    # Start user input thread
-    threading.Thread(target=user_input_thread, args=(ws,), daemon=True).start()
-
-    while True:
-        time.sleep(1)
-
-    ws.stop()
+    with ws.running():
+        if not ws.is_headless():
+            threading.Thread(target=user_input_thread, args=(ws,), daemon=True).start()
+        ws.wait_for_stop()
 
 if __name__ == "__main__":
     main()

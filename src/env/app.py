@@ -1,8 +1,10 @@
 import argparse
 import asyncio
+from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
 from logging.handlers import TimedRotatingFileHandler
 import os
+import signal
 from pathlib import Path
 from queue import Queue, Empty
 import time
@@ -51,6 +53,7 @@ class App:
 
     def __init__(self, app_name: str, app_model: AppModel):
 
+        self._stop_event = threading.Event()
         version_info = get_version_info()
 
         if app_name is None or app_name.strip() == "":
@@ -235,6 +238,47 @@ class App:
             ),
         )
 
+    def request_stop(self):
+        """Request shutdown; the main thread performs cleanup outside handlers."""
+        self._stop_event.set()
+
+    @property
+    def stop_requested(self) -> bool:
+        return self._stop_event.is_set()
+
+    def wait_for_stop(self, timeout: float | None = None) -> bool:
+        """Wait interruptibly, returning True when shutdown has been requested."""
+        return self._stop_event.wait(timeout)
+
+    @contextmanager
+    def running(self):
+        """Own the standalone process lifecycle, including signals and logging."""
+        if threading.current_thread() is not threading.main_thread():
+            raise RuntimeError("App.running() must execute on the main thread")
+        previous_handlers = {}
+
+        def request_shutdown(signum, frame):
+            self.request_stop()
+
+        try:
+            for signum in (signal.SIGTERM, signal.SIGINT):
+                previous_handlers[signum] = signal.signal(signum, request_shutdown)
+            if not self.stop_requested:
+                self.start()
+            try:
+                yield self
+            except KeyboardInterrupt:
+                self.request_stop()
+        finally:
+            try:
+                self.stop()
+            finally:
+                try:
+                    logging.shutdown()
+                finally:
+                    for signum, handler in previous_handlers.items():
+                        signal.signal(signum, handler)
+
     def start(self):
         """Starts the application."""
         self.app_model.app_running = True
@@ -291,7 +335,7 @@ class App:
                 else:
                     self.status_update_event.enqueue(self.queue)
                     
-                time.sleep(30)  # Sleep main thread to avoid busy-waiting, work is done in the processor threads
+                self.wait_for_stop(30)  # Wake promptly when shutdown is requested.
 
             except Exception as e:
                 logger.error(self.set_last_err(f"App {self.app_model.app_name} encountered an error: {e}"))
@@ -300,10 +344,17 @@ class App:
         """Stops the application."""
 
         self.app_model.app_running = False # Stops status thread
-        self.stop_timer_manager()
-        self.stop_cmd_server()
-        self.stop_processors()
-        self.stop_status_thread()
+        if hasattr(self, "_stop_event"):
+            self.request_stop()
+        for component_name in (
+            "stop_timer_manager", "stop_cmd_server", "stop_processors",
+            "stop_status_thread", "stop_interfaces",
+        ):
+            try:
+                getattr(self, component_name)()
+            except Exception:
+                logger.exception("App %s failed during %s", self.app_model.app_name,
+                                 component_name)
 
         if not self.queue.empty():
             self.queue.queue.clear()
@@ -318,6 +369,19 @@ class App:
 
         logger.info(f"App {self.app_model.app_name} stopped")
         self.app_model.health = HealthState.UNKNOWN
+
+    def stop_interfaces(self):
+        """Close registered network endpoints after worker processing stops."""
+        stopped = set()
+        for _, endpoint, _ in list(getattr(self, "interfaces", {}).values()):
+            if id(endpoint) in stopped:
+                continue
+            stopped.add(id(endpoint))
+            try:
+                endpoint.stop()
+            except Exception:
+                logger.exception("App %s failed to stop an interface", self.app_model.app_name)
+        getattr(self, "interfaces", {}).clear()
 
     def start_processors(self):
         """Starts all processor threads."""
