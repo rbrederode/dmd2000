@@ -9,6 +9,7 @@ import pytest
 from env.app import App
 from env.events import TimerEvent
 from models.comms import CommunicationStatus
+from models.health import HealthState
 from models.ws import WeatherData, WeatherStationDriverType, WeatherStationModel
 from ws.ws import WeatherStation
 
@@ -26,6 +27,7 @@ def station(tmp_path, monkeypatch):
     )
     station.app_model = station.ws_model.app
     station.weather_driver = mock.Mock()
+    station._weather_available = True
     station.weather_driver.get_poll_interval_ms.return_value = 1500
     station._poll_deadline = 100.0
     # Each synthetic event fires at its scheduled deadline unless a test
@@ -92,7 +94,7 @@ def test_every_poll_logs_even_without_dish_manager(station, tmp_path, connected,
         assert action.timer_actions[0].timer_action == 1500
 
     assert len(rows(tmp_path)) == 2
-    assert all(row[2] == ("OK" if connected else "FAILED") for row in rows(tmp_path))
+    assert all(row[2] == ("OK" if connected else "DEGRADED") for row in rows(tmp_path))
     if sim_mode == "off":
         assert station.weather_driver.get_weather_data.call_count == 2
         station._generate_weather.assert_not_called()
@@ -114,6 +116,63 @@ def test_failed_poll_and_unsupported_measurements_do_not_reuse_old_data(station,
     partial.wind_direction = partial.temperature = partial.humidity = partial.pressure = None
     station._log_weather(partial)
     assert rows(tmp_path)[2][3:8] == ["3.700000", "None", "None", "None", "None"]
+
+
+@pytest.mark.parametrize("tm_connected, dm_connected", [
+    (False, False), (False, True), (True, False), (True, True),
+])
+def test_health_startup_failure_and_recovery_for_all_manager_connections(
+    station, tmp_path, tm_connected, dm_connected
+):
+    station.ws_model.tm_connected = (
+        CommunicationStatus.ESTABLISHED if tm_connected else CommunicationStatus.NOT_ESTABLISHED
+    )
+    station.ws_model.dm_connected = (
+        CommunicationStatus.ESTABLISHED if dm_connected else CommunicationStatus.NOT_ESTABLISHED
+    )
+    station._weather_available = None
+    assert station.get_health_state() == HealthState.UNKNOWN
+    station.weather_driver.get_weather_data.side_effect = [sample(), RuntimeError("anemometer disconnected"), sample()]
+    station._construct_dm_advice_message = mock.Mock(return_value=object())
+    healthy = HealthState.OK if tm_connected and dm_connected else HealthState.DEGRADED
+
+    for expected in (healthy, HealthState.FAILED, healthy):
+        station.process_timer_event(poll_event())
+        assert station.get_health_state() == expected
+
+    assert [row[2] for row in rows(tmp_path)] == [healthy.name, "FAILED", healthy.name]
+    # Immediate failure does not depend on the driver's old failure threshold.
+    assert station.ws_model.driver_failures == 0
+
+
+@pytest.mark.parametrize("wind_speed", [None, float("nan"), float("inf"), -1.0])
+def test_missing_or_invalid_wind_is_failed_even_when_other_measurements_exist(station, wind_speed):
+    # Guard against malformed samples from a third-party driver as well as
+    # missing values accepted by WeatherData itself.
+    weather = SimpleNamespace(wind_speed=wind_speed, temperature=15.5)
+    station.weather_driver.get_weather_data.return_value = weather
+    station._construct_dm_advice_message = mock.Mock(return_value=object())
+    station.process_timer_event(poll_event())
+    assert station.get_health_state() == HealthState.FAILED
+
+
+def test_missing_driver_is_failed_after_first_poll(station, tmp_path):
+    station._weather_available = None
+    station.weather_driver = None
+    assert station.get_health_state() == HealthState.UNKNOWN
+    station.process_timer_event(poll_event())
+    assert station.get_health_state() == HealthState.FAILED
+    assert rows(tmp_path)[0][2] == "FAILED"
+
+
+def test_driver_replacement_returns_health_to_unknown_until_next_poll(station):
+    station.ws_model.sim_mode = "calm"
+    station._replace_weather_driver()
+    assert station.get_health_state() == HealthState.UNKNOWN
+    station._generate_weather = mock.Mock(return_value=sample())
+    station._construct_dm_advice_message = mock.Mock(return_value=object())
+    station.process_timer_event(poll_event())
+    assert station.get_health_state() == HealthState.OK
 
 
 @pytest.mark.parametrize("event", [

@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Weather Station reports DEGRADED when either or both manager connections are unavailable, FAILED immediately when the latest poll cannot supply valid wind data, and UNKNOWN until the first poll after startup or driver replacement. Health recovers on the next successful poll.
 - All five application entry points use a shared App lifecycle to handle SIGTERM and SIGINT, stop workers and network interfaces, invoke application-specific cleanup, and flush and close logging handlers. Weather Station headless runs no longer start an interactive input thread.
 - Weather Station polls only when its weather polling timer expires. Polls follow monotonic deadlines so sensor processing time does not accumulate into the configured interval; overdue deadlines are skipped with a warning rather than triggering catch-up reads.
 - Weather analysis ignores macOS metadata files, sorts readings on disk to handle backward timestamp jumps, and reports and removes leading NUL padding found in logs. An optional `--skip-invalid-lines` flag warns and omits malformed readings; default processing stops on malformed data.

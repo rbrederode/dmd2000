@@ -68,6 +68,7 @@ class WeatherStation(App):
         self.ws_model.tm_connected = CommunicationStatus.NOT_ESTABLISHED
 
         self.weather_driver = None
+        self._weather_available = None  # Unknown until the first poll completes.
         self._poll_deadline = None
         self.weather_logger = self.get_weather_logger()
 
@@ -212,6 +213,10 @@ class WeatherStation(App):
         else:
             weather_data = self._generate_weather()
 
+        wind_speed = getattr(weather_data, "wind_speed", None)
+        self._weather_available = (
+            wind_speed is not None and math.isfinite(wind_speed) and wind_speed >= 0
+        )
         self._log_weather(weather_data)
 
         if weather_data is not None and self.ws_model.dm_connected == CommunicationStatus.ESTABLISHED:
@@ -288,40 +293,28 @@ class WeatherStation(App):
         )
 
     def get_health_state(self) -> HealthState:
-        """ Returns the current health state of this application.
-        """
+        """Distinguish unavailable measurements from missing manager links."""
+        if self._weather_available is None:
+            return HealthState.UNKNOWN
+        if not self._weather_available:
+            self.set_last_err(
+                f"WeatherStation {self.ws_model.id} health status set to FAILED: "
+                "Latest weather poll failed or wind speed is unavailable or invalid"
+            )
+            return HealthState.FAILED
 
-        health_state = HealthState.UNKNOWN
-
-        if self.ws_model.tm_connected == CommunicationStatus.ESTABLISHED and self.ws_model.dm_connected == CommunicationStatus.ESTABLISHED:
-            health_state = HealthState.OK
-
-        elif self.ws_model.tm_connected != CommunicationStatus.ESTABLISHED and self.ws_model.dm_connected == CommunicationStatus.ESTABLISHED:
-            message = f"WeatherStation {self.ws_model.id} health status set to DEGRADED: Telescope Manager not connected"
-            self.set_last_err(message)
-            health_state = HealthState.DEGRADED
-
-        elif self.ws_model.tm_connected == CommunicationStatus.ESTABLISHED and self.ws_model.dm_connected != CommunicationStatus.ESTABLISHED:
-            message = f"WeatherStation {self.ws_model.id} health status set to FAILED: Dish Manager not connected"
-            self.set_last_err(message)
-            health_state = HealthState.FAILED
-
-        if self.ws_model.sim_mode.upper() == "OFF" and self.ws_model.driver_type != WeatherStationDriverType.UNKNOWN:
-            failure_count = self.ws_model.driver_failures
-            poll_period = self.ws_model.driver_poll_period or 1000
-            failure_threshold = max(10, int(60000 / poll_period))
-            
-            if failure_count >= failure_threshold:
-                message = f"WeatherStation {self.ws_model.id} health status set to FAILED: Weather driver failures exceeded threshold ({failure_count} >= {failure_threshold})"
-                self.set_last_err(message)
-                health_state = HealthState.FAILED
-
-            elif failure_count > 0 and health_state == HealthState.OK:
-                message = f"WeatherStation {self.ws_model.id} health status set to DEGRADED: Weather driver failures ({failure_count}) exceeded 0 but below threshold ({failure_threshold})"
-                self.set_last_err(message)
-                health_state = HealthState.DEGRADED
-        
-        return health_state
+        disconnected = []
+        if self.ws_model.tm_connected != CommunicationStatus.ESTABLISHED:
+            disconnected.append("Telescope Manager")
+        if self.ws_model.dm_connected != CommunicationStatus.ESTABLISHED:
+            disconnected.append("Dish Manager")
+        if disconnected:
+            self.set_last_err(
+                f"WeatherStation {self.ws_model.id} health status set to DEGRADED: "
+                f"{', '.join(disconnected)} not connected"
+            )
+            return HealthState.DEGRADED
+        return HealthState.OK
 
     def process_status_event(self, event) -> Action:
         """ Processes status update events.
@@ -482,6 +475,7 @@ class WeatherStation(App):
 
     def _replace_weather_driver(self) -> None:
         """Close the current driver before creating its configured replacement."""
+        self._weather_available = None
         current_driver = self.weather_driver
         self.weather_driver = None
 
