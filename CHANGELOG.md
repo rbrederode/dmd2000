@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Local Dish Manager launch uses `python -m dsh.dm` so application packages remain importable in a new terminal without a preconfigured PYTHONPATH.
 - Terminal launcher activates repository `.venv` environments as well as legacy `venv` environments, preventing a new terminal window from falling back to the system Python. Repository pyenv configuration retains precedence.
 - Weather Station reports DEGRADED when either or both manager connections are unavailable, FAILED immediately when the latest poll cannot supply valid wind data, and UNKNOWN until the first poll after startup or driver replacement. Health recovers on the next successful poll.
 - All five application entry points use a shared App lifecycle to handle SIGTERM and SIGINT, stop workers and network interfaces, invoke application-specific cleanup, and flush and close logging handlers. Weather Station headless runs no longer start an interactive input thread.

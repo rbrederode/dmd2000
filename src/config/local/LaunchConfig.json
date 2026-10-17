@@ -26,7 +26,7 @@
             "env": {},
             "program": "python",
             "args": [
-                "dsh/dm.py",
+                "-m", "dsh.dm",
                 "--profile", "local",
                 "--entity_id", "dm001",
                 "--tm_host", "127.0.0.1",
