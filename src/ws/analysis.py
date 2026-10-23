@@ -4,6 +4,9 @@ Run from the repository root::
 
     python src/ws/analysis.py logs/weather --threshold 15 --output weather_daily.csv
 
+Optional --start_date and --end_date use inclusive UTC dates (YYYY-MM-DD).
+Without a start date, include the earliest readings; the end defaults to today UTC.
+
 Inputs can be directories or individual files. Readings are sorted by timestamp
 using a temporary disk database, including logs with backward clock jumps.
 Sample counts include polls with missing wind values. Wind statistics exclude
@@ -227,6 +230,16 @@ def daily_summaries(readings: Iterable[Reading], threshold: float) -> Iterator[D
     yield from (summaries[key] for key in sorted(summaries))
 
 
+def parse_date(value: str) -> date:
+    """Require the unambiguous calendar-date format used in the summary CSV."""
+    try:
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+            raise ValueError
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"invalid date {value!r}; expected YYYY-MM-DD") from exc
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("inputs", nargs="+", type=Path, help="weather log directories, plain logs or ZIP archives")
@@ -234,7 +247,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, default=Path("weather_daily.csv"), help="summary CSV (default: weather_daily.csv)")
     parser.add_argument("--encoding", default="utf-8", help="input log encoding, e.g. latin-1 (default: utf-8); CSV output is UTF-8")
     parser.add_argument("--skip-invalid-lines", action="store_true", help="warn and skip malformed readings; default is to stop (decoding errors still stop)")
+    parser.add_argument("--start_date", "--start-date", type=parse_date, metavar="YYYY-MM-DD",
+                        help="first UTC date to include (default: earliest available date)")
+    parser.add_argument("--end_date", "--end-date", type=parse_date, metavar="YYYY-MM-DD",
+                        default=datetime.now(timezone.utc).date(),
+                        help="last UTC date to include (default: today UTC)")
     args = parser.parse_args(argv)
+    if args.start_date is not None and args.start_date > args.end_date:
+        parser.error("start_date must be on or before end_date (which defaults to today UTC)")
     # Finish writing a temporary file before replacing an existing summary.
     import os
 
@@ -255,6 +275,12 @@ def main(argv: list[str] | None = None) -> int:
             writer.writerow(COLUMNS)
             count = 0
             for summary in daily_summaries(read_logs(paths, args.encoding, args.skip_invalid_lines), args.threshold):
+                # Filter summaries so earlier readings still establish whether a
+                # gust crossing the start boundary began on a preceding day.
+                if args.start_date is not None and summary.day < args.start_date:
+                    continue
+                if summary.day > args.end_date:
+                    break
                 writer.writerow(summary.row(args.threshold))
                 count += 1
         os.replace(temporary, output)

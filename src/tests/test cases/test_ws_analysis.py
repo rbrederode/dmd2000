@@ -1,6 +1,7 @@
 """Standalone tests: PYTHONPATH=src python -m unittest discover -s 'src/tests/test cases' -p test_ws_analysis.py."""
 
 import csv
+from datetime import datetime, timezone
 import io
 import tempfile
 import unittest
@@ -16,6 +17,73 @@ def line(timestamp, wind, station="ws001"):
 
 
 class WeatherAnalysisTests(unittest.TestCase):
+    def test_cli_date_filters_are_inclusive_with_defaults_and_gust_history(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with zipfile.ZipFile(root / "ws.log.2026-10-07.zip", "w") as archive:
+                # Select by record date even when the archive spans UTC days.
+                archive.writestr("ws.log.2026-10-07", (
+                    line("2026-10-07 23:59:59,999", 12)
+                    + line("2026-10-08 00:00:00,000", 13)
+                    + line("2026-10-08 23:59:59,999", 5)
+                ))
+            (root / "ws.log").write_text(
+                line("2026-10-09 00:00:00,000", 14)
+                + line("2026-10-09 23:59:59,999", 15, "ws002")
+                + line("2026-10-10 00:00:00,000", 20)
+            )
+            cases = [
+                ([], [("2026-10-07", "ws001"), ("2026-10-08", "ws001"),
+                      ("2026-10-09", "ws001"), ("2026-10-09", "ws002")]),
+                (["--start_date", "2026-10-08"],
+                 [("2026-10-08", "ws001"), ("2026-10-09", "ws001"), ("2026-10-09", "ws002")]),
+                (["--end_date", "2026-10-08"], [("2026-10-07", "ws001"), ("2026-10-08", "ws001")]),
+                (["--start_date", "2026-10-08", "--end_date", "2026-10-09"],
+                 [("2026-10-08", "ws001"), ("2026-10-09", "ws001"), ("2026-10-09", "ws002")]),
+                (["--start-date", "2026-10-08", "--end-date", "2026-10-08"], [("2026-10-08", "ws001")]),
+                (["--start_date", "2026-10-10", "--end_date", "2026-10-10"], [("2026-10-10", "ws001")]),
+                (["--start_date", "2026-10-01", "--end_date", "2026-10-02"], []),
+            ]
+            for options, expected in cases:
+                with self.subTest(options=options), mock.patch("ws.analysis.datetime", wraps=datetime) as clock:
+                    clock.now.return_value = datetime(2026, 10, 9, 23, 30, tzinfo=timezone.utc)
+                    output = root / "daily.csv"
+                    self.assertEqual(main([str(root), "--threshold", "10", "--output", str(output), *options]), 0)
+                    clock.now.assert_called_once_with(timezone.utc)
+                    with output.open(newline="") as stream:
+                        reader = csv.DictReader(stream)
+                        records = list(reader)
+                        self.assertIn("gust_count", reader.fieldnames)
+                    self.assertEqual([(row["date"], row["weather_station_id"]) for row in records], expected)
+                    for row in records:
+                        if row["date"] == "2026-10-08":
+                            self.assertEqual(row["sample_count"], "2")
+                            self.assertEqual(row["gust_count"], "0")  # Started before the selected range.
+                            self.assertEqual(row["first_reading_datetime_utc"], "2026-10-08T00:00:00.000+00:00")
+                            self.assertEqual(row["last_reading_datetime_utc"], "2026-10-08T23:59:59.999+00:00")
+
+    def test_cli_rejects_invalid_dates_and_reversed_ranges_without_replacing_csv(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "daily.csv"
+            output.write_text("existing summary\n")
+            cases = [
+                ["--start_date", "2026-02-30"],
+                ["--end_date", "not-a-date"],
+                ["--start_date", "20261008"],
+                ["--end_date", "2026-10-8"],
+                ["--start_date", "2026-10-09", "--end_date", "2026-10-08"],
+                ["--start_date", "2026-10-10"],  # After the default UTC end date.
+            ]
+            for options in cases:
+                with self.subTest(options=options), mock.patch("ws.analysis.datetime", wraps=datetime) as clock:
+                    clock.now.return_value = datetime(2026, 10, 9, tzinfo=timezone.utc)
+                    with mock.patch("sys.stderr", io.StringIO()), self.assertRaises(SystemExit) as error:
+                        main([str(root), "--threshold", "10", "--output", str(output), *options])
+                    self.assertEqual(error.exception.code, 2)
+                    self.assertEqual(output.read_text(), "existing summary\n")
+                    self.assertEqual(list(root.glob(".weather-summary-*")), [])
+
     def test_macos_metadata_is_ignored_in_directories_and_archives(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -11,6 +11,25 @@ plain logs and daily ZIP archives directly, without extracting them. Supply
 one or more directories or file paths; directories are scanned without recursion.
 You can also run it as `PYTHONPATH=src python -m ws.analysis ...`.
 
+To restrict the CSV to a date range, pass `--start_date` and/or `--end_date`:
+
+```bash
+python src/ws/analysis.py logs/weather --threshold 15 \
+  --start_date 2026-10-10 --end_date 2026-10-20 --output weather_daily.csv
+```
+
+Dates must use `YYYY-MM-DD`. Both boundaries include the entire specified UTC
+day. Omitting `--start_date` includes the earliest available readings; omitting
+`--end_date` includes readings through today's UTC date. Either argument can be
+used alone. The aliases `--start-date` and `--end-date` are also accepted. A start
+date after the effective end date is rejected. A range with no readings produces
+a CSV containing only the column headers.
+
+Filtering uses the date of each recorded timestamp. Input files are still read
+and validated, including earlier readings that establish whether a gust was
+already active at the start boundary. Such a gust remains attributed to its
+original starting day, so it is not counted again inside the selected range.
+
 Input defaults to UTF-8. For older single-byte logs, use `--encoding latin-1`
 (or the known source encoding, such as `cp1252`). This applies to both plain
 logs and ZIP contents; CSV output remains UTF-8. For example, from `src`:
@@ -23,7 +42,7 @@ Decoding errors report the file, ZIP member where applicable, and line number.
 The tool does not discard or replace undecodable bytes. Choosing an encoding
 does not change which log row formats the parser supports.
 
-Each CSV row represents one station on one UTC day, sorted by date then station.
+Each CSV row represents one station on one selected UTC day, sorted by date then station.
 Rerunning replaces the CSV, so changing `--threshold` rebuilds the results from
 the original data. A parse or archive error leaves an existing CSV intact and
 reports the source of the failure. Readings are sorted by recorded UTC time,
