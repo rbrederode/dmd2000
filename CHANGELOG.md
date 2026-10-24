@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-24 - First Light Milestone
+
+First light was achieved on the Alston Radio Telescope using the DMD2000 software. An observation of the Cygnus region of the Milky Way detected neutral hydrogen emmissions. The Alston Radio Telescope has been assembled, integrated and is undergoing verification and commissioning tests whilst temporarily located at Jodrell Bank. The Alston Radio Telescope will be moved to the Alston Observatory once a concrete pad has been prepared for its arrival. The following applications where utilised to achieve "First Light": Telescope Manager, Science Data Processor, Digitiser, Dish Manager, and the Weather Station simulating calm weather despite a storm raging towards the afternoon !
+
 - Signal displays retain a lightweight baseline spectrum and channel flags per scan, preserving the black load overlay after calibration queue cleanup. Subsequent scans select the latest available compatible baseline; headless runs do not create display copies.
 
 - Weather analysis accepts optional inclusive UTC `--start_date` and `--end_date` filters in YYYY-MM-DD format, defaulting to the earliest available readings through today UTC while preserving gust continuity across the start boundary.
