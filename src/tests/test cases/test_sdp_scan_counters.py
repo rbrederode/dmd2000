@@ -130,3 +130,69 @@ def test_headless_completed_scan_does_not_wait_for_display(monkeypatch):
 
     assert sdp.sky_q.empty()
     assert sdp.completed_display_q.empty()
+    assert not hasattr(scan, "_display_baseline")
+
+
+def _add_load(sdp, value):
+    load = _build_scan()
+    load.scan_model.scan_type = ScanType.LOAD
+    load.mpr = np.full(load.scan_model.spectral_resolution, value, dtype=float)
+    sdp.cal_q.put(load)
+    return load
+
+
+def test_display_baseline_is_independent_and_fixed_until_next_scan():
+    import gc
+    import weakref
+
+    sdp = _build_sdp()
+    first = _build_scan()
+    load = _add_load(sdp, 2.0)
+    reference = weakref.ref(load)
+    baseline = sdp._display_baseline(first)
+    assert not np.shares_memory(baseline.mpr, load.mpr)
+    assert not np.shares_memory(baseline.mpr_flags, load.mpr_flags)
+    load.mpr[:] = 99.0
+    load.mpr_flags[:] = 1
+    np.testing.assert_array_equal(baseline.mpr, 2.0)
+    np.testing.assert_array_equal(baseline.mpr_flags, 0)
+    sdp.cal_q.get_nowait()
+    sdp.cal_q.task_done()
+    del load
+    gc.collect()
+    assert reference() is None
+
+    _add_load(sdp, 3.0)
+    assert sdp._display_baseline(first) is baseline
+    second = _build_scan()
+    np.testing.assert_array_equal(sdp._display_baseline(second).mpr, 3.0)
+
+
+def test_completed_scan_keeps_black_baseline_after_observation_cleanup(monkeypatch, tmp_path):
+    from matplotlib import pyplot as plt
+    from sdp.signal_display import SignalDisplay
+
+    monkeypatch.setattr(Scan, "save_to_disk", lambda *args, **kwargs: None)
+    monkeypatch.setattr(SignalDisplay, "is_visible_figure", lambda self: None)
+    sdp = _build_sdp()
+    sdp.get_args = lambda: SimpleNamespace(scan_store_dir=str(tmp_path), headless=False)
+    scan = _build_scan()
+    scan.load_spr(sec=1, spr=np.ones(scan.scan_model.spectral_resolution))
+    _add_load(sdp, 2.0)
+    sdp.sky_q.put(scan)
+    sdp._complete_scan(scan)
+    assert not sdp.signal_displays
+    sdp.set_obs_complete(scan.get_obs_id())
+    assert sdp.cal_q.empty()
+    try:
+        sdp._refresh_signal_displays()
+        display = sdp.signal_displays[scan.get_dig_id()]
+        assert display.load_line.get_visible()
+        assert display.load_line.get_color() == "black"
+        np.testing.assert_allclose(display.load_line.get_ydata(), 2.0)
+        assert scan.scan_model.scan_id in display.saved_scan_ids
+        assert len(list(tmp_path.glob("*.png"))) == 1
+        sdp._refresh_signal_displays()
+        np.testing.assert_allclose(display.load_line.get_ydata(), 2.0)
+    finally:
+        plt.close("all")

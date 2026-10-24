@@ -29,6 +29,7 @@ from models.scan import ScanModel, ScanState, ScanType
 from models.sdp import ScienceDataProcessorModel
 from models.target import TargetConfig
 from obs.scan import Scan
+from sdp.display_baseline import DisplayBaseline
 from sdp.pipeline.pipeline_factory import ProcessingPipelineFactory
 from util import log, util
 from util.xbase import XBase, XStreamUnableToExtract, XSoftwareFailure, XInvalidTransition
@@ -941,8 +942,10 @@ class SDP(App):
     @staticmethod
     def _newest_equivalent_load_scan(scan: Scan, cal_q: Queue) -> Scan | None:
         """Return the newest completed real load scan for a scan, falling back to synthetic."""
+        with cal_q.mutex:
+            candidates = list(cal_q.queue)
         load_scans = [
-            s for s in list(cal_q.queue)
+            s for s in candidates
             if s.equivalent(scan)
             and s.get_scan_type() == ScanType.LOAD
             and s.get_status() == ScanState.COMPLETE
@@ -979,6 +982,10 @@ class SDP(App):
         if scan.get_scan_type() != ScanType.SKY:
             self._merge_into_queue(scan, self.cal_q) 
 
+        if not self.is_headless():
+            # Capture before observation cleanup, even if the GUI has not seen this scan.
+            self._display_baseline(scan)
+
         scan.save_to_disk(output_dir=self.get_args().scan_store_dir, include_iq=False)
 
         if not self.is_headless():
@@ -1013,6 +1020,14 @@ class SDP(App):
         except ValueError:
             logger.warning(self.set_last_err(f"Science Data Processor could not find scan while attempting to remove scan {scan} from queue. It may have already been removed."))
 
+    def _display_baseline(self, scan: Scan):
+        """Select once per displayed scan; retain only spectrum, flags, and IDs."""
+        with scan._rlock:
+            if not hasattr(scan, "_display_baseline"):
+                load = self._newest_equivalent_load_scan(scan, self.cal_q)
+                scan._display_baseline = DisplayBaseline.copy_from(load)
+            return scan._display_baseline
+
     def _update_signal_display(self, scan: Scan):
         """Bind a scan on the GUI thread, including scans already completed."""
         dig_id = scan.get_dig_id()
@@ -1028,13 +1043,8 @@ class SDP(App):
             display.display()
             display.save_scan_figure(output_dir=self.get_args().scan_store_dir)
 
-        newest_load = self._newest_equivalent_load_scan(scan, self.cal_q)
-        if newest_load is not None:
-            scan.set_load_scan(newest_load)
         if previous is not scan:
-            display.set_scan(scan=scan, load=newest_load)
-        else:
-            display.set_load(load=newest_load)
+            display.set_scan(scan=scan, load=self._display_baseline(scan))
 
     def _refresh_signal_displays(self):
         """Consume completed scans before refreshing scans still being processed."""
