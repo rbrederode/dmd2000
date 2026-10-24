@@ -21,9 +21,7 @@
             "_type": "LaunchModel",
             "app_name": "dig",
             "entity_id": "dig003",
-            "env": {
-                "GPIOZERO_PIN_FACTORY": "mock"
-            },
+            "env": {},
             "program": "python",
             "args": [
                 "-m", "dig.dig",
@@ -100,7 +98,7 @@
                 "--profile", "alston",
                 "--dm_host", "192.168.2.1",
                 "--tm_host", "192.168.2.1",
-                "--sim", "off"
+                "--sim", "calm"
             ]
         },
         {
@@ -114,7 +112,7 @@
                 "--profile", "alston",
                 "--dm_host", "192.168.2.1",
                 "--tm_host", "192.168.2.1",
-                "--sim", "off"
+                "--sim", "calm"
             ]
         }
     ]

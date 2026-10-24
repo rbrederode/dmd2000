@@ -20,7 +20,7 @@
                 "processors": [],
                 "msg_timeout_ms": 10000,
                 "arguments": {
-                    "local_host": "192.168.2.1"
+                    "local_host": "192.168.2.2"
                 },
                 "last_update": {
                     "_type": "datetime",
@@ -32,6 +32,11 @@
                 "_type": "enum.IntEnum",
                 "instance": "BandpassFilterType",
                 "value": "SAWBIRD_H1_BAREBONES"
+            },
+            "bpf_config": {
+                "_type": "SAWbirdH1_BareBones",
+                "gpio_pin_power": 18,
+                "gpio_pin_load": 19
             },
             "temp_type": "bme280",
             "temp_config": {"bus_number": 1, "address": 118},
