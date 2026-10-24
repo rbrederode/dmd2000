@@ -46,7 +46,7 @@ class MD01Config(BaseModel):
             "min_az": 0.0,
             "max_az": 360.0,
             "resolution": 0.1,
-            "rotation_speed": 2.5,
+            "rotation_speed": 1.5,
             "rate_limit": 1.0,
             "short_way": False,
             "last_update": datetime.now(timezone.utc),
@@ -86,7 +86,7 @@ if __name__ == "__main__":
         max_alt=90.0,
         min_az=-180.0,
         max_az=540.0,
-        rotation_speed=2.5,      # degrees / sec
+        rotation_speed=1.5,      # degrees / sec
         resolution=0.1,          # degrees / step
         rate_limit=1.0,          # msgs / sec
         short_way=False,
