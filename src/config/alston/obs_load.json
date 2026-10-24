@@ -63,10 +63,10 @@
       "_type": "TargetModel",
       "tgt_idx": 0,
       "obs_id": "ODT-{{NOW}}-dish003-Test",
-      "id": "Stow Position: AltAz (90,0)",
+      "id": "Stow Position: AltAz (18,48)",
       "altaz": {
-        "alt": 90.0,
-        "az": 0.0
+        "alt": 18.0,
+        "az": 48.0
       },
       "pointing": {
         "_type": "enum.IntEnum",
@@ -78,10 +78,10 @@
       "_type": "TargetModel",
       "tgt_idx": 1,
       "obs_id": "ODT-{{NOW}}-dish003-Test",
-      "id": "Stow Position: AltAz (90,0)",
+      "id": "Stow Position: AltAz (18,48)",
       "altaz": {
-        "alt": 90.0,
-        "az": 0.0
+        "alt": 18.0,
+        "az": 48.0
       },
       "pointing": {
         "_type": "enum.IntEnum",

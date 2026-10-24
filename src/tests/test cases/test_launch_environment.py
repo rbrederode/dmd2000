@@ -1,3 +1,11 @@
+# Verify Python environment selection when the launcher opens a new terminal.
+# Temporary environments contain a stub Python executable that prints its name,
+# allowing the generated launch command to be tested in a fresh shell without
+# opening a terminal window or starting a DMD2000 application. The tests cover
+# .venv and legacy venv activation, .venv preference when both exist, shell quoting
+# for paths containing spaces, repository pyenv precedence, and leaving Python
+# selection unchanged when no repository environment is configured.
+
 import os
 from pathlib import Path
 import shlex
