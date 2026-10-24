@@ -4,15 +4,21 @@ from typing import Any, Dict
 
 from api import protocol as dmd_protocol
 from api.api import API
+from api.cmd_registry import CommandRegistry
 from util.xbase import XAPIUnsupportedVersion, XAPIValidationFailed
 
 
 API_VERSION = "1.0"
 LEGACY_SUPPORTED_VERSIONS = []
+ACTION_CODE_COMMAND = "command"
 
 
 class CommandAPI(API):
     """Validate the small, shared command protocol used by every application."""
+
+    def __init__(self, app_name: str = "", registry: CommandRegistry | None = None):
+        super().__init__()
+        self.registry = registry or CommandRegistry(app_name=app_name)
 
     def get_api_version(self) -> str:
         return API_VERSION
@@ -37,7 +43,10 @@ class CommandAPI(API):
             raise XAPIValidationFailed(f"Unsupported command message type '{msg_type}'")
 
         action_code = api_call.get("action_code")
-        if action_code not in dmd_protocol.ACTION_CODES:
+        action_codes = dmd_protocol.ACTION_CODES
+        if self.registry.command_names:
+            action_codes += (ACTION_CODE_COMMAND,)
+        if action_code not in action_codes:
             raise XAPIValidationFailed(f"Unsupported command action code '{action_code}'")
 
         if msg_type == dmd_protocol.MSG_TYPE_REQ:
@@ -45,8 +54,7 @@ class CommandAPI(API):
         else:
             self._validate_response(api_msg, api_call)
 
-    @staticmethod
-    def _validate_request(api_msg: dict, api_call: dict) -> None:
+    def _validate_request(self, api_msg: dict, api_call: dict) -> None:
         if api_msg.get("from") != dmd_protocol.CMD:
             raise XAPIValidationFailed(
                 f"Command request must originate from '{dmd_protocol.CMD}'"
@@ -54,6 +62,15 @@ class CommandAPI(API):
 
         action_code = api_call["action_code"]
         if action_code == dmd_protocol.ACTION_CODE_RESYNC:
+            return
+
+        if action_code == ACTION_CODE_COMMAND:
+            if api_msg.get("to") != self.registry.app_name:
+                raise XAPIValidationFailed(
+                    f"Command registry for '{self.registry.app_name}' cannot validate "
+                    f"a request to '{api_msg.get('to')}'"
+                )
+            self.registry.validate(api_call)
             return
 
         prop_name = api_call.get("property")
@@ -67,8 +84,7 @@ class CommandAPI(API):
                     f"Command property '{prop_name}' requires value 'ON' or 'OFF'"
                 )
 
-    @staticmethod
-    def _validate_response(api_msg: dict, api_call: dict) -> None:
+    def _validate_response(self, api_msg: dict, api_call: dict) -> None:
         if api_msg.get("to") != dmd_protocol.CMD:
             raise XAPIValidationFailed(
                 f"Command response must be addressed to '{dmd_protocol.CMD}'"
@@ -77,6 +93,9 @@ class CommandAPI(API):
         status = api_call.get("status")
         if status not in dmd_protocol.STATUS:
             raise XAPIValidationFailed(f"Unsupported command response status '{status}'")
+
+        if api_call.get("action_code") == ACTION_CODE_COMMAND:
+            self.registry.validate(api_call)
 
     def translate(
         self,

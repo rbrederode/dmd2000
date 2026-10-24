@@ -11,6 +11,7 @@ import pytest
 from queue import Queue
 import time
 import threading
+from typing import Any
 
 from api import protocol as dmd_protocol
 from api import tm_dm, ws_dm
@@ -50,6 +51,7 @@ class DM(App):
     def __init__(self, app_name: str = "dm"):
 
         super().__init__(app_name=app_name, app_model = self.dm_model.app)
+        self.register_command_handler("stop", self.process_stop_command)
 
         # Telescope Manager interface
         self.tm_system = "tm"
@@ -281,6 +283,7 @@ class DM(App):
 
             if driver is not None:
                 driver.set_trace(self.trace)
+                driver.set_pointing_log_dir(Path(App.logs_dir) / "pointing")
                 self.dish_drivers[dish.dsh_id] = driver
 
                 # Start the polling driver timer for this dish
@@ -316,6 +319,26 @@ class DM(App):
                 except XBase as e:
                     message = f"Dish Manager failed to set STANDBY_FP mode for Dish {dish_id}: {e}"
                     logger.error(dish_driver.set_last_err(message))
+
+    def process_stop_command(self, api_call: dict) -> tuple[str, str]:
+        """Process the registered Dish Manager STOP command."""
+        dish_id = api_call.get("value")
+        logger.info("Dish Manager received STOP command for dish %s", dish_id)
+
+        dish_driver = self.dish_drivers.get(dish_id)
+        if dish_driver is None:
+            return (
+                dmd_protocol.STATUS_ERROR,
+                f"Dish Manager cannot stop unknown dish '{dish_id}'",
+            )
+
+        dish_lock = self._get_dish_lock(dish_id)
+        with dish_lock:
+            dish_driver.emergency_stop()
+
+        message = f"Dish Manager stopped movement of Dish {dish_id}"
+        logger.warning(message)
+        return dmd_protocol.STATUS_SUCCESS, message
 
     def process_tm_connected(self, event) -> Action:
         """ Processes Telescope Manager connected events.
@@ -435,6 +458,8 @@ class DM(App):
             target_id = target.obs_id + f"-{target.tgt_idx}" if target is not None else None
 
             target_acquired = False
+            estimated_slew_duration = 0 if target is None else None
+            estimated_tgt_acq_dt = None
 
             # Prevent concurrent access to the dish driver
             with dish_lock:
@@ -462,6 +487,27 @@ class DM(App):
                         # If the dish is already on target, we can indicate that in the response to TM so the OET workflow can be optimized accordingly 
                         target_acquired = dish_driver.get_pointing_state() == PointingState.READY
 
+                        try:
+                            estimated_slew_duration = dish_driver.estimate_slew_duration()
+                            if estimated_slew_duration is not None:
+                                estimated_tgt_acq_dt = datetime.now(timezone.utc) + timedelta(
+                                    seconds=estimated_slew_duration
+                                )
+
+                                # Keep the estimate in the authoritative Dish
+                                # Manager model so periodic status snapshots do
+                                # not erase the value recorded by Telescope
+                                # Manager from this response.  Once the target
+                                # is acquired, the driver replaces it with the
+                                # actual acquisition time.
+                                if not target_acquired:
+                                    dish_driver.dsh_model.tgt_acq_dt = estimated_tgt_acq_dt
+                                    dish_driver.dsh_model.last_update = datetime.now(timezone.utc)
+                        except Exception as e:
+                            # A driver-specific estimate is advisory and must not turn an
+                            # otherwise accepted target command into a failed request.
+                            logger.warning("Dish Manager could not estimate slew duration for Dish %s: %s", dish_id, e)
+
                     else:
                         raise XSoftwareFailure(f"Invalid target provided to set for dish {dish_id}\n{api_call}")
 
@@ -483,6 +529,14 @@ class DM(App):
                 api_msg=api_msg,
                 api_call=api_call,
                 include_obs_data=target_acquired,
+                slew={
+                    "estimated_duration": estimated_slew_duration,
+                    "estimated_tgt_acq_dt": (
+                        estimated_tgt_acq_dt.isoformat()
+                        if estimated_tgt_acq_dt is not None
+                        else None
+                    ),
+                },
             )
             action.set_msg_to_remote(rsp_msg)
 
@@ -498,6 +552,28 @@ class DM(App):
                     message=f"Dish {dish_id} is already at target {target_id}.",
                     dish_id=dish_id,
                 )
+
+        # If the Telescope Manager API call is to get pointing information for a dish
+        if api_call.get('action_code','') == 'get' and api_call.get('property','') == tm_dm.PROPERTY_POINTING:
+            try:
+                pointing_data = dish_driver.get_pointing_for_time_range(api_call.get('value', None))
+            except XBase as e:
+                message = f"Dish Manager failed to get pointing data for Dish {dish_id}: {e}"
+                logger.error(dish_driver.set_last_err(message))
+                rsp_msg = self._construct_rsp_to_tm(status=dmd_protocol.STATUS_ERROR, message=message, api_msg=api_msg, api_call=api_call)
+                action.set_msg_to_remote(rsp_msg)
+                return action
+
+            message = f"Dish Manager retrieved pointing data for Dish {dish_id}."
+            logger.info(message)
+            rsp_msg = self._construct_rsp_to_tm(
+                status=dmd_protocol.STATUS_SUCCESS,
+                message=message,
+                value=pointing_data,
+                api_msg=api_msg,
+                api_call=api_call
+            )
+            action.set_msg_to_remote(rsp_msg)
 
         return action
 
@@ -804,9 +880,11 @@ class DM(App):
             
         return action
 
-    def _construct_rsp_to_tm(self, status, message, api_msg: dict, api_call: dict, include_obs_data: bool = False) -> APIMessage:
+    def _construct_rsp_to_tm(self, status: int, message: str, value: Any = None, api_msg: dict | None = None, api_call: dict | None = None, include_obs_data: bool = False, slew: dict | None = None) -> APIMessage:
         """ Constructs a response message to the Telescope Manager.
         """
+        api_msg = api_msg or {}
+        api_call = api_call or {}
         # Prepare rsp msg to tm containing result of an api call
         tm_rsp = APIMessage(api_msg=api_msg, api_version=self.tm_api.get_api_version())
 
@@ -819,17 +897,28 @@ class DM(App):
         if api_call.get('property') is not None:
             tm_rsp_api_call["property"] = api_call['property']
 
-        if api_call.get('value') is not None:
+        if value is not None:
+            tm_rsp_api_call["value"] = value
+        elif api_call.get('value') is not None:
             tm_rsp_api_call["value"] = api_call['value']
 
         # Exclude obs_data on successful set-target unless the dish is already on target.
         # In the usual case set-target leads to a slew/track/scan acquisition and a later status update
         # is used to trigger the TM/OET workflow review. If no acquisition is needed, keep obs_data here.
-        if status == dmd_protocol.STATUS_ERROR or api_call.get('property') != tm_dm.PROPERTY_TARGET or include_obs_data:
-            tm_rsp_api_call["obs_data"] = api_call['obs_data']
+        if ("obs_data" in api_call
+            and (
+                status == dmd_protocol.STATUS_ERROR
+                or api_call.get('property') != tm_dm.PROPERTY_TARGET
+                or include_obs_data
+            )
+        ):
+            tm_rsp_api_call["obs_data"] = api_call["obs_data"]
 
         if message is not None:
             tm_rsp_api_call["message"] = message
+
+        if slew is not None:
+            tm_rsp_api_call["slew"] = slew
 
         tm_rsp.set_api_call(tm_rsp_api_call)  
         return tm_rsp
@@ -986,23 +1075,15 @@ def test_get_desired_altaz(dm, md01_driver):
 
 def main():
     dm = DM()
-    dm.start()
+    with dm.running():
+        if dm.is_headless():
+            logger.info("Dish Manager running in headless mode; skipping dish and weather displays.")
+            dm.wait_for_stop()
+            return
 
-    if dm.is_headless():
-        logger.info("Dish Manager running in headless mode; skipping dish and weather displays.")
-        try:
-            while True:
-                time.sleep(1.0)
-        except KeyboardInterrupt:
-            pass
-        finally:
-            dm.stop()
-        return
+        display_period_sec = 1.0
 
-    display_period_sec = 1.0
-
-    try:
-        while True:
+        while not dm.stop_requested:
             time_start = time.monotonic()
 
             for dish_id, dish_driver in dm.dish_drivers.items():
@@ -1030,12 +1111,8 @@ def main():
                 display_period_sec = max(1.0, display_period_sec - 2.0)
                 logger.info(f"Dish Manager dish display loop took {time_elapsed:.3f} seconds to execute, shortening display period to {display_period_sec} seconds")
 
-            time.sleep(max(0.0, display_period_sec - time_elapsed)) # Update on an approximately 1 second cadence
+            dm.wait_for_stop(max(0.0, display_period_sec - time_elapsed)) # Update on an approximately 1 second cadence
                 
-    except KeyboardInterrupt:
-        pass
-    finally:
-        dm.stop()
 
 if __name__ == "__main__":
     main()

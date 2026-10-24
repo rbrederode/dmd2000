@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from api import protocol as dmd_protocol
-from api.command import CommandAPI
+from api.cmd_api import CommandAPI
 from env.app_processor import AppProcessor
 from env.events import ConnectEvent, DataEvent, DisconnectEvent
 from ipc.message import APIMessage

@@ -114,6 +114,22 @@ class SDR:
 
         return self.info
 
+    def stream_reset(self) -> int:
+        """Reset buffered stream data as an idempotent cleanup operation.
+
+        A hardware read failure stops and removes the worker before the
+        observation cleanup request arrives.  In that state there is no
+        stream left to reset, so cleanup has already achieved its goal.
+        """
+
+        if self._worker is None or not self._worker.is_running():
+            self.connected = CommunicationStatus.NOT_ESTABLISHED
+            logger.info("Skipping SDR stream reset because the device worker is not running.")
+            return 0
+
+        discarded = self._invoke("stream_reset", raise_on_error=False)
+        return int(discarded) if discarded is not None else 0
+
     def __getattr__(self, name: str):
         if name.startswith("_") or name not in _SDR_METHODS:
             raise AttributeError(name)

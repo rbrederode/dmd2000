@@ -80,6 +80,9 @@ class SDR:
     
     def close(self):
         if self.rtlsdr:
+            if not self._device_is_present():
+                self._abandon_disconnected_handle("while closing SDR")
+                return
             self.rtlsdr.close()
             self.rtlsdr = None
             self.connected = CommunicationStatus.NOT_ESTABLISHED
@@ -89,7 +92,45 @@ class SDR:
         """ Get the current comms status of the SDR device.
             :returns: CommunicationStatus indicating if the SDR is connected
         """
+        if self.connected == CommunicationStatus.ESTABLISHED and not self._device_is_present():
+            self._abandon_disconnected_handle("during connection check")
         return self.connected
+
+    def _device_is_present(self) -> bool:
+        """Check whether the configured RTL-SDR index is still enumerated."""
+
+        try:
+            device_index = int(self.sdr_config.get("device_index", 0))
+            return device_index >= 0 and device_index < int(librtlsdr.rtlsdr_get_device_count())
+        except Exception as exc:
+            logger.warning("SDR failed to enumerate RTL-SDR devices: %s", exc)
+            return False
+
+    def _abandon_disconnected_handle(self, operation: str) -> None:
+        """Invalidate a stale native handle without asking librtlsdr to close it.
+
+        Once USB reports that the device is absent, calling rtlsdr_close on the
+        stale pointer can itself enter unsafe native code. Marking the Python
+        wrapper closed prevents its destructor from doing so as well.
+        """
+
+        device = self.rtlsdr
+        self.rtlsdr = None
+        self.connected = CommunicationStatus.NOT_ESTABLISHED
+        if device is not None and hasattr(device, "device_opened"):
+            device.device_opened = False
+        logger.warning("SDR device disconnected %s; abandoned stale native handle.", operation)
+
+    def _require_connected_device(self, operation: str) -> None:
+        """Fail before a native hardware call when USB no longer sees the SDR."""
+
+        if (
+            self.rtlsdr is None
+            or self.connected != CommunicationStatus.ESTABLISHED
+            or not self._device_is_present()
+        ):
+            self._abandon_disconnected_handle(operation)
+            raise XHardwareFailure(f"SDR device disconnected or unavailable {operation}")
 
     def get_eeprom_info(self) -> dict:
         """ Retrieve the EEPROM information of the connected RTL-SDR device.
@@ -188,22 +229,23 @@ class SDR:
         else:
             logger.exception(f"SDR unexpected exception {operation}: {err}")
 
-        try:
-            if self.rtlsdr is not None:
-                self.rtlsdr.close()
-        except Exception as close_err:
-            logger.warning(f"SDR close after read error also failed: {close_err}")
-
-        self.rtlsdr = None
-        self.connected = CommunicationStatus.NOT_ESTABLISHED
+        if not self._device_is_present():
+            self._abandon_disconnected_handle(operation)
+        else:
+            try:
+                if self.rtlsdr is not None:
+                    self.rtlsdr.close()
+            except Exception as close_err:
+                logger.warning(f"SDR close after read error also failed: {close_err}")
+            finally:
+                self.rtlsdr = None
+                self.connected = CommunicationStatus.NOT_ESTABLISHED
         raise XHardwareFailure(f"SDR device disconnected or unavailable {operation}: {err}")
 
     def _reset_buffer(self):
         """Flush the SDR's internal USB buffer if the device is available."""
 
-        if self.rtlsdr is None:
-            logger.warning("SDR device not connected.")
-            return
+        self._require_connected_device("while resetting the SDR buffer")
 
         result = librtlsdr.rtlsdr_reset_buffer(self.rtlsdr.dev_p)
         if result < 0:
@@ -330,98 +372,72 @@ class SDR:
             return None
 
     def get_center_freq(self):
-        if self.rtlsdr is None:
-            logger.warning("SDR device not connected.")
-            return
+        self._require_connected_device("while getting center frequency")
 
         return self.rtlsdr.center_freq # Hz
 
     def set_center_freq(self, value):
-        if self.rtlsdr is None:
-            logger.warning("SDR device not connected.")
-            return
+        self._require_connected_device("while setting center frequency")
 
         self.rtlsdr.center_freq = value
         self.center_freq = value
 
     def get_sample_rate(self):
-        if self.rtlsdr is None:
-            logger.warning("SDR device not connected.")
-            return
+        self._require_connected_device("while getting sample rate")
 
         return self.rtlsdr.sample_rate # Hz
 
     def set_sample_rate(self, value):
-        if self.rtlsdr is None:
-            logger.warning("SDR device not connected.")
-            return
+        self._require_connected_device("while setting sample rate")
 
         self.rtlsdr.sample_rate = value
         self.sample_rate = int(math.ceil(value))
 
     def get_bandwidth(self):
-        if self.rtlsdr is None:
-            logger.warning("SDR device not connected.")
-            return
+        self._require_connected_device("while getting bandwidth")
 
         return self.rtlsdr.bandwidth # MHz
 
     def set_bandwidth(self, value):
-        if self.rtlsdr is None:
-            logger.warning("SDR device not connected.")
-            return
+        self._require_connected_device("while setting bandwidth")
 
         self.rtlsdr.bandwidth = value
         self.bandwidth = value
 
     def get_gain(self):
-        if self.rtlsdr is None:
-            logger.warning("SDR device not connected.")
-            return
+        self._require_connected_device("while getting gain")
 
         return self.rtlsdr.gain
 
     def set_gain(self, value):
-        if self.rtlsdr is None:
-            logger.warning("SDR device not connected.")
-            return
+        self._require_connected_device("while setting gain")
 
         self.rtlsdr.gain = value
         self.gain = value
 
     def get_freq_correction(self):
-        if self.rtlsdr is None:
-            logger.warning("SDR device not connected.")
-            return
+        self._require_connected_device("while getting frequency correction")
 
         return self.rtlsdr.ppm # ppm
 
     def set_freq_correction(self, value):
-        if self.rtlsdr is None:
-            logger.warning("SDR device not connected.")
-            return
+        self._require_connected_device("while setting frequency correction")
 
         self.rtlsdr.ppm = value
         self.freq_correction = value
 
     def get_gains(self):
-        if self.rtlsdr is None:
-            logger.warning("SDR device not connected.")
-            return
+        self._require_connected_device("while getting supported gains")
 
         return self.rtlsdr.get_gains()
 
     def get_tuner_type(self):
-        if self.rtlsdr is None:
-            logger.warning("SDR device not connected.")
-            return
+        self._require_connected_device("while getting tuner type")
 
         return self.rtlsdr.get_tuner_type()
     
     def set_direct_sampling(self, value):
-        if self.rtlsdr is None:
-            logger.warning("SDR device not connected.")
-            return
+        self._require_connected_device("while setting direct sampling")
 
         self.rtlsdr.direct_sampling = value
 
@@ -431,9 +447,7 @@ class SDR:
                 A dictionary of metadata associated with the byte read
                 A numpy array of uint8 samples read from the SDR
         """
-        if self.rtlsdr is None:
-            logger.warning("SDR device not connected.")
-            return None, None
+        self._require_connected_device("while reading bytes")
 
         self.sample_rate = int(self.rtlsdr.sample_rate)
 
@@ -466,9 +480,7 @@ class SDR:
                 A dictionary of metadata associated with the sample read
                 A numpy array of complex64 samples read from the SDR
         """
-        if self.rtlsdr is None:
-            logger.warning("SDR device not connected.")
-            return None, None
+        self._require_connected_device("while reading samples")
 
         try:
             self.sample_rate = int(self.rtlsdr.sample_rate)
@@ -495,8 +507,9 @@ class SDR:
         return metadata, x
 
     def _read_complex_samples(self, num_samples: int) -> np.ndarray:
-        if self.rtlsdr is None:
-            raise XHardwareFailure("SDR device is not connected.")
+        self._require_connected_device(
+            f"while reading {num_samples} complex samples from SDR"
+        )
 
         try:
             samples = self.rtlsdr.read_samples(int(num_samples))

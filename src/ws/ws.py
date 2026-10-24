@@ -2,7 +2,10 @@ import sys
 import time
 import random
 import logging
+import math
+from logging.handlers import TimedRotatingFileHandler
 import threading
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -19,6 +22,15 @@ from ipc.tcp_server import TCPServer
 from models.app import AppModel, HealthState
 from models.ws import WeatherStationDriverType
 from ws.drivers.driver import create_ws_driver
+from util.format import fmt_number
+
+try:
+    from minimalmodbus import NoResponseError
+except ImportError:
+    # Modbus is optional when using simulation or another weather driver.
+    MODBUS_NO_RESPONSE_ERRORS = ()
+else:
+    MODBUS_NO_RESPONSE_ERRORS = (NoResponseError,)
 
 logger = logging.getLogger("ws.ws")
 
@@ -29,6 +41,7 @@ class WeatherStation(App):
     Weather data is needed for safety reasons to perform a wind stow of the dish when wind speeds are too high.
     """
     ws_model = WeatherStationModel(id="ws001")
+    POLL_TIMER_NAME = "weather_polling_timer"
 
     def __init__(self, app_name: str = "ws"):
 
@@ -55,6 +68,9 @@ class WeatherStation(App):
         self.ws_model.tm_connected = CommunicationStatus.NOT_ESTABLISHED
 
         self.weather_driver = None
+        self._weather_available = None  # Unknown until the first poll completes.
+        self._poll_deadline = None
+        self.weather_logger = self.get_weather_logger()
 
     def add_args(self, arg_parser): 
         """ Specifies the weather station's command line arguments.
@@ -103,12 +119,7 @@ class WeatherStation(App):
 
         self._replace_weather_driver()
 
-        poll_interval = self.weather_driver.get_poll_interval_ms() if self.weather_driver is not None else self.ws_model.driver_poll_period
-
-        # Start the polling timer to update wind speed at 1Hz intervals
-        action.set_timer_action(Action.Timer(
-            name=f"weather_polling_timer",
-            timer_action=poll_interval))
+        action.set_timer_action(self._next_poll_timer(reset=True))
 
         return action
 
@@ -186,65 +197,124 @@ class WeatherStation(App):
         return action
 
     def process_timer_event(self, event) -> Action:
-        """ Processes timer events.
-        """
+        """Read weather only for the polling timer, preserving its cadence."""
         logger.debug(f"WeatherStation timer event: {event}")
 
         action = Action()
 
-        if self.ws_model.dm_connected == CommunicationStatus.ESTABLISHED:
+        if getattr(event, "name", None) != self.POLL_TIMER_NAME:
+            return action
 
-            if self.ws_model.sim_mode.upper() == "OFF":
-                weather_data = self._read_weather()
-            else:
-                weather_data = self._generate_weather()
+        if self._poll_deadline is None:
+            self._poll_deadline = time.monotonic()
 
-            if weather_data is not None:
-                dm_msg = self._construct_dm_advice_message(weather_data)
-                action.set_msg_to_remote(dm_msg)
+        if self.ws_model.sim_mode.upper() == "OFF":
+            weather_data = self._read_weather()
+        else:
+            weather_data = self._generate_weather()
 
-        poll_interval = self.weather_driver.get_poll_interval_ms() if self.weather_driver is not None else self.ws_model.driver_poll_period
-        action.set_timer_action(Action.Timer(
-            name=f"weather_polling_timer", 
-            timer_action=poll_interval)) 
+        wind_speed = getattr(weather_data, "wind_speed", None)
+        self._weather_available = (
+            wind_speed is not None and math.isfinite(wind_speed) and wind_speed >= 0
+        )
+        self._log_weather(weather_data)
+
+        if weather_data is not None and self.ws_model.dm_connected == CommunicationStatus.ESTABLISHED:
+            dm_msg = self._construct_dm_advice_message(weather_data)
+            action.set_msg_to_remote(dm_msg)
+
+        action.set_timer_action(self._next_poll_timer())
 
         return action
 
+    def _next_poll_timer(self, reset: bool = False) -> Action.Timer:
+        """Wait only until the next deadline; skip slots elapsed during a read."""
+        interval_ms = (self.weather_driver.get_poll_interval_ms()
+                       if self.weather_driver is not None else self.ws_model.driver_poll_period) or 1000
+        period = interval_ms / 1000.0
+        now = time.monotonic()
+        deadline = now + period if reset or self._poll_deadline is None else self._poll_deadline + period
+        if deadline <= now:
+            skipped = math.floor((now - deadline) / period) + 1
+            deadline += skipped * period
+            logger.warning("WeatherStation %s skipped %d elapsed polling deadline(s).",
+                           self.ws_model.id, skipped)
+        self._poll_deadline = deadline
+        return Action.Timer(
+            name=self.POLL_TIMER_NAME,
+            timer_action=max(1, math.ceil((deadline - now) * 1000)),
+        )
+
+    def get_weather_logger(self) -> logging.Logger:
+        """Get a weather logger that archives daily UTC logs without deletion."""
+        log_dir = Path(App.logs_dir).expanduser() / "weather"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        weather_logger = logging.getLogger(f"{self.app_model.app_name}.weather")
+        weather_logger.setLevel(logging.INFO)
+        weather_logger.propagate = False
+        for handler in weather_logger.handlers[:]:
+            weather_logger.removeHandler(handler)
+            handler.close()
+
+        handler = TimedRotatingFileHandler(
+            filename=log_dir / f"{self.app_model.app_name}.log",
+            when="midnight",
+            interval=1,
+            backupCount=0,
+            encoding="utf-8",
+            utc=True,
+        )
+        handler.suffix = "%Y-%m-%d"
+        handler.namer = lambda filename: f"{filename}.zip"
+        handler.rotator = self._archive_weather_log
+        formatter = logging.Formatter("%(asctime)s UTC | %(message)s")
+        formatter.converter = time.gmtime
+        handler.setFormatter(formatter)
+        weather_logger.addHandler(handler)
+        return weather_logger
+
+    @staticmethod
+    def _archive_weather_log(source: str, destination: str) -> None:
+        """Compress a completed daily log before removing its uncompressed copy."""
+        with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.write(source, arcname=Path(destination).stem)
+        Path(source).unlink()
+
+    def _log_weather(self, weather: WeatherData | None) -> None:
+        """Log one poll with missing measurements represented as None."""
+        self.weather_logger.info(
+            "%s | %s | %s | %s | %s | %s | %s",
+            self.ws_model.id,
+            self.get_health_state().name,
+            *(fmt_number(getattr(weather, field, None), precision=6) for field in (
+                "wind_speed", "wind_direction", "temperature", "humidity", "pressure",
+            )),
+        )
+
     def get_health_state(self) -> HealthState:
-        """ Returns the current health state of this application.
-        """
+        """Distinguish unavailable measurements from missing manager links."""
+        if self._weather_available is None:
+            return HealthState.UNKNOWN
+        if not self._weather_available:
+            self.set_last_err(
+                f"WeatherStation {self.ws_model.id} health status set to FAILED: "
+                "Latest weather poll failed or wind speed is unavailable or invalid"
+            )
+            return HealthState.FAILED
 
-        health_state = HealthState.UNKNOWN
-
-        if self.ws_model.tm_connected == CommunicationStatus.ESTABLISHED and self.ws_model.dm_connected == CommunicationStatus.ESTABLISHED:
-            health_state = HealthState.OK
-
-        elif self.ws_model.tm_connected != CommunicationStatus.ESTABLISHED and self.ws_model.dm_connected == CommunicationStatus.ESTABLISHED:
-            message = f"WeatherStation {self.ws_model.id} health status set to DEGRADED: Telescope Manager not connected"
-            self.set_last_err(message)
-            health_state = HealthState.DEGRADED
-
-        elif self.ws_model.tm_connected == CommunicationStatus.ESTABLISHED and self.ws_model.dm_connected != CommunicationStatus.ESTABLISHED:
-            message = f"WeatherStation {self.ws_model.id} health status set to FAILED: Dish Manager not connected"
-            self.set_last_err(message)
-            health_state = HealthState.FAILED
-
-        if self.ws_model.sim_mode.upper() == "OFF" and self.ws_model.driver_type != WeatherStationDriverType.UNKNOWN:
-            failure_count = self.ws_model.driver_failures
-            poll_period = self.ws_model.driver_poll_period or 1000
-            failure_threshold = max(10, int(60000 / poll_period))
-            
-            if failure_count >= failure_threshold:
-                message = f"WeatherStation {self.ws_model.id} health status set to FAILED: Weather driver failures exceeded threshold ({failure_count} >= {failure_threshold})"
-                self.set_last_err(message)
-                health_state = HealthState.FAILED
-
-            elif failure_count > 0 and health_state == HealthState.OK:
-                message = f"WeatherStation {self.ws_model.id} health status set to DEGRADED: Weather driver failures ({failure_count}) exceeded 0 but below threshold ({failure_threshold})"
-                self.set_last_err(message)
-                health_state = HealthState.DEGRADED
-        
-        return health_state
+        disconnected = []
+        if self.ws_model.tm_connected != CommunicationStatus.ESTABLISHED:
+            disconnected.append("Telescope Manager")
+        if self.ws_model.dm_connected != CommunicationStatus.ESTABLISHED:
+            disconnected.append("Dish Manager")
+        if disconnected:
+            self.set_last_err(
+                f"WeatherStation {self.ws_model.id} health status set to DEGRADED: "
+                f"{', '.join(disconnected)} not connected"
+            )
+            return HealthState.DEGRADED
+        return HealthState.OK
 
     def process_status_event(self, event) -> Action:
         """ Processes status update events.
@@ -340,7 +410,10 @@ class WeatherStation(App):
             return self.weather_driver.get_weather_data()
         except Exception as exc:
             message = f"WeatherStation {self.ws_model.id} failed to read weather driver: {exc}"
-            logger.exception(self.set_last_err(message))
+            if isinstance(exc, MODBUS_NO_RESPONSE_ERRORS):
+                logger.error(self.set_last_err(message))
+            else:
+                logger.exception(self.set_last_err(message))
             return None
 
     def _generate_weather(self) -> WeatherData:
@@ -359,7 +432,7 @@ class WeatherStation(App):
             ws_id=self.ws_model.id)
 
         if self.ws_model.sim_mode == "calm":
-            weather.wind_speed = random.uniform(0, 15)
+            weather.wind_speed = random.uniform(0, 7)
             weather.temperature = random.uniform(15, 25)
             weather.humidity = random.uniform(30, 70)
             weather.pressure = random.uniform(1000, 1025)
@@ -369,7 +442,7 @@ class WeatherStation(App):
             weather.uv_index = random.uniform(0, 5)
             weather.cloud_cover = random.uniform(0, 30)
         elif self.ws_model.sim_mode == "windy":
-            weather.wind_speed = random.uniform(16, 25)
+            weather.wind_speed = random.uniform(16, 15)
             weather.temperature = random.uniform(10, 20)
             weather.humidity = random.uniform(40, 80)
             weather.pressure = random.uniform(990, 1015)
@@ -379,7 +452,7 @@ class WeatherStation(App):
             weather.uv_index = random.uniform(0, 7)
             weather.cloud_cover = random.uniform(20, 70)
         elif self.ws_model.sim_mode == "stormy":
-            weather.wind_speed = random.uniform(26, 40)
+            weather.wind_speed = random.uniform(26, 25)
             weather.temperature = random.uniform(5, 15)
             weather.humidity = random.uniform(60, 100)
             weather.pressure = random.uniform(970, 1000)
@@ -402,6 +475,7 @@ class WeatherStation(App):
 
     def _replace_weather_driver(self) -> None:
         """Close the current driver before creating its configured replacement."""
+        self._weather_available = None
         current_driver = self.weather_driver
         self.weather_driver = None
 
@@ -422,15 +496,10 @@ def user_input_thread(ws):
 
 def main():
     ws = WeatherStation()
-    ws.start()
-
-    # Start user input thread
-    threading.Thread(target=user_input_thread, args=(ws,), daemon=True).start()
-
-    while True:
-        time.sleep(1)
-
-    ws.stop()
+    with ws.running():
+        if not ws.is_headless():
+            threading.Thread(target=user_input_thread, args=(ws,), daemon=True).start()
+        ws.wait_for_stop()
 
 if __name__ == "__main__":
     main()

@@ -3,6 +3,8 @@ import numpy as np
 import time
 
 from models.dig import DigitiserModel
+from models.comms import CommunicationStatus
+from sdr.facade import SDR as ThreadedSDR
 from sdr.sdr import SDR, _normalise_sdr_type
 from util.xbase import XSoftwareFailure
 
@@ -74,6 +76,15 @@ def test_sdr_type_aliases(configured, expected):
 def test_unknown_sdr_type_is_rejected_before_driver_import(configured):
     with pytest.raises(XSoftwareFailure):
         SDR(sdr_type=configured)
+
+
+def test_stream_reset_is_idempotent_after_worker_has_stopped():
+    sdr = ThreadedSDR.__new__(ThreadedSDR)
+    sdr._worker = None
+    sdr.connected = CommunicationStatus.ESTABLISHED
+
+    assert sdr.stream_reset() == 0
+    assert sdr.connected == CommunicationStatus.NOT_ESTABLISHED
 
 
 def test_gqrxraw_driver_reads_complex64_and_pads_after_eof(tmp_path):

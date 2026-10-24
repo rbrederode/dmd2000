@@ -31,13 +31,15 @@ TO = (
 
 # Allowable properties to get or set on the system
 PROPERTY_TARGET         = 'target'           # Set target model 
-PROPERTY_CAPABILITY     = 'capability'       # Set dish capability capability
+PROPERTY_CAPABILITY     = 'capability'       # Set dish capability
 PROPERTY_MODE           = 'mode'             # Set dish mode
+PROPERTY_POINTING       = 'pointing'         # Get dish pointings for time range
 
 PROPERTIES = dmd_protocol.PROPERTIES + (
     PROPERTY_TARGET,
     PROPERTY_CAPABILITY,
     PROPERTY_MODE,
+    PROPERTY_POINTING,
 )   
 
 # Allowable msg fields and types defining their format     
@@ -54,10 +56,11 @@ MSG_FIELDS = {
     "msg_type":     {"enum": MSG_TYPES},                            # Message type (one of MSG_TYPES)
     "action_code":  {"enum": ACTION_CODES},                         # Action to be taken (one of ACTION_CODES)
     "property":     {"enum": PROPERTIES},                           # Property name (one of PROPERTIES)
-    "value":        {"type": "(int, float, str, dict)"},            # Value to set or value returned
+    "value":        {"type": "(int, float, str, dict, list)"},      # Value to set or value returned
     "status":       {"enum": STATUS},                               # Status of response (e.g. success, error)
     "message":      {"type": "str"},                                # Additional information about the status
     "obs_data":     {"type": "dict"},                               # Observation data in dictionary format 
+    "slew":         {"type": "dict"},                               # Target slew estimate: duration seconds and acquisition ISO datetime
 }
 
 # Definition of required, conditional and optional fields for each api msg type
@@ -80,10 +83,7 @@ MSG_FIELDS_DEFINITIONS = {
     },
     "rsp": {
         "required": {"msg_type", "action_code", "status"},
-        "optional": {"message"},
-        "optional": {"property"},   # Copied from req/adv
-        "optional": {"value"},      # Copied from req/adv
-        "optional": {"obs_data"},   # Optional field
+        "optional": {"message", "property", "value", "obs_data", "slew"},
     },
 }
 

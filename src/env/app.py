@@ -1,8 +1,10 @@
 import argparse
 import asyncio
+from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
 from logging.handlers import TimedRotatingFileHandler
 import os
+import signal
 from pathlib import Path
 from queue import Queue, Empty
 import time
@@ -10,7 +12,8 @@ import threading
 
 from api.api import API
 from api import protocol as dmd_protocol
-from api.command import CommandAPI
+from api.cmd_api import CommandAPI
+from api.cmd_registry import CommandRegistry, DEFAULT_COMMAND_CONFIG
 from ipc.tcp_server import TCPServer
 from ipc.message import AppMessage, APIMessage
 from ipc.action import Action
@@ -50,6 +53,7 @@ class App:
 
     def __init__(self, app_name: str, app_model: AppModel):
 
+        self._stop_event = threading.Event()
         version_info = get_version_info()
 
         if app_name is None or app_name.strip() == "":
@@ -74,6 +78,10 @@ class App:
         self.arg_parser = argparse.ArgumentParser(description=self.app_model.app_name)
         self.add_args(self.arg_parser)
         self.app_model.arguments = vars(self.get_args())
+        self.command_registry = CommandRegistry.load(
+            app_name=app_name,
+            path=self.get_args().cmd_config,
+        )
 
         # Debug is application-wide.  The command API and all processor
         # threads therefore share the state held by the AppModel and update
@@ -212,6 +220,13 @@ class App:
         arg_parser.add_argument("--cmd_host", type=str, required=False, help="Command host to listen for TCP/IP command messages such as trace or debug ON/OFF, or resync. Defaults to 127.0.0.1 if not specified.")
         arg_parser.add_argument("--cmd_port", type=int, required=False, help="Command port to listen for TCP/IP command messages such as trace or debug ON/OFF, or resync. Generally in the range 60001-60010.")
         arg_parser.add_argument(
+            "--cmd_config",
+            type=str,
+            required=False,
+            default=str(DEFAULT_COMMAND_CONFIG),
+            help="Path to the application command registry configuration",
+        )
+        arg_parser.add_argument(
             "--manage_trace_archives",
             type=fmt_bool,
             nargs="?",
@@ -222,6 +237,47 @@ class App:
                 "Defaults to true for TM and false for other apps; accepts true/false."
             ),
         )
+
+    def request_stop(self):
+        """Request shutdown; the main thread performs cleanup outside handlers."""
+        self._stop_event.set()
+
+    @property
+    def stop_requested(self) -> bool:
+        return self._stop_event.is_set()
+
+    def wait_for_stop(self, timeout: float | None = None) -> bool:
+        """Wait interruptibly, returning True when shutdown has been requested."""
+        return self._stop_event.wait(timeout)
+
+    @contextmanager
+    def running(self):
+        """Own the standalone process lifecycle, including signals and logging."""
+        if threading.current_thread() is not threading.main_thread():
+            raise RuntimeError("App.running() must execute on the main thread")
+        previous_handlers = {}
+
+        def request_shutdown(signum, frame):
+            self.request_stop()
+
+        try:
+            for signum in (signal.SIGTERM, signal.SIGINT):
+                previous_handlers[signum] = signal.signal(signum, request_shutdown)
+            if not self.stop_requested:
+                self.start()
+            try:
+                yield self
+            except KeyboardInterrupt:
+                self.request_stop()
+        finally:
+            try:
+                self.stop()
+            finally:
+                try:
+                    logging.shutdown()
+                finally:
+                    for signum, handler in previous_handlers.items():
+                        signal.signal(signum, handler)
 
     def start(self):
         """Starts the application."""
@@ -279,7 +335,7 @@ class App:
                 else:
                     self.status_update_event.enqueue(self.queue)
                     
-                time.sleep(30)  # Sleep main thread to avoid busy-waiting, work is done in the processor threads
+                self.wait_for_stop(30)  # Wake promptly when shutdown is requested.
 
             except Exception as e:
                 logger.error(self.set_last_err(f"App {self.app_model.app_name} encountered an error: {e}"))
@@ -288,10 +344,17 @@ class App:
         """Stops the application."""
 
         self.app_model.app_running = False # Stops status thread
-        self.stop_timer_manager()
-        self.stop_cmd_server()
-        self.stop_processors()
-        self.stop_status_thread()
+        if hasattr(self, "_stop_event"):
+            self.request_stop()
+        for component_name in (
+            "stop_timer_manager", "stop_cmd_server", "stop_processors",
+            "stop_status_thread", "stop_interfaces",
+        ):
+            try:
+                getattr(self, component_name)()
+            except Exception:
+                logger.exception("App %s failed during %s", self.app_model.app_name,
+                                 component_name)
 
         if not self.queue.empty():
             self.queue.queue.clear()
@@ -306,6 +369,19 @@ class App:
 
         logger.info(f"App {self.app_model.app_name} stopped")
         self.app_model.health = HealthState.UNKNOWN
+
+    def stop_interfaces(self):
+        """Close registered network endpoints after worker processing stops."""
+        stopped = set()
+        for _, endpoint, _ in list(getattr(self, "interfaces", {}).values()):
+            if id(endpoint) in stopped:
+                continue
+            stopped.add(id(endpoint))
+            try:
+                endpoint.stop()
+            except Exception:
+                logger.exception("App %s failed to stop an interface", self.app_model.app_name)
+        getattr(self, "interfaces", {}).clear()
 
     def start_processors(self):
         """Starts all processor threads."""
@@ -365,7 +441,8 @@ class App:
         if self.app_model.app_cmd_host is None or self.app_model.app_cmd_port is None:
             raise XSoftwareFailure("App requires both cmd host and port to be specified in the app model or via command line arguments")
 
-        self.cmd_api = CommandAPI()
+        self.command_registry.validate_handlers()
+        self.cmd_api = CommandAPI(registry=self.command_registry)
         self.cmd_endpoint = TCPServer(
             description=dmd_protocol.CMD,
             queue=self.get_queue(),
@@ -395,6 +472,26 @@ class App:
         if dmd_protocol.CMD in getattr(self, "interfaces", {}):
             self.deregister_interface(dmd_protocol.CMD)
         self.cmd_api = None
+
+    def register_command_handler(self, command_name: str, handler) -> None:
+        """Register code that implements a configured application command."""
+        self.command_registry.register_handler(command_name, handler)
+
+    def reload_command_registry(self) -> None:
+        """Atomically reload command specifications while retaining known handlers."""
+        replacement = CommandRegistry.load(
+            app_name=self.app_model.app_name,
+            path=self.command_registry.source_path,
+        )
+        for command_name in replacement.command_names:
+            handler = self.command_registry.get_handler(command_name)
+            if handler is not None:
+                replacement.register_handler(command_name, handler)
+        replacement.validate_handlers()
+
+        self.command_registry = replacement
+        if getattr(self, "cmd_api", None) is not None:
+            self.cmd_api.registry = replacement
 
     def register_interface(self, system_name: str, api: API, endpoint, interface_type: InterfaceType = InterfaceType.UNKNOWN):
         """Registers an interface with the application.

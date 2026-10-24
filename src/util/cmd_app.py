@@ -3,19 +3,22 @@
 Examples::
 
     python -m util.cmd_app --system dm --port 60002 set trace ON
+    python -m util.cmd_app --system dm --port 60003 stop dish001
     python -m util.cmd_app --system sdp --port 60003 get debug
     python -m util.cmd_app --system tm --port 60001 resync
 """
 
 import argparse
 import logging
+import sys
 import threading
 import time
 from datetime import datetime, timezone
 from queue import Queue
 
 from api import protocol as dmd_protocol
-from api.command import CommandAPI
+from api.cmd_api import ACTION_CODE_COMMAND, CommandAPI
+from api.cmd_registry import CommandRegistry, DEFAULT_COMMAND_CONFIG
 from env.app_processor import AppProcessor
 from ipc.action import Action
 from ipc.message import APIMessage
@@ -42,8 +45,23 @@ COMMAND_PROPERTIES = (
 )
 
 
-def normalise_command_config(config: dict) -> tuple[str, str | None, str | None]:
-    """Translate a UI command payload to cmd_app action arguments."""
+def normalise_command_config(
+    config: dict,
+    registry: CommandRegistry | None = None,
+    command_config_path=None,
+) -> tuple[str, str | None, str | None]:
+    """Translate a UI command payload to cmd_app action arguments.
+
+        Params:
+            config: A dict containing the command configuration, e.g.::
+                {
+                    "cmd": "Trace",
+                    "property": "Trace",
+                    "value": "On"
+                }
+        Returns:
+            A tuple of (action_code, property_name, value) suitable for use with cmd_app
+    """
 
     if not isinstance(config, dict):
         raise ValueError("Command configuration must be a JSON object")
@@ -53,7 +71,8 @@ def normalise_command_config(config: dict) -> tuple[str, str | None, str | None]
     property_name = str(property_name).strip().lower() if property_name is not None else None
     property_name = property_name or None
     value = config.get("value")
-    value = str(value).strip().upper() if value is not None else None
+    value = str(value).strip() if value is not None else None
+    value = value or None
 
     # The UI's convenient form uses cmd=Trace/Debug. cmd_app's protocol form
     # calls these SET (with a value) or GET (without a value) operations.
@@ -63,6 +82,7 @@ def normalise_command_config(config: dict) -> tuple[str, str | None, str | None]
                 f"Command '{command}' conflicts with property '{property_name}'"
             )
         property_name = command
+        value = value.upper() if value is not None else None
         command = (
             dmd_protocol.ACTION_CODE_SET
             if value is not None
@@ -74,6 +94,20 @@ def normalise_command_config(config: dict) -> tuple[str, str | None, str | None]
         # fields even though the command protocol does not use them for resync.
         return command, None, None
 
+    app_name = str(config.get("app") or "").strip().lower()
+    if registry is None and app_name:
+        registry = CommandRegistry.load(app_name=app_name, path=command_config_path)
+
+    if registry is not None and registry.has_command(command):
+        if property_name is not None:
+            raise ValueError(f"Command '{command}' does not accept a property")
+        try:
+            value = registry.coerce_value(command, value)
+            registry.validate({"command": command, "value": value})
+        except Exception as exc:
+            raise ValueError(str(exc)) from exc
+        return command, None, value
+
     if command not in (dmd_protocol.ACTION_CODE_GET, dmd_protocol.ACTION_CODE_SET):
         raise ValueError(f"Unsupported command '{config.get('cmd')}'")
     if property_name not in COMMAND_PROPERTIES:
@@ -82,22 +116,31 @@ def normalise_command_config(config: dict) -> tuple[str, str | None, str | None]
         if value is not None:
             raise ValueError("Get does not accept a value")
         return command, property_name, None
+    value = value.upper() if value is not None else None
     if value not in ("ON", "OFF"):
         raise ValueError(
             f"Command property '{property_name}' requires value 'On' or 'Off'"
         )
-    return command, property_name, value
 
+    return command, property_name, value
 
 class CommandUtilityDriver:
     """Minimal command-client driver used to process the API response."""
 
-    def __init__(self, target_system: str, action_code: str, property_name=None):
+    def __init__(
+        self,
+        target_system: str,
+        requested_action: str,
+        property_name=None,
+        registry: CommandRegistry | None = None,
+    ):
         self.app_model = AppModel(app_name=dmd_protocol.CMD, app_tracing=False)
         self.target_system = target_system
-        self.action_code = action_code
+        self.registry = registry or CommandRegistry(app_name=target_system)
+        self.command_name = requested_action if self.registry.has_command(requested_action) else None
+        self.action_code = ACTION_CODE_COMMAND if self.command_name else requested_action
         self.property_name = property_name
-        self.api = CommandAPI()
+        self.api = CommandAPI(registry=self.registry)
         self.endpoint = None
         self.entity_connection_map = {}
         self.response = None
@@ -119,6 +162,10 @@ class CommandUtilityDriver:
             and api_call.get("action_code") == self.action_code
             and (
                 self.action_code == dmd_protocol.ACTION_CODE_RESYNC
+                or (
+                    self.action_code == ACTION_CODE_COMMAND
+                    and api_call.get("command") == self.command_name
+                )
                 or api_call.get("property") == self.property_name
             )
         ):
@@ -148,8 +195,9 @@ class CommandUtilityDriver:
         return self._process_response(api_call)
 
 
-def build_arg_parser() -> argparse.ArgumentParser:
+def build_arg_parser(registry: CommandRegistry | None = None) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
+        prog="cmd_app",
         description="Send a command to a DMD2000 application"
     )
     parser.add_argument("--host", default="localhost", help="Application command server host")
@@ -166,6 +214,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=5.0,
         help="Seconds to wait for connection and response",
     )
+    parser.add_argument(
+        "--cmd_config",
+        default=str(DEFAULT_COMMAND_CONFIG),
+        help="Path to the application command registry configuration",
+    )
 
     subparsers = parser.add_subparsers(dest="action", required=True)
 
@@ -177,6 +230,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
     get_parser.add_argument("property", choices=COMMAND_PROPERTIES)
 
     subparsers.add_parser("resync", help="Reload application configuration")
+
+    for command_name in registry.command_names if registry is not None else ():
+        spec = registry.get_spec(command_name)
+        command_parser = subparsers.add_parser(
+            command_name,
+            help=spec.description,
+        )
+        command_parser.add_argument(
+            "value",
+            metavar="value",
+            nargs=None if spec.value_required else "?",
+            help=f"Command value ({spec.value_type})",
+        )
     return parser
 
 
@@ -192,12 +258,22 @@ def _wait_for_connection(client: TCPClient, timeout: float) -> bool:
 def construct_request(args, api: CommandAPI) -> APIMessage:
     """Construct and validate the request represented by parsed CLI arguments."""
 
+    action_code = args.action
+    command_name = None
+    if api.registry.has_command(action_code):
+        command_name = action_code
+        action_code = ACTION_CODE_COMMAND
+
     api_call = {
         "msg_type": dmd_protocol.MSG_TYPE_REQ,
-        "action_code": args.action,
+        "action_code": action_code,
     }
+    if command_name is not None:
+        api_call["command"] = command_name
     property_name = getattr(args, "property", None)
     value = getattr(args, "value", None)
+    if command_name is not None:
+        value = api.registry.coerce_value(command_name, value)
     if property_name is not None:
         api_call["property"] = property_name
     if value is not None:
@@ -216,10 +292,31 @@ def construct_request(args, api: CommandAPI) -> APIMessage:
 
 
 def main(argv=None) -> int:
-    args = build_arg_parser().parse_args(argv)
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    preliminary_parser = argparse.ArgumentParser(add_help=False)
+    preliminary_parser.add_argument("--system", choices=SUPPORTED_SYSTEMS)
+    preliminary_parser.add_argument(
+        "--cmd_config",
+        default=str(DEFAULT_COMMAND_CONFIG),
+    )
+    preliminary_args, _ = preliminary_parser.parse_known_args(raw_argv)
+    registry = (
+        CommandRegistry.load(
+            app_name=preliminary_args.system,
+            path=preliminary_args.cmd_config,
+        )
+        if preliminary_args.system
+        else None
+    )
+    args = build_arg_parser(registry=registry).parse_args(raw_argv)
     property_name = getattr(args, "property", None)
     event_queue = Queue()
-    driver = CommandUtilityDriver(args.system, args.action, property_name)
+    driver = CommandUtilityDriver(
+        args.system,
+        args.action,
+        property_name,
+        registry=registry,
+    )
     processor = AppProcessor(name="cmd-app", event_q=event_queue, driver=driver)
     client = TCPClient(
         description=args.system,

@@ -3,7 +3,7 @@ from astropy.coordinates import AltAz
 import astropy.units as u
 
 from dsh.drivers.driver import DishDriver
-from models.dsh import DishMode, DishModel, PointingState
+from models.dsh import Capability, DishMode, DishModel, PointingState
 
 
 def make_ready_driver(pointing_altaz, mode=DishMode.STANDBY_FP):
@@ -92,6 +92,7 @@ def test_slew_records_acquisition_when_dish_is_already_on_target():
         {"alt": 80.0, "az": 10.0},
         mode=DishMode.OPERATE,
     )
+    driver.dsh_model.capability = Capability.OPERATE_FULL
     target_altaz = AltAz(alt=80.0 * u.deg, az=10.0 * u.deg)
 
     driver.slew(target_altaz)

@@ -8,7 +8,7 @@ def test_launch_config_loads_jodrell_profile():
     config = LaunchConfigModel.load_from_disk(input_dir="src/config/jodrell", filename="LaunchConfig.json")
 
     assert config.profile == "jodrell"
-    assert len(config.launches) == 6
+    assert {launch.entity_id for launch in config.launches} == {"dig001", "dm001", "sdp001", "tm001"}
 
     dig = config.get_launch_by_entity_id("dig001")
 
@@ -16,7 +16,18 @@ def test_launch_config_loads_jodrell_profile():
     assert dig.app_name == "dig"
     assert dig.env["GPIOZERO_PIN_FACTORY"] == "mock"
     assert dig.program == "python"
-    assert dig.args[:4] == ["dig/dig.py", "--profile", "jodrell", "--entity_id"]
+    assert dig.args[:5] == ["-m", "dig.dig", "--profile", "jodrell", "--entity_id"]
+
+
+@pytest.mark.parametrize("profile", ["local", "alston", "gqrx", "jodrell", "patio", "rtlstream", "solar"])
+def test_app_launches_use_modules_so_src_packages_are_importable(profile):
+    config = LaunchConfigModel.load_from_disk(
+        input_dir=f"src/config/{profile}", filename="LaunchConfig.json",
+    )
+    modules = {"dm": "dsh.dm", "dig": "dig.dig", "tm": "tm.tm", "sdp": "sdp.sdp", "ws": "ws.ws"}
+    for launch in config.launches:
+        if launch.app_name in modules:
+            assert launch.args[:2] == ["-m", modules[launch.app_name]]
 
 
 def test_launch_config_returns_none_for_unknown_entity():

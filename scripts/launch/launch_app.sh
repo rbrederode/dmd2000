@@ -95,10 +95,14 @@ build_run_cmd() {
         # activated environment from the Terminal process that opens this window.
         printf ' && unset PYENV_VERSION VIRTUAL_ENV'
     else
-        venv_activate="$REPO_ROOT/venv/bin/activate"
-        if [ -f "$venv_activate" ]; then
-            printf ' && source %q' "$venv_activate"
-        fi
+        # New terminal windows do not inherit the launching shell's activation.
+        # Prefer the standard .venv name, retaining legacy venv installations.
+        for venv_activate in "$REPO_ROOT/.venv/bin/activate" "$REPO_ROOT/venv/bin/activate"; do
+            if [ -f "$venv_activate" ]; then
+                printf ' && source %q' "$venv_activate"
+                break
+            fi
+        done
     fi
 
     if [ "${#EXPORT_ENVS[@]}" -gt 0 ]; then

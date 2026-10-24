@@ -1,0 +1,23 @@
+{
+    "_type": "CmdRegistry",
+    "applications": {
+        "dm": {
+            "commands": {
+                "stop": {
+                    "description": "Immediately stop dish movement",
+                    "value": {
+                        "required": true,
+                        "type": "str",
+                        "pattern": "^[A-Za-z0-9_-]+$"
+                    }
+                }
+            }
+        },
+        "tm": {"commands": {}},
+        "dig": {"commands": {}},
+        "sdp": {"commands": {}},
+        "ws": {"commands": {}},
+        "imu": {"commands": {}},
+        "app": {"commands": {}}
+    }
+}

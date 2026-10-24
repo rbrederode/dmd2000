@@ -28,6 +28,7 @@ with warnings.catch_warnings():
     import matplotlib.pyplot as plt
 
 from util import gen_file_prefix
+from sdp.display_baseline import DisplayBaseline
 from util.matplotlib_window import get_figure_visibility
 from sdp.channel_mask import (
     DEFAULT_EXCLUDED_FLAGS,
@@ -62,7 +63,7 @@ class SignalDisplay:
         self.dig_id = dig_id            # Current digitiser signal being displayed
 
         self.scan = None                # Current digitiser scan being displayed
-        self.load = None                # Current digitiser scan baseline being applied
+        self.load = None                # Lightweight baseline spectrum/flags, never a full load scan
         self.sec = None                 # Current scan second being displayed
 
         self.fig = None                 # Figure for the digitiser signal display
@@ -252,8 +253,9 @@ class SignalDisplay:
             logger.warning(f"Signal display for {self.dig_id} cannot set_scan for scan from different dig_id {scan.scan_model.dig_id}")
             return
 
-        if load is not None and load.scan_model.dig_id != self.dig_id:
-            logger.warning(f"Signal display for {self.dig_id} cannot set_scan for baseline from different dig_id {load.scan_model.dig_id}")
+        load = DisplayBaseline.copy_from(load)
+        if load is not None and load.dig_id != self.dig_id:
+            logger.warning(f"Signal display for {self.dig_id} cannot set_scan for baseline from different dig_id {load.dig_id}")
             return
 
         self.scan = scan
@@ -287,9 +289,10 @@ class SignalDisplay:
         return self.scan
 
     def set_load(self, load: Scan | None):
-        """Update the optional baseline/load scan for the currently displayed sky scan."""
-        if load is not None and load.scan_model.dig_id != self.dig_id:
-            logger.warning(f"Signal display for {self.dig_id} cannot set_load for baseline from different dig_id {load.scan_model.dig_id}")
+        """Copy an optional baseline without retaining the full load scan."""
+        load = DisplayBaseline.copy_from(load)
+        if load is not None and load.dig_id != self.dig_id:
+            logger.warning(f"Signal display for {self.dig_id} cannot set_load for baseline from different dig_id {load.dig_id}")
             return
 
         self.load = load

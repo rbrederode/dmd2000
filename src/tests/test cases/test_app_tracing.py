@@ -9,7 +9,8 @@ import pytest
 
 from api.api import API
 from api import protocol as dmd_protocol
-from api.command import CommandAPI
+from api.cmd_api import CommandAPI
+from api.cmd_registry import CommandRegistry
 from env.app import App, _should_manage_trace_archives
 from env.app_processor import AppProcessor
 from env.processor import Processor
@@ -269,6 +270,7 @@ def test_app_registers_command_server_as_cmd_interface():
     )
     app.queue = Queue()
     app.interfaces = {}
+    app.command_registry = CommandRegistry(app_name=dmd_protocol.DM)
 
     class FakeTCPServer:
         def __init__(self, description, queue, host, port):

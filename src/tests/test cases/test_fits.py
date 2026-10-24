@@ -27,7 +27,6 @@ print("\nData sample:")
 print(hdul['TARGET_SCANS'].data)
 
 hdul.close()
-exit(1)
 
 from astropy.io import fits
 import numpy as np

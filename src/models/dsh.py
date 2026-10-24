@@ -121,7 +121,7 @@ class DishModel(BaseModel):
         "velocity_altaz": Or(None, dict, lambda v: v is None or isinstance(v, dict)),             # Current velocity of dish in Altitude and Azimuth (degrees per second)
         "target": Or(None, lambda v: v is None or isinstance(v, BaseModel)),                      # Current target model assigned to the dish
         "tgt_id": Or(None, And(str, lambda v: isinstance(v, str))),                               # Current target id assigned to the dish in the form {obs_id}_{obs.tgt_idx}
-        "tgt_acq_dt": Or(None, And(datetime, lambda v: isinstance(v, datetime))),                 # Datetime when the dish acquired the current target
+        "tgt_acq_dt": Or(None, And(datetime, lambda v: isinstance(v, datetime))),                 # Datetime when the dish acquired the current target (initially estimated)
         "tgt_pec": And(list, lambda v: isinstance(v, list)),                                      # Current periodic error correction (PEC) list of PECModel instances 
         "capability": And(Capability, lambda v: isinstance(v, Capability)),
         "driver_type": And(DriverType, lambda v: isinstance(v, DriverType)),                      # Dish driver type e.g. "ASCOM", "INDI", "MD-01", "MD-02"

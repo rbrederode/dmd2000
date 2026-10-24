@@ -3,7 +3,8 @@ from datetime import datetime, timezone
 import pytest
 
 from api import protocol as dmd_protocol
-from api.command import CommandAPI
+from api.cmd_api import ACTION_CODE_COMMAND, CommandAPI
+from api.cmd_registry import CommandRegistry
 from ipc.message import APIMessage
 from util.xbase import XAPIValidationFailed
 
@@ -17,6 +18,7 @@ def make_command(
     property_name=dmd_protocol.PROPERTY_TRACE,
     value="ON",
     status=None,
+    command_name=None,
 ):
     api_call = {
         "msg_type": msg_type,
@@ -28,6 +30,8 @@ def make_command(
         api_call["value"] = value
     if status is not None:
         api_call["status"] = status
+    if command_name is not None:
+        api_call["command"] = command_name
 
     message = APIMessage()
     message.set_json_api_header(
@@ -67,6 +71,51 @@ def test_command_api_rejects_non_command_origins_and_invalid_values():
 
     with pytest.raises(XAPIValidationFailed):
         api.validate(make_command(property_name=dmd_protocol.PROPERTY_STATUS))
+
+
+def test_command_api_accepts_registered_dm_stop_request():
+    registry = CommandRegistry.load(app_name=dmd_protocol.DM)
+    api = CommandAPI(registry=registry)
+
+    api.validate(make_command(
+        action_code=ACTION_CODE_COMMAND,
+        property_name=None,
+        value="dish001",
+        command_name="stop",
+    ))
+
+
+@pytest.mark.parametrize("property_name,value", [
+    (dmd_protocol.PROPERTY_STATUS, "dish001"),
+    (None, None),
+    (None, ""),
+    (None, "dish 001"),
+])
+def test_command_api_rejects_invalid_registered_stop_requests(property_name, value):
+    registry = CommandRegistry.load(app_name=dmd_protocol.DM)
+    api = CommandAPI(registry=registry)
+
+    with pytest.raises(XAPIValidationFailed):
+        api.validate(make_command(
+            action_code=ACTION_CODE_COMMAND,
+            property_name=property_name,
+            value=value,
+            command_name="stop",
+        ))
+
+
+def test_command_api_does_not_offer_stop_to_other_apps():
+    registry = CommandRegistry.load(app_name=dmd_protocol.SDP)
+    api = CommandAPI(registry=registry)
+
+    with pytest.raises(XAPIValidationFailed):
+        api.validate(make_command(
+            to_system=dmd_protocol.SDP,
+            action_code=ACTION_CODE_COMMAND,
+            property_name=None,
+            value="dish001",
+            command_name="stop",
+        ))
 
 
 def test_command_api_accepts_response_addressed_to_command_client():

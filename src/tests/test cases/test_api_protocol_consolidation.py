@@ -54,6 +54,7 @@ def test_api_modules_preserve_interface_specific_extensions():
             tm_dm.PROPERTY_TARGET,
             tm_dm.PROPERTY_CAPABILITY,
             tm_dm.PROPERTY_MODE,
+            tm_dm.PROPERTY_POINTING,
         ),
         sdp_dig: (
             sdp_dig.PROPERTY_DIG_ID,

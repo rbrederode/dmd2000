@@ -54,7 +54,16 @@ class RecordingTrace:
 
 def make_driver():
     driver = MD01Driver.__new__(MD01Driver)
-    driver.md01_config = SimpleNamespace(host="192.0.2.1", port=23)
+    driver.md01_config = SimpleNamespace(
+        host="192.0.2.1",
+        port=23,
+        offset_alt=0.0,
+        offset_az=0.0,
+        min_alt=0.0,
+        max_alt=90.0,
+        min_az=-180.0,
+        max_az=540.0,
+    )
     driver.dsh_model = SimpleNamespace(dsh_id="dish001")
     driver.trace = None
     driver.last_command_time = 0
@@ -268,6 +277,24 @@ def test_md01_suppresses_duplicate_quantised_set_commands():
 
     assert len(sent_commands) == 2
     assert sent_commands[0] != sent_commands[1]
+
+
+def test_md01_set_command_is_clamped_to_configured_azimuth_limits():
+    driver = make_driver()
+    driver.md01_config.min_az = 0.0
+    driver.md01_config.max_az = 360.0
+    sent_positions = []
+
+    def send(command):
+        sent_positions.append((command.alt, command.az))
+        return MD01Msg()
+
+    driver._send_md01_command = send
+
+    driver._set_md01_altaz(40.0, -1.0)
+    driver._set_md01_altaz(40.0, 361.0)
+
+    assert sent_positions == [(40.0, 0.0), (40.0, 360.0)]
 
 
 def test_md01_stop_allows_same_set_command_to_be_sent_again():

@@ -20,6 +20,16 @@ def test_retry_scan_iteration_matches_current_planned_scan():
     assert retry_scan.scan_id == f"{obs.obs_id}-47-0-0"
 
 
+def test_scan_id_from_another_observation_does_not_match_by_indices():
+    obs = ObsModel.load_from_disk(
+        input_dir="src/config/jodrell",
+        filename="obs_3hr_solar_drift_scan.json",
+    )
+    obs.determine_scans()
+
+    assert obs.get_target_scan_by_id("another-observation-0-0-0") is None
+
+
 def test_target_scan_set_finds_sparse_persisted_iteration():
     persisted_scan = ScanModel(
         obs_id="obs001",

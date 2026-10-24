@@ -239,15 +239,9 @@ class AppProcessor(Processor):
                         self.performActions(Action().set_msg_to_remote(rsp_msg), event.local_sap, event.remote_conn, event.remote_addr)
                         return True
 
-                    # Only generic commands are accepted on the command port;
-                    # never dispatch unrecognised input into an application
-                    # handler such as process_cmd_msg().
+                    # Handle application command requests
                     if interface_name == dmd_protocol.CMD:
-                        rsp_msg = self._construct_rsp_msg(
-                            api_msg,
-                            dmd_protocol.STATUS_ERROR,
-                            "Unsupported command request",
-                        )
+                        rsp_msg = self._handle_cmd_req(api_msg, api_call)
                         self.performActions(Action().set_msg_to_remote(rsp_msg), event.local_sap, event.remote_conn, event.remote_addr)
                         return True
 
@@ -665,6 +659,28 @@ class AppProcessor(Processor):
         rsp_msg.set_api_call(rsp_call)
         return rsp_msg
 
+    def _handle_cmd_req(self, api_msg: APIMessage, api_call: dict) -> APIMessage:
+        """Handle application command requests."""
+
+        command_name = api_call.get("command")
+        registry = getattr(self.driver, "command_registry", None)
+        handler = registry.get_handler(command_name) if registry is not None else None
+        if handler is None or not callable(handler):
+            return self._construct_rsp_msg(
+                api_msg,
+                dmd_protocol.STATUS_ERROR,
+                f"Application has no registered handler for command '{command_name}'",
+            )
+
+        try:
+            status, message = handler(api_call)
+        except Exception as exc:
+            message = f"Application command failed: {exc}"
+            logger.exception(self.driver.set_last_err(message))
+            status = dmd_protocol.STATUS_ERROR
+
+        return self._construct_rsp_msg(api_msg, status, message)
+
     def _handle_resync_req(self, api_msg: APIMessage) -> APIMessage:
         """Invoke an application's optional configuration resync hook."""
 
@@ -681,6 +697,9 @@ class AppProcessor(Processor):
             action = handler()
             if action is not None:
                 self.performActions(action)
+            registry_reload = getattr(self.driver, "reload_command_registry", None)
+            if registry_reload is not None and callable(registry_reload):
+                registry_reload()
             return self._construct_rsp_msg(
                 api_msg,
                 dmd_protocol.STATUS_SUCCESS,
