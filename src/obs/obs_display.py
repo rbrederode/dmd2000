@@ -257,3 +257,46 @@ class ObsDisplay:
             plt.close(output_fig)
 
         return output_path
+
+    def display_lsr(self, obs, output_path: str, blacklist=()):
+        """Show and save calibrated aggregates in LSRK, one curve per frequency scan."""
+        from obs.lsr import lsr_velocity, scan_observing_context
+
+        figure, axes = plt.subplots(num=f"LSRK Observation {self.obs_id}", figsize=(14, 6))
+        plotted = 0
+        for scan, colour in zip(self.scans, _scan_colours(len(self.scans))):
+            model = scan.scan_model
+            if scan.mpr is None:
+                continue
+            try:
+                direction, location, observed_at = scan_observing_context(obs, scan, blacklist)
+                frequencies = model.center_freq + np.fft.fftshift(
+                    np.fft.fftfreq(model.spectral_resolution, d=1 / model.sample_rate)
+                )
+                velocity = lsr_velocity(frequencies, direction, location, observed_at)
+            except (ValueError, TypeError, AttributeError) as exc:
+                logger.warning("Skipping LSRK plot for %s: %s", model.scan_id, exc)
+                continue
+            flags = getattr(scan, "mpr_flags", None)
+            if not isinstance(flags, np.ndarray) or flags.shape != scan.mpr.shape:
+                flags = empty_channel_flags(scan.mpr.shape)
+            order = np.argsort(velocity)
+            axes.plot(
+                velocity[order], masked_values(scan.mpr, flags)[order], color=colour,
+                label=f"Target {model.tgt_idx}, frequency {model.freq_scan} ({model.center_freq / 1e6:.3f} MHz)",
+            )
+            plotted += 1
+        if not plotted:
+            plt.close(figure)
+            logger.warning("No LSRK plot produced: no SKY scans with sufficient observing metadata")
+            return None
+        axes.axvline(0, color="black", linestyle="--", linewidth=1, label="Zero LSRK velocity")
+        axes.set_title(f"Observation {self.obs_id} — Aggregated Sky Scans")
+        axes.set_xlabel("LSRK velocity [km/s] (radio convention; H I rest 1420.405751768 MHz)")
+        axes.set_ylabel("Calibrated Power Spectrum [a.u.]")
+        axes.grid(True, alpha=0.25)
+        axes.legend()
+        figure.tight_layout()
+        figure.savefig(output_path, dpi=150, bbox_inches="tight")
+        plt.show(block=False)
+        return figure
