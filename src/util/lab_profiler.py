@@ -1,4 +1,4 @@
-"""Extract a LAB H I reference profile for an observation and physical scan.
+"""Extract a LAB H I reference profile from scan metadata or Galactic coordinates.
 
 From src: python -m util.lab_profiler --obs OBS_ID --scan SCAN_ID --dir PATH
 Survey description: https://lambda.gsfc.nasa.gov/product/foreground/fg_LAB_HI_Survey_info.html
@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 from contextlib import contextmanager
 from dataclasses import dataclass
+import json
 from pathlib import Path
 import re
 import shutil
@@ -19,15 +20,18 @@ from urllib.request import urlopen
 
 import numpy as np
 from astropy import units as u
-from astropy.coordinates import AltAz, EarthLocation, SkyCoord
 from astropy.io import fits
-from astropy.time import Time
-from astropy.utils import iers
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from models.obs import ObsModel
+from obs.obs_pointing import (
+    get_obs_pointing,
+    JODRELL_BANK_LOCATION,
+    PointingContext as ProfileContext,
+    resolve_pointing_context as resolve_profile_context,
+    add_pointing_arguments,
+)
 
 LAB_ARCHIVE_URL = "https://lambda.gsfc.nasa.gov/data/foregrounds/HI/lab_healpix.tar.bz2"
 SLICE_NAME = re.compile(r"LAB[_-]cut([+-]?\d+)\.fits$", re.IGNORECASE)
@@ -43,39 +47,6 @@ class LabProfile:
     brightness_k: np.ndarray
     weight: np.ndarray
 
-
-def observation_pointing(directory, obs_id, scan_id):
-    """Read metadata only; prefer actual acquired Alt/Az for fixed pointings."""
-    obs = ObsModel.load_from_disk(input_dir=str(Path(directory).expanduser()), filename=f"{obs_id}-obs.json")
-    matches = [scan for group in obs.target_scans for scan in group.scans if scan.scan_id == scan_id]
-    if len(matches) != 1:
-        available = ", ".join(scan.scan_id for group in obs.target_scans for scan in group.scans)
-        raise ValueError(f"Expected one scan matching {scan_id!r}; found {len(matches)}. Available scans: {available}")
-    scan = matches[0]
-    start = scan.read_start or scan.tgt_acq_dt
-    if start is None:
-        raise ValueError(f"Scan {scan_id} has no recorded observation time")
-    end = scan.read_end or start
-    if end < start:
-        raise ValueError(f"Scan {scan_id} ends before it starts")
-    midpoint = start + (end - start) / 2
-    target = obs.get_target_by_index(scan.tgt_idx)
-    if target is None:
-        raise ValueError(f"Scan {scan_id} has no target metadata")
-    location = EarthLocation.from_geodetic(obs.longitude * u.deg, obs.latitude * u.deg, obs.height * u.m)
-    with iers.conf.set_temp("auto_download", False), iers.conf.set_temp("auto_max_age", None):
-        if target.sky_coord is not None:
-            pointing = target.sky_coord
-        else:
-            altaz = scan.tgt_acq_altaz or target.altaz
-            if altaz is None:
-                raise ValueError(f"Scan {scan_id} has neither sky coordinates nor Alt/Az")
-            pointing = SkyCoord(
-                alt=altaz["alt"] * u.deg, az=altaz["az"] * u.deg,
-                frame=AltAz(location=location, obstime=Time(midpoint), pressure=0 * u.hPa),
-            )
-        galactic = pointing.galactic
-    return galactic, midpoint
 
 
 def find_slices(directory):
@@ -169,9 +140,13 @@ def extract_profile(slices, galactic, observed_at):
     return LabProfile(float(longitude), float(latitude), observed_at.isoformat(), np.array(velocities), np.array(brightness), np.array(weights))
 
 
-def save_profile(profile, prefix, show=True):
-    """Save CSV and PNG outside the temporary survey directory."""
+def save_profile(profile, prefix, show=True, context=None):
+    """Save CSV/PNG, plus a JSON context sidecar when provided.
+
+    Returns the CSV and PNG paths, preserving the existing importable API.
+    """
     import matplotlib.pyplot as plt
+    from matplotlib.ticker import MultipleLocator
 
     prefix = Path(prefix).expanduser()
     prefix.parent.mkdir(parents=True, exist_ok=True)
@@ -181,8 +156,17 @@ def save_profile(profile, prefix, show=True):
     figure, axes = plt.subplots(figsize=(12, 5))
     axes.step(profile.velocity_lsr_kms, profile.brightness_k, where="mid", label="LAB H I (10 km/s bins)")
     axes.axvline(0, color="black", linestyle="--", alpha=0.7, label="Zero LSR velocity")
-    axes.set(xlabel="LSR velocity [km/s]", ylabel="Mean H I brightness temperature [K]",
-             title=f"{prefix.name}\nl={profile.longitude_deg:.3f}°, b={profile.latitude_deg:.3f}°; {profile.observed_at}")
+    title = f"l={profile.longitude_deg:.3f}°, b={profile.latitude_deg:.3f}°; {profile.observed_at}"
+    if context is None or context.input_mode != "galactic":
+        title = f"{prefix.name}\n{title}"
+    axes.set(xlabel="LSR velocity [km/s]", ylabel="Mean H I brightness temperature [K]", title=title)
+    if context is not None:
+        latitude, longitude, height = context.location
+        axes.set_title(axes.get_title() + f"\nSite: {latitude:.6f}°, {longitude:.6f}°, {height:g} m ({context.input_mode})", fontsize=10)
+        metadata = {**context.metadata(), "survey": "NASA LAMBDA LAB HEALPix, 10 km/s slices"}
+        Path(f"{prefix}.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+    axes.xaxis.set_major_locator(MultipleLocator(100))
+    axes.xaxis.set_minor_locator(MultipleLocator(50))
     axes.grid(alpha=0.3)
     axes.legend()
     figure.tight_layout()
@@ -193,27 +177,34 @@ def save_profile(profile, prefix, show=True):
     return csv_path, png_path
 
 
-def main(argv=None):
+def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--obs", "--observation-id", required=True, dest="obs")
-    parser.add_argument("--scan", "--scan-id", required=True, dest="scan")
-    parser.add_argument("--dir", default=".", help="Directory containing observation metadata")
+    add_pointing_arguments(parser)
     parser.add_argument("--lab-dir", help="Extracted LAB FITS directory; defaults to ~/Downloads/LAB_Healpix")
-    parser.add_argument("--output-dir", help="Output directory; defaults to --dir")
-    parser.add_argument("--no-show", action="store_true", help="Save the plot without opening a window")
+    return parser
+
+
+def main(argv=None):
+    parser = build_parser()
     args = parser.parse_args(argv)
+    try:
+        context = resolve_profile_context(args)
+    except ValueError as exc:
+        parser.error(str(exc))
+    except (OSError, KeyError) as exc:
+        parser.exit(1, f"LAB metadata lookup failed: {exc}\n")
     try:
         # Check dependencies before initiating a potentially large download.
         import healpy  # noqa: F401
-        galactic, observed_at = observation_pointing(args.dir, args.obs, args.scan)
-        print(f"Scan midpoint UTC: {observed_at.isoformat()}; l={galactic.l.deg:.4f}°, b={galactic.b.deg:.4f}°")
+        galactic, observed_at = context.galactic, context.observed_at
+        print(f"Observation datetime UTC: {observed_at.isoformat()}; l={galactic.l.deg:.4f}°, b={galactic.b.deg:.4f}°")
         with survey_slices(args.lab_dir) as slices:
             print(f"Extracting {len(slices)} LAB velocity bins")
             profile = extract_profile(slices, galactic, observed_at)
-        name = re.sub(r"[^A-Za-z0-9_.+-]", "_", args.scan)
-        prefix = Path(args.output_dir or args.dir).expanduser() / f"{name}-lab-profile"
-        for path in save_profile(profile, prefix, show=not args.no_show):
+        prefix = Path(args.output_dir or args.dir).expanduser() / f"{context.output_name}-lab-profile"
+        for path in save_profile(profile, prefix, show=not args.no_show, context=context):
             print(f"Saved: {path}")
+        print(f"Saved: {prefix}.json")
     except ImportError as exc:
         parser.exit(1, f"LAB extraction dependency missing: {exc}. Install with python -m pip install healpy\n")
     except (OSError, ValueError, RuntimeError, KeyError, tarfile.TarError) as exc:

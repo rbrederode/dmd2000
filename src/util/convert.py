@@ -121,3 +121,36 @@ def duration_to_seconds(value: str) -> int:
 
 def datetime_to_dict(value: datetime) -> dict:
     return {"_type": "datetime", "value": value.isoformat()}
+
+
+def datetime_to_utc(value: datetime) -> datetime:
+    """Return a timezone-aware UTC datetime.
+
+    A naive datetime is interpreted as UTC, independently of the machine's local
+    timezone. A timezone-aware datetime is converted while preserving its instant.
+    """
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
+def parse_utc_datetime(value: str) -> datetime:
+    """Parse an ISO date/time string and return a timezone-aware UTC datetime.
+
+    Parameters:
+        value: ISO datetime with a ``T`` or space between date and time. A
+            trailing ``Z`` denotes UTC; explicit offsets are converted to UTC.
+            A missing timezone is interpreted as UTC. Date-only input is rejected.
+
+    Returns:
+        The parsed datetime, normalised to ``timezone.utc``.
+
+    Raises:
+        ValueError: The input is not a valid ISO datetime containing a time.
+
+    This function has no CLI dependency and can also be used as an argparse type.
+    """
+    try:
+        if "T" not in value and " " not in value:
+            raise ValueError("A date and time are required")
+        return datetime_to_utc(datetime.fromisoformat(value.replace("Z", "+00:00")))
+    except ValueError as exc:
+        raise ValueError(f"Expected an ISO datetime, e.g. 2026-10-24T11:25:50Z; got {value!r}") from exc
