@@ -364,9 +364,14 @@ class Digitiser(App):
 
         self.dig_model.sdp_connected = CommunicationStatus.NOT_ESTABLISHED
 
-        # If currently scanning for an observation, stop scanning due to SDP disconnect (TM will abort the observation anyway)
+        obs_data = None
+        message = "DIG status update"
+
+        # Preserve the interrupted observation before stopping acquisition so TM
+        # can abort it through its existing error-advice handler.
         if isinstance(self.dig_model.scanning, dict) and self.dig_model.scanning.get('obs_id', None) is not None:
-            message = f"Digitiser stopping scanning for observation {self.dig_model.scanning.get('obs_id', 'None')} due to Science Data Processor disconnect."
+            obs_data = dict(self.dig_model.scanning)
+            message = f"Digitiser stopping scanning for observation {obs_data['obs_id']} due to Science Data Processor disconnect."
             logger.warning(self.set_last_err(message))
 
             self.set_scanning(False)
@@ -377,7 +382,11 @@ class Digitiser(App):
 
         if self.dig_model.tm_connected == CommunicationStatus.ESTABLISHED:
             # Send status advice message to Telescope Manager
-            tm_adv = self._construct_status_adv_to_tm()
+            tm_adv = self._construct_status_adv_to_tm(
+                status=dmd_protocol.STATUS_ERROR if obs_data is not None else None,
+                message=message,
+                obs_data=obs_data,
+            )
             action.set_msg_to_remote(tm_adv)
             action.set_timer_action(Action.Timer(name=f"tm_adv_timer:{tm_adv.get_timestamp()}", timer_action=self.dig_model.app.msg_timeout_ms, echo_data=tm_adv))
 

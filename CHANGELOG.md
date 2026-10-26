@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Digitiser reports SDP disconnections during an active scan as error status advice with the interrupted observation's scan identifiers and updated stopped/disconnected state, allowing Telescope Manager to abort the observation immediately instead of waiting for the scan timeout. Idle disconnections remain ordinary status updates.
+
 - Renamed the Milky Way utility to `util.milkyway_plot` and added LAB-compatible direct `--galactic`, `--location`, and `--dt` inputs, sharing defaults and validation with LAB profiler and saving a JSON context sidecar.
 
 - LAB profiler accepts direct `--galactic L B` coordinates without observation metadata, with optional `--location LAT LON HEIGHT` (default Jodrell Bank) and `--dt` (default current UTC). Both input modes save a JSON context sidecar alongside CSV and PNG outputs.
