@@ -1,3 +1,4 @@
+import csv
 import logging
 from typing import Iterable
 
@@ -258,12 +259,19 @@ class ObsDisplay:
 
         return output_path
 
-    def display_lsr(self, obs, output_path: str, blacklist=()):
-        """Show and save calibrated aggregates in LSRK, one curve per frequency scan."""
+    def display_lsr(self, obs, output_path: str, blacklist=(), csv_path: str | None = None):
+        """Show and save calibrated aggregates in LSRK, one curve per frequency scan.
+
+        If csv_path is supplied, export the plotted samples with numeric target indices,
+        frequency scan indices and velocities in km/s. Masked powers are blank;
+        frequency scans for each target are written consecutively without
+        combining overlapping channels.
+        """
         from obs.lsr import lsr_velocity, scan_observing_context
 
         figure, axes = plt.subplots(num=f"LSRK Observation {self.obs_id}", figsize=(14, 6))
         plotted = 0
+        csv_rows = []
         for scan, colour in zip(self.scans, _scan_colours(len(self.scans))):
             model = scan.scan_model
             if scan.mpr is None:
@@ -281,10 +289,17 @@ class ObsDisplay:
             if not isinstance(flags, np.ndarray) or flags.shape != scan.mpr.shape:
                 flags = empty_channel_flags(scan.mpr.shape)
             order = np.argsort(velocity)
+            sorted_velocity = velocity[order]
+            sorted_power = masked_values(scan.mpr, flags)[order]
             axes.plot(
-                velocity[order], masked_values(scan.mpr, flags)[order], color=colour,
+                sorted_velocity, sorted_power, color=colour,
                 label=f"Target {model.tgt_idx}, frequency {model.freq_scan} ({model.center_freq / 1e6:.3f} MHz)",
             )
+            if csv_path is not None:
+                csv_rows.extend(
+                    (model.tgt_idx, model.freq_scan, float(v), "" if np.ma.is_masked(power) else float(power))
+                    for v, power in zip(sorted_velocity, sorted_power)
+                )
             plotted += 1
         if not plotted:
             plt.close(figure)
@@ -298,5 +313,10 @@ class ObsDisplay:
         axes.legend()
         figure.tight_layout()
         figure.savefig(output_path, dpi=150, bbox_inches="tight")
+        if csv_path is not None:
+            with open(csv_path, "w", newline="", encoding="utf-8") as csv_file:
+                writer = csv.writer(csv_file)
+                writer.writerow(["target_id", "freq_scan", "velocity_km_s", "calibrated_power"])
+                writer.writerows(csv_rows)
         plt.show(block=False)
         return figure

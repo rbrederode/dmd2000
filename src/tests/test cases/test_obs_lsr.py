@@ -1,3 +1,4 @@
+import csv
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -89,3 +90,55 @@ def test_lsr_plot_multiple_frequencies_retains_masks_and_power(tmp_path):
         assert path.read_bytes().startswith(b"\x89PNG")
     finally:
         plt.close(figure)
+
+
+def test_lsr_csv_matches_plotted_samples_for_multiple_targets(tmp_path):
+    obs, scan = make_observation()
+    target = obs.get_target_by_index(1)
+    target.id = "Stow Position: AltAz (18,48)"
+    second_target = SimpleNamespace(**{**vars(target), "id": "target-two"})
+    obs.get_target_by_index = lambda idx: target if idx == 1 else second_target
+    second = SimpleNamespace(
+        scan_model=SimpleNamespace(**{**vars(scan.scan_model), "tgt_idx": 2, "freq_scan": 1}),
+        mpr=scan.mpr + 10, mpr_flags=scan.mpr_flags.copy(),
+    )
+    original = obs.target_scans[0].scans[0]
+    obs.target_scans[0].scans.append(SimpleNamespace(**{**vars(original), "tgt_idx": 2, "freq_scan": 1}))
+    display = ObsDisplay("csv-test")
+    display.scans = [scan, second]
+    csv_path = tmp_path / "csv-test_vlsr.csv"
+
+    figure = display.display_lsr(obs, str(tmp_path / "lsrk.png"), csv_path=str(csv_path))
+    try:
+        with csv_path.open(newline="", encoding="utf-8") as csv_file:
+            reader = csv.DictReader(csv_file)
+            assert reader.fieldnames == ["target_id", "freq_scan", "velocity_km_s", "calibrated_power"]
+            rows = list(reader)
+        assert len(rows) == 16
+        for index, target_id in enumerate([1, 2]):
+            target_rows = rows[index * 8:(index + 1) * 8]
+            line = figure.axes[0].lines[index]
+            assert all(row["target_id"] == str(target_id) for row in target_rows)
+            assert all(row["freq_scan"] == str(index) for row in target_rows)
+            np.testing.assert_array_equal(
+                [float(row["velocity_km_s"]) for row in target_rows], line.get_xdata(),
+            )
+            for row, power in zip(target_rows, line.get_ydata()):
+                if np.ma.is_masked(power):
+                    assert row["calibrated_power"] == ""
+                else:
+                    assert float(row["calibrated_power"]) == float(power)
+    finally:
+        plt.close(figure)
+
+
+def test_lsr_csv_is_not_created_when_no_scans_can_be_plotted(tmp_path):
+    obs, scan = make_observation()
+    display = ObsDisplay("excluded-test")
+    display.scans = [scan]
+    csv_path = tmp_path / "excluded-test_vlsr.csv"
+
+    assert display.display_lsr(
+        obs, str(tmp_path / "lsrk.png"), blacklist=["physical"], csv_path=str(csv_path),
+    ) is None
+    assert not csv_path.exists()

@@ -1010,8 +1010,10 @@ def main():
         obs_display.display()
 
         lsr_path = os.path.splitext(apr_path)[0] + "-lsrk.png"
-        if obs_display.display_lsr(obs.obs_model, lsr_path, blacklist=blacklist) is not None:
+        vlsr_path = os.path.join(args.dir, f"{obs.obs_model.obs_id}_vlsr.csv")
+        if obs_display.display_lsr(obs.obs_model, lsr_path, blacklist=blacklist, csv_path=vlsr_path) is not None:
             print(f"Aggregated SKY LSRK velocity plot written to {lsr_path}")
+            print(f"Aggregated SKY LSRK velocity data written to {vlsr_path}")
 
         print_sky_scans(obs=obs.obs_model, sky_q=sky_q, blacklist=blacklist)
         print_aggregated_scans(obs=obs.obs_model, sky_q=sky_q, int_arrays=collapsed_sky_arrays, blacklist=blacklist)
