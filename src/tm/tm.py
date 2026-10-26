@@ -64,6 +64,9 @@ class TelescopeManager(App):
 
         # Lock for thread-safe allocation of shared resources
         self._rlock = threading.RLock()  
+        # Keep the last reported hardware gain while a new measurement is pending.
+        # Response timestamps identify which calibration request may resolve it.
+        self._pending_auto_gain_requests = {}
 
         # Observation Execution Tool is an internal component of the TM used to manage observation workflows
         self.oet = ObservationExecutionTool(telmodel=self.telmodel, tm=self)
@@ -807,6 +810,10 @@ class TelescopeManager(App):
         # If the api call indicates that an error occured
         if api_call.get('status','') == dmd_protocol.STATUS_ERROR:
 
+            pending_gains = getattr(self, "_pending_auto_gain_requests", {})
+            if dt is not None and pending_gains.get(digitiser.dig_id) == dt:
+                pending_gains.pop(digitiser.dig_id)
+
             # An error status advice/response can carry the Digitiser's latest
             # model, for example after its SDR disconnects during a scan.
             if (
@@ -849,8 +856,21 @@ class TelescopeManager(App):
                 method = api_call.get('method')
 
                 if method in [tm_dig.METHOD_GET_AUTO_GAIN, tm_dig.METHOD_SET_AUTO_GAIN]:
+                    pending_gains = getattr(self, "_pending_auto_gain_requests", {})
+                    if (
+                        api_call.get('msg_type') != dmd_protocol.MSG_TYPE_RSP
+                        or api_call.get('status') != dmd_protocol.STATUS_SUCCESS
+                        or dt is None
+                        or pending_gains.get(digitiser.dig_id) != dt
+                    ):
+                        logger.info(
+                            "Telescope Manager ignoring unmatched auto gain result from Digitiser %s at %s.",
+                            digitiser.dig_id, dt,
+                        )
+                        return action
                     gain_value = api_call.get('value')
                     if gain_value is not None:
+                        pending_gains.pop(digitiser.dig_id)
                         digitiser.gain = float(gain_value)
                         logger.info(f"Telescope Manager received Digitiser auto gain result: {digitiser.gain} dB")
 
@@ -928,15 +948,19 @@ class TelescopeManager(App):
                             current_value = getattr(digitiser, config_key, None)
 
                             if current_value != new_value:
-                                # Special case: if desired gain is an AUTO token and current is numeric, this is success (calibration completed)
-                                if config_key == 'gain' and TargetConfig.is_auto_gain_token(new_value) and isinstance(current_value, (int, float)):
-                                    logger.info(f"Telescope Manager confirmed Digitiser {digitiser.dig_id} auto-gain calibration completed for observation {obs_id}: " +
-                                    f"Desired token: {new_value}, Measured gain: {current_value} dB")
+                                # A numeric hardware gain can predate this request.
+                                # Only the matching method response replaces the
+                                # AUTO token with its measured value above.
+                                config_mismatched = True
+                                if config_key == 'gain' and TargetConfig.is_auto_gain_token(new_value):
+                                    logger.info(
+                                        "Telescope Manager waiting for Digitiser %s auto gain result for observation %s, token %s.",
+                                        digitiser.dig_id, obs_id, new_value,
+                                    )
                                 else:
-                                    config_mismatched = True
                                     logger.info(f"Telescope Manager identified mismatch between desired and current configuration for observation {obs_id}" + 
                                     f" on digitiser {digitiser.dig_id} for property {config_key}.\nCurrent value: {current_value}\nDesired value: {new_value}")
-                                    break
+                                break
 
                     # If no mismatches remain, the configuration update has been applied successfully
                     if not config_mismatched and obs.obs_state == ObsState.CONFIGURING:
@@ -1225,6 +1249,10 @@ class TelescopeManager(App):
                 echo = req_msg.get_echo_data()
                 api_call = req_msg.get_api_call()
                 obs_id = None
+
+                pending_gains = getattr(self, "_pending_auto_gain_requests", {})
+                if pending_gains.get(req_msg.get_entity()) == req_msg.get_timestamp():
+                    pending_gains.pop(req_msg.get_entity())
 
                 if echo is not None and isinstance(echo, dict):
                     new_config = echo["echo_data"] if "echo_data" in echo else echo
@@ -1744,6 +1772,11 @@ class TelescopeManager(App):
                     "value": value if value is not None else 0, 
                     "message": message if message else ""
             })
+
+        if method in [tm_dig.METHOD_GET_AUTO_GAIN, tm_dig.METHOD_SET_AUTO_GAIN]:
+            if not hasattr(self, "_pending_auto_gain_requests"):
+                self._pending_auto_gain_requests = {}
+            self._pending_auto_gain_requests[entity] = dig_req.get_timestamp()
 
         return dig_req
 
