@@ -60,3 +60,17 @@ def test_non_hardware_errors_are_not_wrapped():
     assert facade.connected == CommunicationStatus.NOT_ESTABLISHED
     assert facade._worker is worker
     assert worker.stopped is False
+
+
+@pytest.mark.parametrize("method", ["stream_reset", "read_samples"])
+def test_live_freshness_failures_propagate_and_stop_worker(method):
+    worker = FailingWorker(XHardwareFailure("stream freshness failure"))
+    facade = make_facade(worker)
+
+    with pytest.raises(XHardwareFailure, match="stream freshness failure"):
+        getattr(facade, method)()
+
+    assert worker.stopped
+    assert facade._worker is None
+    # Cleanup after the fatal error remains idempotent.
+    assert facade.stream_reset() == 0

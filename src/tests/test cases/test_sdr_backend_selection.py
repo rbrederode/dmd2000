@@ -311,7 +311,7 @@ def test_rtlstream_auto_gain_calls_hold_driver_lock(monkeypatch):
 
     assert sdr.get_auto_gain(sample_rate=100, time_in_secs=1) == 12.5
     assert sdr.set_auto_gain(sample_rate=100, time_in_secs=1) == 14.4
-    assert recording_lock.entries == 2
+    assert recording_lock.entries == 6
 
     sdr.close()
 

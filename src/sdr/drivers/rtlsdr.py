@@ -242,6 +242,13 @@ class SDR:
                 self.connected = CommunicationStatus.NOT_ESTABLISHED
         raise XHardwareFailure(f"SDR device disconnected or unavailable {operation}: {err}")
 
+    def stop_acquisition(self):
+        # RTL uses synchronous USB reads: stopping the producer stops reads.
+        pass
+
+    def start_acquisition(self):
+        self._reset_buffer()
+
     def _reset_buffer(self):
         """Flush the SDR's internal USB buffer if the device is available."""
 

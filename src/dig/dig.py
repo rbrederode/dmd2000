@@ -1,3 +1,4 @@
+from copy import deepcopy
 from datetime import datetime, timezone
 import logging
 import json
@@ -234,8 +235,7 @@ class Digitiser(App):
             message = f"Digitiser stopping scanning for observation {self.dig_model.scanning.get('obs_id', 'None')} due to Telescope Manager disconnect."
             logger.warning(self.set_last_err(message))
 
-            self.set_scanning(False)
-            self._advance_scan_samples_generation()
+            self._stop_scanning_for_cleanup()
             self.set_bpf_power_state(False)  # Switch bandpass filter powered off when stopping scanning:
 
     def process_tm_msg(self, event, api_msg: dict, api_call: dict, payload: bytearray) -> Action:
@@ -299,7 +299,7 @@ class Digitiser(App):
                 if api_call['action_code'] == dmd_protocol.ACTION_CODE_SET and api_call.get('property') == tm_dig.PROPERTY_SCANNING:
 
                     logger.info(f"Digitiser scanning state changed to: {value}")
-                    scan_generation = self._advance_scan_samples_generation()
+                    scan_generation = self._current_scan_samples_generation()
 
                     # If scanning is active, ensure sample reads are running immediately.
                     if self.dig_model.scanning:
@@ -374,8 +374,9 @@ class Digitiser(App):
             message = f"Digitiser stopping scanning for observation {obs_data['obs_id']} due to Science Data Processor disconnect."
             logger.warning(self.set_last_err(message))
 
-            self.set_scanning(False)
-            self._advance_scan_samples_generation()
+            reset_error = self._stop_scanning_for_cleanup()
+            if reset_error:
+                message += f" Stream reset failed: {reset_error}"
             self.set_bpf_power_state(False)  # Switch bandpass filter powered off when stopping scanning:
 
         action = Action()
@@ -430,35 +431,38 @@ class Digitiser(App):
                 logger.debug(f"Digitiser ignoring stale {event.name} timer event from generation {scan_generation}; current generation is {self._current_scan_samples_generation()}.")
                 return action
             
+            sample_context = self._sample_context()
             # Invoke the read_samples method to read samples from the SDR
             result = self.handle_method_call({"method": "read_samples", "params": {}})
             status, message, value, payload = util.unpack_result(result)
 
-            if not self._is_current_scan_samples_generation(scan_generation):
-                logger.debug(f"Digitiser dropping stale samples from {event.name} generation {scan_generation}; current generation is {self._current_scan_samples_generation()}.")
-                return action
+            with self._scan_samples_generation_lock:
+                if (scan_generation != self._scan_samples_generation
+                        or sample_context != self._sample_context()):
+                    logger.debug(f"Digitiser dropping stale samples from {event.name} generation {scan_generation}; current generation is {self._scan_samples_generation}.")
+                    return action
 
-            if (status == dmd_protocol.STATUS_ERROR and self.dig_model.sdr_connected != CommunicationStatus.ESTABLISHED):
-                tm_adv = self._construct_sdr_disconnect_adv_to_tm(message)
-                if tm_adv is not None:
-                    action.set_msg_to_remote(tm_adv)
+                if (status == dmd_protocol.STATUS_ERROR and self.dig_model.sdr_connected != CommunicationStatus.ESTABLISHED):
+                    tm_adv = self._construct_sdr_disconnect_adv_to_tm(message)
+                    if tm_adv is not None:
+                        action.set_msg_to_remote(tm_adv)
 
-            # If the digitiser is set to scan samples
-            if self.dig_model.scanning:
+                # If the digitiser is set to scan samples
+                if self.dig_model.scanning:
 
-                # Start the same scan_samples timer immediately if it was successful, else wait 1000 milliseconds before retrying
-                wait = 0 if status == dmd_protocol.STATUS_SUCCESS else 1000
-                action.set_timer_action(Action.Timer(name=event.name, timer_action=wait, echo_data=scan_generation)) 
+                    # Start the same scan_samples timer immediately if it was successful, else wait 1000 milliseconds before retrying
+                    wait = 0 if status == dmd_protocol.STATUS_SUCCESS else 1000
+                    action.set_timer_action(Action.Timer(name=event.name, timer_action=wait, echo_data=scan_generation))
 
-            if self.dig_model.sdp_connected == CommunicationStatus.ESTABLISHED and payload is not None:
-                # Prepare adv msg to send samples to sdp
-                sdp_adv = self._construct_adv_to_sdp(status, message, value, payload.tobytes())
-                action.set_msg_to_remote(sdp_adv)
-                action.set_timer_action(Action.Timer(name=f"sdp_adv_timer:{sdp_adv.get_timestamp()}", timer_action=self.dig_model.app.msg_timeout_ms, echo_data=sdp_adv))
+                if self.dig_model.sdp_connected == CommunicationStatus.ESTABLISHED and payload is not None:
+                    # Prepare adv msg to send samples to sdp
+                    sdp_adv = self._construct_adv_to_sdp(status, message, value, payload.tobytes(), sample_context)
+                    action.set_msg_to_remote(sdp_adv)
+                    action.set_timer_action(Action.Timer(name=f"sdp_adv_timer:{sdp_adv.get_timestamp()}", timer_action=self.dig_model.app.msg_timeout_ms, echo_data=sdp_adv))
 
-            elif payload is None:
-                # Wait for scan_samples timer to trigger again
-                self.set_last_err(f"Digitiser cannot send samples to Science Data Processor on {event.name}, no payload (samples) after reading SDR.")
+                elif payload is None:
+                    # Wait for scan_samples timer to trigger again
+                    self.set_last_err(f"Digitiser cannot send samples to Science Data Processor on {event.name}, no payload (samples) after reading SDR.")
         
         # Else if the timer is for handling sdp adv timeouts
         elif event.name.startswith("sdp_adv_timer"):
@@ -486,8 +490,7 @@ class Digitiser(App):
                         if temp_reading.temperature > self.dig_model.temp_max:
 
                             # Stop scanning and advance the scan samples generation to invalidate any queued/in-flight scan sample timers
-                            self.set_scanning(False)
-                            self._advance_scan_samples_generation()
+                            self._stop_scanning_for_cleanup()
 
                             shutdown_reason = (f"Digitiser Assembly temperature sensor reading {temp_reading.temperature:.2f} C "
                                                f"exceeds maximum configured temperature {self.dig_model.temp_max:.2f} C. "
@@ -727,8 +730,22 @@ class Digitiser(App):
         logger.info(message)
         return dmd_protocol.STATUS_SUCCESS, message, prop_value, None
 
+    def _stop_scanning_for_cleanup(self):
+        """Continue disconnect/shutdown reporting even if hardware cannot stop."""
+        try:
+            self.set_scanning(False)
+        except XHardwareFailure as exc:
+            self.dig_model.scanning = False
+            self.dig_model.sdr_connected = CommunicationStatus.NOT_ESTABLISHED
+            logger.error(self.set_last_err(f"Digitiser stream reset failed during cleanup: {exc}"))
+            return str(exc)
+        return None
+
     def set_scanning(self, value):
-        """Update scanning state and reset the stream when acquisition stops."""
+        """Invalidate in-flight reads before resetting a changed acquisition phase."""
+        if hasattr(self, "_scan_samples_generation_lock"):
+            self._advance_scan_samples_generation()
+        changed = value != self.dig_model.scanning
         if value and value != self.dig_model.scanning:
             advice_lock = getattr(self, "_sdr_disconnect_advice_lock", None)
             if advice_lock is None:
@@ -736,13 +753,11 @@ class Digitiser(App):
             else:
                 with advice_lock:
                     self._sdr_disconnect_advice_sent = False
-        self.dig_model.scanning = value
-        if not value:
+        if not value or changed:
             discarded = self.sdr.stream_reset()
-            logger.info(
-                "Digitiser reset SDR stream after scanning stopped; discarded %d buffered samples.",
-                discarded,
-            )
+            logger.info("Digitiser reset SDR stream for phase transition %s -> %s; discarded %d samples.",
+                        self.dig_model.scanning, value, discarded)
+        self.dig_model.scanning = value
 
     def handle_field_get(self, api_call):
         """ Handles field get api calls.
@@ -911,8 +926,14 @@ class Digitiser(App):
             obs_data=dict(scanning),
         )
 
-    def _construct_adv_to_sdp(self, status, message, value, payload: bytes) -> APIMessage:
+    def _sample_context(self):
+        return deepcopy({key: getattr(self.dig_model, key) for key in (
+            "load_active", "center_freq", "sample_rate", "bandwidth", "gain", "scanning")})
+
+    def _construct_adv_to_sdp(self, status, message, value, payload: bytes, sample_context=None) -> APIMessage:
         """ Constructs an advice message to the Science Data Processor with the given sample payload. """
+
+        context = sample_context if sample_context is not None else self._sample_context()
 
         # Extract sample metadata from the value dictionary
         read_counter = value.get('read_counter', 0)
@@ -934,17 +955,21 @@ class Digitiser(App):
         # Construct metadata using the digitiser model and sample read info
         metadata = [   
             {"property": "dig_id", "value": self.dig_model.dig_id},               # Digitiser Id
-            {"property": "load", "value": self.dig_model.load_active},            # Bool
-            {"property": "center_freq", "value": self.dig_model.center_freq},     # Hz    
-            {"property": "sample_rate", "value": self.dig_model.sample_rate},     # Hz
-            {"property": "bandwidth", "value": self.dig_model.bandwidth},         # MHz
-            {"property": "gain", "value": self.dig_model.gain},                   # dB
+            {"property": "load", "value": context["load_active"]},            # Bool
+            {"property": "center_freq", "value": context["center_freq"]},     # Hz
+            {"property": "sample_rate", "value": context["sample_rate"]},     # Hz
+            {"property": "bandwidth", "value": context["bandwidth"]},         # MHz
+            {"property": "gain", "value": context["gain"]},                   # dB
             {"property": "read_counter", "value": read_counter},
             {"property": "read_start", "value": datetime.fromtimestamp(read_start, timezone.utc).isoformat()},
             {"property": "read_end", "value": datetime.fromtimestamp(read_end, timezone.utc).isoformat()},
-            {"property": "scanning", "value": self.dig_model.scanning}
+            {"property": "scanning", "value": context["scanning"]}
            ]   
   
+        for key in sdp_dig.STREAM_METADATA_PROPERTIES:
+            if key in value:
+                metadata.append({"property": key, "value": value[key]})
+
         sdp_adv.set_api_call({
             "msg_type": "adv", 
             "action_code": "samples", 

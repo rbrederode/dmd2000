@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Streaming digitisers stop the hardware acquisition at phase boundaries, restart with a configurable settling discard, and isolate auto-gain measurements from recorded samples. Sample timestamps follow producer acquisition and sample indexes (including dropped-sample gaps), with host-estimated timing and sample-age metadata. Stale samples and failed live stream resets propagate hardware errors; phase changes invalidate reads before resetting and preserve the read's original scan metadata.
+
 - HI4PI spectrum extraction downloads CAR cubes from the projection subdirectory in the CDS archive, fixing HTTP 404 errors for selected tiles, and handles scalar NumPy pixel coordinates returned by Astropy WCS.
 
 - Galactic target coordinates (`sky_coord` with `frame: "galactic"` and longitude `l`/latitude `b` in degrees) now survive serialization and display correctly. Dish drivers transform the supplied coordinates directly to Alt/Az for sidereal tracking, offset scans, and five-point scans.

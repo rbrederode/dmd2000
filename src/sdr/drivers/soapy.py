@@ -26,6 +26,7 @@ class SDR:
         self.sdr_config = sdr_config or {}
         self.device = None
         self.stream = None
+        self._stream_active = False
         self.connected = CommunicationStatus.NOT_ESTABLISHED
         self.read_counter = 0
 
@@ -64,7 +65,7 @@ class SDR:
 
             self.device = SoapySDR.Device(self._device_args())
             self.stream = self.device.setupStream(SOAPY_SDR_RX, SOAPY_SDR_CF32, [self.channel])
-            self.device.activateStream(self.stream)
+            self.start_acquisition()
             self._prime_stream()
             self.connected = CommunicationStatus.ESTABLISHED
             logger.info("SoapySDR connection established.")
@@ -79,7 +80,7 @@ class SDR:
     def close(self):
         if self.device is not None and self.stream is not None:
             try:
-                self.device.deactivateStream(self.stream)
+                self.stop_acquisition()
             except Exception as exc:
                 logger.warning(f"SoapySDR stream deactivate failed: {exc}")
             try:
@@ -88,6 +89,7 @@ class SDR:
                 logger.warning(f"SoapySDR stream close failed: {exc}")
 
         self.stream = None
+        self._stream_active = False
         self.device = None
         self.connected = CommunicationStatus.NOT_ESTABLISHED
         logger.info("SoapySDR connection closed.")
@@ -194,17 +196,31 @@ class SDR:
         except Exception as exc:
             logger.debug(f"SoapySDR startup prime failed: {exc}")
 
-    def _reset_buffer(self):
-        if self.device is None:
-            logger.warning("SoapySDR device not connected.")
-            return
+    def stop_acquisition(self):
+        """Stop the hardware callback; no plugin FIFO may grow while idle."""
+        if self._stream_active:
+            result = self.device.deactivateStream(self.stream)
+            if result not in (None, 0):
+                raise XHardwareFailure(f"SoapySDR deactivateStream failed: {result}")
+            self._stream_active = False
 
-        try:
-            self._read_complex_samples(min(int(self.sample_rate), 262144), timeout_us=100000)
-        except XHardwareFailure:
-            raise
-        except Exception as exc:
-            logger.debug(f"SoapySDR buffer flush did not complete: {exc}")
+    def start_acquisition(self):
+        if self.device is None or self.stream is None:
+            raise XHardwareFailure("SoapySDR device stream is not open.")
+        if not self._stream_active:
+            result = self.device.activateStream(self.stream)
+            if result not in (None, 0):
+                raise XHardwareFailure(f"SoapySDR activateStream failed: {result}")
+            self._stream_active = True
+
+    def _reset_buffer(self):
+        # SoapyAirspy resets its FIFO on reactivation. A single discarded
+        # read cannot establish freshness when the FIFO contains a backlog.
+        self.stop_acquisition()
+        self.start_acquisition()
+        count = int(math.ceil(float(self.sdr_config.get("settle_seconds", 0.1)) * self.sample_rate))
+        if count:
+            self._read_complex_samples(count)
 
     def get_gain_gaussianity(self, sample_rate=None, time_in_secs=1):
         sample_rate = sample_rate if sample_rate is not None else self.sample_rate
@@ -456,6 +472,7 @@ class SDR:
         if self.device is None or self.stream is None:
             raise XHardwareFailure("SoapySDR device stream is not open.")
 
+        self.start_acquisition()
         timeout_us = int(self.sdr_config.get("read_timeout_us", timeout_us))
         timeout_total_sec = float(self.sdr_config.get("read_timeout_total_sec", 5.0) if timeout_total_sec is None else timeout_total_sec)
         timeout_deadline = time.monotonic() + max(0.0, timeout_total_sec)

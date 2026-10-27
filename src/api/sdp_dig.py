@@ -46,6 +46,12 @@ PROPERTY_READ_START      = 'read_start'       # Epoch seconds corresponding to s
 PROPERTY_READ_END        = 'read_end'         # Epoch seconds corresponding to end timestamp of sample read
 PROPERTY_SCANNING        = 'scanning'         # Scanning parameters (obs_id, tgt_idx, freq_scan) to allow SDP to match samples to the correct scan configuration and discard samples that do not match these parameters
 
+# Optional acquisition diagnostics supplied by streaming drivers.
+STREAM_METADATA_PROPERTIES = (
+    "stream_backend", "stream_phase", "timestamp_source", "sample_age_sec",
+    "sample_index_start", "sample_index_end", "dropped_samples",
+)
+
 PROPERTIES = dmd_protocol.PROPERTIES + (
     PROPERTY_DIG_ID,
     PROPERTY_LOAD,
@@ -59,7 +65,7 @@ PROPERTIES = dmd_protocol.PROPERTIES + (
     PROPERTY_READ_START,
     PROPERTY_READ_END,
     PROPERTY_SCANNING,
-)
+) + STREAM_METADATA_PROPERTIES
 
 # Allowable msg fields and types defining their format     
 #   "field_name": "regex_pattern" | {"type": "type_name", "pattern": "regex_pattern", "enum": [...]} 

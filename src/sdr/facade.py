@@ -127,7 +127,7 @@ class SDR:
             logger.info("Skipping SDR stream reset because the device worker is not running.")
             return 0
 
-        discarded = self._invoke("stream_reset", raise_on_error=False)
+        discarded = self._invoke("stream_reset")
         return int(discarded) if discarded is not None else 0
 
     def __getattr__(self, name: str):
