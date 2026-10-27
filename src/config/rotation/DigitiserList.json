@@ -69,7 +69,7 @@
                 "value": "NOT_ESTABLISHED"
             },
             "scanning": false,
-            "sdr_type": "airstream",
+            "sdr_type": "rtlstream",
             "sdr_config": {
                 "ring_seconds": 10,
                 "read_timeout_sec": 10
