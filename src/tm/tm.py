@@ -54,7 +54,7 @@ logger = logging.getLogger("tm.tm")
 
 class TelescopeManager(App):
 
-    AUTO_GAIN_TIMEOUT_MS = 30*1000 # Max time (ms) allowance for a Digitiser to resolve a single AUTO gain request
+    AUTO_GAIN_TIMEOUT_MS = 40*1000 # Max time (ms) allowance for a Digitiser to resolve a single AUTO gain request
 
     telmodel = TelescopeModel()
 
@@ -850,6 +850,7 @@ class TelescopeManager(App):
                 obs_data = dict(obs_data)
             obs_id = obs_data.get('obs_id', None) if obs_data is not None and isinstance(obs_data, dict) else None
             sdp_config_update_pending = False
+            auto_gain_resolved = False
 
             # If the api call is a successful method response, handle it separately from property updates
             if api_call.get('action_code') == tm_dig.ACTION_CODE_METHOD:
@@ -879,6 +880,7 @@ class TelescopeManager(App):
                             obs_data['gain'] = digitiser.gain
                             obs = self.telmodel.oda.obs_store.get_obs_by_id(obs_id) if obs_id is not None else None
                             self._apply_auto_gain_to_current_target(obs, digitiser.gain, gain_token)
+                            auto_gain_resolved = True
                             if self.telmodel.sdp is not None:
                                 sdp_dig = self.telmodel.sdp.dig_store.get_dig_by_id(digitiser.dig_id)
                                 old_sdp_config = {
@@ -962,13 +964,17 @@ class TelescopeManager(App):
                                     f" on digitiser {digitiser.dig_id} for property {config_key}.\nCurrent value: {current_value}\nDesired value: {new_value}")
                                 break
 
-                    # If no mismatches remain, the configuration update has been applied successfully
-                    if not config_mismatched and obs.obs_state == ObsState.CONFIGURING:
+                    # Recheck after calibration even if a temporary load-state
+                    # snapshot still differs. OET will resolve remaining changes.
+                    if obs.obs_state == ObsState.CONFIGURING and (auto_gain_resolved or not config_mismatched):
                         if sdp_config_update_pending:
                             logger.info(f"Telescope Manager waiting for Science Data Processor to acknowledge resolved gain " + \
                                         f"before advancing observation {obs_id}.")
                         else:
-                            logger.info(f"Telescope Manager configuration update for observation {obs_id} has been applied successfully by Digitiser {digitiser.dig_id}.")
+                            if auto_gain_resolved:
+                                logger.info(f"Telescope Manager rechecking configuration for observation {obs_id} after resolving Digitiser {digitiser.dig_id} auto gain.")
+                            else:
+                                logger.info(f"Telescope Manager configuration update for observation {obs_id} has been applied successfully by Digitiser {digitiser.dig_id}.")
                             action.set_obs_transition(obs=obs, transition=ObsTransition.CONFIGURE_RESOURCES)
 
         # Update Telescope Model timestamps based on received Digitiser api_call

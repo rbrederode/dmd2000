@@ -164,6 +164,8 @@ class TargetModel(BaseModel):
         if self.id is not None:
             return f"Id={self.id}"
         elif self.sky_coord is not None:
+            if self.sky_coord.frame.name == "galactic":
+                return f"{self.pointing.name}(l={self.sky_coord.l}, b={self.sky_coord.b})"
             return f"{self.pointing.name}(ra={self.sky_coord.ra}, dec={self.sky_coord.dec})"
         elif self.altaz is not None:
             return f"{self.pointing.name}(alt={self.altaz.get('alt')}, az={self.altaz.get('az')})"

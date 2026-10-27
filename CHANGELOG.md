@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Galactic target coordinates (`sky_coord` with `frame: "galactic"` and longitude `l`/latitude `b` in degrees) now survive serialization and display correctly. Dish drivers transform the supplied coordinates directly to Alt/Az for sidereal tracking, offset scans, and five-point scans.
+
+- Telescope Manager allows 40 seconds per auto-gain request attempt and rechecks observation configuration after accepting the result when no SDP gain acknowledgement is pending, preventing configuration stalls when SDP already has the measured gain and TM retains a temporary load-state snapshot.
+
 - Telescope Manager tracks pending auto-gain requests by digitiser and request timestamp, retaining the last reported hardware gain until the matching result arrives. Unrelated configuration acknowledgements no longer report premature calibration completion using a previous gain; failures and final request timeouts clear the pending request.
 
 - Digitiser reports SDP disconnections during an active scan as error status advice with the interrupted observation's scan identifiers and updated stopped/disconnected state, allowing Telescope Manager to abort the observation immediately instead of waiting for the scan timeout. Idle disconnections remain ordinary status updates.

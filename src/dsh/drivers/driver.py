@@ -1272,8 +1272,7 @@ class DishDriver:
           
         if target.pointing == PointingType.SIDEREAL_TRACK:
             # Sidereal target
-            sky_coord = SkyCoord(ra=target.sky_coord.ra, dec=target.sky_coord.dec, unit='deg', frame=target.sky_coord.frame)
-            desired_altaz = sky_coord.transform_to(frame)
+            desired_altaz = target.sky_coord.transform_to(frame)
             
         elif target.pointing == PointingType.NON_SIDEREAL_TRACK:
             # Non-sidereal target (solar system body)
@@ -1301,8 +1300,7 @@ class DishDriver:
 
             # Step 1: Compute true target position in AltAz at current time
             if target.sky_coord is not None:
-                sky_coord = SkyCoord(ra=target.sky_coord.ra, dec=target.sky_coord.dec, unit='deg', frame=target.sky_coord.frame)
-                true_altaz = sky_coord.transform_to(frame)
+                true_altaz = target.sky_coord.transform_to(frame)
             elif target.id is not None:
                 body_coord = get_body(body=target.id, time=time, location=self.location)
                 true_altaz = body_coord.transform_to(frame)
@@ -1332,8 +1330,7 @@ class DishDriver:
 
             # Step 1: Compute true target position in AltAz at current time
             if target.sky_coord is not None:
-                sky_coord = SkyCoord(ra=target.sky_coord.ra, dec=target.sky_coord.dec, unit='deg', frame=target.sky_coord.frame)
-                true_altaz = sky_coord.transform_to(frame)
+                true_altaz = target.sky_coord.transform_to(frame)
             elif target.id is not None:
                 body_coord = get_body(body=target.id, time=time, location=self.location)
                 true_altaz = body_coord.transform_to(frame)

@@ -79,6 +79,8 @@ def fmt_hyperlink(path: str, label: str) -> str:
 def fmt_target_coords(target: TargetModel) -> str:
     """Format target coordinates for table output. """
     if target is not None and target.sky_coord is not None:
+        if target.sky_coord.frame.name == "galactic":
+            return f"Galactic l {target.sky_coord.l.to_string(unit='deg', precision=2)} b {target.sky_coord.b.to_string(unit='deg', precision=2)}"
         return f"RA {target.sky_coord.ra.to_string(unit='hour', precision=0)} Dec {target.sky_coord.dec.to_string(unit='deg', precision=2)}"
     if target is not None and target.altaz is not None:
         if isinstance(target.altaz, dict):

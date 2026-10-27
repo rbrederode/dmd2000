@@ -240,7 +240,9 @@ class BaseModel:
             return [BaseModel._serialise(x) for x in v.tolist()]
         if isinstance(v, SkyCoord):
             # Check the frame type to determine which attributes to serialize
-            if hasattr(v, 'ra') and hasattr(v, 'dec'):
+            if v.frame.name == "galactic":
+                return {"_type": "SkyCoord", "l": v.l.deg, "b": v.b.deg, "frame": v.frame.name}
+            elif hasattr(v, 'ra') and hasattr(v, 'dec'):
                 # ICRS, FK5, etc. frames with RA/Dec
                 return {"_type": "SkyCoord", "ra": v.ra.deg, "dec": v.dec.deg, "frame": v.frame.name}
             elif hasattr(v, 'az') and hasattr(v, 'alt'):
