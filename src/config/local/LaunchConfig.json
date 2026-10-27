@@ -6,14 +6,27 @@
             "_type": "LaunchModel",
             "app_name": "dig",
             "entity_id": "dig001",
-            "env": {
-                "GPIOZERO_PIN_FACTORY": "mock"
-            },
+            "env": {},
             "program": "python",
             "args": [
                 "-m", "dig.dig",
                 "--profile", "local",
                 "--entity_id", "dig001",
+                "--tm_host", "127.0.0.1",
+                "--sdp_host", "127.0.0.1",
+                "--local_host", "127.0.0.1"
+            ]
+        },
+        {
+            "_type": "LaunchModel",
+            "app_name": "dig",
+            "entity_id": "dig003",
+            "env": {},
+            "program": "python",
+            "args": [
+                "-m", "dig.dig",
+                "--profile", "local",
+                "--entity_id", "dig003",
                 "--tm_host", "127.0.0.1",
                 "--sdp_host", "127.0.0.1",
                 "--local_host", "127.0.0.1"
@@ -35,16 +48,6 @@
         },
         {
             "_type": "LaunchModel",
-            "app_name": "mdsim",
-            "entity_id": "mdsim",
-            "env": {},
-            "program": "python",
-            "args": [
-                "dsh/drivers/md01/md01_simulator.py", "--host", "127.0.0.1"
-            ]
-        },
-        {
-            "_type": "LaunchModel",
             "app_name": "sdp",
             "entity_id": "sdp001",
             "env": {},
@@ -55,7 +58,7 @@
                 "--entity_id", "sdp001",
                 "--tm_host", "127.0.0.1",
                 "--dig_host", "127.0.0.1",
-                "--scan_store_dir", "~/samples"
+                "--scan_store_dir", "~/samples/local"
             ]
         },
         {
@@ -76,8 +79,32 @@
         },
         {
             "_type": "LaunchModel",
+            "app_name": "mdsim",
+            "entity_id": "mdsim",
+            "env": {},
+            "program": "python",
+            "args": [
+                "dsh/drivers/md01/md01_simulator.py", "--host", "127.0.0.1"
+            ]
+        },
+        {
+            "_type": "LaunchModel",
             "app_name": "ws",
             "entity_id": "ws001",
+            "env": {},
+            "program": "python",
+            "args": [
+                "-m", "ws.ws",
+                "--profile", "local",
+                "--dm_host", "127.0.0.1",
+                "--tm_host", "127.0.0.1",
+                "--sim", "calm"
+            ]
+        },
+        {
+            "_type": "LaunchModel",
+            "app_name": "ws",
+            "entity_id": "ws002",
             "env": {},
             "program": "python",
             "args": [
