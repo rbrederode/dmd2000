@@ -16,8 +16,8 @@
     "_type": "relativetime",
     "value": "00:05:10"
   },
-  "dsh_id": "dish001",
-  "obs_id": "ODT-{{NOW}}-dish001-Rotation",
+  "dsh_id": "dish003",
+  "obs_id": "ODT-{{NOW}}-dish003-Rotation",
   "obs_state": {
     "_type": "enum.IntEnum",
     "instance": "ObsState",
@@ -32,14 +32,14 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 6000000,
-      "integration_time": 15,
+      "sample_rate": 2048000,
+      "integration_time": 180,
       "spectral_resolution": 2048,
       "tgt_idx": 0,
-      "obs_id": "ODT-{{NOW}}-dish001-Rotation"
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
     },
     {
       "_type": "TargetConfig",
@@ -48,14 +48,14 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 6000000,
-      "integration_time": 15,
+      "sample_rate": 2048000,
+      "integration_time": 180,
       "spectral_resolution": 2048,
       "tgt_idx": 1,
-      "obs_id": "ODT-{{NOW}}-dish001-Rotation"
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
     },
     {
       "_type": "TargetConfig",
@@ -64,14 +64,14 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": "AUTO1",
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 6000000,
-      "integration_time": 15,
+      "sample_rate": 2048000,
+      "integration_time": 180,
       "spectral_resolution": 2048,
       "tgt_idx": 2,
-      "obs_id": "ODT-{{NOW}}-dish001-Rotation"
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
     },
     {
       "_type": "TargetConfig",
@@ -80,14 +80,14 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 25,
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 6000000,
-      "integration_time": 15,
+      "sample_rate": 2048000,
+      "integration_time": 180,
       "spectral_resolution": 2048,
       "tgt_idx": 3,
-      "obs_id": "ODT-{{NOW}}-dish001-Rotation"
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
     },
     {
       "_type": "TargetConfig",
@@ -96,14 +96,14 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 25,
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 6000000,
-      "integration_time": 15,
+      "sample_rate": 2048000,
+      "integration_time": 180,
       "spectral_resolution": 2048,
       "tgt_idx": 4,
-      "obs_id": "ODT-{{NOW}}-dish001-Rotation"
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
     },
     {
       "_type": "TargetConfig",
@@ -112,25 +112,25 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 25,
+      "gain": 30,
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 6000000,
-      "integration_time": 15,
+      "sample_rate": 2048000,
+      "integration_time": 180,
       "spectral_resolution": 2048,
       "tgt_idx": 5,
-      "obs_id": "ODT-{{NOW}}-dish001-Rotation"
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
     }
   ],
   "targets": [
     {
       "_type": "TargetModel",
       "tgt_idx": 0,
-      "obs_id": "ODT-{{NOW}}-dish001-Rotation",
-      "id": "Stow Position: AltAz (90.0, 0.0)",
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
+      "id": "Galactic longitude 30.0, latitude 0.0",
       "altaz": {
-        "alt": 90.0,
-        "az": 0.0
+        "alt": 24.0,
+        "az": 178.0
       },
       "pointing": {
         "_type": "enum.IntEnum",
@@ -141,7 +141,7 @@
     {
       "_type": "TargetModel",
       "tgt_idx": 1,
-      "obs_id": "ODT-{{NOW}}-dish001-Rotation",
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
       "id": "Galactic longitude 30.0, latitude 0.0",
       "sky_coord": {
         "_type": "SkyCoord",
@@ -158,7 +158,7 @@
     {
       "_type": "TargetModel",
       "tgt_idx": 2,
-      "obs_id": "ODT-{{NOW}}-dish001-Rotation",
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
       "id": "Galactic longitude 40.0, latitude 0.0",
       "sky_coord": {
         "_type": "SkyCoord",
@@ -175,7 +175,7 @@
     {
       "_type": "TargetModel",
       "tgt_idx": 3,
-      "obs_id": "ODT-{{NOW}}-dish001-Rotation",
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
       "id": "Galactic longitude 50.0, latitude 0.0",
       "sky_coord": {
         "_type": "SkyCoord",
@@ -192,7 +192,7 @@
     {
       "_type": "TargetModel",
       "tgt_idx": 4,
-      "obs_id": "ODT-{{NOW}}-dish001-Rotation",
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
       "id": "Galactic longitude 60.0, latitude 0.0",
       "sky_coord": {
         "_type": "SkyCoord",
@@ -209,7 +209,7 @@
     {
       "_type": "TargetModel",
       "tgt_idx": 5,
-      "obs_id": "ODT-{{NOW}}-dish001-Rotation",
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
       "id": "Galactic longitude 70.0, latitude 0.0",
       "sky_coord": {
         "_type": "SkyCoord",
