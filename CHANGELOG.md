@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- HI4PI sweep fitting can optionally remove a constant or linear lower-envelope baseline from observation power before normalization, improving vertical alignment with the near-zero HI4PI survey baseline. Documented `--observation-baseline` usage in `docs/hi4pi.md`.
+
+- Combined HI4PI single-position extraction and Galactic-coordinate sweep fitting in `util/hi4pi.py`. The utility can generate beam-convolved HI4PI velocity plots or compare observation CSV spectra against a swept grid of convolved HI4PI profiles, with local cube reuse, cached downloads, RMS/correlation scoring, and best-fit plots. Added user documentation in `docs/hi4pi.md`.
+
 - Streaming digitisers stop the hardware acquisition at phase boundaries, restart with a configurable settling discard, and isolate auto-gain measurements from recorded samples. Sample timestamps follow producer acquisition and sample indexes (including dropped-sample gaps), with host-estimated timing and sample-age metadata. Stale samples and failed live stream resets propagate hardware errors; phase changes invalidate reads before resetting and preserve the read's original scan metadata.
 
 - HI4PI spectrum extraction downloads CAR cubes from the projection subdirectory in the CDS archive, fixing HTTP 404 errors for selected tiles, and handles scalar NumPy pixel coordinates returned by Astropy WCS.
