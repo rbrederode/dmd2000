@@ -5,6 +5,30 @@ per target/frequency scan, and displays and exports calibrated spectra. Its
 longitude–velocity (L–V) view maps Galactic longitude against LSRK velocity,
 with colour and contours representing baseline-subtracted calibrated power.
 
+## Browser workspace
+
+For scan selection and completed-aggregate browsing without terminal pauses,
+use the integrated frontend prototype:
+
+```bash
+PYTHONPATH=src python -m ui.opt_service --data-root ~/samples
+```
+
+Open **http://127.0.0.1:8765/#results** to use **Observation Processing**.
+Choose a directory, then select an observation from the scrollable metadata
+catalogue and open it. The directory, Find, filter and Open controls share one
+pane. Choose the configuration profile under **Analysis settings** at the bottom;
+it selects the processing pipeline and changing it requires reprocessing.
+Review input checkboxes, process the whole batch, then select completed
+aggregates in the left pane. Signal, velocity, total-power timeline and L–V
+views appear on the right. Baseline/contour changes can update plots from cached
+spectra; changing input scans requires reprocessing. Results are saved in a
+separate session directory and can be downloaded as a ZIP.
+
+See the [frontend workspace guide](../src/ui/frontend_prototype/README.md) for
+configuration, controls and current limitations. The terminal workflow below
+remains available and retains its existing interactive prompts.
+
 ## Run OPT
 
 Install the repository dependencies and activate your Python environment.

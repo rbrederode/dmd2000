@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- OPT's frontend adds a scrollable observation catalogue with names, dishes, completed scan counts/types and completed integration times, plus row selection, filtering and an Open action. The connection badge now turns red with “OPT Disconnected” on lost connections and recovers through periodic health checks. Updated the workspace heading and input/aggregate/plot tab labels.
+
+- Integrated a local OPT analysis workspace into the frontend prototype's Results view, with physical-scan inclusion controls, uninterrupted background processing, completed-aggregate signal browsing, velocity/timeline/L–V views, cancellation, logs and ZIP exports. Baseline and contour changes can re-render cached spectra without replaying recorded scans. Added the localhost-only `ui.opt_service` launcher and frontend workspace documentation.
+
 - OPT (`obs.opt`) now opens and saves a longitude–velocity (L–V) diagram after the velocity plot's Enter prompt. It uses target Galactic coordinates, native LSRK channels and baseline-subtracted power, with white/blue asinh colouring and labelled magenta contours. The view truncates columns to their shared valid velocity interval, preserves masked channels, separates frequency setups, and supports configurable contour levels and contour-only velocity smoothing. Added the OPT usage guide in `docs/opt.md`, linked from the README.
 
 - Observation velocity plots independently subtract a linear or constant lower-envelope baseline per target/frequency scan without amplitude scaling, using the shared `util.convert.subtract_spectrum_baseline` helper. Velocity CSV exports preserve original `calibrated_power` and add `baseline` and `baseline_subtracted_power`; fitting ranges and optional line-free windows are configurable.

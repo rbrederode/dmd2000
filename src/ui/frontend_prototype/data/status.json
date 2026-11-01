@@ -1,0 +1,70 @@
+{
+  "generated_at": "2026-06-12T10:46:41+00:00",
+  "observation": {
+    "id": "ODT-2026-05-22T0900Z-dish001-2hr",
+    "mode": "SIDEREAL_TRACK, LF_400",
+    "output": "0 summed-power files, 0 processing scans",
+    "state": "ABORTED",
+    "target": "B0329+54, RA 53.2475 deg, Dec 54.5787 deg"
+  },
+  "subsystems": [
+    {
+      "endpoint": "127.0.0.1:50000",
+      "health": "OK",
+      "health_class": "is-live",
+      "last_update": "10:46:26Z",
+      "name": "telmgr001",
+      "state": "RUNNING"
+    },
+    {
+      "endpoint": "127.0.0.1:50002",
+      "health": "OK",
+      "health_class": "is-live",
+      "last_update": "10:46:19Z",
+      "name": "dm001",
+      "state": "RUNNING"
+    },
+    {
+      "endpoint": "127.0.0.1:50000",
+      "health": "FAILED",
+      "health_class": "is-bad",
+      "last_update": "10:46:26Z",
+      "name": "dig001",
+      "state": "IDLE"
+    },
+    {
+      "endpoint": "127.0.0.1:50001",
+      "health": "OK",
+      "health_class": "is-live",
+      "last_update": "10:46:18Z",
+      "name": "sdp001",
+      "state": "RUNNING"
+    },
+    {
+      "endpoint": "-",
+      "health": "UNKNOWN",
+      "health_class": "is-empty",
+      "last_update": "16:40:21Z",
+      "name": "ws001",
+      "state": "STOPPED"
+    }
+  ],
+  "summary": {
+    "digitiser": {
+      "detail": "dig001 ready",
+      "state": "IDLE"
+    },
+    "dish": {
+      "detail": "Alt 90.0 deg, Az 0.0 deg",
+      "state": "READY"
+    },
+    "tm": {
+      "detail": "Queue 0, allocations 0",
+      "state": "OK"
+    },
+    "weather": {
+      "detail": "Wind avg 0.0 m/s, max 0.0 m/s",
+      "state": "SAFE"
+    }
+  }
+}

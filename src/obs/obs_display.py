@@ -329,6 +329,7 @@ class ObsDisplay:
                 "target_id": model.tgt_idx, "freq_scan": model.freq_scan,
                 "center_freq": model.center_freq, "direction": direction,
                 "velocity": sorted_velocity.copy(), "power": corrected_power.copy(),
+                "raw_power": sorted_power.copy(),
             })
             if csv_path is not None:
                 def csv_value(value):

@@ -1,10 +1,7 @@
 # LAB profiles and observation fitting
 
 `src/util/lab_profiler.py` contains the LAB Gaussian extractor, single-profile
-plotting, observation comparison and Galactic offset sweeps. It replaces
-`lab_gau_extractor_simple_mod.py` and `read_ray.py`. It reads the local Galactic
-CAR cube (`lab.fit`), rather than the old 10 km/s HEALPix slices. There is no
-automatic survey download and `healpy` is no longer needed.
+plotting, observation comparison and Galactic offset sweeps. It reads the local Galactic CAR cube (`lab.fit`).
 
 Run from the repository root with Python, NumPy, Astropy and Matplotlib installed.
 The default cube path is `~/github/lab-fit/lab.fit`; override with `--lab-fits`.
@@ -21,8 +18,7 @@ The plot shows native LAB LSR velocity channels in km/s and brightness in K.
 `--beam` (alias `--fwhm`) is the Gaussian averaging FWHM in degrees. The method
 uses a Gaussian in Galactic coordinate degrees, extending three sigma per axis,
 with fractional pixel offsets and per-channel blank-pixel exclusion. It handles
-the repeated longitude endpoint without counting it twice. As in the original
-extractor, this is a coordinate-plane average, not a spherical convolution;
+the repeated longitude endpoint without counting it twice. This is a coordinate-plane average, not a spherical convolution;
 there is no subtraction of the native LAB beam in quadrature. At high Galactic
 latitude the longitude width does not represent a constant angular sky width.
 
@@ -35,6 +31,51 @@ Use `--output path/profile.csv` to choose their stem, `--no-show` for saved
 outputs without a window, or `--display-only` to show without saving. Existing
 `--output-dir` remains supported. `--vmin` and `--vmax` control the plot limits
 (default -100 and +100 km/s).
+
+## Coordinate context and observation metadata
+
+Direct Galactic input accepts either `--lon L --lat B` or `--galactic L B`.
+Longitude wraps to 0–360° and latitude must be within ±90°. Optional site and
+UTC time provide context without changing the survey spectrum:
+
+```bash
+python src/util/lab_profiler.py \
+  --galactic 82.2361 -5.6143 \
+  --location 53.234123 -2.305485 77 \
+  --dt 2026-10-24T11:25:50Z \
+  --output-dir ~/samples/lab-profiles --no-show
+```
+
+`--location` takes geodetic latitude, east-positive longitude (degrees), and
+height (metres). It defaults to Jodrell Bank (53.234123°, −2.305485°, 77 m).
+`--dt` defaults to current UTC; an ISO datetime without a timezone is interpreted
+as UTC, and explicit offsets are converted to UTC. Date-only input is rejected.
+No additional site/time Doppler correction is applied to the LAB LSR channels.
+
+To obtain the pointing from a recorded physical scan:
+
+```bash
+python src/util/lab_profiler.py \
+  --dir ~/samples/rotation \
+  --obs OBSERVATION_ID --scan FULL_PHYSICAL_SCAN_ID \
+  --beam 5 --no-show
+```
+
+The directory must contain `<OBSERVATION_ID>-obs.json`. Both identifiers are
+required, and the scan must match an entry in the observation's `target_scans`.
+This mode uses the recorded site and observation time and cannot be combined
+with direct coordinate, `--location`, or `--dt` overrides. Stored target sky
+coordinates take precedence; fixed Alt/Az targets use acquisition pointing
+when available and requested pointing as a fallback. Only metadata is read;
+IQ data is not loaded or reprocessed.
+
+Default output stems include the scan ID in metadata mode, or Galactic
+coordinates and a UTC timestamp in direct mode. JSON records the resolved
+coordinates, site/time and any observation/scan IDs. The shared coordinate
+resolver is `obs.obs_pointing`.
+
+The LAB survey is described by Kalberla et al. (2005), A&A 440, 775; see the
+[NASA LAMBDA LAB product description](https://lambda.gsfc.nasa.gov/product/foreground/fg_LAB_HI_Survey_info.html).
 
 ## Compare one observation
 

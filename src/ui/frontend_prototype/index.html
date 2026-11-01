@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>dmd2000 Engineering Console</title>
+    <script>
+      (function () {
+        try {
+          var p = localStorage.getItem("dmd-theme") || "system";
+          var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+          document.documentElement.setAttribute("data-theme", p === "system" ? (dark ? "dark" : "light") : p);
+        } catch (_) {
+          document.documentElement.setAttribute("data-theme", "light");
+        }
+      })();
+    </script>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="zk-shell">
+      <header class="zk-appbar">
+        <button class="zk-menu-btn zk-appbar__menu" type="button" aria-label="Open menu" data-drawer-open>
+          <svg class="ico"><use href="#i-menu" /></svg>
+        </button>
+
+        <a class="zk-brand" href="#" aria-label="dmd2000 home">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span class="zk-name">dmd2000</span>
+        </a>
+
+        <div class="zk-appbar__context">
+          <span class="zk-ctx-icon"><svg class="ico"><use href="#i-activity" /></svg></span>
+          <span class="zk-ctx-name" data-current-view>Status</span>
+        </div>
+
+        <nav class="zk-tabs" aria-label="Primary">
+          <button type="button" class="is-active" data-tab="status"><svg class="ico"><use href="#i-activity" /></svg>Status</button>
+          <button type="button" data-tab="schedule"><svg class="ico"><use href="#i-calendar" /></svg>Schedule</button>
+          <button type="button" data-tab="design"><svg class="ico"><use href="#i-target" /></svg>Design</button>
+          <button type="button" data-tab="targets"><svg class="ico"><use href="#i-crosshair" /></svg>Targets</button>
+          <button type="button" data-tab="results"><svg class="ico"><use href="#i-archive" /></svg>Results</button>
+          <button type="button" data-tab="admin"><svg class="ico"><use href="#i-sliders" /></svg>Admin</button>
+          <button type="button" data-tab="access"><svg class="ico"><use href="#i-shield" /></svg>Access</button>
+        </nav>
+
+        <div class="zk-grow"></div>
+
+        <div class="zk-user">
+          <div class="zk-theme-toggle" role="radiogroup" aria-label="Theme">
+            <button type="button" data-theme-choice="light" aria-label="Light"><svg class="ico"><use href="#i-sun" /></svg></button>
+            <button type="button" data-theme-choice="system" aria-label="System"><svg class="ico"><use href="#i-monitor" /></svg></button>
+            <button type="button" data-theme-choice="dark" aria-label="Dark"><svg class="ico"><use href="#i-moon" /></svg></button>
+          </div>
+          <span class="zk-email">operator@dmd2000.local</span>
+          <span class="zk-role">operator</span>
+        </div>
+
+        <button class="zk-avatar-btn zk-appbar__account" type="button" aria-label="Account">
+          <span class="zk-avatar">OP</span>
+        </button>
+      </header>
+
+      <aside class="zk-drawer" data-drawer hidden>
+        <div class="zk-drawer__head">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span class="zk-name">dmd2000</span>
+          <button class="zk-icon-btn" type="button" aria-label="Close menu" data-drawer-close><svg class="ico"><use href="#i-x" /></svg></button>
+        </div>
+        <nav class="zk-drawer__nav" aria-label="Mobile primary"></nav>
+      </aside>
+      <div class="zk-scrim" data-drawer-close hidden></div>
+
+      <main class="zk-page">
+        <section class="view is-active" data-view="status">
+          <div class="zk-page-head">
+            <div class="zk-title">
+              <h1>Engineering Status</h1>
+              <span class="zk-subtitle">TM, DM, DIG, SDP, weather, and current observation state.</span>
+            </div>
+            <div class="zk-actions">
+              <span class="zk-chip is-live"><span class="zk-dot"></span>Sim connected</span>
+              <button class="zk-btn"><svg class="ico"><use href="#i-refresh" /></svg>Refresh</button>
+            </div>
+          </div>
+
+          <div class="metric-grid">
+            <article class="zk-card metric-card">
+              <span class="zk-eyebrow">Telescope manager</span>
+              <strong data-status-value="tm.state">READY</strong>
+              <span class="zk-muted" data-status-value="tm.detail">Queue 2, allocations 1</span>
+            </article>
+            <article class="zk-card metric-card">
+              <span class="zk-eyebrow">Dish manager</span>
+              <strong data-status-value="dish.state">TRACKING</strong>
+              <span class="zk-muted" data-status-value="dish.detail">Alt 67.2 deg, Az 18.4 deg</span>
+            </article>
+            <article class="zk-card metric-card">
+              <span class="zk-eyebrow">Digitiser</span>
+              <strong data-status-value="digitiser.state">SCANNING</strong>
+              <span class="zk-muted" data-status-value="digitiser.detail">1.4204 GHz, 2048 channels</span>
+            </article>
+            <article class="zk-card metric-card">
+              <span class="zk-eyebrow">Weather</span>
+              <strong data-status-value="weather.state">SAFE</strong>
+              <span class="zk-muted" data-status-value="weather.detail">Wind avg 0.8 m/s, max 2.1 m/s</span>
+            </article>
+          </div>
+
+          <div class="split-grid">
+            <section class="zk-card panel">
+              <div class="panel-head">
+                <div>
+                  <h2>Subsystems</h2>
+                  <p>Live application health and last update.</p>
+                </div>
+              </div>
+              <table class="zk-tbl">
+                <thead>
+                  <tr><th>App</th><th>Health</th><th>State</th><th>Last update</th><th>Endpoint</th></tr>
+                </thead>
+                <tbody data-status-subsystems>
+                  <tr><td>TM001</td><td><span class="zk-chip is-live">OK</span></td><td>READY</td><td class="zk-mono">11:23:33Z</td><td>127.0.0.1:50000</td></tr>
+                  <tr><td>DM001</td><td><span class="zk-chip is-live">OK</span></td><td>TRACKING</td><td class="zk-mono">11:23:34Z</td><td>127.0.0.1:50002</td></tr>
+                  <tr><td>DIG001</td><td><span class="zk-chip is-warn">WARN</span></td><td>SCANNING</td><td class="zk-mono">11:23:31Z</td><td>127.0.0.1:60000</td></tr>
+                  <tr><td>SDP001</td><td><span class="zk-chip is-live">OK</span></td><td>PROCESSING</td><td class="zk-mono">11:23:30Z</td><td>127.0.0.1:60010</td></tr>
+                </tbody>
+              </table>
+            </section>
+
+            <section class="zk-card panel">
+              <div class="panel-head">
+                <div>
+                  <h2>Current Observation</h2>
+                  <p data-status-value="observation.id">ODT-2026-06-09T1200Z-dish001</p>
+                </div>
+                <span class="zk-chip is-live" data-status-value="observation.state">Running</span>
+              </div>
+              <dl class="kv">
+                <div><dt>Target</dt><dd data-status-value="observation.target">M82, RA 148.9685 deg, Dec 69.6797 deg</dd></div>
+                <div><dt>Mode</dt><dd data-status-value="observation.mode">Sidereal track, H3T_1420 feed</dd></div>
+                <div><dt>Progress</dt><dd><div class="bar"><span style="width: 42%"></span></div></dd></div>
+                <div><dt>Output</dt><dd data-status-value="observation.output">5 summed-power files, 1 metadata file</dd></div>
+              </dl>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" data-view="schedule">
+          <div class="zk-page-head">
+            <div class="zk-title">
+              <h1>Observation Schedule</h1>
+              <span class="zk-subtitle">Queued, running, completed, and aborted observations.</span>
+            </div>
+            <div class="zk-actions">
+              <button class="zk-btn is-primary" data-jump="design"><svg class="ico"><use href="#i-plus" /></svg>New observation</button>
+            </div>
+          </div>
+          <section class="zk-card panel">
+            <table class="zk-tbl zk-tbl--cards">
+              <thead>
+                <tr><th>ID</th><th>Title</th><th>Dish</th><th>Status</th><th>Start UTC</th><th>Duration</th><th>Owner</th><th></th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td data-label="ID" class="zk-mono">ODT-2026-06-09T1200Z</td>
+                  <td data-label="Title">M82 hydrogen line survey</td>
+                  <td data-label="Dish">dish001</td>
+                  <td data-label="Status"><span class="zk-chip is-live">RUNNING</span></td>
+                  <td data-label="Start UTC" class="zk-mono">2026-06-09 12:00</td>
+                  <td data-label="Duration">00:30:00</td>
+                  <td data-label="Owner">student1@example.edu</td>
+                  <td class="zk-tbl__actions"><button class="zk-icon-btn" aria-label="Open observation"><svg class="ico"><use href="#i-chevron" /></svg></button></td>
+                </tr>
+                <tr>
+                  <td data-label="ID" class="zk-mono">ODT-2026-06-09T1300Z</td>
+                  <td data-label="Title">Drift scan at zenith</td>
+                  <td data-label="Dish">dish002</td>
+                  <td data-label="Status"><span class="zk-chip is-navy">QUEUED</span></td>
+                  <td data-label="Start UTC" class="zk-mono">2026-06-09 13:00</td>
+                  <td data-label="Duration">00:12:00</td>
+                  <td data-label="Owner">class-a@example.edu</td>
+                  <td class="zk-tbl__actions"><button class="zk-icon-btn" aria-label="Open observation"><svg class="ico"><use href="#i-chevron" /></svg></button></td>
+                </tr>
+                <tr>
+                  <td data-label="ID" class="zk-mono">ODT-2026-06-08T1900Z</td>
+                  <td data-label="Title">M81 reference scan</td>
+                  <td data-label="Dish">dish001</td>
+                  <td data-label="Status"><span class="zk-chip is-empty">COMPLETE</span></td>
+                  <td data-label="Start UTC" class="zk-mono">2026-06-08 19:00</td>
+                  <td data-label="Duration">00:20:00</td>
+                  <td data-label="Owner">student2@example.edu</td>
+                  <td class="zk-tbl__actions"><button class="zk-icon-btn" aria-label="Open observation"><svg class="ico"><use href="#i-chevron" /></svg></button></td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+        </section>
+
+        <section class="view" data-view="design">
+          <div class="zk-page-head">
+            <div class="zk-title">
+              <h1>Design Observation</h1>
+              <span class="zk-subtitle">Student-facing observation definition with visibility and safety checks.</span>
+            </div>
+            <div class="zk-actions">
+              <button class="zk-btn"><svg class="ico"><use href="#i-save" /></svg>Save draft</button>
+              <button class="zk-btn is-primary" id="submit-observation"><svg class="ico"><use href="#i-send" /></svg>Submit</button>
+            </div>
+          </div>
+
+          <div class="design-grid">
+            <section class="zk-card panel form-panel">
+              <div class="form-grid">
+                <label class="zk-field">Title<input class="zk-input" value="M82 hydrogen line survey" /></label>
+                <label class="zk-field">Dish<select class="zk-select"><option>dish001 D=0.7m F/D=0.37</option><option>dish002 D=3m F/D=0.43</option></select></label>
+                <label class="zk-field">Target<input class="zk-input" value="M82" /></label>
+                <label class="zk-field">Pointing<select class="zk-select"><option>Sidereal Track</option><option>Drift Scan</option><option>AltAz</option></select></label>
+                <label class="zk-field">Feed<select class="zk-select"><option>H3T_1420</option><option>H7T_1420</option><option>LF_400</option></select></label>
+                <label class="zk-field">Gain<select class="zk-select"><option>Auto</option><option>12 dB</option><option>23 dB</option><option>45 dB</option></select></label>
+                <label class="zk-field">Centre frequency<input class="zk-input" value="1420400000" /></label>
+                <label class="zk-field">Bandwidth<input class="zk-input" value="1000000" /></label>
+                <label class="zk-field">Sample rate<input class="zk-input" value="2048000" /></label>
+                <label class="zk-field">Integration time<input class="zk-input" value="60" /></label>
+                <label class="zk-field">Scheduling start<input class="zk-input" type="datetime-local" value="2026-06-09T13:00" /></label>
+                <label class="zk-field">Scheduling end<input class="zk-input" type="datetime-local" value="2026-06-09T14:00" /></label>
+              </div>
+            </section>
+            <aside class="zk-card panel">
+              <div class="panel-head">
+                <div>
+                  <h2>Checks</h2>
+                  <p>Calculated from dish limits, target altitude, weather, and queue state.</p>
+                </div>
+              </div>
+              <ul class="check-list">
+                <li><span class="zk-chip is-live">Pass</span> Target above 30 deg for full block</li>
+                <li><span class="zk-chip is-live">Pass</span> Dish and digitiser available</li>
+                <li><span class="zk-chip is-warn">Review</span> Auto gain will calibrate on first scan</li>
+                <li><span class="zk-chip is-live">Pass</span> Weather safety window acceptable</li>
+              </ul>
+              <div class="altitude-plot" aria-label="Altitude chart">
+                <span style="height:42%"></span><span style="height:50%"></span><span style="height:61%"></span><span style="height:70%"></span><span style="height:77%"></span><span style="height:74%"></span><span style="height:66%"></span><span style="height:58%"></span>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view" data-view="targets">
+          <div class="zk-page-head">
+            <div class="zk-title">
+              <h1>Targets</h1>
+              <span class="zk-subtitle">Saved catalogue, SIMBAD-style lookup, and visibility preview.</span>
+            </div>
+            <div class="zk-actions"><label class="zk-search"><svg class="ico"><use href="#i-search" /></svg><input id="target-search" placeholder="Search targets" /></label></div>
+          </div>
+          <div class="split-grid">
+            <section class="zk-card panel">
+              <table class="zk-tbl">
+                <thead><tr><th>Name</th><th>RA</th><th>Dec</th><th>Type</th><th>Visibility</th></tr></thead>
+                <tbody id="target-table">
+                  <tr><td>M82</td><td>148.9685</td><td>69.6797</td><td>Galaxy</td><td><span class="zk-chip is-live">Excellent</span></td></tr>
+                  <tr><td>M81</td><td>148.8882</td><td>69.0653</td><td>Galaxy</td><td><span class="zk-chip is-live">Excellent</span></td></tr>
+                  <tr><td>M52</td><td>351.1950</td><td>61.5900</td><td>Cluster</td><td><span class="zk-chip is-navy">Good</span></td></tr>
+                  <tr><td>Sun</td><td>Auto</td><td>Auto</td><td>Solar system</td><td><span class="zk-chip is-warn">Day only</span></td></tr>
+                </tbody>
+              </table>
+            </section>
+            <section class="zk-card panel target-preview">
+              <span class="zk-eyebrow">Selected target</span>
+              <h2>M82</h2>
+              <dl class="kv">
+                <div><dt>Coordinates</dt><dd>RA 148.9685 deg, Dec 69.6797 deg</dd></div>
+                <div><dt>Best window</dt><dd>2026-06-09 12:10Z to 15:40Z</dd></div>
+                <div><dt>Recommended mode</dt><dd>Sidereal track</dd></div>
+              </dl>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" data-view="results">
+          <div class="zk-page-head">
+            <div class="zk-title"><h1>Observation Processing</h1><span class="zk-subtitle">Review inputs, process once, explore completed aggregates.</span></div>
+            <div class="zk-actions"><span class="zk-chip" id="opt-connection" role="status" aria-live="polite">Connecting…</span><a class="zk-btn" id="opt-export" hidden>Export results</a></div>
+          </div>
+          <div id="opt-error" class="opt-notice is-error" role="alert" hidden></div>
+          <section class="zk-card opt-load">
+            <label class="zk-field">Observation directory<input class="zk-input" id="opt-directory" list="opt-directories" placeholder="~/samples/rotation" /><datalist id="opt-directories"></datalist></label>
+            <button class="zk-btn" id="opt-find" type="button">Find observations</button>
+            <label class="zk-field">Filter observations<input class="zk-input" id="opt-observation-search" type="search" placeholder="Name, ID, dish or scan type…" /></label>
+            <input id="opt-observation" type="hidden" />
+            <button class="zk-btn is-primary" id="opt-open" type="button">Open observation</button>
+          </section>
+          <details class="zk-card opt-observation-browser" id="opt-observation-browser" open>
+            <summary>Observations in this directory <span id="opt-observation-count" class="zk-muted">Choose a directory</span><span class="opt-observation-selection">Selected: <strong id="opt-observation-choice">Choose a row below</strong></span></summary>
+            <div class="opt-observation-scroll" role="region" aria-label="Scrollable observation catalogue" tabindex="0">
+              <table class="opt-observation-table">
+                <thead><tr><th scope="col"><span class="sr-only">Select</span></th><th scope="col">Observation</th><th scope="col">Dish</th><th scope="col">Completed scans</th><th scope="col">Completed types</th><th scope="col">Completed time</th></tr></thead>
+                <tbody id="opt-observation-rows"><tr><td colspan="6" class="opt-empty-small">Choose an observation directory to list its observations.</td></tr></tbody>
+              </table>
+            </div>
+          </details>
+          <section class="opt-runbar zk-card">
+            <div><strong id="opt-observation-title">No observation loaded</strong><span class="zk-muted" id="opt-summary">Open a recorded observation to review its scans.</span></div>
+            <div class="zk-actions"><button class="zk-btn is-primary" id="opt-process" type="button" disabled>Process observation</button><button class="zk-btn" id="opt-cancel" type="button" hidden>Cancel</button></div>
+          </section>
+          <div class="opt-progress" id="opt-progress" hidden><progress max="1" value="0"></progress><span aria-live="polite">Starting…</span></div>
+          <div id="opt-stale" class="opt-notice" hidden>Selections or settings have changed. The plots show the last completed run. Reprocess after changing inputs, or update plots to apply analysis settings.</div>
+          <div id="opt-warnings" class="opt-notice" hidden></div>
+          <div class="opt-workspace">
+            <aside class="zk-card opt-sidebar" aria-label="Observation scans">
+              <div class="opt-sidebar-tabs"><button class="is-active" data-opt-list="inputs" type="button">Input scans <span id="opt-input-count">0</span></button><button data-opt-list="aggregates" type="button">Aggregate scans <span id="opt-aggregate-count">0</span></button></div>
+              <div class="opt-filters"><input class="zk-input" id="opt-search" type="search" placeholder="Filter target, scan, frequency…" aria-label="Filter scans" /><select class="zk-select" id="opt-kind" aria-label="Scan type"><option value="all">All types</option><option value="SKY">SKY</option><option value="calibration">Calibration</option></select></div>
+              <div class="opt-list-actions"><button class="zk-btn is-sm" id="opt-include" type="button">Include all</button><button class="zk-btn is-sm" id="opt-exclude" type="button">Exclude all</button><span class="zk-muted">Checkboxes control processing.</span></div>
+              <div class="opt-scan-list" id="opt-scan-list" aria-label="Scan selection"><div class="opt-empty-small">Your scans will appear here.</div></div>
+              <div class="opt-sidebar-foot"><button class="zk-btn is-sm" id="opt-previous" type="button">← Previous</button><button class="zk-btn is-sm" id="opt-next" type="button">Next →</button></div>
+            </aside>
+            <section class="zk-card opt-viewer" aria-label="Analysis views">
+              <div class="opt-view-tabs" role="tablist" aria-label="Analysis view">
+                <button class="is-active" data-opt-view="signal" type="button" role="tab" aria-selected="true">Signal</button><button data-opt-view="velocity" type="button" role="tab" aria-selected="false">Velocity</button><button data-opt-view="timeline" type="button" role="tab" aria-selected="false">Total Power</button><button data-opt-view="lv" type="button" role="tab" aria-selected="false">L-V Diagram</button><button data-opt-view="overview" type="button" role="tab" aria-selected="false">Aggregate</button><button data-opt-view="details" type="button" role="tab" aria-selected="false">Details</button>
+              </div>
+              <div class="opt-plot-head"><div><strong id="opt-selected-title">Select a scan</strong><span class="zk-muted" id="opt-selected-detail">Completed aggregates are available after processing.</span></div><div class="zk-actions"><label id="opt-overlay-label" hidden><input id="opt-overlay" type="checkbox" /> All SKY aggregates</label><a class="zk-btn is-sm" id="opt-image-link" target="_blank" rel="noopener" hidden>Open image ↗</a></div></div>
+              <div class="opt-canvas" id="opt-canvas"><div id="opt-placeholder" class="opt-empty"><span class="opt-empty-icon">⌁</span><h2>From recorded scans to a clearer view</h2><p>Choose an observation, review the included scans, then process the complete batch. Select any aggregate to inspect its signal.</p><div class="opt-empty-steps"><span>1 · Review inputs</span><span>2 · Process once</span><span>3 · Explore results</span></div></div><img id="opt-plot" alt="Selected observation analysis plot" hidden /><div id="opt-details" hidden></div></div>
+            </section>
+          </div>
+          <section class="zk-card opt-settings">
+            <div><h2>Analysis settings</h2><p class="zk-muted">Applied to each target/frequency scan. Power amplitudes are preserved.</p><button class="zk-btn is-sm" id="opt-replot" type="button" disabled>Update plots</button></div>
+            <div class="opt-settings-fields"><label class="zk-field opt-pipeline-profile">Configuration profile<select class="zk-select" id="opt-profile" aria-describedby="opt-profile-help"><option>default</option></select><small id="opt-profile-help" class="zk-muted">Selects pipeline steps; changes require reprocessing.</small></label><label class="zk-field">Baseline<select class="zk-select" id="opt-baseline"><option value="linear">Linear lower envelope</option><option value="constant">Constant lower envelope</option><option value="none">No subtraction</option></select></label><label class="zk-field">Fit minimum [km/s]<input class="zk-input" type="number" id="opt-vmin" value="-150" /></label><label class="zk-field">Fit maximum [km/s]<input class="zk-input" type="number" id="opt-vmax" value="150" /></label><label class="zk-field">Contour smoothing [km/s]<input class="zk-input" type="number" min="0" step="0.5" id="opt-smoothing" value="2" /></label><label class="zk-field">Contour levels [a.u.]<input class="zk-input" id="opt-contours" placeholder="Automatic; e.g. 0.01, 0.02, 0.04" /></label></div>
+          </section>
+          <details class="zk-card opt-log"><summary>Processing log <span id="opt-log-status" class="zk-muted">No processing run yet</span></summary><pre id="opt-log-output">Processing messages will appear here.</pre></details>
+        </section>
+
+        <section class="view" data-view="admin">
+          <div class="zk-page-head">
+            <div class="zk-title">
+              <h1>Admin Configuration</h1>
+              <span class="zk-subtitle">Static telescope artefacts, defaults, limits, and integration settings.</span>
+            </div>
+            <div class="zk-actions"><button class="zk-btn is-primary"><svg class="ico"><use href="#i-save" /></svg>Save changes</button></div>
+          </div>
+          <div class="zk-subtabs" data-admin-tabs>
+            <button class="is-active" type="button" data-admin-tab="dishes">Dishes</button>
+            <button type="button" data-admin-tab="digitisers">Digitisers</button>
+            <button type="button" data-admin-tab="weather">Weather</button>
+            <button type="button" data-admin-tab="defaults">Defaults</button>
+            <button type="button" data-admin-tab="limits">Limits</button>
+          </div>
+          <section class="zk-card panel admin-panel is-active" data-admin-panel="dishes">
+            <table class="zk-tbl"><thead><tr><th>Dish ID</th><th>Diameter</th><th>F/D</th><th>Latitude</th><th>Longitude</th><th>Capabilities</th></tr></thead><tbody><tr><td>dish001</td><td>0.7 m</td><td>0.37</td><td>53.187052</td><td>-2.256079</td><td>Pointing, No Tracking</td></tr><tr><td>dish002</td><td>3.0 m</td><td>0.43</td><td>53.187052</td><td>-2.256079</td><td>Drift Scan over Zenith</td></tr></tbody></table>
+          </section>
+          <section class="zk-card panel admin-panel" data-admin-panel="digitisers">
+            <table class="zk-tbl"><thead><tr><th>Digitiser</th><th>Feed</th><th>Sample rates</th><th>Gain modes</th><th>Default bandwidth</th></tr></thead><tbody><tr><td>dig001</td><td>H3T_1420</td><td>2.048, 2.4 MHz</td><td>Auto, 1..45 dB</td><td>1 MHz</td></tr><tr><td>dig002</td><td>LF_400</td><td>2.048 MHz</td><td>Auto, 12, 23 dB</td><td>2 MHz</td></tr></tbody></table>
+          </section>
+          <section class="zk-card panel admin-panel" data-admin-panel="weather">
+            <div class="form-grid"><label class="zk-field">Station ID<input class="zk-input" value="ws001" /></label><label class="zk-field">Location<input class="zk-input" value="Jodrell Bank Observatory" /></label><label class="zk-field">Wind max threshold<input class="zk-input" value="8.0" /></label><label class="zk-field">Sample count minimum<input class="zk-input" value="10" /></label></div>
+          </section>
+          <section class="zk-card panel admin-panel" data-admin-panel="defaults">
+            <div class="form-grid"><label class="zk-field">Default feed<select class="zk-select"><option>H3T_1420</option></select></label><label class="zk-field">Default gain<select class="zk-select"><option>Auto</option></select></label><label class="zk-field">Default spectral resolution<input class="zk-input" value="2048" /></label><label class="zk-field">Default scan duration<input class="zk-input" value="60" /></label></div>
+          </section>
+          <section class="zk-card panel admin-panel" data-admin-panel="limits">
+            <div class="form-grid"><label class="zk-field">Minimum altitude<input class="zk-input" value="30" /></label><label class="zk-field">Maximum observation duration<input class="zk-input" value="02:00:00" /></label><label class="zk-field">Queue horizon days<input class="zk-input" value="14" /></label><label class="zk-field">Student approval required<select class="zk-select"><option>Yes</option><option>No</option></select></label></div>
+          </section>
+        </section>
+
+        <section class="view" data-view="access">
+          <div class="zk-page-head">
+            <div class="zk-title">
+              <h1>Access</h1>
+              <span class="zk-subtitle">Users, student groups, roles, and approvals.</span>
+            </div>
+            <div class="zk-actions"><button class="zk-btn is-primary"><svg class="ico"><use href="#i-plus" /></svg>Invite user</button></div>
+          </div>
+          <section class="zk-card panel">
+            <table class="zk-tbl">
+              <thead><tr><th>User</th><th>Role</th><th>Group</th><th>Enabled</th><th>Last login</th></tr></thead>
+              <tbody>
+                <tr><td>student1@example.edu</td><td><span class="zk-chip is-navy">student</span></td><td>Class A</td><td><span class="zk-chip is-live">Yes</span></td><td class="zk-mono">2026-06-09</td></tr>
+                <tr><td>teacher@example.edu</td><td><span class="zk-chip is-magenta">teacher</span></td><td>Class A</td><td><span class="zk-chip is-live">Yes</span></td><td class="zk-mono">2026-06-08</td></tr>
+                <tr><td>operator@dmd2000.local</td><td><span class="zk-chip is-magenta">operator</span></td><td>Operations</td><td><span class="zk-chip is-live">Yes</span></td><td class="zk-mono">2026-06-09</td></tr>
+              </tbody>
+            </table>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <svg aria-hidden="true" hidden>
+      <symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12h4l2-7 4 14 2-7h6" /></symbol>
+      <symbol id="i-archive" viewBox="0 0 24 24"><path d="M4 7h16M5 7l1 13h12l1-13M9 11h6" /></symbol>
+      <symbol id="i-calendar" viewBox="0 0 24 24"><path d="M7 3v4M17 3v4M4 9h16M5 5h14v15H5z" /></symbol>
+      <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" /></symbol>
+      <symbol id="i-crosshair" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7" /><path d="M12 2v4M12 18v4M2 12h4M18 12h4" /></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14" /></symbol>
+      <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16" /></symbol>
+      <symbol id="i-monitor" viewBox="0 0 24 24"><path d="M4 5h16v11H4zM9 21h6M12 16v5" /></symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 15.5A8 8 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5z" /></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></symbol>
+      <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5M18 10a6 6 0 0 0-10-4M6 14a6 6 0 0 0 10 4" /></symbol>
+      <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 4h12l2 2v14H5zM8 4v6h8M8 20v-6h8v6" /></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="M20 20l-4-4" /></symbol>
+      <symbol id="i-send" viewBox="0 0 24 24"><path d="M21 3L10 14M21 3l-7 18-4-7-7-4z" /></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z" /></symbol>
+      <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h8M16 7h4M14 5v4M4 17h4M12 17h8M10 15v4" /></symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M2 12h2M20 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" /></symbol>
+      <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" /></symbol>
+      <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></symbol>
+    </svg>
+    <script src="app.js"></script>
+    <script src="opt.js"></script>
+  </body>
+</html>

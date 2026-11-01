@@ -910,6 +910,7 @@ def process_observation(
     blacklist: list[str] | None = None,
     retain_sky_scans: bool = False,
     signal_displays: dict | None = None,
+    progress_callback=None,
 ):
     """Load and process an observation using the same pipeline as OPT.
 
@@ -937,6 +938,11 @@ def process_observation(
     retained_scans = [] if retain_sky_scans else None
     displays = signal_displays or {}
 
+    def progress(message, fraction):
+        if progress_callback is not None:
+            progress_callback(message, fraction)
+
+    progress("Loading accepted calibration scans", .1)
     observation.integrate_cal_scans(
         dir=directory,
         sky_q=sky_queue,
@@ -947,18 +953,21 @@ def process_observation(
         cal_q=calibration_queue,
         signal_displays=displays,
     )
+    progress("Calibration complete; loading accepted SKY scans", .4)
     observation.integrate_sky_scans(
         dir=directory,
         sky_q=sky_queue,
         cal_q=calibration_queue,
         processed_scans=retained_scans,
     )
+    progress("Preparing completed SKY aggregates", .85)
     observation.synthesise_integrated_scans(
         sky_q=sky_queue,
         cal_q=calibration_queue,
         signal_displays=displays,
     )
 
+    progress("All aggregates processed", 1.)
     return observation, sky_queue, calibration_queue, retained_scans or []
 
 def main():

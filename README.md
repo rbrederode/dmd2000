@@ -15,3 +15,5 @@ pip install -r src/requirements.txt
 ## Documentation
 
 - [Observation Processing Tool (OPT): usage, baseline subtraction, and longitude–velocity plots](docs/opt.md)
+
+- [Local frontend prototype and OPT analysis workspace](src/ui/frontend_prototype/README.md)
