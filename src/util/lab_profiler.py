@@ -1,22 +1,19 @@
-"""Extract a LAB H I reference profile from scan metadata or Galactic coordinates.
+"""Gaussian LAB extraction, observation fitting and predicted longitude–velocity maps.
 
-From src: python -m util.lab_profiler --obs OBS_ID --scan SCAN_ID --dir PATH
-Survey description: https://lambda.gsfc.nasa.gov/product/foreground/fg_LAB_HI_Survey_info.html
+Run ``python src/util/lab_profiler.py --help`` from the repository root.
+The cube supplies LSR velocities and brightness temperatures; no additional
+Earth-motion correction is applied. Profile/sweep beam FWHM is the Gaussian
+averaging width. In --lv mode it is the requested final beam, corrected for
+the nominal native LAB resolution. All widths use Galactic coordinate degrees.
 """
-
 from __future__ import annotations
 
 import argparse
-from contextlib import contextmanager
+import csv
 from dataclasses import dataclass
 import json
 from pathlib import Path
-import re
-import shutil
 import sys
-import tarfile
-import tempfile
-from urllib.request import urlopen
 
 import numpy as np
 from astropy import units as u
@@ -25,190 +22,641 @@ from astropy.io import fits
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from util.convert import subtract_spectrum_baseline
+from util.lv_plot import reference_lv_colormap
+
 from obs.obs_pointing import (
-    get_obs_pointing,
     JODRELL_BANK_LOCATION,
-    PointingContext as ProfileContext,
-    resolve_pointing_context as resolve_profile_context,
     add_pointing_arguments,
+    resolve_pointing_context as resolve_profile_context,
 )
 
-LAB_ARCHIVE_URL = "https://lambda.gsfc.nasa.gov/data/foregrounds/HI/lab_healpix.tar.bz2"
-SLICE_NAME = re.compile(r"LAB[_-]cut([+-]?\d+)\.fits$", re.IGNORECASE)
-BIN_WIDTH_KMS = 10.0
 
+class LABGaussianExtractor:
+    """Read a Galactic CAR LAB cube and average spectra with a Gaussian beam.
 
-@dataclass(frozen=True)
-class LabProfile:
-    longitude_deg: float
-    latitude_deg: float
-    observed_at: str
-    velocity_lsr_kms: np.ndarray
-    brightness_k: np.ndarray
-    weight: np.ndarray
-
-
-
-def find_slices(directory):
-    """Find velocity slices recursively; reject ambiguous duplicate velocity bins."""
-    slices = {}
-    directory = Path(directory).expanduser()
-    for path in directory.rglob("*.fits"):
-        match = SLICE_NAME.fullmatch(path.name)
-        if match:
-            lower = float(match[1])
-            if lower in slices:
-                raise ValueError(f"Duplicate LAB velocity slice at {lower:g} km/s")
-            slices[lower] = path
-    return sorted(slices.items())
-
-
-@contextmanager
-def survey_slices(lab_dir=None):
-    """Reuse local slices, or download/extract to a folder removed on exit.
-
-    Only regular velocity-slice files are copied, with flat validated names;
-    archive links and unrelated files are never extracted.
+    ``extract(l, b, fwhm)`` accepts degrees and returns velocity (km/s LSR)
+    and brightness (K). Blank pixels are excluded separately per channel.
+    Weights extend three sigma in each coordinate and use fractional pixel
+    offsets. This preserves the original coordinate-plane Gaussian method;
+    it is not a spherical convolution or a correction for LAB's native beam.
+    Use as a context manager to release the memory-mapped cube after a sweep.
     """
-    local = Path(lab_dir).expanduser() if lab_dir else Path.home() / "Downloads" / "LAB_Healpix"
-    slices = find_slices(local)
-    if slices:
-        yield slices
-        return
-    with tempfile.TemporaryDirectory(prefix="dmd2000-lab-") as temporary:
-        folder = Path(temporary)
-        archive = folder / "lab_healpix.tar.bz2"
-        print(f"No local LAB slices found in {local}. Downloading {LAB_ARCHIVE_URL} to {folder}", file=sys.stderr)
-        with urlopen(LAB_ARCHIVE_URL, timeout=120) as response, archive.open("wb") as output:
-            shutil.copyfileobj(response, output)
-        with tarfile.open(archive, "r:bz2") as bundle:
-            for member in bundle:
-                name = Path(member.name).name
-                if member.isfile() and SLICE_NAME.fullmatch(name):
-                    destination = folder / name
-                    with bundle.extractfile(member) as source, destination.open("xb") as output:
-                        shutil.copyfileobj(source, output)
-        archive.unlink()
-        slices = find_slices(folder)
-        if not slices:
-            raise ValueError("Downloaded LAB archive contains no velocity slices")
-        yield slices
+
+    def __init__(self, fits_file):
+        self.path = Path(fits_file).expanduser()
+        self._hdul = fits.open(self.path, do_not_scale_image_data=True, memmap=True)
+        try:
+            self.header = h = self._hdul[0].header
+            self.data = self._hdul[0].data
+            if self.data is None or self.data.ndim != 3:
+                raise ValueError("Expected a 3D LAB FITS cube")
+            if h.get("CTYPE1", "").strip().upper() != "GLON-CAR" or h.get("CTYPE2", "").strip().upper() != "GLAT-CAR":
+                raise ValueError("Expected Galactic CAR longitude/latitude cube axes")
+            if "LSR" not in h.get("CTYPE3", "").upper():
+                raise ValueError("Expected an LSR velocity axis")
+            self.nvel, self.nlat, self.nlon = self.data.shape
+            self.l0, self.dl, self.lref = h["CRVAL1"], h["CDELT1"], h["CRPIX1"]
+            self.b0, self.db, self.bref = h["CRVAL2"], h["CDELT2"], h["CRPIX2"]
+            if not np.all(np.isfinite([self.dl, self.db])) or self.dl == 0 or self.db == 0:
+                raise ValueError("Spatial pixel increments must be finite and nonzero")
+            # LAB includes both endpoints of the 360-degree longitude axis.
+            self.period = round(360 / abs(self.dl))
+            if self.period < 1 or not np.isclose(self.period * abs(self.dl), 360) or self.nlon not in (self.period, self.period + 1):
+                raise ValueError("Expected a full 360-degree longitude grid")
+            velocity_unit = u.Unit(h.get("CUNIT3", "m/s").strip().lower())
+            self.velocity = ((h["CRVAL3"] + (np.arange(self.nvel) - h["CRPIX3"] + 1) * h["CDELT3"]) * velocity_unit).to_value(u.km / u.s)
+            self.temperature_factor = u.Unit(h.get("BUNIT", "K")).to(u.K)
+            self.bzero, self.bscale, self.blank = h.get("BZERO", 0.), h.get("BSCALE", 1.), h.get("BLANK")
+        except Exception:
+            self.close()
+            raise
+
+    def close(self):
+        self.data = None
+        self._hdul.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+    def extract(self, l, b, fwhm):
+        if not np.all(np.isfinite([l, b, fwhm])) or fwhm <= 0 or not -90 <= b <= 90:
+            raise ValueError("Coordinates and FWHM must be finite; latitude -90..90 and FWHM positive")
+        sigma = fwhm / np.sqrt(8 * np.log(2))
+        xc = ((l - self.l0) / self.dl + self.lref - 1) % self.period
+        yc = (b - self.b0) / self.db + self.bref - 1
+        if not 0 <= yc <= self.nlat - 1:
+            raise ValueError("Latitude is outside the FITS range")
+        ix, iy = int(round(xc)), int(round(yc))
+        rx = min(int(np.ceil(3 * sigma / abs(self.dl))) + 1, self.period // 2)
+        ry = min(int(np.ceil(3 * sigma / abs(self.db))) + 1, self.nlat)
+        xi = np.unique(np.arange(ix - rx, ix + rx + 1) % self.period)
+        yi = np.arange(max(0, iy - ry), min(self.nlat, iy + ry + 1))
+        dx = ((xi - xc + self.period / 2) % self.period - self.period / 2) * self.dl
+        dy = (yi - yc) * self.db
+        weights = np.exp(-0.5 * ((dx[None, :] / sigma)**2 + (dy[:, None] / sigma)**2))
+        data = self.data[:, yi[:, None], xi[None, :]].astype(float)
+        if self.blank is not None:
+            data[data == self.blank] = np.nan
+        data = (data * self.bscale + self.bzero) * self.temperature_factor
+        valid = np.isfinite(data)
+        denominator = np.sum(np.where(valid, weights, 0), axis=(1, 2))
+        numerator = np.sum(np.where(valid, data, 0) * weights, axis=(1, 2))
+        spectrum = np.full(self.nvel, np.nan)
+        np.divide(numerator, denominator, out=spectrum, where=denominator > 0)
+        return self.velocity.copy(), spectrum
 
 
-def extract_profile(slices, galactic, observed_at):
-    """Read one nearest HEALPix pixel per 10 km/s slice (no beam averaging).
+def load_observation(path, target_id, freq_scan):
+    """Select both identifiers in an Observation Velocity CSV; sort by velocity."""
+    samples = []
+    with Path(path).expanduser().open(newline="") as stream:
+        reader = csv.DictReader(stream)
+        required = {"target_id", "freq_scan", "velocity_km_s", "calibrated_power"}
+        if not required.issubset(reader.fieldnames or []):
+            raise ValueError(f"Observation CSV requires columns: {', '.join(sorted(required))}")
+        for row in reader:
+            if row["target_id"] != str(target_id) or row["freq_scan"] != str(freq_scan):
+                continue
+            try:
+                sample = float(row["velocity_km_s"]), float(row["calibrated_power"])
+            except (TypeError, ValueError):
+                continue
+            if np.all(np.isfinite(sample)):
+                samples.append(sample)
+    if len(samples) < 10:
+        raise ValueError(f"Fewer than 10 populated samples for target_id={target_id}, freq_scan={freq_scan}")
+    data = np.array(sorted(samples))
+    if np.any(np.diff(data[:, 0]) <= 0):
+        raise ValueError("Selected observation contains duplicate velocity channels")
+    return data[:, 0], data[:, 1]
 
-    NASA's TEMPERATURE field is already mean brightness in K; the second field
-    counts contributing channels. Neither dividing by bin width nor another
-    Earth-motion correction is appropriate for these LSR survey slices.
+
+def subtract_baseline(velocity, power, method="read-ray", fit_mask=None):
+    """Shared baseline subtraction, plus the profiler's positive-peak check.
+
+    The helper preserves amplitudes; LAB peak scaling happens only in the plot.
+    The legacy Python API default remains read-ray; the CLI defaults to linear.
     """
+    corrected, baseline = subtract_spectrum_baseline(velocity, power, method, fit_mask)
+    if not np.any(np.isfinite(corrected)) or np.nanmax(corrected) <= 0:
+        raise ValueError("Observation has no positive peak after baseline subtraction")
+    return corrected, baseline
+
+
+def match_channels(velocity, temperature):
+    """Average adjacent LAB pairs, dropping the leading channel for odd cubes.
+
+    For the 891-channel LAB cube this exactly reproduces read_ray's 445 pairs.
+    Interpolation onto observation centres is performed separately for scoring.
+    """
+    start = len(velocity) % 2
+    if len(velocity) - start < 2:
+        raise ValueError("At least two LAB channels are required for pair averaging")
+    return (np.asarray(velocity)[start:].reshape(-1, 2).mean(axis=1),
+            np.asarray(temperature)[start:].reshape(-1, 2).mean(axis=1))
+
+
+def range_values(value):
     try:
-        import healpy as hp
-    except ImportError as exc:
-        raise RuntimeError("LAB extraction requires healpy: python -m pip install healpy") from exc
-    longitude, latitude = galactic.l.deg, galactic.b.deg
-    velocities, brightness, weights = [], [], []
-    for lower, path in slices:
-        with fits.open(path, memmap=True) as hdul:
-            table = hdul[1]
-            header = table.header
-            if header.get("INDXSCHM", "IMPLICIT").strip().upper() != "IMPLICIT":
-                raise ValueError(f"Unsupported explicit HEALPix indexing in {path}")
-            if header.get("COORDSYS", "G").strip().upper() != "G":
-                raise ValueError(f"Expected Galactic LAB coordinates in {path}")
-            ordering = header["ORDERING"].strip().upper()
-            if ordering not in ("RING", "NESTED"):
-                raise ValueError(f"Unknown HEALPix ordering {ordering} in {path}")
-            pixel = hp.ang2pix(int(header["NSIDE"]), longitude, latitude, lonlat=True, nest=ordering == "NESTED")
-            names = [name.upper() for name in table.columns.names]
-            temperature_index = names.index("TEMPERATURE")
-            weight_index = next((names.index(name) for name in ("SIMULATION", "WEIGHT") if name in names), None)
-            if weight_index is None:
-                raise ValueError(f"No contributing-channel count field in {path}")
-            value = float(table.data.field(temperature_index).reshape(-1)[pixel])
-            weight = float(table.data.field(weight_index).reshape(-1)[pixel])
-            unit = table.columns[temperature_index].unit
-            if unit:
-                value = (value * u.Unit(unit)).to_value(u.K)
-        if weight <= 0 or not np.isfinite(weight) or not np.isfinite(value) or np.isclose(value, hp.UNSEEN):
-            value = np.nan
-        velocities.append(lower + BIN_WIDTH_KMS / 2)
-        brightness.append(value)
-        weights.append(weight)
-    if not velocities:
-        raise ValueError("No LAB velocity slices supplied")
-    return LabProfile(float(longitude), float(latitude), observed_at.isoformat(), np.array(velocities), np.array(brightness), np.array(weights))
+        parts = value.strip().strip("[]").split(",")
+        minimum, maximum, step = map(float, parts)
+    except ValueError as exc:
+        raise ValueError("Ranges must be [minimum offset,maximum offset,step]") from exc
+    if not np.all(np.isfinite([minimum, maximum, step])) or step <= 0 or maximum < minimum:
+        raise ValueError("Range must be finite with positive step and maximum >= minimum")
+    count = int(np.floor((maximum - minimum) / step + 1e-9)) + 1
+    if count > 10000:
+        raise ValueError("Range has more than 10000 points")
+    return minimum + step * np.arange(count)
 
 
-def save_profile(profile, prefix, show=True, context=None):
-    """Save CSV/PNG, plus a JSON context sidecar when provided.
+@dataclass
+class FitResult:
+    longitude: float
+    latitude: float
+    lon_offset: float
+    lat_offset: float
+    rms: float
+    correlation: float
+    velocity: np.ndarray
+    temperature: np.ndarray
 
-    Returns the CSV and PNG paths, preserving the existing importable API.
+
+def compare_spectra(velocity, corrected, reference_velocity, temperature, vmin, vmax):
+    """Score normalized spectral shapes on common observation channel centres."""
+    order = np.argsort(reference_velocity)
+    reference_velocity, temperature = reference_velocity[order], temperature[order]
+    reference = np.interp(velocity, reference_velocity, temperature, left=np.nan, right=np.nan)
+    valid = np.isfinite(reference) & (velocity >= vmin) & (velocity <= vmax)
+    if valid.sum() < 10:
+        return np.inf, np.nan
+    observed, lab = corrected[valid], reference[valid]
+    if max(observed) <= 0 or max(lab) <= 0:
+        return np.inf, np.nan
+    observed, lab = observed / max(observed), lab / max(lab)
+    mask = (observed > .01) & (lab > .01)
+    if mask.sum() < 10:
+        return np.inf, np.nan
+    rms = float(np.sqrt(np.mean((observed[mask] - lab[mask])**2)))
+    correlation = float(np.corrcoef(observed[mask], lab[mask])[0, 1]) if np.std(observed[mask]) > 0 and np.std(lab[mask]) > 0 else np.nan
+    return rms, correlation
+
+
+def estimate_terminal_velocity(velocity, brightness, vmin, vmax, noise_ranges=None,
+                               sigma=3., min_channels=3):
+    """Find the rightmost positive emission edge above noise mean + N RMS.
+
+    Noise RMS is measured about the mean in the supplied line-free windows.
+    By default use the highest-velocity 20% of finite positive channels in the
+    displayed interval. Search only the displayed positive interval. Reject
+    short above-threshold runs and do not bridge missing channels. Interpolate
+    the final falling crossing; report a lower bound if coverage ends first.
+    This is a threshold-based estimate, not an optical-depth/dispersion model.
     """
-    import matplotlib.pyplot as plt
-    from matplotlib.ticker import MultipleLocator
-
-    prefix = Path(prefix).expanduser()
-    prefix.parent.mkdir(parents=True, exist_ok=True)
-    csv_path, png_path = Path(f"{prefix}.csv"), Path(f"{prefix}.png")
-    np.savetxt(csv_path, np.column_stack([profile.velocity_lsr_kms, profile.brightness_k, profile.weight]),
-               delimiter=",", header="velocity_lsr_kms,mean_brightness_K,weight", comments="")
-    figure, axes = plt.subplots(figsize=(12, 5))
-    axes.step(profile.velocity_lsr_kms, profile.brightness_k, where="mid", label="LAB H I (10 km/s bins)")
-    axes.axvline(0, color="black", linestyle="--", alpha=0.7, label="Zero LSR velocity")
-    title = f"l={profile.longitude_deg:.3f}°, b={profile.latitude_deg:.3f}°; {profile.observed_at}"
-    if context is None or context.input_mode != "galactic":
-        title = f"{prefix.name}\n{title}"
-    axes.set(xlabel="LSR velocity [km/s]", ylabel="Mean H I brightness temperature [K]", title=title)
-    if context is not None:
-        latitude, longitude, height = context.location
-        axes.set_title(axes.get_title() + f"\nSite: {latitude:.6f}°, {longitude:.6f}°, {height:g} m ({context.input_mode})", fontsize=10)
-        metadata = {**context.metadata(), "survey": "NASA LAMBDA LAB HEALPix, 10 km/s slices"}
-        Path(f"{prefix}.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
-    axes.xaxis.set_major_locator(MultipleLocator(100))
-    axes.xaxis.set_minor_locator(MultipleLocator(50))
-    axes.grid(alpha=0.3)
-    axes.legend()
-    figure.tight_layout()
-    figure.savefig(png_path, dpi=180)
-    if show:
-        plt.show()
-    plt.close(figure)
-    return csv_path, png_path
+    if not np.all(np.isfinite([vmin, vmax, sigma])) or vmin >= vmax or sigma <= 0 or min_channels < 1:
+        raise ValueError("Terminal limits and sigma must be finite; sigma and minimum channels positive")
+    velocity, brightness = np.asarray(velocity), np.asarray(brightness)
+    order = np.argsort(velocity)
+    velocity, brightness = velocity[order], brightness[order]
+    finite = np.isfinite(velocity) & np.isfinite(brightness)
+    search = finite & (velocity > 0) & (velocity >= vmin) & (velocity <= vmax)
+    result = {"status": "not_detected", "velocity_lsr_kms": None,
+              "sigma_multiplier": float(sigma), "minimum_channels": int(min_channels),
+              "search_range_kms": [float(max(0, vmin)), float(vmax)],
+              "noise_level_k": None, "noise_rms_k": None, "threshold_k": None,
+              "noise_sample_count": 0, "noise_ranges_kms": [],
+              "noise_window_selection": "explicit" if noise_ranges else "highest positive-velocity 20% of displayed finite channels"}
+    if noise_ranges:
+        noise = np.zeros(len(velocity), dtype=bool)
+        for low, high in noise_ranges:
+            if not np.all(np.isfinite([low, high])) or low >= high:
+                raise ValueError("Noise windows must be finite with minimum < maximum")
+            noise |= (velocity >= low) & (velocity <= high)
+        result["noise_ranges_kms"] = [[float(low), float(high)] for low, high in noise_ranges]
+        noise &= finite
+    else:
+        indices = np.flatnonzero(search)
+        count = int(np.ceil(len(indices) * .2))
+        noise = np.zeros(len(velocity), dtype=bool)
+        if count:
+            selected = indices[-count:]
+            noise[selected] = True
+            result["noise_ranges_kms"] = [[float(velocity[selected[0]]), float(velocity[selected[-1]])]]
+    result["noise_sample_count"] = int(noise.sum())
+    if noise.sum() < 10:
+        result["status"] = "insufficient_noise_channels"
+        return result
+    level = float(np.mean(brightness[noise]))
+    rms = float(np.sqrt(np.mean((brightness[noise] - level)**2)))
+    threshold = level + sigma * rms
+    result.update(noise_level_k=level, noise_rms_k=rms, threshold_k=float(threshold))
+    if rms <= 0:
+        result["status"] = "zero_noise_rms"
+        return result
+    indices = np.flatnonzero(search & (brightness > threshold))
+    if not len(indices):
+        return result
+    spacings = np.diff(velocity[np.isfinite(velocity)])
+    spacings = spacings[spacings > 0]
+    max_gap = 1.5 * np.median(spacings) if len(spacings) else 0.
+    breaks = (np.diff(indices) > 1) | (np.diff(velocity[indices]) > max_gap)
+    runs = [run for run in np.split(indices, np.flatnonzero(breaks) + 1) if len(run) >= min_channels]
+    if not runs:
+        return result
+    index = runs[-1][-1]
+    result["last_above_threshold_velocity_kms"] = float(velocity[index])
+    result["emission_run_channels"] = int(len(runs[-1]))
+    following = index + 1
+    if following >= len(velocity) or velocity[following] > vmax:
+        result["status"] = "edge_limited"
+    elif not finite[following] or velocity[following] - velocity[index] > max_gap:
+        result["status"] = "gap_limited"
+    else:
+        fraction = (brightness[index] - threshold) / (brightness[index] - brightness[following])
+        crossing = velocity[index] + fraction * (velocity[following] - velocity[index])
+        result.update(status="detected", velocity_lsr_kms=float(crossing))
+    return result
 
 
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     add_pointing_arguments(parser)
-    parser.add_argument("--lab-dir", help="Extracted LAB FITS directory; defaults to ~/Downloads/LAB_Healpix")
+    parser.add_argument("--lon", type=float, help="Nominal Galactic longitude (degrees); use with --lat")
+    parser.add_argument("--lat", type=float, help="Nominal Galactic latitude (degrees); use with --lon")
+    parser.add_argument("--lab-fits", type=Path, default=Path.home() / "github/lab-fit/lab.fit")
+    parser.add_argument("--beam", "--fwhm", type=float, default=5., help="Gaussian FWHM in degrees (default 5); --lv interprets this as the final beam")
+    parser.add_argument("--file", type=Path, help="Observation Velocity CSV")
+    parser.add_argument("--target-id", help="Observation target ID; required with --file")
+    parser.add_argument("--freq-scan", help="Frequency scan ID; required with --file")
+    parser.add_argument("--sweep", action="store_true", help="Fit Galactic offsets to the selected observation")
+    parser.add_argument("--lv", action="store_true", help="Predict a longitude–velocity map at fixed latitude, using --lon-range offsets")
+    parser.add_argument("--lv-style", choices=("reference", "inferno"), default="reference",
+                        help="Predicted L–V appearance: white/blue with magenta contours (default reference), or original inferno")
+    parser.add_argument("--lv-stretch", choices=("linear", "sqrt", "asinh"),
+                        help="Colour mapping only; default asinh for reference, linear for inferno")
+    parser.add_argument("--lv-brightness-min", type=float, help="Lower colour limit in K; default 0 for reference, data minimum for inferno")
+    parser.add_argument("--lv-brightness-max", type=float, help="Upper colour limit in K; default visible data maximum")
+    parser.add_argument("--lv-asinh-width", type=float, default=10., help="Asinh linear transition width in K (default 10)")
+    parser.add_argument("--lv-contours", nargs="+", type=float, metavar="K",
+                        help="Increasing brightness contour levels in K; reference defaults to 5 10 20 40 80")
+    parser.add_argument("--lv-no-contours", action="store_true", help="Disable predicted L–V contours")
+    parser.add_argument("--lv-longitude-order", choices=("increasing", "decreasing"),
+                        help="Default decreasing with signed labels for reference, increasing for inferno")
+    parser.add_argument("--lab-native-beam", type=float, default=.6,
+                        help="Nominal LAB native FWHM in degrees for --lv final-beam convolution (default 0.6)")
+    parser.add_argument("--lon-range", default="[-3,3,1]", help="Longitude offsets [min,max,step] in degrees for sweeps or --lv")
+    parser.add_argument("--lat-range", default="[-3,3,1]", help="Latitude offsets [min,max,step] in degrees")
+    parser.add_argument("--fit-vmin", type=float, default=-150.)
+    parser.add_argument("--fit-vmax", type=float, default=150.)
+    parser.add_argument("--observation-baseline", choices=("none", "constant", "linear", "read-ray"), default="linear",
+                        help="HI4PI lower-envelope baseline (default linear); read-ray restores the +50 km/s anchor method")
+    parser.add_argument("--vmin", type=float, default=-100., help="Plot minimum LSR velocity")
+    parser.add_argument("--vmax", type=float, default=100., help="Plot maximum LSR velocity")
+    parser.add_argument("--noise-range", nargs=2, type=float, action="append", metavar=("VMIN", "VMAX"),
+                        help="Line-free LSR noise window (km/s); repeat for multiple windows. Default: highest positive-velocity 20%% of displayed channels")
+    parser.add_argument("--terminal-source", choices=("auto", "observation", "lab"), default="auto",
+                        help="Spectrum for terminal velocity; auto uses observation when available, otherwise LAB")
+    parser.add_argument("--terminal-sigma", type=float, default=3., help="Threshold above mean noise level in RMS units (default 3)")
+    parser.add_argument("--terminal-min-channels", type=int, default=3,
+                        help="Minimum consecutive channels above threshold (default 3; use 1 for the rightmost individual channel)")
+    parser.add_argument("--no-terminal-velocity", action="store_true", help="Disable terminal-velocity estimation")
+    parser.add_argument("--output", type=Path, help="CSV output path; PNG/JSON use the same stem")
+    parser.add_argument("--display-only", action="store_true", help="Show a plot without saving files")
     return parser
+
+
+def predict_lv(extractor, longitudes, latitude, beam, native_beam=.6):
+    """Return native LSR channels and a (velocity, longitude) kelvin array.
+
+    ``beam`` is the requested final Gaussian FWHM. The smoothing kernel is
+    sqrt(beam**2 - native_beam**2), using a nominal native LAB resolution.
+    Extraction retains the existing Galactic-coordinate-plane Gaussian model.
+    No baseline subtraction, receiver simulation or amplitude scaling is used.
+    """
+    longitudes = np.asarray(longitudes, dtype=float)
+    if longitudes.ndim != 1 or not len(longitudes) or not np.all(np.isfinite(longitudes)):
+        raise ValueError("Predicted L–V longitudes must be a finite non-empty 1D array")
+    if not np.all(np.isfinite([latitude, beam, native_beam])) or not -90 <= latitude <= 90 or native_beam < 0 or beam <= native_beam:
+        raise ValueError("L–V latitude must be -90..90 and final beam must exceed the non-negative native LAB beam")
+    kernel = np.sqrt(beam**2 - native_beam**2)
+    columns = []
+    velocity = None
+    for index, longitude in enumerate(longitudes):
+        channels, temperature = extractor.extract(float(longitude % 360), latitude, kernel)
+        if velocity is None:
+            velocity = np.asarray(channels)
+        elif not np.array_equal(channels, velocity):
+            raise ValueError("LAB cube returned inconsistent velocity channels")
+        columns.append(temperature)
+        if (index + 1) % max(1, len(longitudes) // 10) == 0 or index == len(longitudes) - 1:
+            print(f"Predicted LAB profiles: {index + 1}/{len(longitudes)}")
+    order = np.argsort(velocity)
+    velocity = velocity[order]
+    if len(velocity) < 2 or not np.all(np.isfinite(velocity)) or np.any(np.diff(velocity) <= 0):
+        raise ValueError("LAB velocity channels must be finite and distinct")
+    return velocity, np.column_stack(columns)[order]
+
+
+def plot_predicted_lv(args, context, offsets):
+    """Extract, display and optionally export a predicted LAB L–V diagram."""
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import AsinhNorm, Normalize, PowerNorm
+    from matplotlib.ticker import FuncFormatter, MaxNLocator
+
+    longitudes = context.galactic.l.deg + offsets
+    latitude = float(context.galactic.b.deg)
+    with LABGaussianExtractor(args.lab_fits) as extractor:
+        velocity, temperature = predict_lv(extractor, longitudes, latitude, args.beam, args.lab_native_beam)
+    visible = (velocity >= args.vmin) & (velocity <= args.vmax)
+    values = temperature[visible]
+    if not np.any(np.isfinite(values)):
+        raise ValueError("No finite LAB temperatures in the requested L–V velocity range")
+
+    def bin_edges(centres, single_width=1.):
+        if len(centres) == 1:
+            return np.array([centres[0] - single_width / 2, centres[0] + single_width / 2])
+        return np.r_[centres[0] - (centres[1] - centres[0]) / 2,
+                     (centres[:-1] + centres[1:]) / 2,
+                     centres[-1] + (centres[-1] - centres[-2]) / 2]
+
+    reference_style = args.lv_style == "reference"
+    stretch = args.lv_stretch or ("asinh" if reference_style else "linear")
+    colour_min = args.lv_brightness_min if args.lv_brightness_min is not None else (0. if reference_style else float(np.nanmin(values)))
+    colour_max = args.lv_brightness_max if args.lv_brightness_max is not None else float(np.nanmax(values))
+    if args.lv_brightness_max is None and colour_max <= colour_min:
+        colour_max = colour_min + max(abs(colour_min) * .01, 1e-6)
+    if colour_max <= colour_min:
+        raise ValueError("Upper L–V brightness limit must exceed the lower limit")
+    if stretch == "asinh":
+        norm = AsinhNorm(linear_width=args.lv_asinh_width, vmin=colour_min, vmax=colour_max, clip=True)
+    elif stretch == "sqrt":
+        norm = PowerNorm(gamma=.5, vmin=colour_min, vmax=colour_max, clip=True)
+    else:
+        norm = Normalize(vmin=colour_min, vmax=colour_max, clip=True)
+    if reference_style:
+        cmap = reference_lv_colormap()
+    else:
+        cmap = "inferno"
+    fig, ax = plt.subplots(figsize=(13, 6), layout="constrained", facecolor="white")
+    ax.set_facecolor("white")
+    mesh = ax.pcolormesh(bin_edges(longitudes), bin_edges(velocity), np.ma.masked_invalid(temperature),
+                         cmap=cmap, norm=norm, shading="flat", rasterized=True)
+    requested_levels = args.lv_contours if args.lv_contours is not None else ([5., 10., 20., 40., 80.] if reference_style else [])
+    contour_levels = []
+    if not args.lv_no_contours and len(longitudes) > 1 and visible.sum() > 1:
+        contour_levels = [float(level) for level in requested_levels if np.nanmin(values) < level < np.nanmax(values)]
+        if contour_levels:
+            contours = ax.contour(longitudes, velocity[visible], np.ma.masked_invalid(values),
+                                  levels=contour_levels, colors="#c849b8", linewidths=.65, alpha=.8)
+            ax.clabel(contours, inline=True, fontsize=7, fmt="%g K")
+    label = f"{longitudes[0] % 360:.3f}° to {longitudes[-1] % 360:.3f}°"
+    if longitudes[0] // 360 != longitudes[-1] // 360:
+        label += " (across 0°)"
+    longitude_order = args.lv_longitude_order or ("decreasing" if reference_style else "increasing")
+    longitude_edges = bin_edges(longitudes)
+    if np.isclose(longitude_edges[-1] - longitude_edges[0], 360, rtol=0, atol=1e-8):
+        label = ("+180° to −180° (full coverage)" if longitude_order == "decreasing" else "−180° to +180° (full coverage)") if reference_style else "0° to 360° (full coverage)"
+    ax.set(xlabel="Galactic longitude [degrees]", ylabel="LSR velocity [km/s]",
+           ylim=(args.vmin, args.vmax), xlim=(bin_edges(longitudes)[0], bin_edges(longitudes)[-1]),
+           title=f"Predicted LAB longitude–velocity | Gaussian beam FWHM={args.beam:g}°\n"
+                 f"Galactic longitude {label}; latitude {latitude:+.3f}°")
+    ax.xaxis.set_major_locator(MaxNLocator(nbins=10))
+    def longitude_label(value, position):
+        longitude = (value + 180) % 360 - 180 if reference_style else value % 360
+        if reference_style and np.isclose(longitude, -180) and value > 0:
+            longitude = 180
+        return f"{longitude:g}°"
+    ax.xaxis.set_major_formatter(FuncFormatter(longitude_label))
+    if longitude_order == "decreasing":
+        ax.invert_xaxis()
+    ax.minorticks_on()
+    ax.tick_params(which="both", direction="in", top=True, right=True)
+    ax.axhline(0, color="grey" if reference_style else "white", linestyle=":", linewidth=.6, alpha=.6)
+    colour_bar = fig.colorbar(mesh, ax=ax, label="Predicted H I brightness temperature [K]")
+    if stretch == "asinh":
+        from matplotlib.ticker import FormatStrFormatter
+        ticks = sorted(set([colour_min, colour_max] + [float(level) for level in requested_levels if colour_min < level < colour_max]))
+        colour_bar.set_ticks(ticks)
+        colour_bar.ax.yaxis.set_major_formatter(FormatStrFormatter("%g"))
+    if not args.display_only:
+        prefix = args.output.expanduser().with_suffix("") if args.output else Path(args.output_dir or args.dir).expanduser() / f"{context.output_name}-lab-lv"
+        prefix.parent.mkdir(parents=True, exist_ok=True)
+        png_path, csv_path, json_path = (Path(f"{prefix}{suffix}") for suffix in (".png", ".csv", ".json"))
+        fig.savefig(png_path, dpi=180)
+        # Export all native velocity channels, not just the displayed interval.
+        with csv_path.open("w", newline="") as stream:
+            writer = csv.writer(stream)
+            writer.writerow(["galactic_longitude_deg", "galactic_latitude_deg", "velocity_lsr_kms", "brightness_K"])
+            for column, longitude in enumerate(longitudes):
+                writer.writerows((float(longitude % 360), latitude, float(v), float(t))
+                                 for v, t in zip(velocity, temperature[:, column]))
+        metadata = {**context.metadata(), "mode": "predicted_lv", "survey": "LAB Galactic CAR cube",
+                    "lab_fits": str(args.lab_fits.expanduser().resolve()),
+                    "final_beam_fwhm_deg": args.beam, "nominal_native_beam_fwhm_deg": args.lab_native_beam,
+                    "smoothing_kernel_fwhm_deg": float(np.sqrt(args.beam**2 - args.lab_native_beam**2)),
+                    "beam_method": "Gaussian in Galactic coordinate degrees; three sigma aperture; nominal native-beam quadrature correction",
+                    "longitude_offsets_deg": offsets.tolist(), "longitudes_deg": (longitudes % 360).tolist(),
+                    "unwrapped_longitudes_deg": longitudes.tolist(), "latitude_deg": latitude,
+                    "velocity_frame": "LSR", "brightness_unit": "K", "colormap": mesh.get_cmap().name,
+                    "lv_style": args.lv_style, "colour_stretch": stretch,
+                    "colour_limits_k": [colour_min, colour_max], "asinh_width_k": args.lv_asinh_width if stretch == "asinh" else None,
+                    "contour_levels_k": contour_levels, "longitude_order": longitude_order,
+                    "longitude_labels": "signed" if reference_style else "unsigned",
+                    "display_velocity_range_kms": [args.vmin, args.vmax],
+                    "velocity_channels": len(velocity), "longitude_samples": len(longitudes),
+                    "amplitude_scaling": "none", "baseline_subtraction": "none"}
+        json_path.write_text(json.dumps(metadata, indent=2, allow_nan=False) + "\n")
+        print(f"Saved: {png_path}, {csv_path}, {json_path}")
+    if not args.no_show:
+        plt.show()
+    plt.close(fig)
+
+
+def plot_result(result, args, context, observation=None):
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.plot(result.velocity, result.temperature, color="black", linestyle="--", label="LAB Survey")
+    if observation is not None:
+        velocity, corrected, baseline = observation
+        scaled = corrected * np.nanmax(result.temperature) / np.max(corrected)
+        baseline_label = "no baseline subtraction" if args.observation_baseline == "none" else f"{args.observation_baseline} baseline removed"
+        ax.plot(velocity, scaled, color="red", label=f"Observation ({baseline_label}; scaled to LAB peak)")
+    terminal = {"status": "disabled"}
+    if not args.no_terminal_velocity:
+        source = args.terminal_source
+        if source == "auto":
+            source = "observation" if observation is not None else "lab"
+        terminal_velocity, terminal_brightness = (velocity, scaled) if source == "observation" else (result.velocity, result.temperature)
+        terminal = estimate_terminal_velocity(terminal_velocity, terminal_brightness, args.vmin, args.vmax,
+                                              args.noise_range, args.terminal_sigma, args.terminal_min_channels)
+        terminal["source"] = source
+        if terminal["threshold_k"] is not None:
+            ax.axhline(terminal["threshold_k"], color="grey", linestyle=":",
+                       label=f"Noise floor + {args.terminal_sigma:g}σ ({terminal['threshold_k']:.2f} K)")
+        if terminal["status"] == "detected":
+            terminal_v = terminal["velocity_lsr_kms"]
+            ax.axvline(terminal_v, color="tab:purple", linestyle="-.",
+                       label=f"Terminal velocity ({source}): {terminal_v:+.2f} km/s")
+            ax.plot(terminal_v, terminal["threshold_k"], "o", color="tab:purple")
+            print(f"Terminal LSR velocity ({source}): {terminal_v:+.3f} km/s; noise RMS={terminal['noise_rms_k']:.4f} K; threshold={terminal['threshold_k']:.4f} K")
+        else:
+            reason = terminal["status"].replace("_", " ")
+            if terminal["status"] in ("edge_limited", "gap_limited"):
+                reason += f"; emission extends to {terminal['last_above_threshold_velocity_kms']:+.2f} km/s"
+            ax.text(.02, .02, f"Terminal velocity: {reason}", transform=ax.transAxes, fontsize=9,
+                    bbox={"facecolor": "white", "alpha": .8, "edgecolor": "none"})
+            print(f"Terminal velocity ({source}): {reason}")
+    title = f"LAB: l={result.longitude:.3f}°, b={result.latitude:.3f}° | Beam FWHM={args.beam:g}°"
+    if observation is not None:
+        title += (f"\nOffsets: Δl={result.lon_offset:+.3f}°, Δb={result.lat_offset:+.3f}°"
+                  f" | Target={args.target_id}, frequency scan={args.freq_scan}"
+                  f"\nFit RMS={result.rms:.5f}, correlation={result.correlation:.5f} | Baseline={args.observation_baseline}")
+    ax.set(title=title, xlabel="LSR velocity [km/s]", ylabel="Brightness temperature / scaled observation [K]" if observation else "Brightness temperature [K]", xlim=(args.vmin, args.vmax))
+    ax.grid(alpha=.3)
+    ax.legend()
+    fig.tight_layout()
+    if not args.display_only:
+        prefix = args.output.expanduser().with_suffix("") if args.output else Path(args.output_dir or args.dir).expanduser() / (f"{context.output_name}-lab-profile" if observation is None else f"{args.file.stem}_target{args.target_id}_scan{args.freq_scan}_lab_fit")
+        prefix.parent.mkdir(parents=True, exist_ok=True)
+        def destination(suffix):
+            return Path(f"{prefix}{suffix}")
+        np.savetxt(destination(".csv"), np.column_stack([result.velocity, result.temperature]), delimiter=",", header="velocity_lsr_kms,brightness_K", comments="")
+        fig.savefig(destination(".png"), dpi=180)
+        metadata = {**context.metadata(), "survey": "LAB Galactic CAR cube", "lab_fits": str(args.lab_fits.expanduser().resolve()),
+                    "beam_fwhm_deg": args.beam, "beam_method": "Gaussian in Galactic coordinate degrees; three sigma aperture",
+                    "best_longitude_deg": result.longitude, "best_latitude_deg": result.latitude,
+                    "longitude_offset_deg": result.lon_offset, "latitude_offset_deg": result.lat_offset,
+                    "target_id": args.target_id, "freq_scan": args.freq_scan,
+                    "observation_file": str(args.file.expanduser().resolve()) if args.file else None,
+                    "rms": result.rms if np.isfinite(result.rms) else None,
+                    "correlation": result.correlation if np.isfinite(result.correlation) else None,
+                    "terminal_velocity": terminal}
+        if observation is not None:
+            metadata.update(observation_baseline=args.observation_baseline,
+                            baseline_method={"linear": "linear fit to lowest 20% of powers on shared fitting channels (HI4PI method)",
+                                             "constant": "median of lowest 20% of powers on shared fitting channels (HI4PI method)",
+                                             "none": "no subtraction",
+                                             "read-ray": "line from first valid observation channel to interpolated power at +50 km/s"}[args.observation_baseline],
+                            channel_matching="drop leading LAB channel if odd; average pairs; interpolate for scoring", fit_velocity_range_kms=[args.fit_vmin, args.fit_vmax], observation_peak_scale=float(np.nanmax(result.temperature) / np.max(corrected)))
+            if args.observation_baseline == "read-ray":
+                metadata.update(baseline_start_velocity_kms=float(velocity[0]), baseline_reference_velocity_kms=50.)
+            reference = np.interp(velocity, result.velocity, result.temperature, left=np.nan, right=np.nan)
+            np.savetxt(destination("_comparison.csv"), np.column_stack([velocity, baseline, corrected, scaled, reference]), delimiter=",", header="velocity_lsr_kms,baseline,baseline_subtracted_power,observation_scaled_to_lab_K,lab_K", comments="")
+        destination(".json").write_text(json.dumps(metadata, indent=2, allow_nan=False) + "\n")
+        print(f"Saved: {destination('.csv')}, {destination('.png')}, {destination('.json')}")
+    if not args.no_show:
+        plt.show()
+    plt.close(fig)
 
 
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
+        if args.lon is not None or args.lat is not None:
+            if args.lon is None or args.lat is None or args.galactic is not None:
+                raise ValueError("Provide both --lon and --lat, or --galactic L B")
+            args.galactic = [args.lon, args.lat]
         context = resolve_profile_context(args)
+        if not np.isfinite(args.beam) or args.beam <= 0:
+            raise ValueError("Beam must be finite and positive")
+        if args.lv:
+            if args.sweep or args.file is not None or args.target_id is not None or args.freq_scan is not None:
+                raise ValueError("--lv predicts survey profiles; do not combine with --sweep or observation CSV selection")
+            if not np.isfinite(args.lab_native_beam) or args.lab_native_beam < 0 or args.beam <= args.lab_native_beam:
+                raise ValueError("Final --beam must exceed the non-negative --lab-native-beam for --lv")
+            if not np.isfinite(args.lv_asinh_width) or args.lv_asinh_width <= 0:
+                raise ValueError("L–V asinh width must be finite and positive")
+            limits = [v for v in (args.lv_brightness_min, args.lv_brightness_max) if v is not None]
+            if not np.all(np.isfinite(limits)):
+                raise ValueError("L–V brightness limits must be finite")
+            if args.lv_brightness_max is not None and args.lv_brightness_min is not None and args.lv_brightness_max <= args.lv_brightness_min:
+                raise ValueError("Upper L–V brightness limit must exceed the lower limit")
+            if args.lv_contours is not None and (not np.all(np.isfinite(args.lv_contours)) or min(args.lv_contours) <= 0 or np.any(np.diff(args.lv_contours) <= 0)):
+                raise ValueError("L–V contour levels must be finite, positive and strictly increasing")
+        if not np.all(np.isfinite([args.vmin, args.vmax, args.fit_vmin, args.fit_vmax])) or args.vmin >= args.vmax or args.fit_vmin >= args.fit_vmax:
+            raise ValueError("Velocity limits must be finite with minimum < maximum")
+        if args.file is None and (args.target_id is not None or args.freq_scan is not None or args.sweep):
+            raise ValueError("--file, --target-id and --freq-scan are required for observation comparisons and sweeps")
+        if args.file is not None and (args.target_id is None or args.freq_scan is None):
+            raise ValueError("--target-id and --freq-scan are required with --file")
+        if args.display_only and (args.no_show or args.output is not None):
+            raise ValueError("--display-only cannot be combined with --no-show or --output")
+        if args.terminal_source == "observation" and args.file is None and not args.no_terminal_velocity:
+            raise ValueError("--terminal-source observation requires --file, --target-id and --freq-scan")
+        if not np.isfinite(args.terminal_sigma) or args.terminal_sigma <= 0 or args.terminal_min_channels < 1:
+            raise ValueError("Terminal sigma must be finite and positive; minimum channels must be positive")
+        for low, high in args.noise_range or []:
+            if not np.all(np.isfinite([low, high])) or low >= high:
+                raise ValueError("Noise windows must be finite with minimum < maximum")
+        lon_offsets = range_values(args.lon_range) if args.sweep or args.lv else [0.]
+        if args.lv:
+            if lon_offsets[-1] - lon_offsets[0] > 360 + 1e-9:
+                raise ValueError("Predicted L–V longitude span must not exceed 360 degrees")
+            if len(lon_offsets) > 1 and np.isclose(lon_offsets[-1] - lon_offsets[0], 360, rtol=0, atol=1e-9):
+                lon_offsets = lon_offsets[:-1]  # Do not repeat the circular endpoint.
+        lat_offsets = range_values(args.lat_range) if args.sweep else [0.]
+        if len(lon_offsets) * len(lat_offsets) > 100000:
+            raise ValueError("Sweep exceeds 100000 candidates")
     except ValueError as exc:
         parser.error(str(exc))
     except (OSError, KeyError) as exc:
         parser.exit(1, f"LAB metadata lookup failed: {exc}\n")
     try:
-        # Check dependencies before initiating a potentially large download.
-        import healpy  # noqa: F401
-        galactic, observed_at = context.galactic, context.observed_at
-        print(f"Observation datetime UTC: {observed_at.isoformat()}; l={galactic.l.deg:.4f}°, b={galactic.b.deg:.4f}°")
-        with survey_slices(args.lab_dir) as slices:
-            print(f"Extracting {len(slices)} LAB velocity bins")
-            profile = extract_profile(slices, galactic, observed_at)
-        prefix = Path(args.output_dir or args.dir).expanduser() / f"{context.output_name}-lab-profile"
-        for path in save_profile(profile, prefix, show=not args.no_show, context=context):
-            print(f"Saved: {path}")
-        print(f"Saved: {prefix}.json")
-    except ImportError as exc:
-        parser.exit(1, f"LAB extraction dependency missing: {exc}. Install with python -m pip install healpy\n")
-    except (OSError, ValueError, RuntimeError, KeyError, tarfile.TarError) as exc:
-        parser.exit(1, f"LAB extraction failed: {exc}\n")
+        if args.lv:
+            plot_predicted_lv(args, context, lon_offsets)
+            return 0
+        observation = None
+        if args.file is not None:
+            velocity, power = load_observation(args.file, args.target_id, args.freq_scan)
+        longitude, latitude = context.galactic.l.deg, context.galactic.b.deg
+        best, rows = None, []
+        with LABGaussianExtractor(args.lab_fits) as extractor:
+            for dl in lon_offsets:
+                for db in lat_offsets:
+                    lon, lat = (longitude + dl) % 360, latitude + db
+                    if not -90 <= lat <= 90:
+                        continue
+                    ref_v, ref_t = extractor.extract(lon, lat, args.beam)
+                    rms, correlation = np.nan, np.nan
+                    candidate_observation = None
+                    if args.file is not None:
+                        ref_v, ref_t = match_channels(ref_v, ref_t)
+                        order = np.argsort(ref_v)
+                        ref_v, ref_t = ref_v[order], ref_t[order]
+                        reference = np.interp(velocity, ref_v, ref_t, left=np.nan, right=np.nan)
+                        fit_mask = np.isfinite(reference) & (velocity >= args.fit_vmin) & (velocity <= args.fit_vmax)
+                        if fit_mask.sum() >= 10:
+                            corrected, baseline = subtract_baseline(velocity, power, args.observation_baseline, fit_mask)
+                            candidate_observation = velocity, corrected, baseline
+                            rms, correlation = compare_spectra(velocity, corrected, ref_v, ref_t, args.fit_vmin, args.fit_vmax)
+                        else:
+                            rms = np.inf
+                    result = FitResult(float(lon), float(lat), float(dl), float(db), rms, correlation, ref_v, ref_t)
+                    rows.append([lon, lat, dl, db, rms, correlation])
+                    if args.file is not None:
+                        print(f"l={lon:.4f} b={lat:.4f} Δl={dl:+.4f} Δb={db:+.4f} RMS={rms:.6f} corr={correlation:.6f}")
+                    if args.file is None or (np.isfinite(rms) and (best is None or rms < best.rms)):
+                        best = result
+                        observation = candidate_observation
+        if best is None:
+            raise ValueError("No valid LAB comparison found; check velocity overlap, fitting limits and signal")
+        if not np.any(np.isfinite(best.temperature)):
+            raise ValueError("LAB profile contains no finite temperatures")
+        plot_result(best, args, context, observation)
+        if args.sweep:
+            print(f"Best match: l={best.longitude:.4f}°, b={best.latitude:.4f}°; offsets Δl={best.lon_offset:+.4f}°, Δb={best.lat_offset:+.4f}°")
+            if not args.display_only:
+                path = args.output.expanduser().with_suffix("") if args.output else Path(args.output_dir or args.dir).expanduser() / f"{args.file.stem}_target{args.target_id}_scan{args.freq_scan}_lab_fit"
+                path = Path(f"{path}_sweep.csv")
+                np.savetxt(path, rows, delimiter=",", header="longitude_deg,latitude_deg,longitude_offset_deg,latitude_offset_deg,rms,correlation", comments="")
+                print(f"Saved: {path}")
+    except (OSError, ValueError, RuntimeError, KeyError, u.UnitsError) as exc:
+        parser.exit(1, f"LAB profiling failed: {exc}\n")
     return 0
 
 

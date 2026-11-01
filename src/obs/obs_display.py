@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.gridspec import GridSpec
 from matplotlib.ticker import AutoMinorLocator, MaxNLocator
+from util.convert import subtract_spectrum_baseline
+from util.lv_plot import reference_lv_colormap, interpolate_lv_contour_column
 from sdp.channel_mask import (
     ChannelFlag,
     channels_with_flag,
@@ -56,6 +58,8 @@ class ObsDisplay:
         self.ax_vel = None
         self.freq_min_mhz = None
         self.freq_max_mhz = None
+        self.lsr_spectra = []
+        self.lsr_baseline_method = None
 
     def __str__(self):
         return f"ObsDisplay(obs_id={self.obs_id})"
@@ -82,6 +86,7 @@ class ObsDisplay:
             scans: Iterable of aggregated SKY Scan instances to plot.
             obs: Optional Observation model used to derive the full frequency span.
         """
+        self.lsr_spectra = []
         if scans is None:
             self.scans = []
             return
@@ -259,16 +264,28 @@ class ObsDisplay:
 
         return output_path
 
-    def display_lsr(self, obs, output_path: str, blacklist=(), csv_path: str | None = None):
+    def display_lsr(self, obs, output_path: str, blacklist=(), csv_path: str | None = None,
+                    observation_baseline="linear", baseline_vmin=-150., baseline_vmax=150.,
+                    baseline_windows=None):
         """Show and save calibrated aggregates in LSRK, one curve per frequency scan.
 
-        If csv_path is supplied, export the plotted samples with numeric target indices,
-        frequency scan indices and velocities in km/s. Masked powers are blank;
-        frequency scans for each target are written consecutively without
-        combining overlapping channels.
+        Fit each target/frequency scan separately without amplitude scaling.
+        Baseline windows, when supplied, are intersected with the fit interval.
+        CSV preserves calibrated_power and adds baseline/baseline_subtracted_power.
+        Masked powers remain blank. Input MPR arrays are never changed. A scan
+        with insufficient baseline samples is logged and skipped, not shown raw.
         """
         from obs.lsr import lsr_velocity, scan_observing_context
 
+        self.lsr_spectra = []
+        self.lsr_baseline_method = observation_baseline
+        if observation_baseline not in ("none", "constant", "linear"):
+            raise ValueError("Observation baseline must be none, constant or linear")
+        if not np.all(np.isfinite([baseline_vmin, baseline_vmax])) or baseline_vmin >= baseline_vmax:
+            raise ValueError("Baseline velocity limits must be finite with minimum < maximum")
+        for low, high in baseline_windows or []:
+            if not np.all(np.isfinite([low, high])) or low >= high:
+                raise ValueError("Baseline windows must be finite with minimum < maximum")
         figure, axes = plt.subplots(num=f"LSRK Observation {self.obs_id}", figsize=(14, 6))
         plotted = 0
         csv_rows = []
@@ -291,24 +308,46 @@ class ObsDisplay:
             order = np.argsort(velocity)
             sorted_velocity = velocity[order]
             sorted_power = masked_values(scan.mpr, flags)[order]
+            fit_mask = (sorted_velocity >= baseline_vmin) & (sorted_velocity <= baseline_vmax)
+            if baseline_windows:
+                windows = np.zeros(len(sorted_velocity), dtype=bool)
+                for low, high in baseline_windows:
+                    windows |= (sorted_velocity >= low) & (sorted_velocity <= high)
+                fit_mask &= windows
+            try:
+                corrected_power, baseline = subtract_spectrum_baseline(
+                    sorted_velocity, sorted_power, observation_baseline, fit_mask)
+            except ValueError as exc:
+                logger.warning("Skipping LSRK baseline for target %s, frequency %s: %s",
+                               model.tgt_idx, model.freq_scan, exc)
+                continue
             axes.plot(
-                sorted_velocity, sorted_power, color=colour,
+                sorted_velocity, corrected_power, color=colour,
                 label=f"Target {model.tgt_idx}, frequency {model.freq_scan} ({model.center_freq / 1e6:.3f} MHz)",
             )
+            self.lsr_spectra.append({
+                "target_id": model.tgt_idx, "freq_scan": model.freq_scan,
+                "center_freq": model.center_freq, "direction": direction,
+                "velocity": sorted_velocity.copy(), "power": corrected_power.copy(),
+            })
             if csv_path is not None:
+                def csv_value(value):
+                    return "" if np.ma.is_masked(value) or not np.isfinite(value) else float(value)
                 csv_rows.extend(
-                    (model.tgt_idx, model.freq_scan, float(v), "" if np.ma.is_masked(power) else float(power))
-                    for v, power in zip(sorted_velocity, sorted_power)
+                    (model.tgt_idx, model.freq_scan, float(v), csv_value(power), csv_value(base), csv_value(corrected))
+                    for v, power, base, corrected in zip(sorted_velocity, sorted_power, baseline, corrected_power)
                 )
             plotted += 1
         if not plotted:
             plt.close(figure)
-            logger.warning("No LSRK plot produced: no SKY scans with sufficient observing metadata")
+            logger.warning("No LSRK plot produced: no SKY scans with sufficient observing metadata and baseline samples")
             return None
         axes.axvline(0, color="black", linestyle="--", linewidth=1, label="Zero LSRK velocity")
-        axes.set_title(f"Observation {self.obs_id} — Aggregated Sky Scans")
+        axes.axhline(0, color="grey", linestyle=":", linewidth=1)
+        axes.set_title(f"Observation {self.obs_id} — Aggregated Sky Scans (baseline: {observation_baseline})")
         axes.set_xlabel("LSRK velocity [km/s] (radio convention; H I rest 1420.405751768 MHz)")
-        axes.set_ylabel("Calibrated Power Spectrum [a.u.]")
+        axes.set_ylabel("Calibrated Power Spectrum [a.u.]" if observation_baseline == "none"
+                        else "Baseline-subtracted calibrated power [a.u.]")
         axes.grid(True, alpha=0.25)
         axes.legend()
         figure.tight_layout()
@@ -316,7 +355,158 @@ class ObsDisplay:
         if csv_path is not None:
             with open(csv_path, "w", newline="", encoding="utf-8") as csv_file:
                 writer = csv.writer(csv_file)
-                writer.writerow(["target_id", "freq_scan", "velocity_km_s", "calibrated_power"])
+                writer.writerow(["target_id", "freq_scan", "velocity_km_s", "calibrated_power",
+                                 "baseline", "baseline_subtracted_power"])
                 writer.writerows(csv_rows)
+        plt.show(block=False)
+        return figure
+
+    def display_lv(self, obs, output_path: str, contour_levels=None, contour_smoothing=2.):
+        """Show/save longitude–LSRK velocity columns from the last LSRK plot.
+
+        Reuse its exact baseline-subtracted, unscaled powers and channel masks.
+        Target sky coordinates take precedence over the resolved scan direction.
+        Longitude edges are midpoints between observed longitudes, with half a
+        spacing at either end (one degree total width for a single longitude).
+        Columns retain native velocity channels, without interpolation; the
+        view is cropped to the intersection of their valid velocity edges. Separate
+        frequency setups and repeated longitudes get separate panels. A common
+        white/blue asinh colour mapping preserves amplitude comparisons throughout.
+        Magenta contours interpolate between sampled longitudes for display only;
+        their labels remain in calibrated power units. Pass [] to disable them.
+        """
+        from matplotlib.colors import AsinhNorm
+        from matplotlib.ticker import FuncFormatter
+
+        if not np.isfinite(contour_smoothing) or contour_smoothing < 0:
+            raise ValueError("Contour smoothing must be finite and non-negative")
+        if contour_levels is not None and (not np.all(np.isfinite(contour_levels)) or
+                any(level <= 0 for level in contour_levels) or np.any(np.diff(contour_levels) <= 0)):
+            raise ValueError("L–V contour levels must be finite, positive and strictly increasing")
+        spectra = []
+        for source in self.lsr_spectra:
+            target = obs.get_target_by_index(source["target_id"])
+            direction = getattr(target, "sky_coord", None)
+            if direction is None:
+                direction = source["direction"]
+            try:
+                galactic = direction.galactic
+                longitude, latitude = float(galactic.l.deg), float(galactic.b.deg)
+                if not np.all(np.isfinite([longitude, latitude])):
+                    raise ValueError("Non-finite Galactic coordinates")
+            except (AttributeError, TypeError, ValueError) as exc:
+                logger.warning("Skipping L–V target %s, frequency %s: %s",
+                               source["target_id"], source["freq_scan"], exc)
+                continue
+            if len(source["velocity"]) < 2 or not np.any(np.isfinite(source["power"].compressed())):
+                continue
+            spectra.append({**source, "longitude": round(longitude % 360, 8) % 360, "latitude": latitude})
+        if not spectra:
+            logger.warning("No L–V plot produced: no prepared LSRK spectra with Galactic coordinates")
+            return None
+
+        # Cut at the largest unobserved circular gap, keeping 359°/1° adjacent.
+        longitudes = np.unique([item["longitude"] for item in spectra])
+        gaps = np.diff(np.r_[longitudes, longitudes[0] + 360])
+        start = longitudes[(np.argmax(gaps) + 1) % len(longitudes)]
+        for item in spectra:
+            item["x"] = start + (item["longitude"] - start) % 360
+        centres = np.unique([item["x"] for item in spectra])
+        if len(centres) == 1:
+            edges = np.array([centres[0] - .5, centres[0] + .5])
+        else:
+            edges = np.r_[centres[0] - (centres[1] - centres[0]) / 2,
+                          (centres[:-1] + centres[1:]) / 2,
+                          centres[-1] + (centres[-1] - centres[-2]) / 2]
+        panels = {}
+        for item in sorted(spectra, key=lambda s: (s["freq_scan"], s["center_freq"], s["x"], s["target_id"])):
+            key = item["freq_scan"], item["center_freq"]
+            batches = panels.setdefault(key, [])
+            batch = next((batch for batch in batches if all(s["x"] != item["x"] for s in batch)), None)
+            if batch is None:
+                batch = []
+                batches.append(batch)
+            batch.append(item)
+        groups = [(key, index, batch) for key, batches in panels.items() for index, batch in enumerate(batches)]
+        powers = np.concatenate([np.ma.masked_invalid(item["power"]).compressed() for item in spectra])
+        high = max(float(np.max(powers)), 1e-12)
+        norm = AsinhNorm(linear_width=.1 * high, vmin=0., vmax=high, clip=True)
+        cmap = reference_lv_colormap()
+        levels = list(contour_levels) if contour_levels is not None else (high * np.array([.05, .1, .2, .4, .8])).tolist()
+        figure, axes = plt.subplots(len(groups), 1, num=f"L–V Observation {self.obs_id}",
+                                    figsize=(12, 5 * len(groups)), squeeze=False,
+                                    sharex=True, sharey=True, layout="constrained", clear=True, facecolor="white")
+        velocity_bounds = []
+        for axis, (key, index, batch) in zip(axes[:, 0], groups):
+            for item in batch:
+                column = np.searchsorted(centres, item["x"])
+                velocity = item["velocity"]
+                velocity_edges = np.r_[velocity[0] - (velocity[1] - velocity[0]) / 2,
+                                       (velocity[:-1] + velocity[1:]) / 2,
+                                       velocity[-1] + (velocity[-1] - velocity[-2]) / 2]
+                valid = np.flatnonzero(~np.ma.getmaskarray(np.ma.masked_invalid(item["power"])))
+                velocity_bounds.append((velocity_edges[valid[0]], velocity_edges[valid[-1] + 1]))
+                mesh = axis.pcolormesh(edges[column:column + 2], velocity_edges,
+                                       np.ma.masked_invalid(item["power"])[:, None],
+                                       cmap=cmap, norm=norm, shading="flat", rasterized=True)
+            longitude_start = min(item["x"] for item in batch)
+            longitude_end = max(item["x"] for item in batch)
+            longitude_range = f"{longitude_start % 360:.3f}° to {longitude_end % 360:.3f}°"
+            if longitude_start // 360 != longitude_end // 360:
+                longitude_range += " (across 0°)"
+            latitudes = [item["latitude"] for item in batch]
+            repeated = f"; group {index + 1}" if len(panels[key]) > 1 else ""
+            axis.set_title(f"Frequency scan {key[0]} ({key[1] / 1e6:.3f} MHz){repeated}\n"
+                           f"Galactic longitude {longitude_range}; latitude {min(latitudes):+.3f}° to {max(latitudes):+.3f}°")
+            axis.set_ylabel("LSRK velocity [km/s]")
+            axis.set_xlim(edges[0], edges[-1])
+            axis.set_xticks(centres)
+            axis.xaxis.set_major_formatter(FuncFormatter(lambda value, position: f"{value % 360:g}°"))
+            axis.set_facecolor("white")
+            axis.axhline(0, color="grey", linestyle=":", linewidth=.6, alpha=.6)
+        lower = max(low for low, high in velocity_bounds)
+        upper = min(high for low, high in velocity_bounds)
+        if lower >= upper:
+            plt.close(figure)
+            logger.warning("No L–V plot produced: columns have no shared valid velocity coverage")
+            return None
+        # Clip the view at the shared cell edges without shifting or regridding.
+        axes[0, 0].set_ylim(lower, upper)
+        for axis, (key, index, batch) in zip(axes[:, 0], groups):
+            # Do not span a known missing longitude in this frequency panel.
+            columns = [np.searchsorted(centres, item["x"]) for item in batch]
+            runs = np.split(np.arange(len(batch)), np.flatnonzero(np.diff(columns) > 1) + 1)
+            for run in runs:
+                if len(run) < 2 or not levels:
+                    continue
+                segment = [batch[i] for i in run]
+                grid = segment[0]["velocity"]
+                grid = grid[(grid >= lower) & (grid <= upper)]
+                if len(grid) < 2:
+                    continue
+                # Only the contour overlay is resampled, never the coloured columns.
+                values = np.ma.masked_invalid(np.column_stack([
+                    interpolate_lv_contour_column(item["velocity"], item["power"], grid, contour_smoothing) for item in segment]))
+                if values.count() < 2:
+                    continue
+                panel_levels = [level for level in levels if values.min() < level < values.max()]
+                if panel_levels:
+                    contours = axis.contour([item["x"] for item in segment], grid, values,
+                                            levels=panel_levels, colors="#c849b8", linewidths=.65, alpha=.8)
+                    # One label per level avoids dense text on noisy observations.
+                    for level, paths in zip(contours.levels, contours.allsegs):
+                        paths = [path for path in paths if len(path) > 1]
+                        if paths:
+                            longest = max(paths, key=len)
+                            axis.clabel(contours, levels=[level], manual=[longest[len(longest) // 2]],
+                                        inline=True, fontsize=7, fmt=lambda value: f"{value:.3g} a.u.")
+        axes[-1, 0].set_xlabel("Galactic longitude [degrees]")
+        label = "Calibrated power [a.u.]" if self.lsr_baseline_method == "none" else "Baseline-subtracted calibrated power [a.u.]"
+        colour_bar = figure.colorbar(mesh, ax=list(axes[:, 0]), label=label)
+        colour_bar.set_ticks(sorted(set([0., high] + [level for level in levels if 0 < level < high])))
+        from matplotlib.ticker import FormatStrFormatter
+        colour_bar.ax.yaxis.set_major_formatter(FormatStrFormatter("%.3g"))
+        figure.suptitle(f"Observation {self.obs_id} — Longitude–Velocity (baseline: {self.lsr_baseline_method})")
+        figure.savefig(output_path, dpi=150, bbox_inches="tight")
         plt.show(block=False)
         return figure

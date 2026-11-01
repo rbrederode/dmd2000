@@ -154,3 +154,63 @@ def parse_utc_datetime(value: str) -> datetime:
         return datetime_to_utc(datetime.fromisoformat(value.replace("Z", "+00:00")))
     except ValueError as exc:
         raise ValueError(f"Expected an ISO datetime, e.g. 2026-10-24T11:25:50Z; got {value!r}") from exc
+
+
+def subtract_spectrum_baseline(velocity, power, method="linear", fit_mask=None):
+    """Return (power - baseline, baseline) without scaling or mutating inputs.
+
+    Linear/constant modes use the lowest 20% of finite, unmasked powers in
+    ``fit_mask`` (all valid channels when omitted). Linear fits a straight
+    line; constant uses their median. At least ten fit channels and three
+    lower-envelope samples are required. The fit is evaluated on the full
+    velocity grid. Negative residuals and noise-only spectra are retained.
+    ``none`` subtracts zero. ``read-ray`` retains the legacy line from the
+    first valid velocity to the interpolated power at +50 km/s.
+
+    Inputs must be matching 1D arrays. Invalid values and existing masks are
+    excluded from fitting and preserved in the returned masked arrays. Plain
+    arrays return plain arrays, with invalid samples represented as NaN.
+    """
+    import numpy as np
+
+    v = np.ma.asarray(velocity, dtype=float)
+    p = np.ma.asarray(power, dtype=float)
+    if v.ndim != 1 or p.shape != v.shape:
+        raise ValueError("Velocity and power must be matching one-dimensional arrays")
+    x, y = v.filled(np.nan), p.filled(np.nan)
+    invalid = np.ma.getmaskarray(v) | np.ma.getmaskarray(p) | ~np.isfinite(x) | ~np.isfinite(y)
+    valid = ~invalid
+    if fit_mask is not None:
+        selection = np.asarray(fit_mask, dtype=bool)
+        if selection.shape != x.shape:
+            raise ValueError("Baseline fit mask must match the spectrum shape")
+        valid &= selection
+    if method == "none":
+        baseline = np.zeros_like(y)
+    elif method in ("linear", "constant"):
+        if valid.sum() < 10:
+            raise ValueError("Baseline fitting requires at least ten valid fitting channels")
+        threshold = np.quantile(y[valid], .2)
+        points = valid & (y <= threshold)
+        if points.sum() < 3:
+            raise ValueError("Baseline fitting requires at least three lower-envelope samples")
+        if method == "linear":
+            if np.unique(x[points]).size < 2:
+                raise ValueError("Linear baseline requires distinct fitting velocities")
+            baseline = np.polyval(np.polyfit(x[points], y[points], 1), x)
+        else:
+            baseline = np.full_like(y, np.median(y[points]))
+    elif method == "read-ray":
+        indices = np.flatnonzero(~invalid)
+        indices = indices[np.argsort(x[indices])]
+        if not len(indices) or not x[indices[0]] < 50 <= x[indices[-1]]:
+            raise ValueError("Observation must span +50 km/s with a first channel below +50 km/s")
+        x0, y0 = x[indices[0]], y[indices[0]]
+        baseline = y0 + (np.interp(50., x[indices], y[indices]) - y0) * (x - x0) / (50. - x0)
+    else:
+        raise ValueError(f"Unknown observation baseline: {method}")
+    baseline[invalid] = np.nan
+    corrected = y - baseline
+    if np.ma.isMaskedArray(velocity) or np.ma.isMaskedArray(power):
+        return np.ma.array(corrected, mask=invalid), np.ma.array(baseline, mask=invalid)
+    return corrected, baseline

@@ -77,15 +77,16 @@ def test_lsr_plot_multiple_frequencies_retains_masks_and_power(tmp_path):
     display = ObsDisplay("lsr-test")
     display.scans = [scan, second]
     path = tmp_path / "lsrk.png"
-    figure = display.display_lsr(obs, str(path))
+    figure = display.display_lsr(obs, str(path), observation_baseline="none")
     try:
         axes = figure.axes[0]
-        assert len(axes.lines) == 3
+        assert len(axes.lines) == 4
         assert "LSRK" in axes.get_xlabel()
         assert "radio convention" in axes.get_xlabel()
         for line, source in zip(axes.lines[:2], [scan, second]):
             assert np.all(np.diff(line.get_xdata()) > 0)
-            np.testing.assert_array_equal(line.get_ydata().data, source.mpr[::-1])
+            valid = ~np.ma.getmaskarray(line.get_ydata())
+            np.testing.assert_array_equal(line.get_ydata().data[valid], source.mpr[::-1][valid])
             np.testing.assert_array_equal(np.ma.getmaskarray(line.get_ydata()), [False, False, False, True, False, False, False, True])
         assert path.read_bytes().startswith(b"\x89PNG")
     finally:
@@ -108,11 +109,11 @@ def test_lsr_csv_matches_plotted_samples_for_multiple_targets(tmp_path):
     display.scans = [scan, second]
     csv_path = tmp_path / "csv-test_vlsr.csv"
 
-    figure = display.display_lsr(obs, str(tmp_path / "lsrk.png"), csv_path=str(csv_path))
+    figure = display.display_lsr(obs, str(tmp_path / "lsrk.png"), csv_path=str(csv_path), observation_baseline="none")
     try:
         with csv_path.open(newline="", encoding="utf-8") as csv_file:
             reader = csv.DictReader(csv_file)
-            assert reader.fieldnames == ["target_id", "freq_scan", "velocity_km_s", "calibrated_power"]
+            assert reader.fieldnames == ["target_id", "freq_scan", "velocity_km_s", "calibrated_power", "baseline", "baseline_subtracted_power"]
             rows = list(reader)
         assert len(rows) == 16
         for index, target_id in enumerate([1, 2]):
@@ -142,3 +143,81 @@ def test_lsr_csv_is_not_created_when_no_scans_can_be_plotted(tmp_path):
         obs, str(tmp_path / "lsrk.png"), blacklist=["physical"], csv_path=str(csv_path),
     ) is None
     assert not csv_path.exists()
+
+
+def test_lsr_baselines_are_independent_and_csv_keeps_raw_powers(tmp_path, monkeypatch):
+    from obs import lsr
+    from util.convert import subtract_spectrum_baseline
+    obs, source = make_observation()
+    velocity = np.linspace(-100., 150., 251)
+    monkeypatch.setattr(lsr, "lsr_velocity", lambda *a: velocity)
+    monkeypatch.setattr(lsr, "scan_observing_context", lambda *a: (None, None, None))
+    scans = []
+    for target, freq, offset, slope, amplitude in [(1, 0, 10, .01, 2), (1, 1, 20, -.01, 4), (2, 0, 30, .02, 3)]:
+        model = SimpleNamespace(**{**vars(source.scan_model), "tgt_idx": target, "freq_scan": freq,
+                                   "spectral_resolution": len(velocity)})
+        power = offset + slope * velocity + amplitude * np.exp(-((velocity - 10) / 10)**2)
+        flags = empty_channel_flags(len(velocity))
+        power[20] = 10000  # Excluded RFI must never affect the fit.
+        flags[20] |= int(ChannelFlag.RFI_DETECTED)
+        power[21] = np.nan
+        scans.append(SimpleNamespace(scan_model=model, mpr=power, mpr_flags=flags))
+    originals = [s.mpr.copy() for s in scans]
+    display = ObsDisplay("baseline-test")
+    display.scans = scans
+    path = tmp_path / "baseline.csv"
+    figure = display.display_lsr(obs, str(tmp_path / "baseline.png"), csv_path=str(path))
+    try:
+        with path.open() as stream:
+            rows = list(csv.DictReader(stream))
+        for i, scan in enumerate(scans):
+            powers = np.ma.masked_invalid(scan.mpr)
+            powers.mask[20] = True
+            expected, baseline = subtract_spectrum_baseline(velocity, powers)
+            line = figure.axes[0].lines[i]
+            np.testing.assert_allclose(line.get_ydata().compressed(), expected.compressed())
+            np.testing.assert_array_equal(scan.mpr, originals[i])
+            target_rows = rows[i * 251:(i + 1) * 251]
+            for j, row in enumerate(target_rows):
+                assert row["target_id"] == str(scan.scan_model.tgt_idx)
+                assert row["freq_scan"] == str(scan.scan_model.freq_scan)
+                if j in [20, 21]:
+                    assert row["calibrated_power"] == row["baseline"] == row["baseline_subtracted_power"] == ""
+                else:
+                    assert float(row["calibrated_power"]) == scan.mpr[j]
+                    assert float(row["baseline"]) == baseline[j]
+                    assert float(row["baseline_subtracted_power"]) == expected[j]
+        assert "Baseline-subtracted" in figure.axes[0].get_ylabel()
+    finally:
+        plt.close(figure)
+
+
+def test_lsr_insufficient_baseline_does_not_silently_plot_raw(tmp_path, caplog):
+    obs, scan = make_observation()
+    display = ObsDisplay("too-short")
+    display.scans = [scan]
+    path = tmp_path / "short.png"
+    assert display.display_lsr(obs, str(path)) is None
+    assert not path.exists()
+    assert "target 1, frequency 0" in caplog.text
+
+
+def test_lsr_baseline_windows_exclude_emission(tmp_path, monkeypatch):
+    from obs import lsr
+    obs, scan = make_observation()
+    velocity = np.arange(-100., 151.)
+    monkeypatch.setattr(lsr, "lsr_velocity", lambda *a: velocity)
+    monkeypatch.setattr(lsr, "scan_observing_context", lambda *a: (None, None, None))
+    scan.scan_model.spectral_resolution = len(velocity)
+    baseline = 5 + .01 * velocity
+    scan.mpr = baseline.copy()
+    scan.mpr[(velocity >= -20) & (velocity <= 60)] += 3
+    scan.mpr_flags = empty_channel_flags(len(velocity))
+    display = ObsDisplay("windows")
+    display.scans = [scan]
+    fig = display.display_lsr(obs, str(tmp_path / "windows.png"), baseline_windows=[[-100, -30], [80, 150]])
+    try:
+        actual = fig.axes[0].lines[0].get_ydata()
+        np.testing.assert_allclose(actual, scan.mpr - baseline, atol=1e-12)
+    finally:
+        plt.close(fig)

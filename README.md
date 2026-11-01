@@ -11,3 +11,7 @@ Observations of known radio sources are conducted to characterise the performanc
 # Installation Instructions
 
 pip install -r src/requirements.txt
+
+## Documentation
+
+- [Observation Processing Tool (OPT): usage, baseline subtraction, and longitude–velocity plots](docs/opt.md)

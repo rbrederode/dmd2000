@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- OPT (`obs.opt`) now opens and saves a longitude–velocity (L–V) diagram after the velocity plot's Enter prompt. It uses target Galactic coordinates, native LSRK channels and baseline-subtracted power, with white/blue asinh colouring and labelled magenta contours. The view truncates columns to their shared valid velocity interval, preserves masked channels, separates frequency setups, and supports configurable contour levels and contour-only velocity smoothing. Added the OPT usage guide in `docs/opt.md`, linked from the README.
+
+- Observation velocity plots independently subtract a linear or constant lower-envelope baseline per target/frequency scan without amplitude scaling, using the shared `util.convert.subtract_spectrum_baseline` helper. Velocity CSV exports preserve original `calibrated_power` and add `baseline` and `baseline_subtracted_power`; fitting ranges and optional line-free windows are configurable.
+
+- LAB profiler can generate predicted L–V diagrams from a local LAB FITS cube at fixed Galactic latitude over configurable longitude offsets. Predictions support a requested final Gaussian beam with nominal native-beam correction, white/blue or inferno styling, brightness contours, colour stretches, and CSV/PNG/JSON outputs. Usage is documented in `docs/lab_profiler.md`.
+
 - HI4PI sweep fitting can optionally remove a constant or linear lower-envelope baseline from observation power before normalization, improving vertical alignment with the near-zero HI4PI survey baseline. Documented `--observation-baseline` usage in `docs/hi4pi.md`.
 
 - Combined HI4PI single-position extraction and Galactic-coordinate sweep fitting in `util/hi4pi.py`. The utility can generate beam-convolved HI4PI velocity plots or compare observation CSV spectra against a swept grid of convolved HI4PI profiles, with local cube reuse, cached downloads, RMS/correlation scoring, and best-fit plots. Added user documentation in `docs/hi4pi.md`.
@@ -29,11 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added `util.milkyway_plot` to show and save a scan's Galactic line of sight on the Milky Way illustration, using observation site, recording time and pointing metadata shared with `util.lab_profiler`.
 
-- LAB H I profile extraction is now an importable `util.lab_profiler` CLI using observation and scan metadata, with local survey reuse, automatic temporary download/extraction, CSV/PNG output, and corrected kelvin brightness scaling.
+- LAB H I profile extraction is an importable `util.lab_profiler` CLI using observation/scan metadata or direct Galactic coordinates, with local LAB cube reuse, Gaussian beam averaging, CSV/PNG/JSON output, and kelvin brightness scaling.
 
 - Observation processing displays and saves an additional H I LSRK velocity versus calibrated power plot using the radio Doppler convention after the aggregated SKY plots, supporting multiple frequency scans and fixed Alt/Az targets using original recording times.
 
-- Observation processing (`obs.opt`) automatically saves the plotted LSRK velocity and calibrated power samples to `<Obs id>_vlsr.csv` in the observation metadata directory. Columns are `target_id` (numeric target index), `freq_scan`, `velocity_km_s`, and `calibrated_power`; masked channels retain their velocity with a blank power value.
+- Observation processing (`obs.opt`) automatically saves LSRK velocity samples to `<Obs id>_vlsr.csv` in the observation metadata directory. Columns are `target_id` (numeric target index), `freq_scan`, `velocity_km_s`, `calibrated_power`, `baseline`, and `baseline_subtracted_power`; masked channels retain their velocity with blank power values.
 
 ## [1.1.0] - 2026-10-24 - First Light Milestone
 

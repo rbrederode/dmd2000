@@ -26,3 +26,12 @@ __pycache__/
 *.parquet
 de421.bsp
 duckdb-extensions
+
+# Lab Profiler generatored files
+lab_target*.csv
+lab_target*.json
+lab_predicted*.csv
+lab_predicted*.json
+
+# Numpy cache files
+*.npy
