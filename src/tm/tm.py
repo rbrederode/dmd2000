@@ -23,7 +23,7 @@ from api import protocol as dmd_protocol
 from api import tm_dig, tm_sdp, tm_dm, tm_ws
 from api.cmd_registry import CommandRegistry
 from env.app import App
-from env.events import ConnectEvent, DisconnectEvent, DataEvent, ConfigEvent, ObsEvent
+from env.events import ConnectEvent, DisconnectEvent, DataEvent, ConfigEvent, ObsEvent, ResponseEvent
 from ipc.message import AppMessage, APIMessage
 from ipc.action import Action
 from ipc.tcp_client import TCPClient
@@ -48,9 +48,15 @@ from util import log, util
 from util import cmd_app
 from util.timer import Timer, TimerManager
 from util.xbase import XBase, XStreamUnableToExtract, XUnknownEntity, XAPIValidationFailed, XSoftwareFailure
-from .webhook_handler import WebhookHandler
+from .web_api import WebAPIHandler
 
 logger = logging.getLogger("tm.tm")
+
+def _positive_int(value):
+    value = int(value)
+    if value < 1:
+        raise ValueError("must be at least 1")
+    return value
 
 class TelescopeManager(App):
 
@@ -122,6 +128,9 @@ class TelescopeManager(App):
         """ Specifies the digitiser's command line arguments.
         """
         super().add_args(arg_parser)
+
+        arg_parser.add_argument("--web_api_threads", type=_positive_int, default=4,
+                                help="Number of Waitress Web API worker threads (minimum: 1; default: 4)")
 
         arg_parser.add_argument("--dig_host", type=str, required=False, help="TCP server host to listen for Digitiser connections", default="localhost")
         arg_parser.add_argument("--dig_port", type=int, required=False, help="TCP server port to listen for Digitiser connections", default=50000) 
@@ -307,6 +316,11 @@ class TelescopeManager(App):
                     action.set_obs_transition(obs=obs, transition=ObsTransition.RESET)
 
         elif event.category.upper() == "CMD": # Command Event
+            rsp_future = getattr(event, "rsp_future", None)
+            # A request that timed out while queued can be cancelled before it
+            # starts. Once running, a timeout does not cancel a sent command.
+            if rsp_future is not None and not rsp_future.set_running_or_notify_cancel():
+                return action
             config = event.new_config or {}
             try:
                 if not isinstance(config, dict):
@@ -356,7 +370,7 @@ class TelescopeManager(App):
                 logger.info("Telescope Manager forwarding %s command to %s at %s:%s", command, command_system, host, port)
                 threading.Thread(
                     target=self._run_app_command,
-                    args=(argv, config.get("app")),
+                    args=(argv, config.get("app"), rsp_future),
                     name=f"tm-command-{command_system}",
                     daemon=True,
                 ).start()
@@ -369,6 +383,12 @@ class TelescopeManager(App):
             except (TypeError, ValueError) as exc:
                 message = f"Telescope Manager rejected command event: {exc}"
                 logger.error(self.set_last_err(message))
+                if rsp_future is not None and not rsp_future.done():
+                    rsp_future.set_result(ResponseEvent('error', str(exc), code='invalid_request'))
+            except Exception:
+                if rsp_future is not None and not rsp_future.done():
+                    rsp_future.set_result(ResponseEvent('error', 'TM could not dispatch command', code='dispatch_failed'))
+                raise
 
         else:
             logger.warning(f"Telescope Manager received unknown config event category {event.category}. Ignoring event.\n{event}")
@@ -1902,25 +1922,47 @@ class TelescopeManager(App):
 
         return action
 
-    def _run_app_command(self, argv: list[str], requested_app: str) -> None:
-        """Run cmd_app off the TM event-processing thread."""
+    def _run_app_command(self, argv: list[str], requested_app: str, rsp_future=None) -> None:
+        """Run cmd_app and complete the event result off the TM worker thread."""
+        result = ResponseEvent('error', 'Command failed before a response was received',
+                               code='command_failed')
         try:
-            status = cmd_app.main(argv)
+            responses = []
+            status = (cmd_app.main(argv, response_callback=responses.append)
+                      if rsp_future is not None else cmd_app.main(argv))
+            if responses:
+                response = responses[-1]
+                result = ResponseEvent(
+                    status='success' if status == 0 else 'error',
+                    message=response.get('message', 'Command response received'),
+                    payload={'app': requested_app, 'response': response},
+                    code=('timeout' if response.get('error') == 'timeout'
+                          else 'command_failed' if status != 0 else None),
+                )
             if status != 0:
                 message = (f"Telescope Manager failed to forward command to application '{requested_app}'")
                 logger.error(self.set_last_err(message))
-        except Exception as exc:
+        except (Exception, SystemExit) as exc:
             message = (f"Telescope Manager failed to forward command to application '{requested_app}': {exc}")
             logger.exception(self.set_last_err(message))
+        finally:
+            if rsp_future is not None and not rsp_future.done():
+                rsp_future.set_result(result)
 
 def main():
     tm = TelescopeManager()
     with tm.running(), ExitStack() as cleanup:
-        # Webhook inputs remain available in headless mode.
-        webhook_handler = WebhookHandler(event_queue=tm.get_queue(), host='127.0.0.1', port=5001)
-        cleanup.callback(webhook_handler.stop)
-        webhook_handler.start()
-        logger.info("Webhook handler initialized and running on port 5001")
+        # Web API inputs remain available in headless mode.
+        # Register a callback only: SDP arguments are read on each API request,
+        # including after a later SDP startup replaces tm.telmodel.sdp.
+        web_api = WebAPIHandler(
+            event_queue=tm.get_queue(), host='127.0.0.1', port=5001,
+            threads=tm.get_args().web_api_threads,
+            scan_store_provider=lambda: (tm.telmodel.sdp.app.arguments or {}).get('scan_store_dir'),
+        )
+        cleanup.callback(web_api.stop)
+        web_api.start()
+        logger.info("Web API handler initialized and running on port 5001")
 
         if tm.is_headless():
             logger.info("Telescope Manager running in headless mode; skipping ui initialization and updates.")

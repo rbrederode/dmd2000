@@ -6,6 +6,50 @@ from api.cmd_registry import CommandRegistry
 from util.cmd_app import build_arg_parser, construct_request, normalise_command_config
 
 
+@pytest.mark.parametrize('mode, expected_status', [
+    ('success', 0), ('rejected', 1), ('connection_timeout', 1), ('response_timeout', 1),
+])
+def test_main_delivers_response_to_in_process_caller_and_cleans_up(monkeypatch, mode, expected_status):
+    from unittest.mock import Mock
+    from util import cmd_app
+
+    real_driver = cmd_app.CommandUtilityDriver
+    drivers = []
+
+    def make_driver(*args, **kwargs):
+        driver = real_driver(*args, **kwargs)
+        drivers.append(driver)
+        return driver
+
+    client = Mock()
+    processor = Mock()
+    target_reply = {'msg_type': 'rsp', 'action_code': 'get', 'property': 'trace',
+                    'status': 'success' if mode == 'success' else 'error',
+                    'value': 'ON', 'message': 'Target result'}
+
+    def send(request):
+        if mode != 'response_timeout':
+            drivers[0]._process_response(target_reply)
+
+    client.send.side_effect = send
+    monkeypatch.setattr(cmd_app, 'CommandUtilityDriver', make_driver)
+    monkeypatch.setattr(cmd_app, 'TCPClient', Mock(return_value=client))
+    monkeypatch.setattr(cmd_app, 'AppProcessor', Mock(return_value=processor))
+    monkeypatch.setattr(cmd_app, '_wait_for_connection', lambda *_: mode != 'connection_timeout')
+    received = []
+    status = cmd_app.main(['--system', 'tm', '--port', '60002', '--timeout', '0.01',
+                           'get', 'trace'], response_callback=received.append)
+    assert status == expected_status
+    assert len(received) == 1
+    if 'timeout' in mode:
+        assert received[0]['error'] == 'timeout'
+    else:
+        assert received[0] == target_reply
+    client.stop.assert_called_once()
+    processor.stop.assert_called_once()
+    processor.join.assert_called_once()
+
+
 def parse(*command_args):
     registry = CommandRegistry.load(app_name=dmd_protocol.DM)
     return build_arg_parser(registry=registry).parse_args([

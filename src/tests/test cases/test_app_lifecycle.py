@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 import time
+from types import SimpleNamespace
 from unittest import mock
 
 import pytest
@@ -190,13 +191,20 @@ def test_headless_entry_points_use_shared_lifecycle(relative_path, constructor):
     app = lifecycle_app()
     app.is_headless = mock.Mock(return_value=True)
     app.get_queue = mock.Mock(return_value=Queue())
+    app.get_args = mock.Mock(return_value=SimpleNamespace(web_api_threads=10))
     app.start.side_effect = app.request_stop
     thread = mock.Mock()
     webhook = mock.Mock()
+    api_options = {}
+
+    def make_api(**kwargs):
+        api_options.update(kwargs)
+        return webhook
+
     namespace = {
         constructor: lambda: app,
         "logger": mock.Mock(), "threading": thread,
-        "WebhookHandler": lambda **kwargs: webhook, "ExitStack": ExitStack,
+        "WebAPIHandler": make_api, "ExitStack": ExitStack,
     }
     exec(compile(ast.Module(body=[main], type_ignores=[]), str(path), "exec"), namespace)
     with mock.patch("env.app.logging.shutdown") as shutdown:
@@ -206,5 +214,13 @@ def test_headless_entry_points_use_shared_lifecycle(relative_path, constructor):
     shutdown.assert_called_once_with()
     thread.Thread.assert_not_called()
     if constructor == "TelescopeManager":
+        assert api_options['threads'] == 10
         webhook.start.assert_called_once_with()
         webhook.stop.assert_called_once_with()
+        # TM started without even a telmodel on this stub: API registration
+        # must not evaluate the SDP provider. Later status replaces the model.
+        provider = api_options['scan_store_provider']
+        app.telmodel = SimpleNamespace(sdp=SimpleNamespace(app=SimpleNamespace(arguments=None)))
+        assert provider() is None
+        app.telmodel.sdp = SimpleNamespace(app=SimpleNamespace(arguments={'scan_store_dir': '/samples'}))
+        assert provider() == '/samples'

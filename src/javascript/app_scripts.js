@@ -5,9 +5,9 @@
 * Useful for debugging without manually editing the sheet.
 */
 function testOnEdit() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("ART");;
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("DM00X");;
   const e = {
-    range: sheet.getRange("D16"),
+    range: sheet.getRange("F11"),
     value: "TRUE"
   };
   onEditHandler(e);
@@ -33,44 +33,92 @@ const WEBHOOK_URL = 'https://webhook.dmd2000.org/webhook';
 const WEBHOOK_TOKEN = PropertiesService.getScriptProperties().getProperty('WEBHOOK_TOKEN');
 
 /**
- * Send POST request to webhook
+ * Send POST request and record its response in ART!A19:D19.
  */
 function sendWebhook(toSystem, jsonStr) {
+  const fromSystem = "UI";
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const art = spreadsheet.getSheetByName("ART");
 
-  const fromSystem = "UI"
+  if (!art) {
+    throw new Error("Sheet 'ART' was not found");
+  }
+
+  // The command's app identifies the target; toSystem is usually "CMD".
+  let appName = toSystem;
+  try {
+    const command = typeof jsonStr === "string"
+      ? JSON.parse(jsonStr)
+      : jsonStr;
+    appName = command.app || toSystem;
+  } catch (_) {
+    // Use toSystem when the message cannot be parsed locally.
+  }
 
   const payload = {
-    event: ('ALSTON-RT' + "." + fromSystem + "." + toSystem).toLowerCase(),
+    event: ("ALSTON-RT." + fromSystem + "." + toSystem).toLowerCase(),
     timestamp: new Date().toISOString(),
     message: jsonStr,
-    sheet_name: SpreadsheetApp.getActiveSheet().getName()
+    sheet_name: spreadsheet.getActiveSheet().getName()
   };
 
   const options = {
-    method: 'post',
-    contentType: 'application/json',
+    method: "post",
+    contentType: "application/json",
     headers: {
-      'X-Webhook-Token': WEBHOOK_TOKEN
+      "X-Webhook-Token": WEBHOOK_TOKEN
     },
     payload: JSON.stringify(payload),
     muteHttpExceptions: true
   };
-  
+
+  let status = "error";
+  let message = "";
+
   try {
+    art.getRange("A19:D19").clearContent();
+    SpreadsheetApp.flush();
+
     const response = UrlFetchApp.fetch(WEBHOOK_URL, options);
-    const responseCode = response.getResponseCode();
-    
-    if (responseCode === 200) {
-      console.log('Webhook sent successfully ALSTON-RT' + "." + fromSystem + "." + toSystem);
-      console.log(jsonStr);
-    } else {
-      console.error('Webhook failed with status:', responseCode);
-      console.error('Response:', response.getContentText());
+    const httpCode = response.getResponseCode();
+
+    let result;
+    try {
+      result = JSON.parse(response.getContentText());
+    } catch (_) {
+      throw new Error("HTTP " + httpCode + ": response was not valid JSON");
     }
-    
+
+    if (!result || !["success", "error"].includes(result.status)) {
+      throw new Error("HTTP " + httpCode + ": invalid response status");
+    }
+
+    status = result.status;
+    message = result.message || "";
+
+    // Treat an unsuccessful HTTP response as an error.
+    if (httpCode < 200 || httpCode >= 300) {
+      status = "error";
+      message = message || ("HTTP " + httpCode);
+    }
+
+    if (result.payload && result.payload.app) {
+      appName = result.payload.app;
+    }
+
+    console.log(JSON.stringify({ httpCode, appName, status, message }));
+
   } catch (error) {
-    console.error('Failed to send webhook:', error);
+    status = "error";
+    message = String(error.message || error);
+    console.error("Webhook failed:", message);
   }
+
+  art.getRange("A19:D19").setValues([
+    [appName, new Date(), status, message]
+  ]);
+  art.getRange("B19").setNumberFormat("yyyy-mm-dd hh:mm:ss");
+
 }
 
 /**
@@ -502,6 +550,33 @@ function onEditHandler(e) {
       jsonObj["app"] = sheet.getRange("A16").getValue()
       jsonObj["cmd"] = cmd;
       jsonObj["value"] = sheet.getRange("C16").getValue()
+      jsonObj["user_email"] = userEmail
+      jsonObj["created"] = {
+        "_type": "datetime",
+        "value": new Date().toISOString()
+      }
+      
+      // Reset the checkbox
+      sheet.getRange(row, col).setValue(false);
+      Logger.log(`Reset checkbox reset for row ${row}`);
+      
+      sendWebhook("cmd", JSON.stringify(jsonObj, null, 2));
+      return;
+    }
+  }
+
+  if (sheetName === "DM00X") {
+    
+    if (col === 6 && row === 11 && e.value === "TRUE") {
+      const jsonObj = {};
+
+      const cmd = "STOP";
+      Logger.log(`Sending command: ${cmd}`)
+
+      jsonObj["_type"] = "Command"
+      jsonObj["app"] = "DM"
+      jsonObj["cmd"] = cmd;
+      jsonObj["value"] = sheet.getRange("D1").getValue()
       jsonObj["user_email"] = userEmail
       jsonObj["created"] = {
         "_type": "datetime",

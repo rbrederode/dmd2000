@@ -4,7 +4,7 @@ from pathlib import Path
 from queue import Queue
 
 from obs import inject
-from tm.webhook_handler import WebhookHandler
+from tm.web_api import WebAPIHandler
 
 
 OBSERVATION_FILE = (
@@ -144,7 +144,7 @@ def test_main_reports_connection_failure(monkeypatch, capsys):
 
 def test_injection_payload_enters_tm_event_queue():
     event_queue = Queue()
-    handler = WebhookHandler(event_queue=event_queue)
+    handler = WebAPIHandler(event_queue=event_queue)
     payload, _ = inject.build_webhook_payload(OBSERVATION_FILE)
 
     response = handler.app.test_client().post("/webhook", json=payload)

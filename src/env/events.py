@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 
 import time
+from dataclasses import dataclass
+from typing import Literal
 
 from queue import Queue
 from datetime import datetime
@@ -246,9 +248,32 @@ class StatusUpdateEvent:
             f"Processing Time (ms)={self.get_current_processing_time()}, " + \
             f"Average Processing Time (ms)={self.get_average_processing_time()})"
 
+@dataclass(frozen=True)
+class ResponseEvent:
+    """Transport-independent result carried by an event's rsp_future.
+
+    code is an optional machine-readable error reason, never a transport status.
+    payload, when supplied, must contain JSON-serializable application data.
+    """
+
+    status: Literal['success', 'error']
+    message: str
+    payload: dict | None = None
+    code: str | None = None
+
+    def to_dict(self):
+        result = {'status': self.status, 'message': self.message}
+        if self.code is not None:
+            result['code'] = self.code
+        if self.payload is not None:
+            result['payload'] = self.payload
+        return result
+
+
 class ConfigEvent:
 
-    def __init__(self, category=None, old_config=None, new_config=None, timestamp=None):
+    def __init__(self, category=None, old_config=None, new_config=None, timestamp=None,
+                 rsp_future=None):
         """Initialize the config event with the given parameters.
 
         Parameters
@@ -256,11 +281,13 @@ class ConfigEvent:
             old_config: The old configuration data associated with the event
             new_config: The new configuration data associated with the event
             timestamp: Timestamp of the event
+            rsp_future: Optional in-process Future[ResponseEvent] for the result.
         """
         self.category = category
         self.old_config = old_config
         self.new_config = new_config
         self.timestamp = timestamp
+        self.rsp_future = rsp_future
 
     def __str__(self):
         """

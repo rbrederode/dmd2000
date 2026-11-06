@@ -291,7 +291,12 @@ def construct_request(args, api: CommandAPI) -> APIMessage:
     return request
 
 
-def main(argv=None) -> int:
+def main(argv=None, *, response_callback=None) -> int:
+    """Run a command; optionally deliver its protocol response to an in-process caller.
+
+    The callback receives a dict, including synthetic timeout errors when no
+    response arrives. The CLI's integer exit status remains unchanged.
+    """
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     preliminary_parser = argparse.ArgumentParser(add_help=False)
     preliminary_parser.add_argument("--system", choices=SUPPORTED_SYSTEMS)
@@ -336,6 +341,9 @@ def main(argv=None) -> int:
                 args.host,
                 args.port,
             )
+            if response_callback is not None:
+                response_callback({"status": "error", "error": "timeout",
+                                   "message": "Timed out connecting to target application"})
             return 1
 
         client.send(construct_request(args, driver.api))
@@ -345,9 +353,14 @@ def main(argv=None) -> int:
                 args.action,
                 args.system,
             )
+            if response_callback is not None:
+                response_callback({"status": "error", "error": "timeout",
+                                   "message": "Timed out waiting for command response; outcome is unknown"})
             return 1
 
         response = driver.response
+        if response_callback is not None:
+            response_callback(dict(response))
         value_text = ""
         if "value" in response:
             value_text = f" value={response['value']}"

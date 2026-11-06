@@ -1,3 +1,5 @@
+"""Standalone web server receiving external webhooks and forwarding them to TM."""
+
 from flask import Flask, request, jsonify, abort
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -7,6 +9,7 @@ import os
 import logging
 import requests
 from datetime import datetime
+from werkzeug.exceptions import HTTPException
 
 # Configure logging
 logging.basicConfig(
@@ -72,7 +75,7 @@ def validate_request():
     - Payload size is reasonable
     
     Raises:
-        400/401/403 HTTP errors if validation fails
+        400/401/413 HTTP errors if validation fails
     """
     # Check Content-Type
     if request.content_type and 'application/json' not in request.content_type:
@@ -90,18 +93,18 @@ def validate_request():
     
     if signature:
         # Get raw data for HMAC verification
+        payload = request.get_data()
         try:
-            payload = request.get_data()
-            if not verify_hmac_signature(payload, signature, WEBHOOK_SECRET):
-                logger.error(f"Invalid HMAC signature from {request.remote_addr}")
-                abort(401, description="Invalid signature")
-            logger.info(f"Valid HMAC signature verified from {request.remote_addr}")
-        except Exception as e:
-            logger.error(f"Error verifying HMAC from {request.remote_addr}: {e}")
+            valid_signature = verify_hmac_signature(payload, signature, WEBHOOK_SECRET)
+        except (ValueError, TypeError):
+            valid_signature = False
+        if not valid_signature:
+            logger.error("Invalid HMAC signature from %s", request.remote_addr)
             abort(401, description="Invalid signature")
+        logger.info("Valid HMAC signature verified from %s", request.remote_addr)
     elif token:
         # Check for simple token authentication as fallback
-        if token != WEBHOOK_SECRET:
+        if not hmac.compare_digest(token.encode('utf-8'), WEBHOOK_SECRET.encode('utf-8')):
             logger.error(f"Invalid token from {request.remote_addr}")
             abort(401, description="Invalid authentication")
     else:
@@ -112,16 +115,14 @@ def validate_request():
 def log_request():
     """Log all incoming requests for security monitoring."""
     logger.info(f"Request from {request.remote_addr}: {request.method} {request.path}")
-    logger.info(f"Headers: {dict(request.headers)}")
+    safe_headers = {
+        name: '[REDACTED]' if any(part in name.lower() for part in
+                                  ('token', 'authorization', 'cookie', 'signature', 'secret', 'api-key')) else value
+        for name, value in request.headers.items()
+    }
+    logger.info("Headers: %s", safe_headers)
     logger.info(f"Content-Type: {request.content_type}")
     logger.info(f"Content-Length: {request.content_length}")
-    if request.method == 'POST':
-        try:
-            raw_data = request.get_data()
-            logger.info(f"Raw data (bytes): {raw_data}")
-            logger.info(f"Raw data (string): {raw_data.decode('utf-8', errors='replace')}")
-        except Exception as e:
-            logger.error(f"Error reading raw data: {e}")
 
 @app.route('/webhook', methods=['POST'])
 @limiter.limit("100 per hour")
@@ -149,46 +150,97 @@ def webhook_receiver():
             logger.warning(f"JSON parsing error from {request.remote_addr}: {json_error}")
             abort(400, description="Invalid JSON payload")
         
-        if not data:
+        if not isinstance(data, dict) or not data:
             logger.warning(f"Empty payload from {request.remote_addr}")
-            abort(400, description="Empty payload")
+            abort(400, description="Send a non-empty JSON object")
         
         # Log successful webhook receipt
         logger.info(f"Valid webhook received from {request.remote_addr}")
-        logger.debug(f"Webhook data: {data}")
         
         # Forward webhook data to TM application
+        is_command = data.get('event') == 'alston-rt.ui.cmd'
         try:
             tm_response = requests.post(
                 'http://localhost:5001/webhook',
                 json=data,
-                timeout=5
+                timeout=20 if is_command else 5,
+                allow_redirects=False
             )
+            if is_command:
+                # Preserve TM's command result, including target rejection and
+                # timeout details, through the authenticated external endpoint.
+                try:
+                    result = tm_response.json()
+                except ValueError:
+                    return jsonify(status='error', message='Invalid command response from TM'), 502
+                if (not isinstance(result, dict) or 'status' not in result
+                        or tm_response.status_code not in (200, 400, 500, 502, 504)):
+                    return jsonify(status='error', message='Invalid command response from TM'), 502
+                return jsonify(result), tm_response.status_code
             
-            if tm_response.status_code == 200:
+            if 200 <= tm_response.status_code < 300:
                 logger.info("Successfully forwarded webhook to TM application")
             else:
-                logger.warning(f"TM application returned status {tm_response.status_code}: {tm_response.text}")
+                logger.warning("TM application returned status %s", tm_response.status_code)
+                return jsonify(status='error', message='Telescope Manager rejected the webhook',
+                               upstream_status=tm_response.status_code), 502
                 
-        except requests.exceptions.ConnectionError:
-            logger.error("Failed to connect to TM application at localhost:5001 - is it running?")
         except requests.exceptions.Timeout:
             logger.error("Timeout connecting to TM application")
-        except Exception as e:
-            logger.error(f"Error forwarding to TM application: {e}")
+            return jsonify(status='error', message='Telescope Manager request timed out'), 504
+        except requests.exceptions.ConnectionError:
+            logger.error("Failed to connect to TM application at localhost:5001 - is it running?")
+            return jsonify(status='error', message='Could not connect to Telescope Manager'), 502
+        except requests.exceptions.RequestException:
+            logger.error("Error forwarding to TM application")
+            return jsonify(status='error', message='Could not forward webhook to Telescope Manager'), 502
         
         return jsonify({
             'status': 'success',
-            'message': 'Webhook received and processed successfully',
+            'message': 'Webhook forwarded to Telescope Manager',
             'timestamp': datetime.utcnow().isoformat()
         }), 200
         
-    except Exception as e:
-        logger.error(f"Error processing webhook from {request.remote_addr}: {str(e)}")
+    except HTTPException as error:
+        return jsonify(status='error', message=error.description), error.code
+    except Exception:
+        logger.error("Error processing webhook from %s", request.remote_addr)
         return jsonify({
             'status': 'error',
             'message': 'Internal server error'
         }), 500
+
+@app.get('/api/observations')
+def observations():
+    """Authenticate catalogue requests and retrieve metadata from TM."""
+    try:
+        validate_request()
+    except HTTPException as error:
+        return jsonify(status='error', message=error.description), error.code
+    try:
+        query_options = ({'params': {'directory': request.args['directory']}}
+                         if 'directory' in request.args else {})
+        response = requests.get('http://localhost:5001/api/observations',
+                                timeout=5, allow_redirects=False, **query_options)
+    except requests.exceptions.Timeout:
+        return jsonify(status='error', message='Telescope Manager request timed out'), 504
+    except requests.exceptions.RequestException:
+        return jsonify(status='error', message='Could not connect to Telescope Manager'), 502
+    if response.status_code == 503:
+        return jsonify(status='error', message='Observation search directory is unavailable or not known to TM'), 503
+    if response.status_code == 400:
+        return jsonify(status='error', message='Invalid observation search directory'), 400
+    if response.status_code != 200:
+        return jsonify(status='error', message='Could not retrieve observations from Telescope Manager',
+                       upstream_status=response.status_code), 502
+    try:
+        payload = response.json()
+        if not isinstance(payload, dict) or not isinstance(payload.get('observations'), list):
+            raise ValueError('Invalid catalogue response')
+    except ValueError:
+        return jsonify(status='error', message='Invalid observation catalogue from Telescope Manager'), 502
+    return jsonify(payload)
+
 
 @app.route('/health', methods=['GET'])
 def health_check():

@@ -4,6 +4,16 @@
     "launches": [
         {
             "_type": "LaunchModel",
+            "app_name": "web",
+            "entity_id": "web001",
+            "env": {},
+            "program": "python",
+            "args": [
+                "-u", "-m", "web.web_server"
+            ]
+        },
+        {
+            "_type": "LaunchModel",
             "app_name": "dig",
             "entity_id": "dig001",
             "env": {},
