@@ -3,5 +3,5 @@ credentials-file: /Users/r.brederode/.cloudflared/8f05d360-d559-41ec-a716-5c8879
 
 ingress:
   - hostname: webhook.dmd2000.org
-    service: http://localhost:5001
+    service: http://localhost:8000
   - service: http_status:404

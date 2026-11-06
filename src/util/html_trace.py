@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import gzip
 import html
+import json
 import logging
 import os
 import re
@@ -196,6 +197,35 @@ class HTMLTrace:
                 f'<details class="message {direction_class}"><summary>{summary}</summary>'
                 f'<pre>{detail}</pre></details>\n',
                 allow_rollover=True,
+            )
+            self._message_count += 1
+
+    def log_http(self, direction: str, method: str, path: str, request_id: str,
+                 detail: dict, status: Optional[int] = None,
+                 timestamp: Optional[datetime] = None) -> None:
+        """Record HTTP traffic using the same expandable RX/TX presentation."""
+        with self._lock:
+            if not self._started:
+                return
+            timestamp = self._as_utc(timestamp)
+            self._rotate_if_needed(timestamp)
+            direction = direction.upper()
+            css_class = "rx" if direction == "RX" else "tx"
+            kind = "REQ" if direction == "RX" else "RSP"
+            metadata = f"request_id={request_id}"
+            if status is not None:
+                metadata += f" · status={status}"
+            summary = (
+                f'<time>{html.escape(self._format_timestamp(timestamp))}</time> '
+                f'<span class="direction">{direction}</span> '
+                f'<span class="kind">[HTTP {kind}]</span> '
+                f'{html.escape(method)} {html.escape(path)} '
+                f'<span class="meta">— {html.escape(metadata)}</span>'
+            )
+            body = html.escape(json.dumps(detail, indent=2, ensure_ascii=False))
+            self._write(
+                f'<details class="message {css_class}"><summary>{summary}</summary>'
+                f'<pre>{body}</pre></details>\n', allow_rollover=True,
             )
             self._message_count += 1
 

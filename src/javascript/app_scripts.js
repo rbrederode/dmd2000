@@ -33,7 +33,41 @@ const WEBHOOK_URL = 'https://webhook.dmd2000.org/webhook';
 const WEBHOOK_TOKEN = PropertiesService.getScriptProperties().getProperty('WEBHOOK_TOKEN');
 
 /**
- * Send POST request and record its response in ART!A19:D19.
+ * Decode an application reply, or describe an HTTP error from an intermediary.
+ * A gateway error does not tell us whether a submitted command was executed.
+ */
+function decodeWebhookResponse(httpCode, body) {
+  let result;
+  try {
+    result = JSON.parse(body);
+  } catch (_) {
+    result = null;
+  }
+
+  if (result && ["success", "error"].includes(result.status)
+      && typeof result.message === "string") {
+    return result;
+  }
+
+  const gatewayErrors = {
+    502: "Bad gateway",
+    503: "Service unavailable",
+    504: "Gateway timeout"
+  };
+  if (gatewayErrors[httpCode]) {
+    return {
+      status: "error",
+      code: httpCode === 504 ? "gateway_timeout" : "gateway_error",
+      message: "HTTP " + httpCode + ": " + gatewayErrors[httpCode]
+        + "; no application response was received. Command outcome is unknown."
+    };
+  }
+
+  throw new Error("HTTP " + httpCode + ": response was not valid ResponseEvent JSON");
+}
+
+/**
+ * Send POST request and record its response in ART!A20:D20.
  */
 function sendWebhook(toSystem, jsonStr) {
   const fromSystem = "UI";
@@ -76,22 +110,13 @@ function sendWebhook(toSystem, jsonStr) {
   let message = "";
 
   try {
-    art.getRange("A19:D19").clearContent();
+    art.getRange("A20:D20").clearContent();
     SpreadsheetApp.flush();
 
     const response = UrlFetchApp.fetch(WEBHOOK_URL, options);
     const httpCode = response.getResponseCode();
 
-    let result;
-    try {
-      result = JSON.parse(response.getContentText());
-    } catch (_) {
-      throw new Error("HTTP " + httpCode + ": response was not valid JSON");
-    }
-
-    if (!result || !["success", "error"].includes(result.status)) {
-      throw new Error("HTTP " + httpCode + ": invalid response status");
-    }
+    const result = decodeWebhookResponse(httpCode, response.getContentText());
 
     status = result.status;
     message = result.message || "";
@@ -114,10 +139,10 @@ function sendWebhook(toSystem, jsonStr) {
     console.error("Webhook failed:", message);
   }
 
-  art.getRange("A19:D19").setValues([
-    [appName, new Date(), status, message]
+  art.getRange("A20:D20").setValues([
+    [appName.toUpperCase(), new Date(), status, message]
   ]);
-  art.getRange("B19").setNumberFormat("yyyy-mm-dd hh:mm:ss");
+  art.getRange("B20").setNumberFormat("yyyy-mm-dd hh:mm:ss");
 
 }
 
@@ -536,20 +561,20 @@ function onEditHandler(e) {
 
   if (sheetName === "ART") {
 
-    if (col === 2 && row === 16 && e.value === "Resync") {
-      sheet.getRange("C16").clearContent()
+    if (col === 2 && row === 17 && e.value === "Resync") {
+      sheet.getRange("C17").clearContent()
     }
     
-    if (col === 4 && row === 16 && e.value === "TRUE") {
+    if (col === 4 && row === 17 && e.value === "TRUE") {
       const jsonObj = {};
 
-      const cmd = sheet.getRange("B16").getValue()
+      const cmd = sheet.getRange("B17").getValue()
       Logger.log(`Sending command: ${cmd}`)
 
       jsonObj["_type"] = "Command"
-      jsonObj["app"] = sheet.getRange("A16").getValue()
+      jsonObj["app"] = sheet.getRange("A17").getValue()
       jsonObj["cmd"] = cmd;
-      jsonObj["value"] = sheet.getRange("C16").getValue()
+      jsonObj["value"] = sheet.getRange("C17").getValue()
       jsonObj["user_email"] = userEmail
       jsonObj["created"] = {
         "_type": "datetime",
@@ -1059,7 +1084,8 @@ function generateObsList() {
     .getRange(targetCell.getRow(), targetCell.getColumn(), flattened.length, 2)
     .setValues(flattened);
 
-  return flattened;
+  // The sheet uses flattened rows, but the webhook needs the ObsList object.
+  return JSON.stringify(result);
 }
 
 /**

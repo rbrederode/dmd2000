@@ -1,6 +1,7 @@
 {
     "_type": "LaunchConfigModel",
     "profile": "rotation",
+    "scan_store_dir": "~/samples/rotation",
     "launches": [
         {
             "_type": "LaunchModel",
@@ -57,8 +58,7 @@
                 "--profile", "rotation",
                 "--entity_id", "sdp001",
                 "--tm_host", "192.168.50.1",
-                "--dig_host", "192.168.50.1",
-                "--scan_store_dir", "~/samples/rotation"
+                "--dig_host", "192.168.50.1"
             ]
         },
         {

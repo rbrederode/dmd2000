@@ -38,6 +38,7 @@ SUPPORTED_SYSTEMS = (
     dmd_protocol.WS,
     dmd_protocol.IMU,
     dmd_protocol.APP,
+    dmd_protocol.WEB,
 )
 COMMAND_PROPERTIES = (
     dmd_protocol.PROPERTY_TRACE,
@@ -192,6 +193,9 @@ class CommandUtilityDriver:
         return self._process_response(api_call)
 
     def process_app_msg(self, event, api_msg, api_call, payload):
+        return self._process_response(api_call)
+
+    def process_web_msg(self, event, api_msg, api_call, payload):
         return self._process_response(api_call)
 
 

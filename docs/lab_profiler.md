@@ -387,3 +387,52 @@ JSON records the actual colour limits, stretch, contour levels, longitude order
 and label convention for reproducibility. A 5-degree beam will still show
 broader structures than a higher-resolution survey illustration; styling does
 not restore spatial detail removed by beam convolution.
+
+
+## Complementary-error-function terminal edge
+
+Add `--terminal-method erfc --terminal-fit-range VMIN VMAX` to a profile
+comparison or sweep. With the default `--terminal-source auto`, the final plot
+fits both the observation and the best-matching LAB spectrum independently.
+Use `--terminal-source observation` or `lab` to fit only one. Sweep coordinate
+selection still uses the existing full-profile RMS score; the erfc fit measures
+the edge of the winning profile and does not change coordinate selection.
+
+For example (replace the CSV path, pointing and fit window for your observation):
+
+```bash
+python src/util/lab_profiler.py \
+  --lab-fits ~/github/lab-fit/lab.fit \
+  --file observation_vlsr.csv --target-id 3 --freq-scan 0 \
+  --lon 50 --lat 0 --beam 5 --sweep \
+  --lon-range '[-3,3,1]' --lat-range '[-3,3,1]' \
+  --vmin -100 --vmax 150 \
+  --terminal-method erfc --terminal-fit-range 30 120 \
+  --output lab_erfc.csv
+```
+
+The model is `B + A/2 * erfc((v - v_terminal)/(sqrt(2)*width))` with positive
+amplitude and width. `v_terminal` is the midpoint of the fitted falling step;
+`width` is its Gaussian dispersion in km/s. This is a model edge estimate,
+separate from the original noise-dependent 3-sigma crossing, which remains the
+default `--terminal-method threshold`.
+
+Choose a contiguous positive-velocity window covering the final falling wing
+and its line-free tail, excluding unrelated emission peaks. The window must lie
+inside the displayed velocity limits. The program requires at least 12 finite
+channels and rejects gaps or edges without enough coverage on both sides.
+Inspect the overlay and try nearby windows: a converged fit alone does not
+establish that a single erfc describes a blended profile.
+
+The observation is baseline-subtracted using the selected baseline method and
+fitted in its input power units, before display scaling. LAB is fitted in K.
+Plots show both fitted curves, edge velocities and their observation-minus-LAB
+difference. JSON stores each fit's status, parameters, residual RMS and formal
+covariance errors. Failed fits are labelled rather than given a velocity.
+Formal errors exclude baseline, beam, spectral-response and model uncertainties;
+a 5-degree beam can mix materially different terminal edges across longitudes.
+No instrumental-width or beam-smearing correction is applied to the fit.
+
+This optional single-component model is a first comparison tool, rather than a
+reproduction of the multi-component analysis in
+[McClure-Griffiths & Dickey (2007)](https://arxiv.org/abs/0708.0870).

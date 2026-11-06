@@ -1,9 +1,10 @@
-"""Inject an observation definition file into a running Telescope Manager."""
+"""Submit an observation definition to TM through the authenticated web app."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from datetime import datetime, timedelta, timezone
@@ -17,7 +18,8 @@ if __package__ in (None, ""):
 
 from models.oda import ObsList
 
-DEFAULT_URL = "http://127.0.0.1:5001/webhook"
+DEFAULT_URL = "http://127.0.0.1:8000/webhook"
+DEFAULT_TIMEOUT = 20.0
 
 """Match UTC time tokens such as ``{{NOW}}`` and ``{{NOW+5m}}``.
 
@@ -56,7 +58,7 @@ def replace_now_tokens(value, now: datetime | None = None):
     return replace(value)
 
 def build_webhook_payload(observation_file: str | Path, now: datetime | None = None) -> tuple[dict, list[str]]:
-    """Load, validate and wrap an observation file for the TM webhook.
+    """Load, validate and wrap an observation file for the web app's REST call.
         Params:
             observation_file: Path to the observation definition JSON file.
         Returns:
@@ -85,29 +87,40 @@ def build_webhook_payload(observation_file: str | Path, now: datetime | None = N
             },
             obs_ids)
 
-def inject_observation(observation_file: str | Path, url: str = DEFAULT_URL, timeout: float = 5.0) -> tuple[dict, list[str]]:
-    """POST an observation definition to a running TM webhook handler.
+def inject_observation(observation_file: str | Path, url: str = DEFAULT_URL,
+                       timeout: float = DEFAULT_TIMEOUT, token: str | None = None) -> tuple[dict, list[str]]:
+    """POST an observation definition to the web app and await TM's result.
         Params:
             observation_file: Path to the observation definition JSON file.
-            url: URL of the TM webhook handler (default: http://127.0.0.1:5001/webhook).
-            timeout: HTTP request timeout in seconds (default: 5).
+            url: Web app webhook URL (default: http://127.0.0.1:8000/webhook).
+            timeout: HTTP request timeout in seconds (default: 20).
+            token: Authentication token; defaults to WEBHOOK_SECRET.
         Returns:
-            A tuple containing the webhook payload and a list of observation IDs.
+            A tuple containing the ResponseEvent JSON and observation IDs.
     """
     
+    token = token if token is not None else os.getenv('WEBHOOK_SECRET')
+    if not token:
+        raise RuntimeError('Set WEBHOOK_SECRET or supply --token to authenticate with the web application')
     payload, obs_ids = build_webhook_payload(observation_file)
-    request = Request(url=url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST")
+    request = Request(url=url, data=json.dumps(payload).encode("utf-8"),
+                      headers={"Content-Type": "application/json", "X-Webhook-Token": token}, method="POST")
 
     with urlopen(request, timeout=timeout) as response:
         response_data = response.read().decode("utf-8")
 
     try:
-        result = json.loads(response_data) if response_data else {}
+        result = json.loads(response_data)
     except json.JSONDecodeError as exc:
-        raise RuntimeError(f"Telescope Manager returned invalid JSON: {response_data!r}") from exc
+        raise RuntimeError('Web application returned invalid JSON') from exc
+
+    if (not isinstance(result, dict) or result.get('status') not in ('success', 'error')
+            or not isinstance(result.get('message'), str)):
+        raise RuntimeError('Web application returned an invalid ResponseEvent')
 
     if result.get("status") != "success":
-        raise RuntimeError(f"Telescope Manager rejected the observation: {result}")
+        context = ', '.join(f'{key}={result[key]}' for key in ('code', 'request_id') if result.get(key))
+        raise RuntimeError(result['message'] + (f' ({context})' if context else ''))
 
     return result, obs_ids
 
@@ -119,7 +132,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             An argparse.Namespace object containing the parsed arguments.
     """
     parser = argparse.ArgumentParser(
-        description="Inject an observation definition JSON file into a running Telescope Manager.",
+        description="Submit an observation definition JSON file to TM through the web application's REST endpoint.",
         epilog=(
             'UTC time tokens may be embedded in JSON strings, for example '
             '"obs_id": "ODT-{{NOW}}-dish001-1m". {{NOW}} is the injection '
@@ -128,8 +141,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     
     parser.add_argument("-f", "--file", required=True, type=Path, help="Observation definition JSON file (ObsModel, ObsList, or raw observation list).")
-    parser.add_argument("--url", default=DEFAULT_URL, help=f"Telescope Manager webhook URL (default: {DEFAULT_URL}).")
-    parser.add_argument("--timeout", default=5.0, type=float, help="HTTP request timeout in seconds (default: 5).")
+    parser.add_argument("--url", default=DEFAULT_URL, help=f"Web application webhook URL (default: {DEFAULT_URL}).")
+    parser.add_argument("--timeout", default=DEFAULT_TIMEOUT, type=float, help="HTTP request timeout in seconds (default: 20).")
+    parser.add_argument("--token", help="Web authentication token; defaults to the WEBHOOK_SECRET environment variable.")
 
     return parser.parse_args(argv)
 
@@ -137,23 +151,27 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
 
     try:
-        _, obs_ids = inject_observation(args.file, url=args.url, timeout=args.timeout)
+        result, obs_ids = inject_observation(args.file, url=args.url, timeout=args.timeout, token=args.token)
     except HTTPError as exc:
         response_body = exc.read().decode("utf-8", errors="replace")
-        print(f"Telescope Manager returned HTTP {exc.code}: {response_body}", file=sys.stderr)
+        print(f"Web application returned HTTP {exc.code}: {response_body}", file=sys.stderr)
         return 2
     except URLError as exc:
-        print(f"Could not connect to Telescope Manager at {args.url}: {exc.reason}", file=sys.stderr)
+        print(f"Could not connect to web application at {args.url}: {exc.reason}", file=sys.stderr)
+        return 2
+    except TimeoutError:
+        print('HTTP request timed out; observation submission outcome is unknown', file=sys.stderr)
         return 2
     except RuntimeError as exc:
-        print(f"Invalid response from Telescope Manager: {exc}", file=sys.stderr)
+        print(f"Observation submission failed: {exc}", file=sys.stderr)
         return 2
     except (OSError, ValueError) as exc:
         print(f"Failed to load observation file {args.file}: {exc}", file=sys.stderr)
         return 1
 
     obs_label = ", ".join(obs_ids) if obs_ids else "(empty observation list)"
-    print(f"Injected observation definition into Telescope Manager: {obs_label}")
+    print(f"Submitted observation definition through web application: {obs_label}")
+    print(result['message'])
     return 0
 
 if __name__ == "__main__":

@@ -13,6 +13,7 @@ from models.sdp import ScienceDataProcessorModel
 from models.proc import ProcessorModel
 from models.tm import TelescopeManagerModel
 from models.ws import WeatherStationModel
+from models.web import WebServerModel
 
 # The Telescope Model
 class TelescopeModel:
@@ -24,6 +25,7 @@ class TelescopeModel:
         - Digitiser Manager,
         - Science Data Processor, and the
         - Weather Station
+        - Web Server
         
     """
     def __init__(self):
@@ -33,6 +35,7 @@ class TelescopeModel:
         self.dsh_mgr = DishManagerModel(id="dshmgr001")             # Dish Manager (App) model
         self.dig_store = DigitiserList(list_id="diglist001")        # Digitiser store (just a list of digitisers)
         self.sdp = ScienceDataProcessorModel(sdp_id="sdp001")       # Science Data Processor (App) model
+        self.web_svr = WebServerModel(id="web001")                  # Web Server (App) model
         self.wtr_stn = WeatherStationModel(id="ws001")              # Weather Station (App) model
 
     def get_app_model_by_name(self, app_name: str) -> AppModel:
@@ -46,6 +49,7 @@ class TelescopeModel:
             "tm": self.tel_mgr,
             "dm": self.dsh_mgr,
             "sdp": self.sdp,
+            "web": self.web_svr,
             "ws": self.wtr_stn,
         }
         if requested in fixed_apps:
@@ -85,6 +89,7 @@ class TelescopeModel:
             "dsh_mgr": self.dsh_mgr.to_dict(),
             "dig_store": self.dig_store.to_dict(),
             "sdp": self.sdp.to_dict(),
+            "web_svr": self.web_svr.to_dict(),
             "wtr_stn": self.wtr_stn.to_dict()
 
         }

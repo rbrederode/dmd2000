@@ -1,6 +1,7 @@
 {
     "_type": "LaunchConfigModel",
     "profile": "patio",
+    "scan_store_dir": "~/samples",
     "launches": [
         {
             "_type": "LaunchModel",
@@ -44,8 +45,7 @@
                 "--profile", "patio",
                 "--entity_id", "sdp001",
                 "--tm_host", "127.0.0.1",
-                "--dig_host", "127.0.0.1",
-                "--scan_store_dir", "~/samples"
+                "--dig_host", "127.0.0.1"
             ]
         },
         {

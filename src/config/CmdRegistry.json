@@ -18,6 +18,7 @@
         "sdp": {"commands": {}},
         "ws": {"commands": {}},
         "imu": {"commands": {}},
-        "app": {"commands": {}}
+        "app": {"commands": {}},
+        "web": {"commands": {}}
     }
 }

@@ -70,7 +70,8 @@
                 "sdp_range": "TM_UI_API++!J2:K",
                 "odt_range": "TM_UI_API++!M2:N",
                 "oda_range": "TM_UI_API++!P2:Q",
-                "ws_range": "TM_UI_API++!S2:T"
+                "ws_range": "TM_UI_API++!S2:T",
+                "web_range": "TM_UI_API++!V2:W"
             },
             "poll_period": 30,
             "last_update": {

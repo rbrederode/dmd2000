@@ -386,10 +386,55 @@ def test_terminal_plot_and_metadata_use_observation(tmp_path, monkeypatch):
     assert any(line.get_color() == "black" and line.get_linestyle() == "--" for line in captured)
 
 
+def test_erfc_recovers_known_edge_and_is_scale_invariant():
+    v = np.linspace(10, 110, 501)
+    rng = np.random.default_rng(24)
+    t = lab.erfc_edge(v, .2, 12., 51., 7.) + rng.normal(0, .04, len(v))
+    fit = lab.fit_terminal_erfc(v, t, [10, 110])
+    scaled = lab.fit_terminal_erfc(v[::-1], 13*t[::-1], [10, 110])
+    assert fit["status"] == scaled["status"] == "fitted"
+    assert fit["velocity_lsr_kms"] == pytest.approx(51, abs=.1)
+    assert fit["width_kms"] == pytest.approx(7, abs=.1)
+    assert fit["velocity_formal_error_kms"] > 0
+    assert fit["velocity_lsr_kms"] == pytest.approx(scaled["velocity_lsr_kms"], abs=1e-5)
+
+
+def test_erfc_rejects_gaps_and_incomplete_wings():
+    v = np.linspace(10, 110, 501)
+    t = lab.erfc_edge(v, 0, 12, 51, 7)
+    assert lab.fit_terminal_erfc(v, t, [45, 55])["status"] == "unconstrained_edge"
+    t[250] = np.nan
+    assert lab.fit_terminal_erfc(v, t, [10, 110])["status"] == "gap_in_fit_window"
+    assert lab.fit_terminal_erfc(v[:5], t[:5], [10, 110])["status"] == "insufficient_channels"
+    assert lab.fit_terminal_erfc(v, np.ones_like(v), [10, 110])["status"] == "no_falling_edge"
+
+
+def test_erfc_plot_exports_both_native_amplitude_fits(tmp_path):
+    v = np.linspace(-100, 150, 501)
+    survey = lab.erfc_edge(v, 0, 20, 50, 7)
+    observed = lab.erfc_edge(v, .01, .4, 55, 8)
+    result = lab.FitResult(50, 0, 0, 0, .1, .9, v, survey)
+    args = lab.build_parser().parse_args([
+        "--lon", "50", "--lat", "0", "--file", "obs.csv", "--target-id", "3", "--freq-scan", "0",
+        "--terminal-method", "erfc", "--terminal-fit-range", "15", "110", "--vmax", "150",
+        "--no-show", "--output", str(tmp_path / "edge.csv")])
+    args.galactic = [50, 0]
+    context = lab.resolve_profile_context(args)
+    lab.plot_result(result, args, context, (v, observed, np.zeros_like(v)))
+    fit = json.loads((tmp_path / "edge.json").read_text())["terminal_velocity"]
+    assert fit["spectra"]["observation"]["amplitude"] == pytest.approx(.4)
+    assert fit["spectra"]["lab"]["amplitude"] == pytest.approx(20)
+    assert fit["observation_minus_lab_kms"] == pytest.approx(5)
+
+
 @pytest.mark.parametrize("options", [
     ["--terminal-sigma", "0"], ["--terminal-sigma", "nan"],
     ["--terminal-min-channels", "0"], ["--noise-range", "100", "50"],
     ["--noise-range", "nan", "50"], ["--terminal-source", "observation"],
+    ["--terminal-method", "erfc"],
+    ["--terminal-method", "erfc", "--terminal-fit-range", "-10", "80"],
+    ["--terminal-method", "erfc", "--terminal-fit-range", "80", "20"],
+    ["--terminal-method", "erfc", "--terminal-fit-range", "20", "150"],
 ])
 def test_invalid_terminal_options_fail_before_cube_access(options, monkeypatch):
     monkeypatch.setattr(lab, "LABGaussianExtractor", lambda *a: pytest.fail("No cube access"))

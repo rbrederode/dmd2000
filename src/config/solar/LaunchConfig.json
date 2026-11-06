@@ -1,6 +1,7 @@
 {
     "_type": "LaunchConfigModel",
     "profile": "solar",
+    "scan_store_dir": "~/samples/solar",
     "launches": [
         {
             "_type": "LaunchModel",
@@ -61,8 +62,7 @@
                 "--profile", "solar",
                 "--entity_id", "sdp001",
                 "--tm_host", "127.0.0.1",
-                "--dig_host", "192.168.0.7",
-                "--scan_store_dir", "~/samples/solar"
+                "--dig_host", "192.168.0.7"
             ]
         },
         {

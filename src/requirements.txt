@@ -7,6 +7,7 @@ astropy
 astroplan
 astroquery
 flask>=3.0.0
+waitress>=3.0.0
 flask-limiter>=3.5.0
 geopy
 gpiozero

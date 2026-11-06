@@ -303,6 +303,7 @@ class BaseModel:
         from models.tm import TelescopeManagerModel, ResourceAllocations, Allocation, AllocationState
         from models.ui import UIDriverType, UIDriver
         from models.ws import WeatherData, WeatherStation, WeatherSummary, WeatherStationList, WeatherStationModel, WeatherStationDriverType
+        from models.web import WebServerModel
         
         if isinstance(v, np.integer):
             return int(v)
@@ -315,7 +316,10 @@ class BaseModel:
 
             model_type = v["_type"]
 
-            if model_type == "Allocation":
+            if model_type == "WebServerModel":
+                return WebServerModel(**{key: BaseModel._deserialise(value)
+                                         for key, value in v.items() if key != '_type'})
+            elif model_type == "Allocation":
                 deserialized_fields = {k: BaseModel._deserialise(val) for k, val in v.items() if k != "_type"}
                 return Allocation(**deserialized_fields)
             elif model_type == "AltAz":

@@ -8,6 +8,7 @@ from pathlib import Path
 import socket
 import time
 import threading
+from concurrent.futures import Future
 from datetime import datetime, timezone
 
 # Import google api tools
@@ -20,10 +21,9 @@ from googleapiclient.http import HttpRequest
 
 # Import application modules
 from api import protocol as dmd_protocol
-from api import tm_dig, tm_sdp, tm_dm, tm_ws
-from api.cmd_registry import CommandRegistry
+from api import tm_dig, tm_sdp, tm_dm, tm_ws, tm_web
 from env.app import App
-from env.events import ConnectEvent, DisconnectEvent, DataEvent, ConfigEvent, ObsEvent, ResponseEvent
+from env.events import ConnectEvent, DisconnectEvent, DataEvent, ConfigEvent, ObsEvent, ResponseEvent, CallbackEvent
 from ipc.message import AppMessage, APIMessage
 from ipc.action import Action
 from ipc.tcp_client import TCPClient
@@ -43,9 +43,9 @@ from models.telescope import TelescopeModel
 from models.tm import ResourceType, AllocationState, ResourceAllocations, Allocation
 from models.ui import UIDriver, UIDriverType
 from models.ws import WeatherStationModel, WeatherSummary
+from models.web import WebServerModel
 from obs.oet import ObservationExecutionTool
 from util import log, util
-from util import cmd_app
 from util.timer import Timer, TimerManager
 from util.xbase import XBase, XStreamUnableToExtract, XUnknownEntity, XAPIValidationFailed, XSoftwareFailure
 from .web_api import WebAPIHandler
@@ -73,6 +73,16 @@ class TelescopeManager(App):
         # Keep the last reported hardware gain while a new measurement is pending.
         # Response timestamps identify which calibration request may resolve it.
         self._pending_auto_gain_requests = {}
+        self._web_connections = set()
+        self._web_connections_lock = threading.Lock()
+
+        self.web_api = tm_web.TM_WEB()
+        self.web_endpoint = TCPServer(description=dmd_protocol.WEB, queue=self.get_queue(),
+                                      host=self.get_args().web_host, port=self.get_args().web_port)
+        self.register_interface(dmd_protocol.WEB, self.web_api, self.web_endpoint, InterfaceType.APP_APP)
+        # Initialise Web application comms status.
+        self.telmodel.web_svr.tm_connected = CommunicationStatus.NOT_ESTABLISHED
+        self.telmodel.tel_mgr.web_connected = CommunicationStatus.NOT_ESTABLISHED
 
         # Observation Execution Tool is an internal component of the TM used to manage observation workflows
         self.oet = ObservationExecutionTool(telmodel=self.telmodel, tm=self)
@@ -129,6 +139,9 @@ class TelescopeManager(App):
         """
         super().add_args(arg_parser)
 
+        arg_parser.add_argument("--web_host", type=str, required=False, help="TCP server host to listen for Web Server connections", default="localhost")
+        arg_parser.add_argument("--web_port", type=int, required=False, help="TCP server port to listen for Web Server connections", default=50004)
+
         arg_parser.add_argument("--web_api_threads", type=_positive_int, default=4,
                                 help="Number of Waitress Web API worker threads (minimum: 1; default: 4)")
 
@@ -156,6 +169,7 @@ class TelescopeManager(App):
         self.dm_endpoint.connect()  # Client endpoint
         self.dig_endpoint.start()   # Server endpoint
         self.sdp_endpoint.connect() # Client endpoint
+        self.web_endpoint.start()
         if self.ws_endpoint is not None:
             self.ws_endpoint.connect()  # Client endpoint
 
@@ -201,10 +215,106 @@ class TelescopeManager(App):
 
         return action
 
+    def process_web_connected(self, event) -> Action:
+        """ Processes Web Server connected events. """
+
+        logger.info(f"Telescope Manager connected to Web Server: {event.remote_addr}")
+
+        with self._web_connections_lock:
+            if hasattr(event.remote_conn, 'fileno') and event.remote_conn.fileno() < 0:
+                return Action()
+            self._web_connections.add(event.remote_conn)
+
+            self.telmodel.web_svr.tm_connected = CommunicationStatus.ESTABLISHED
+            self.telmodel.tel_mgr.web_connected = CommunicationStatus.ESTABLISHED
+        return Action()
+
+    def process_web_disconnected(self, event) -> Action:
+        """ Processes Web Server disconnected events.
+        """
+        logger.info(f"Telescope Manager disconnected from Web Server: {event.remote_addr}")
+
+        with self._web_connections_lock:
+            self._web_connections.discard(event.remote_conn)
+
+            connected = (CommunicationStatus.ESTABLISHED if self._web_connections
+                         else CommunicationStatus.NOT_ESTABLISHED)
+            self.telmodel.web_svr.tm_connected = connected
+            self.telmodel.tel_mgr.web_connected = connected
+        return Action()
+
+    def process_web_msg(self, event, api_msg, api_call, payload) -> Action:
+        """ Processes api messages received on the Web Server service access point (SAP)
+            API messages are already translated and validated before being passed to this method.
+        """
+        logger.info(f"Telescope Manager received Web Server {api_call['msg_type']} msg, action code: {api_call['action_code']}, property: {api_call.get('property','')}")
+
+        if (api_call['msg_type'] == dmd_protocol.MSG_TYPE_ADV
+                and api_call['action_code'] == dmd_protocol.ACTION_CODE_SET
+                and api_call.get('property') == dmd_protocol.PROPERTY_STATUS):
+            model = WebServerModel.from_dict(api_call['value'])
+            model.last_update = datetime.fromisoformat(api_msg['timestamp'].replace('Z', '+00:00'))
+            with self._web_connections_lock:
+                if hasattr(event.remote_conn, 'fileno') and event.remote_conn.fileno() < 0:
+                    return Action()
+                self._web_connections.add(event.remote_conn)
+                model.tm_connected = CommunicationStatus.ESTABLISHED
+                self.telmodel.web_svr = model
+                self.telmodel.tel_mgr.web_connected = CommunicationStatus.ESTABLISHED
+            return Action()
+
+        if api_call['msg_type'] != 'req':
+            return Action()
+        if api_call['action_code'] != 'set':
+            return Action().set_msg_to_remote(tm_web.configuration_response(
+                api_msg, ResponseEvent('error', 'GET configuration is not implemented', code='invalid_request')))
+        value = api_call['value']
+        future = Future()
+
+        def completed(reply):
+            result = reply.result()
+            response = tm_web.configuration_response(api_msg, result)
+            # Preserve the originating socket; never reply to a different web client.
+            self.get_queue().put(CallbackEvent(
+                lambda: Action().set_msg_to_remote(response), local_sap=event.local_sap,
+                remote_conn=event.remote_conn, remote_addr=event.remote_addr))
+
+        future.add_done_callback(completed)
+        self.get_queue().put(ConfigEvent(
+            category=value['category'], old_config=value.get('old_config'), new_config=value['config'],
+            timestamp=datetime.fromisoformat(api_msg['timestamp'].replace('Z', '+00:00')),
+            rsp_future=future))
+        return Action()
+
+    def _validate_web_configuration(self, event):
+        """Reject invalid remote updates before mutating the live model."""
+        config = event.new_config
+        if not isinstance(config, dict):
+            raise ValueError('Configuration must be an object')
+        if event.category == 'DIG':
+            if not config.get('dig_id') or self.telmodel.dig_store.get_dig_by_id(config['dig_id']) is None:
+                raise ValueError('A known dig_id is required')
+        elif event.category == 'DSH':
+            if not config.get('dsh_id') or self.telmodel.dsh_mgr.get_dish_by_id(config['dsh_id']) is None:
+                raise ValueError('A known dsh_id is required')
+        elif event.category == 'ODT':
+            if config.get('_type') != 'ObsList' or not isinstance(config.get('obs_list'), list):
+                raise ValueError('ODT configuration requires an ObsList with an obs_list array')
+        elif event.category == 'OET':
+            if config.get('_type') != 'ObservationReset':
+                raise ValueError('Unsupported OET operation')
+            if not config.get('obs_id') or self.telmodel.oda.obs_store.get_obs_by_id(config['obs_id']) is None:
+                raise ValueError('A known obs_id is required')
+        else:
+            raise ValueError('Unsupported configuration category')
+
     def process_config(self, event: ConfigEvent) -> Action:
         """ Processes configuration update events.
         """
         logger.info(f"Telescope Manager received updated configuration: {event}")
+
+        if event.rsp_future is not None:
+            self._validate_web_configuration(event)
 
         action = Action()
 
@@ -314,81 +424,6 @@ class TelescopeManager(App):
                 # If the related observation was identified, trigger the workflow to move to ABORT
                 if obs is not None:
                     action.set_obs_transition(obs=obs, transition=ObsTransition.RESET)
-
-        elif event.category.upper() == "CMD": # Command Event
-            rsp_future = getattr(event, "rsp_future", None)
-            # A request that timed out while queued can be cancelled before it
-            # starts. Once running, a timeout does not cancel a sent command.
-            if rsp_future is not None and not rsp_future.set_running_or_notify_cancel():
-                return action
-            config = event.new_config or {}
-            try:
-                if not isinstance(config, dict):
-                    raise ValueError("Command configuration must be a JSON object")
-                app_name = str(config.get("app") or "").strip().lower()
-                app_model = self.telmodel.get_app_model_by_name(app_name)
-                command_system = (
-                    app_name
-                    if app_name in {
-                        dmd_protocol.TM,
-                        dmd_protocol.DM,
-                        dmd_protocol.SDP,
-                        dmd_protocol.WS,
-                    }
-                    else dmd_protocol.DIG
-                )
-                command_config_path = getattr(
-                    getattr(self, "command_registry", None),
-                    "source_path",
-                    None,
-                )
-                target_command_registry = CommandRegistry.load(
-                    app_name=command_system,
-                    path=command_config_path,
-                )
-                command, property_name, value = cmd_app.normalise_command_config(
-                    config,
-                    registry=target_command_registry,
-                )
-                host = app_model.app_cmd_host
-                port = app_model.app_cmd_port
-                if not host or port is None:
-                    raise ValueError(
-                        f"Target application '{config.get('app')}' has no command endpoint configured"
-                    )
-
-                argv = ["--host", str(host), "--port", str(port), "--system", command_system]
-                if command_config_path is not None:
-                    argv.extend(["--cmd_config", str(command_config_path)])
-                argv.append(command)
-
-                if property_name is not None:
-                    argv.append(property_name)
-                if value is not None:
-                    argv.append(str(value))
-
-                logger.info("Telescope Manager forwarding %s command to %s at %s:%s", command, command_system, host, port)
-                threading.Thread(
-                    target=self._run_app_command,
-                    args=(argv, config.get("app"), rsp_future),
-                    name=f"tm-command-{command_system}",
-                    daemon=True,
-                ).start()
-
-                # A STOP is safety-related. Abort any active observation using
-                # the dish immediately rather than waiting for the forwarded
-                # command response or the next Dish Manager status update.
-                if command_system == dmd_protocol.DM and command == "stop":
-                    self.abort_observations(dsh_id=value, action=action)
-            except (TypeError, ValueError) as exc:
-                message = f"Telescope Manager rejected command event: {exc}"
-                logger.error(self.set_last_err(message))
-                if rsp_future is not None and not rsp_future.done():
-                    rsp_future.set_result(ResponseEvent('error', str(exc), code='invalid_request'))
-            except Exception:
-                if rsp_future is not None and not rsp_future.done():
-                    rsp_future.set_result(ResponseEvent('error', 'TM could not dispatch command', code='dispatch_failed'))
-                raise
 
         else:
             logger.warning(f"Telescope Manager received unknown config event category {event.category}. Ignoring event.\n{event}")
@@ -501,7 +536,10 @@ class TelescopeManager(App):
             msg_type = api_call.get('msg_type', 'message')
             message_kind = "response" if msg_type == dmd_protocol.MSG_TYPE_RSP else "advice" if msg_type == dmd_protocol.MSG_TYPE_ADV else "message"
             message_scope = f"for dish {dsh_id}" if dsh_id is not None else "for the Dish Manager"
-            logger.error(f"Telescope Manager received error {message_kind} from Dish Manager {message_scope}.\n{api_call}")
+            message = f"Telescope Manager received error {message_kind} from Dish Manager {message_scope}."
+            if api_call.get('message'):
+                message += f" {api_call['message']}"
+            logger.error(message)
 
             # Note that the dsh_model can be None for some error messages (e.g. a status update message)
             if dsh_model is not None:
@@ -1922,43 +1960,16 @@ class TelescopeManager(App):
 
         return action
 
-    def _run_app_command(self, argv: list[str], requested_app: str, rsp_future=None) -> None:
-        """Run cmd_app and complete the event result off the TM worker thread."""
-        result = ResponseEvent('error', 'Command failed before a response was received',
-                               code='command_failed')
-        try:
-            responses = []
-            status = (cmd_app.main(argv, response_callback=responses.append)
-                      if rsp_future is not None else cmd_app.main(argv))
-            if responses:
-                response = responses[-1]
-                result = ResponseEvent(
-                    status='success' if status == 0 else 'error',
-                    message=response.get('message', 'Command response received'),
-                    payload={'app': requested_app, 'response': response},
-                    code=('timeout' if response.get('error') == 'timeout'
-                          else 'command_failed' if status != 0 else None),
-                )
-            if status != 0:
-                message = (f"Telescope Manager failed to forward command to application '{requested_app}'")
-                logger.error(self.set_last_err(message))
-        except (Exception, SystemExit) as exc:
-            message = (f"Telescope Manager failed to forward command to application '{requested_app}': {exc}")
-            logger.exception(self.set_last_err(message))
-        finally:
-            if rsp_future is not None and not rsp_future.done():
-                rsp_future.set_result(result)
 
 def main():
     tm = TelescopeManager()
     with tm.running(), ExitStack() as cleanup:
         # Web API inputs remain available in headless mode.
-        # Register a callback only: SDP arguments are read on each API request,
-        # including after a later SDP startup replaces tm.telmodel.sdp.
+        # Share the live model; API handlers read current submodels per request.
         web_api = WebAPIHandler(
             event_queue=tm.get_queue(), host='127.0.0.1', port=5001,
             threads=tm.get_args().web_api_threads,
-            scan_store_provider=lambda: (tm.telmodel.sdp.app.arguments or {}).get('scan_store_dir'),
+            telmodel=tm.telmodel,
         )
         cleanup.callback(web_api.stop)
         web_api.start()
@@ -2046,6 +2057,9 @@ def main():
 
                             tm_dict = tm.telmodel.tel_mgr.to_dict()
                             driver.instance.publish(tm_dict)
+
+                            web_dict = tm.telmodel.web_svr.to_dict()
+                            driver.instance.publish(web_dict)
 
                             odt = driver.instance.read_config("ObsList") if hasattr(driver.instance, "read_config") else None
                             if odt:

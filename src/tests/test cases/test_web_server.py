@@ -1,8 +1,9 @@
-"""Exercise authentication, log redaction and TM forwarding without network calls."""
+"""Exercise authentication, direct command dispatch and TCP configuration requests."""
 
 import hashlib
 import hmac
 import importlib.util
+import json
 import logging
 from pathlib import Path
 from types import SimpleNamespace
@@ -23,7 +24,7 @@ def server(monkeypatch, tmp_path):
     module.app.config['TESTING'] = True
     module.limiter.enabled = False
     post = Mock(return_value=SimpleNamespace(status_code=200))
-    monkeypatch.setattr(module.requests, 'post', post)
+    monkeypatch.setattr(requests, 'post', post)
     return module, module.app.test_client(), post
 
 
@@ -52,73 +53,176 @@ def test_credentials_and_payload_are_not_logged(server, caplog):
     with caplog.at_level(logging.DEBUG):
         response = client.post('/webhook', json={'event': 'test', 'message': 'private-payload'},
                                headers=headers)
-    assert response.status_code == 200
+    assert response.status_code == 400
     for value in [*headers.values(), 'private-payload']:
         assert value not in caplog.text
     assert '[REDACTED]' in caplog.text
 
 
-def test_valid_hmac_is_forwarded_without_logging_signature(server, caplog):
+def test_valid_hmac_submits_configuration_without_logging_signature(server, caplog):
+    from env.events import ResponseEvent
     module, client, post = server
-    body = b'{"event":"test"}'
+    runtime = SimpleNamespace(submit_configuration=Mock(return_value=(
+        ResponseEvent('success', 'Actions scheduled'), 'request-1')))
+    module.app.extensions['web_application'] = runtime
+    body = b'{"event":"alston-rt.ui.odt","message":{"_type":"ObsList","obs_list":[]}}'
     signature = hmac.new(module.WEBHOOK_SECRET.encode(), body, hashlib.sha256).hexdigest()
     with caplog.at_level(logging.INFO):
         response = client.post('/webhook', data=body, content_type='application/json',
                                headers={'X-Hub-Signature-256': 'sha256=' + signature})
     assert response.status_code == 200
     assert signature not in caplog.text
-    post.assert_called_once_with('http://localhost:5001/webhook', json={'event': 'test'},
-                                 timeout=5, allow_redirects=False)
+    runtime.submit_configuration.assert_called_once_with('ODT', {'_type': 'ObsList', 'obs_list': []})
+    post.assert_not_called()
 
 
-@pytest.mark.parametrize('error, status', [
-    (requests.exceptions.ConnectionError(), 502),
-    (requests.exceptions.Timeout(), 504),
-    (requests.exceptions.ConnectTimeout(), 504),
-    (requests.exceptions.RequestException(), 502),
-])
-def test_forwarding_errors_are_reported(server, error, status):
+@pytest.mark.parametrize('status, code', [(200, None), (400, 'invalid_request'),
+                                        (500, 'internal_error'), (200, 'command_failed'), (200, 'timeout')])
+def test_command_result_is_returned_without_contacting_tm_http(server, monkeypatch, status, code):
+    from env.events import ResponseEvent
+
     module, client, post = server
-    post.side_effect = error
-    response = client.post('/webhook', json={'event': 'test'},
-                           headers={'X-Webhook-Token': module.WEBHOOK_SECRET})
-    assert response.status_code == status
-    assert response.json['status'] == 'error'
-
-
-@pytest.mark.parametrize('upstream_status', [301, 400, 401, 500, 503])
-def test_tm_rejection_is_reported(server, upstream_status):
-    module, client, post = server
-    post.return_value.status_code = upstream_status
-    response = client.post('/webhook', json={'event': 'test'},
-                           headers={'X-Webhook-Token': module.WEBHOOK_SECRET})
-    assert response.status_code == 502
-    assert response.json['upstream_status'] == upstream_status
-    assert response.json['status'] == 'error'
-
-
-@pytest.mark.parametrize('status', [200, 400, 500, 502, 504])
-def test_command_result_is_preserved_through_proxy(server, status):
-    module, client, post = server
-    body = {'status': 'success' if status == 200 else 'error',
-            'request_id': 'test-request', 'response': {'message': 'Target reply'}}
-    post.return_value = SimpleNamespace(status_code=status, json=lambda: body)
+    result = ResponseEvent('success' if code is None else 'error', 'Target reply',
+                           payload={'app': 'TM', 'response': {'message': 'Target reply'}}, code=code)
+    execute = Mock(return_value=result)
+    monkeypatch.setattr(module.cmd_handler, 'execute', execute)
     payload = {'event': 'alston-rt.ui.cmd', 'message': {'app': 'TM', 'cmd': 'Trace'}}
     response = client.post('/webhook', json=payload,
                            headers={'X-Webhook-Token': module.WEBHOOK_SECRET})
     assert response.status_code == status
-    assert response.json == body
-    post.assert_called_once_with('http://localhost:5001/webhook', json=payload,
-                                 timeout=20, allow_redirects=False)
+    assert response.json['request_id']
+    assert {key: value for key, value in response.json.items() if key != 'request_id'} == result.to_dict()
+    execute.assert_called_once_with(payload['message'])
+    post.assert_not_called()
 
 
-@pytest.mark.parametrize('status, body', [(302, {}), (200, []), (200, {})])
-def test_invalid_command_upstream_result_is_502(server, status, body):
+@pytest.mark.parametrize('body', ['{broken', [], None])
+def test_invalid_command_message_is_400_without_contacting_tm(server, body):
     module, client, post = server
-    post.return_value = SimpleNamespace(status_code=status, json=lambda: body)
-    response = client.post('/webhook', json={'event': 'alston-rt.ui.cmd', 'message': {}},
+    response = client.post('/webhook', json={'event': 'alston-rt.ui.cmd', 'message': body},
                            headers={'X-Webhook-Token': module.WEBHOOK_SECRET})
-    assert response.status_code == 502
+    assert response.status_code == 400
+    assert response.json['code'] == 'invalid_request'
+    post.assert_not_called()
+
+
+def test_commands_require_authentication_before_execution(server, monkeypatch):
+    module, client, post = server
+    execute = Mock()
+    monkeypatch.setattr(module.cmd_handler, 'execute', execute)
+    response = client.post('/webhook', json={'event': 'alston-rt.ui.cmd',
+                                           'message': {'app': 'SDP', 'cmd': 'Resync'}})
+    assert response.status_code == 401
+    execute.assert_not_called()
+    post.assert_not_called()
+
+
+@pytest.mark.parametrize('category', ['dig', 'dsh', 'odt', 'oet'])
+def test_configuration_submits_to_web_application_without_tm_http(server, monkeypatch, category):
+    from env.events import ResponseEvent
+    module, client, post = server
+    runtime = SimpleNamespace(submit_configuration=Mock(return_value=(
+        ResponseEvent('success', 'Actions scheduled'), 'request-1')))
+    module.app.extensions['web_application'] = runtime
+    config = {'_type': 'Configuration'}
+    response = client.post('/webhook', json={
+        'event': 'alston-rt.ui.' + category, 'message': json.dumps(config),
+    }, headers={'X-Webhook-Token': module.WEBHOOK_SECRET})
+    assert response.status_code == 200
+    assert response.json['status'] == 'success'
+    assert response.json['request_id'] == 'request-1'
+    runtime.submit_configuration.assert_called_once_with(category.upper(), config)
+    post.assert_not_called()
+
+
+@pytest.mark.parametrize('encoded', [False, True])
+def test_flattened_observation_rows_are_rejected_before_tcp_submission(server, encoded):
+    module, client, post = server
+    runtime = SimpleNamespace(submit_configuration=Mock())
+    module.app.extensions['web_application'] = runtime
+    rows = [['_type', 'ObsList'], ['obs_list[0].obs_id', 'obs001']]
+    response = client.post('/webhook', json={
+        'event': 'alston-rt.ui.odt', 'message': json.dumps(rows) if encoded else rows,
+    }, headers={'X-Webhook-Token': module.WEBHOOK_SECRET})
+    assert response.status_code == 400
+    assert response.json['message'] == 'Configuration message must be an object'
+    runtime.submit_configuration.assert_not_called()
+    post.assert_not_called()
+
+
+def test_resync_uses_real_command_tcp_endpoint_without_tm_http(server, monkeypatch, tmp_path):
+    from queue import Queue
+    from api.cmd_api import CommandAPI
+    from env.app_processor import AppProcessor
+    from ipc.action import Action
+    from ipc.tcp_server import TCPServer
+    from models.app import AppModel
+    from models.comms import InterfaceType
+    from web.cmd_handler import CommandHandler
+
+    module, client, post = server
+    queue = Queue()
+    endpoint = TCPServer(description='cmd', queue=queue, host='127.0.0.1', port=0)
+    port = endpoint.server_socket.getsockname()[1]
+    api = CommandAPI(app_name='sdp')
+    resync = Mock(return_value=Action())
+    driver = SimpleNamespace(
+        app_model=AppModel(app_name='sdp', app_tracing=False),
+        get_interface=lambda _: (api, endpoint, InterfaceType.APP_APP),
+        set_last_err=lambda message: message,
+        process_resync=resync,
+    )
+    processor = AppProcessor(name='test-sdp-command-server', event_q=queue, driver=driver)
+    monkeypatch.setattr(module, 'cmd_handler', CommandHandler(
+        profile_dir=tmp_path, endpoint_overrides={'SDP': {'host': '127.0.0.1', 'port': port}},
+        timeout=2,
+    ))
+    endpoint.start()
+    processor.start()
+    try:
+        response = client.post('/webhook', json={
+            'event': 'alston-rt.ui.cmd',
+            'message': json.dumps({'app': 'SDP', 'cmd': 'Resync'}),
+        }, headers={'X-Webhook-Token': module.WEBHOOK_SECRET})
+        assert response.status_code == 200
+        assert response.json['status'] == 'success'
+        assert response.json['message'] == 'Application configuration resynchronised'
+        assert response.json['payload']['app'] == 'SDP'
+        assert response.json['payload']['response']['action_code'] == 'resync'
+        resync.assert_called_once_with()
+        post.assert_not_called()
+    finally:
+        processor.stop()
+        processor.join(timeout=3)
+        endpoint.stop()
+        endpoint.server_socket.close()
+
+
+def test_unavailable_tm_returns_json_timeout_from_real_command_client(server, monkeypatch, tmp_path):
+    import socket
+    from web.cmd_handler import CommandHandler
+
+    module, client, post = server
+    # Reserve a local port without listening: no running application can
+    # accidentally receive this RESYNC and connections are refused reliably.
+    with socket.socket() as unavailable:
+        unavailable.bind(('127.0.0.1', 0))
+        port = unavailable.getsockname()[1]
+        monkeypatch.setattr(module, 'cmd_handler', CommandHandler(
+            profile_dir=tmp_path,
+            endpoint_overrides={'TM': {'host': '127.0.0.1', 'port': port}}, timeout=0.05,
+        ))
+        response = client.post('/webhook', json={
+            'event': 'alston-rt.ui.cmd', 'message': {'app': 'TM', 'cmd': 'Resync'},
+        }, headers={'X-Webhook-Token': module.WEBHOOK_SECRET})
+    assert response.status_code == 200
+    assert response.is_json
+    assert response.json['status'] == 'error'
+    assert response.json['code'] == 'timeout'
+    assert response.json['message'] == 'Timed out connecting to target application'
+    assert response.json['payload']['app'] == 'TM'
+    assert response.json['request_id']
+    post.assert_not_called()
 
 
 @pytest.mark.parametrize('body', ['{broken', '[]', '{}'])
@@ -130,84 +234,122 @@ def test_invalid_payload_is_400_and_not_forwarded(server, body):
     post.assert_not_called()
 
 
-def test_catalogue_requires_authentication_before_contacting_tm(server, monkeypatch):
+def test_catalogue_requires_authentication_before_reading_storage(server, monkeypatch):
     module, client, _ = server
-    get = Mock()
-    monkeypatch.setattr(module.requests, 'get', get)
+    listing = Mock()
+    monkeypatch.setattr(module, 'list_observations', listing)
     for headers in [{}, {'X-Webhook-Token': 'wrong'}]:
         assert client.get('/api/observations', headers=headers).status_code == 401
-    get.assert_not_called()
+    listing.assert_not_called()
 
 
-def test_catalogue_proxy_end_to_end(server, monkeypatch, tmp_path):
-    from queue import Queue
-    from tm.web_api import WebAPIHandler
-
+def test_catalogue_reads_profile_storage_without_tm(server, monkeypatch, tmp_path):
+    from models.launch import LaunchConfigModel
     module, client, _ = server
-    (tmp_path / 'obs001-obs.json').write_text('{"_type":"ObsModel", "obs_id":"obs001"}')
-    tm = WebAPIHandler(Queue(), scan_store_provider=lambda: tmp_path).app.test_client()
-
-    def forward(url, **kwargs):
-        assert url == 'http://localhost:5001/api/observations'
-        assert kwargs == {'timeout': 5, 'allow_redirects': False}
-        response = tm.get('/api/observations')
-        return SimpleNamespace(status_code=response.status_code, json=lambda: response.json)
-
-    monkeypatch.setattr(module.requests, 'get', forward)
+    store = tmp_path / 'recordings'
+    store.mkdir()
+    (store / 'obs001-obs.json').write_text('{"_type":"ObsModel", "obs_id":"obs001"}')
+    (tmp_path / 'LaunchConfig.json').write_text(json.dumps(
+        LaunchConfigModel(profile='test', scan_store_dir=str(store)).to_dict()))
+    monkeypatch.setattr(module.cmd_handler, 'profile_dir', tmp_path)
+    network = Mock(side_effect=AssertionError('Catalogue must not contact TM'))
+    monkeypatch.setattr(requests, 'get', network)
     response = client.get('/api/observations', headers={'X-Webhook-Token': module.WEBHOOK_SECRET})
     assert response.status_code == 200
-    assert response.json['count'] == 1
-    assert response.json['observations'][0]['id'] == 'obs001'
+    assert response.json['payload']['count'] == 1
+    assert response.json['payload']['observations'][0]['id'] == 'obs001'
+    network.assert_not_called()
 
 
-@pytest.mark.parametrize('error, status', [
-    (requests.exceptions.ConnectionError(), 502),
-    (requests.exceptions.Timeout(), 504),
+@pytest.mark.parametrize('directory, status, code', [
+    ('', 400, 'invalid_request'), ('missing', 503, 'directory_unavailable'),
 ])
-def test_catalogue_proxy_connection_errors(server, monkeypatch, error, status):
+def test_catalogue_invalid_explicit_directory_does_not_fall_back(server, directory, status, code):
     module, client, _ = server
-    monkeypatch.setattr(module.requests, 'get', Mock(side_effect=error))
-    response = client.get('/api/observations', headers={'X-Webhook-Token': module.WEBHOOK_SECRET})
+    response = client.get('/api/observations', query_string={'directory': directory},
+                          headers={'X-Webhook-Token': module.WEBHOOK_SECRET})
     assert response.status_code == status
-    assert response.json['status'] == 'error'
+    assert response.json['code'] == code
 
 
-@pytest.mark.parametrize('upstream_status, payload, expected', [
-    (400, {}, 400), (503, {}, 503), (500, {}, 502), (302, {}, 502), (200, [], 502), (200, {}, 502),
-])
-def test_catalogue_proxy_upstream_errors(server, monkeypatch, upstream_status, payload, expected):
+def test_catalogue_missing_default_returns_response_event(server, monkeypatch, tmp_path):
     module, client, _ = server
-    get = Mock(return_value=SimpleNamespace(status_code=upstream_status, json=lambda: payload))
-    monkeypatch.setattr(module.requests, 'get', get)
+    monkeypatch.setattr(module.cmd_handler, 'profile_dir', tmp_path)
     response = client.get('/api/observations', headers={'X-Webhook-Token': module.WEBHOOK_SECRET})
-    assert response.status_code == expected
+    assert response.status_code == 503
+    assert response.json['code'] == 'store_not_known'
 
 
-def test_catalogue_proxy_forwards_explicit_directory_and_returns_nested_folders(server, monkeypatch, tmp_path):
-    from queue import Queue
-    from tm.web_api import WebAPIHandler
-
+def test_catalogue_explicit_directory_overrides_runtime_default(server, tmp_path):
     module, client, _ = server
     root = tmp_path / 'Observation archive'
     nested = root / '2026' / 'November'
     nested.mkdir(parents=True)
     (nested / 'obs001-obs.json').write_text('{"_type":"ObsModel", "obs_id":"obs001"}')
-    tm = WebAPIHandler(Queue()).app.test_client()
-
-    def forward(url, **kwargs):
-        assert url == 'http://localhost:5001/api/observations'
-        assert kwargs == {'params': {'directory': str(root)}, 'timeout': 5, 'allow_redirects': False}
-        response = tm.get('/api/observations', query_string=kwargs['params'])
-        return SimpleNamespace(status_code=response.status_code, json=lambda: response.json)
-
-    get = Mock(side_effect=forward)
-    monkeypatch.setattr(module.requests, 'get', get)
-    # Authentication is still checked before a client-supplied path is forwarded.
-    response = client.get('/api/observations', query_string={'directory': str(root)})
-    assert response.status_code == 401
-    get.assert_not_called()
+    module.app.extensions['web_application'] = SimpleNamespace(scan_store_dir='missing-default')
     response = client.get('/api/observations', query_string={'directory': str(root)},
                           headers={'X-Webhook-Token': module.WEBHOOK_SECRET})
     assert response.status_code == 200
-    assert response.json['count'] == 1
-    assert response.json['observations'][0]['folder'] == '2026/November'
+    assert response.json['payload']['count'] == 1
+    assert response.json['payload']['observations'][0]['folder'] == '2026/November'
+
+
+def test_catalogue_uses_runtime_storage_default(server, tmp_path):
+    module, client, _ = server
+    module.app.extensions['web_application'] = SimpleNamespace(scan_store_dir=str(tmp_path))
+    response = client.get('/api/observations', headers={'X-Webhook-Token': module.WEBHOOK_SECRET})
+    assert response.status_code == 200
+    assert response.json['payload'] == {'count': 0, 'observations': []}
+
+
+def test_http_catalogue_trace_records_request_response_and_redacts_credentials(server, tmp_path):
+    import html
+    import re
+    from util.html_trace import HTMLTrace
+    module, client, _ = server
+    trace = HTMLTrace(tmp_path / 'trace', 'web', 'test')
+    trace.start()
+    module.app.extensions['web_application'] = SimpleNamespace(
+        scan_store_dir=str(tmp_path), trace=trace,
+        app_model=SimpleNamespace(app_tracing=True))
+    response = client.get('/api/observations', headers={
+        'X-Webhook-Token': module.WEBHOOK_SECRET, 'Authorization': 'Bearer private-value'})
+    trace.stop()
+    assert response.status_code == 200
+    content = html.unescape(trace.path.read_text())
+    assert '[HTTP REQ]' in content and '[HTTP RSP]' in content
+    assert 'GET /api/observations' in content
+    assert 'status=200' in content and 'elapsed_ms' in content
+    assert 'Found 0 observations' in content
+    ids = re.findall(r'request_id=([a-f0-9]+)', content)
+    assert len(ids) == 2 and ids[0] == ids[1]
+    assert module.WEBHOOK_SECRET not in content
+    assert 'private-value' not in content
+    assert '[REDACTED]' in content
+
+
+@pytest.mark.parametrize('enabled', [True, False])
+def test_http_trace_authentication_errors_and_disabled_tracing(server, tmp_path, enabled):
+    from util.html_trace import HTMLTrace
+    module, client, _ = server
+    trace = HTMLTrace(tmp_path / 'trace', 'web', 'test')
+    trace.start()
+    module.app.extensions['web_application'] = SimpleNamespace(
+        trace=trace, app_model=SimpleNamespace(app_tracing=enabled))
+    response = client.get('/api/observations', headers={'X-Webhook-Token': 'wrong-token'})
+    trace.stop()
+    assert response.status_code == 401
+    content = trace.path.read_text()
+    assert ('[HTTP REQ]' in content) == enabled
+    assert ('status=401' in content) == enabled
+    assert 'wrong-token' not in content
+
+
+def test_http_trace_failure_does_not_break_response(server, tmp_path):
+    module, client, _ = server
+    module.app.extensions['web_application'] = SimpleNamespace(
+        scan_store_dir=str(tmp_path), app_model=SimpleNamespace(app_tracing=True),
+        trace=SimpleNamespace(is_started=True, log_http=Mock(side_effect=OSError('disk failure'))))
+    response = client.get('/api/observations', headers={'X-Webhook-Token': module.WEBHOOK_SECRET})
+    assert response.status_code == 200
+    assert response.json['status'] == 'success'

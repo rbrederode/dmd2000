@@ -1,7 +1,23 @@
 {
     "_type": "LaunchConfigModel",
     "profile": "local",
+    "scan_store_dir": "~/samples/local",
     "launches": [
+        {
+            "_type": "LaunchModel",
+            "app_name": "web",
+            "entity_id": "web001",
+            "env": {},
+            "program": "python",
+            "args": [
+                "-u", "-m", "web.web_server",
+                "--profile", "local",
+                "--entity_id", "web001",
+                "--tm_host", "127.0.0.1",
+                "--tm_port", "50004",
+                "--http_port", "8000"
+            ]
+        },
         {
             "_type": "LaunchModel",
             "app_name": "dig",
@@ -57,8 +73,7 @@
                 "--profile", "local",
                 "--entity_id", "sdp001",
                 "--tm_host", "127.0.0.1",
-                "--dig_host", "127.0.0.1",
-                "--scan_store_dir", "~/samples/local"
+                "--dig_host", "127.0.0.1"
             ]
         },
         {
@@ -71,6 +86,8 @@
                 "-m", "tm.tm",
                 "--profile", "local",
                 "--entity_id", "tm001",
+                "--web_host", "127.0.0.1",
+                "--web_port", "50004",
                 "--dig_host", "127.0.0.1",
                 "--sdp_host", "127.0.0.1",
                 "--dm_host", "127.0.0.1",

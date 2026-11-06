@@ -192,6 +192,7 @@ def test_headless_entry_points_use_shared_lifecycle(relative_path, constructor):
     app.is_headless = mock.Mock(return_value=True)
     app.get_queue = mock.Mock(return_value=Queue())
     app.get_args = mock.Mock(return_value=SimpleNamespace(web_api_threads=10))
+    app.telmodel = SimpleNamespace(sdp=SimpleNamespace(app=SimpleNamespace(arguments=None)))
     app.start.side_effect = app.request_stop
     thread = mock.Mock()
     webhook = mock.Mock()
@@ -217,10 +218,59 @@ def test_headless_entry_points_use_shared_lifecycle(relative_path, constructor):
         assert api_options['threads'] == 10
         webhook.start.assert_called_once_with()
         webhook.stop.assert_called_once_with()
-        # TM started without even a telmodel on this stub: API registration
-        # must not evaluate the SDP provider. Later status replaces the model.
-        provider = api_options['scan_store_provider']
-        app.telmodel = SimpleNamespace(sdp=SimpleNamespace(app=SimpleNamespace(arguments=None)))
-        assert provider() is None
-        app.telmodel.sdp = SimpleNamespace(app=SimpleNamespace(arguments={'scan_store_dir': '/samples'}))
-        assert provider() == '/samples'
+        assert api_options['telmodel'] is app.telmodel
+        assert api_options['event_queue'] is app.get_queue.return_value
+
+
+def test_status_thread_exits_on_shutdown_before_cleanup_clears_running(caplog):
+    app = lifecycle_app()
+    app.app_model.app_running = True
+    app.status_update_event = mock.Mock()
+    app.status_update_event.is_update_pending.return_value = False
+    app.heartbeat = mock.Mock()
+    app.report_availability = mock.Mock()
+    waits = []
+
+    def wait(timeout):
+        waits.append(timeout)
+        app.status_update_event.is_update_pending.return_value = True
+        app.request_stop()
+        # A second iteration would reproduce the old busy loop. Bound this test.
+        if len(waits) > 1:
+            app.app_model.app_running = False
+        return True
+
+    app.wait_for_stop = wait
+    with caplog.at_level('INFO', logger='env.app'):
+        app.run()
+    assert app.app_model.app_running  # Main-thread cleanup has not started yet.
+    assert waits == [30]
+    app.status_update_event.enqueue.assert_called_once_with(app.queue)
+    app.heartbeat.assert_called_once_with()
+    assert 'Debug Info' not in caplog.text
+
+
+def test_status_thread_does_no_work_when_shutdown_already_requested():
+    app = lifecycle_app()
+    app.app_model.app_running = True
+    app.heartbeat = mock.Mock()
+    app.request_stop()
+    app.run()
+    app.heartbeat.assert_not_called()
+
+
+def test_status_thread_preserves_pending_update_diagnostics(caplog):
+    app = lifecycle_app()
+    app.app_model.app_running = True
+    app.status_update_event = mock.Mock()
+    app.status_update_event.is_update_pending.return_value = True
+    app.status_update_event.get_dequeued_count.return_value = 1
+    app.status_update_event.get_millis_since_update_enqueued.return_value = 30000
+    app.processors = []
+    app.heartbeat = mock.Mock()
+    app.report_availability = mock.Mock()
+    app.wait_for_stop = lambda timeout: (app.request_stop() or True)
+    with caplog.at_level('INFO', logger='env.app'):
+        app.run()
+    assert 'Debug Info' in caplog.text
+    assert 'pending for 30000 ms' in caplog.text

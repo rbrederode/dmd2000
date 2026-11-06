@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import time
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Literal
 
@@ -12,6 +13,21 @@ from util.xbase import XSoftwareFailure
 
 import logging
 logger = logging.getLogger(__name__)
+
+# Scoped to the processor thread; unrelated errors cannot affect another request.
+current_config_event = ContextVar('current_config_event', default=None)
+
+
+@dataclass
+class CallbackEvent:
+    """Schedule a local action-producing callback on an application processor."""
+
+    callback: object
+    user_ref: object = None
+    local_sap: object = None
+    remote_conn: object = None
+    remote_addr: object = None
+    lock: object = None
 
 class ConnectEvent:
 
@@ -250,7 +266,7 @@ class StatusUpdateEvent:
 
 @dataclass(frozen=True)
 class ResponseEvent:
-    """Transport-independent result carried by an event's rsp_future.
+    """Transport-independent application result.
 
     code is an optional machine-readable error reason, never a transport status.
     payload, when supplied, must contain JSON-serializable application data.
@@ -281,13 +297,14 @@ class ConfigEvent:
             old_config: The old configuration data associated with the event
             new_config: The new configuration data associated with the event
             timestamp: Timestamp of the event
-            rsp_future: Optional in-process Future[ResponseEvent] for the result.
+            rsp_future: Optional future resolved after handling and action scheduling.
         """
         self.category = category
         self.old_config = old_config
         self.new_config = new_config
         self.timestamp = timestamp
         self.rsp_future = rsp_future
+        self.rsp_result = None
 
     def __str__(self):
         """

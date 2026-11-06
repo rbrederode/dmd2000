@@ -58,7 +58,9 @@
                 "dsh_range": "TM_UI_API++!G2",
                 "sdp_range": "TM_UI_API++!J2",
                 "odt_range": "TM_UI_API++!M2",
-                "oda_range": "TM_UI_API++!P2"
+                "oda_range": "TM_UI_API++!P2",
+                "ws_range": "TM_UI_API++!S2",
+                "web_range": "TM_UI_API++!V2"
             },
             "poll_period": 30,
             "last_update": {

@@ -190,6 +190,9 @@ class App:
         return self.app_model.last_err_dt
 
     def set_last_err(self, err_msg: str, err_dt: datetime=None) -> str:
+        config_event = events.current_config_event.get()
+        if config_event is not None and config_event.rsp_future is not None:
+            config_event.rsp_result = events.ResponseEvent('error', err_msg, code='configuration_failed')
         self.app_model.last_err_msg = err_msg
         self.app_model.last_err_dt = err_dt if err_dt is not None else datetime.now(timezone.utc)
 
@@ -292,7 +295,7 @@ class App:
 
     def run(self):
         
-        while self.app_model.app_running:
+        while self.app_model.app_running and not self.stop_requested:
             try:
                 logger.info(f"App {self.app_model.app_name} status thread checking status update event {self.status_update_event}")
                 
@@ -302,6 +305,9 @@ class App:
                 now = datetime.now(timezone.utc)
                 if now.minute == 0 and now.second < 30:
                     self.report_availability()
+
+                if self.stop_requested:
+                    break
 
                 if self.status_update_event.is_update_pending():
                     if self.status_update_event.get_dequeued_count() == 0:
@@ -335,7 +341,8 @@ class App:
                 else:
                     self.status_update_event.enqueue(self.queue)
                     
-                self.wait_for_stop(30)  # Wake promptly when shutdown is requested.
+                if self.wait_for_stop(30):  # A shutdown wakeup ends the loop.
+                    break
 
             except Exception as e:
                 logger.error(self.set_last_err(f"App {self.app_model.app_name} encountered an error: {e}"))

@@ -1,4 +1,5 @@
 from env.processor import Processor
+from contextlib import nullcontext
 from env.events import InitEvent, StatusUpdateEvent, ConfigEvent, ObsEvent
 from queue import Queue, Empty
 from datetime import datetime, timezone
@@ -38,12 +39,28 @@ class AppProcessor(Processor):
     def process_config_event(self, event: ConfigEvent):
 
         Processor.single_thread()
+        token = events.current_config_event.set(event)
+        future = event.rsp_future
         try:
-            handler_method = "process_config"
-
-            self.performActions(getattr(self.driver, handler_method)(event))
+            if future is not None and not future.set_running_or_notify_cancel():
+                return
+            action = self.driver.process_config(event)
+            if event.rsp_result is None or event.rsp_result.status != 'error':
+                self.performActions(action)
+                if future is not None and action is not None and not action.is_empty() and event.rsp_result is None:
+                    event.rsp_result = events.ResponseEvent(
+                        'error', 'Could not schedule all configuration actions', code='scheduling_failed')
+            if future is not None and not future.done():
+                future.set_result(event.rsp_result or events.ResponseEvent(
+                    'success', f'{event.category} configuration processed; actions scheduled',
+                    payload={'category': event.category, 'phase': 'actions_scheduled'}))
             logger.debug(f"AppProcessor {self.name} config resync'ed")
+        except Exception as error:
+            if future is not None and not future.done():
+                future.set_result(events.ResponseEvent('error', str(error), code='configuration_failed'))
+            raise
         finally:
+            events.current_config_event.reset(token)
             Processor.free_thread()
 
     def process_status_update(self, event: StatusUpdateEvent):
@@ -150,6 +167,11 @@ class AppProcessor(Processor):
                 except Exception as e:
                     logger.exception(self.driver.set_last_err(f"AppProcessor: Exception processing status update event {event}: {e}"))
                     return False
+
+            elif isinstance(event, events.CallbackEvent):
+                with event.lock if event.lock is not None else nullcontext():
+                    self.performActions(event.callback(), event.local_sap, event.remote_conn, event.remote_addr)
+                return True
 
             elif isinstance(event, events.TimerEvent):
 
@@ -449,8 +471,8 @@ class AppProcessor(Processor):
                     duration_ms=timer.get_timer_action(), 
                     user_ref=timer.get_echo_data())  
 
-                action.timer_actions.remove(timer)      # Remove the timer action from the list
                 logger.debug(f"AppProcessor {self.name} started new timer: {new_timer}")
+            action.timer_actions.remove(timer)
 
         # Perform message actions
         for msg in action.msgs_to_remote[:]:    # Iterate over a copy [:] of the list to allow removal during iteration

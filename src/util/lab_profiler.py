@@ -282,6 +282,68 @@ def estimate_terminal_velocity(velocity, brightness, vmin, vmax, noise_ranges=No
     return result
 
 
+def erfc_edge(velocity, baseline, amplitude, terminal, width):
+    """Falling edge; width is the Gaussian dispersion in km/s."""
+    from scipy.special import erfc
+    return baseline + .5 * amplitude * erfc((np.asarray(velocity) - terminal) / (np.sqrt(2) * width))
+
+
+def fit_terminal_erfc(velocity, brightness, fit_range):
+    """Fit an explicitly selected positive wing, without rescaling the data.
+
+    The midpoint of the fitted step is a model edge, not a noise crossing.
+    Formal covariance errors exclude baseline, beam and model uncertainties.
+    """
+    import warnings
+    from scipy.optimize import curve_fit, OptimizeWarning
+    low, high = fit_range
+    if not np.all(np.isfinite([low, high])) or low < 0 or low >= high:
+        raise ValueError("Erfc fit range must be finite with 0 <= minimum < maximum")
+    result = dict(status="insufficient_channels", model="baseline + amplitude/2 * erfc((v-v_terminal)/(sqrt(2)*width))",
+                  fit_range_kms=[float(low), float(high)], velocity_lsr_kms=None)
+    v, t = np.asarray(velocity), np.asarray(brightness)
+    mask = np.isfinite(v) & np.isfinite(t) & (v >= low) & (v <= high)
+    v, t = v[mask], t[mask]
+    order = np.argsort(v)
+    v, t = v[order], t[order]
+    result["sample_count"] = len(v)
+    if len(v) < 12 or len(np.unique(v)) != len(v):
+        return result
+    step = float(np.median(np.diff(v)))
+    if np.any(np.diff(v) > 1.5 * step):
+        result["status"] = "gap_in_fit_window"
+        return result
+    span = float(v[-1] - v[0])
+    tail = max(3, len(t) // 5)
+    baseline = float(np.median(t[-tail:]))
+    amplitude = float(np.median(t[:tail]) - baseline)
+    if amplitude <= 0:
+        result["status"] = "no_falling_edge"
+        return result
+    midpoint = float(v[np.argmin(abs(t - baseline - amplitude / 2))])
+    minimum_width = step / 2
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", OptimizeWarning)
+            parameters, covariance = curve_fit(
+                erfc_edge, v, t, p0=[baseline, amplitude, np.clip(midpoint, v[0]+step, v[-1]-step), max(step, span/10)],
+                bounds=([-np.inf, 0, v[0], minimum_width], [np.inf, np.inf, v[-1], span]), maxfev=20000)
+    except (RuntimeError, ValueError, OptimizeWarning):
+        result["status"] = "fit_failed"
+        return result
+    base, amp, terminal, width = parameters
+    if not np.all(np.isfinite(covariance)) or terminal - v[0] < width or v[-1] - terminal < 2*width or width <= minimum_width*1.01 or width >= span*.99:
+        result["status"] = "unconstrained_edge"
+        return result
+    errors = np.sqrt(np.maximum(0, np.diag(covariance)))
+    result.update(status="fitted", velocity_lsr_kms=float(terminal),
+                  velocity_formal_error_kms=float(errors[2]), width_kms=float(width),
+                  width_formal_error_kms=float(errors[3]), baseline=float(base), amplitude=float(amp),
+                  residual_rms=float(np.sqrt(np.mean((t-erfc_edge(v, *parameters))**2))),
+                  sampled_range_kms=[float(v[0]), float(v[-1])])
+    return result
+
+
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     add_pointing_arguments(parser)
@@ -324,6 +386,10 @@ def build_parser():
     parser.add_argument("--terminal-min-channels", type=int, default=3,
                         help="Minimum consecutive channels above threshold (default 3; use 1 for the rightmost individual channel)")
     parser.add_argument("--no-terminal-velocity", action="store_true", help="Disable terminal-velocity estimation")
+    parser.add_argument("--terminal-method", choices=("threshold", "erfc"), default="threshold",
+                        help="Terminal estimator (default threshold); erfc auto fits both available spectra")
+    parser.add_argument("--terminal-fit-range", nargs=2, type=float, metavar=("VMIN", "VMAX"),
+                        help="Required for erfc: positive falling-wing window in km/s, including the line-free tail")
     parser.add_argument("--output", type=Path, help="CSV output path; PNG/JSON use the same stem")
     parser.add_argument("--display-only", action="store_true", help="Show a plot without saving files")
     return parser
@@ -486,7 +552,37 @@ def plot_result(result, args, context, observation=None):
         baseline_label = "no baseline subtraction" if args.observation_baseline == "none" else f"{args.observation_baseline} baseline removed"
         ax.plot(velocity, scaled, color="red", label=f"Observation ({baseline_label}; scaled to LAB peak)")
     terminal = {"status": "disabled"}
-    if not args.no_terminal_velocity:
+    if not args.no_terminal_velocity and args.terminal_method == "erfc":
+        terminal = {"method": "erfc", "spectra": {}}
+        spectra = {"lab": (result.velocity, result.temperature, 1.)}
+        if observation is not None:
+            spectra["observation"] = (velocity, corrected, float(np.nanmax(result.temperature) / np.max(corrected)))
+        for source, (edge_v, edge_t, scale) in spectra.items():
+            if args.terminal_source not in ("auto", source):
+                continue
+            fit = fit_terminal_erfc(edge_v, edge_t, args.terminal_fit_range)
+            fit["amplitude_unit"] = "K" if source == "lab" else "observation input power units"
+            terminal["spectra"][source] = fit
+            if fit["status"] == "fitted":
+                terminal_v = fit["velocity_lsr_kms"]
+                colour = "tab:blue" if source == "lab" else "tab:orange"
+                sample = np.linspace(*fit["sampled_range_kms"], 300)
+                ax.plot(sample, scale * erfc_edge(sample, fit["baseline"], fit["amplitude"], terminal_v, fit["width_kms"]),
+                        color=colour, linewidth=2, label=f"{source.upper()} erfc wing fit")
+                ax.axvline(terminal_v, color=colour, linestyle=":",
+                           label=f"{source.upper()} erfc edge: {terminal_v:+.2f} ± {fit['velocity_formal_error_kms']:.2f} km/s")
+                print(f"Erfc edge ({source}): {terminal_v:+.3f} ± {fit['velocity_formal_error_kms']:.3f} km/s (formal); width={fit['width_kms']:.3f} km/s")
+            else:
+                print(f"Erfc edge ({source}): {fit['status'].replace('_', ' ')}")
+                ax.text(.02, .02 if source == "lab" else .07, f"{source.upper()} erfc: {fit['status'].replace('_', ' ')}",
+                        transform=ax.transAxes, fontsize=9)
+        fits_by_source = terminal["spectra"]
+        if all(fits_by_source.get(source, {}).get("status") == "fitted" for source in ("lab", "observation")):
+            difference = fits_by_source["observation"]["velocity_lsr_kms"] - fits_by_source["lab"]["velocity_lsr_kms"]
+            terminal["observation_minus_lab_kms"] = difference
+            ax.text(.02, .95, f"Erfc Δv (observation − LAB): {difference:+.2f} km/s", transform=ax.transAxes, va="top")
+            print(f"Erfc edge difference (observation − LAB): {difference:+.3f} km/s")
+    elif not args.no_terminal_velocity:
         source = args.terminal_source
         if source == "auto":
             source = "observation" if observation is not None else "lab"
@@ -582,6 +678,14 @@ def main(argv=None):
             raise ValueError("Velocity limits must be finite with minimum < maximum")
         if args.file is None and (args.target_id is not None or args.freq_scan is not None or args.sweep):
             raise ValueError("--file, --target-id and --freq-scan are required for observation comparisons and sweeps")
+        if args.terminal_method == "erfc" and not args.no_terminal_velocity:
+            if args.terminal_fit_range is None:
+                raise ValueError("--terminal-method erfc requires --terminal-fit-range VMIN VMAX")
+            low, high = args.terminal_fit_range
+            if not np.all(np.isfinite([low, high])) or low < 0 or low >= high:
+                raise ValueError("Erfc fit range must be finite with 0 <= minimum < maximum")
+            if low < args.vmin or high > args.vmax:
+                raise ValueError("Erfc fit range must be inside the displayed velocity range (--vmin/--vmax)")
         if args.file is not None and (args.target_id is None or args.freq_scan is None):
             raise ValueError("--target-id and --freq-scan are required with --file")
         if args.display_only and (args.no_show or args.output is not None):

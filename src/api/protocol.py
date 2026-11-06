@@ -51,6 +51,7 @@ WS  = "ws"   # Weather Station
 IMU = "imu"  # Inertial Measurement Unit
 APP = "app"  # Client Application
 CMD = "cmd"  # Command client used for application-wide control requests
+WEB = "web"  # External HTTP application
 
 # Allowable msg fields and types defining their format     
 #   "field_name": "regex_pattern" | {"type": "type_name", "pattern": "regex_pattern", "enum": [...]} 

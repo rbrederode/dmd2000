@@ -1,15 +1,22 @@
-"""Standalone web server receiving external webhooks and forwarding them to TM."""
+"""Authenticate HTTP calls, dispatch TCP requests, and list stored observations."""
 
-from flask import Flask, request, jsonify, abort
+from flask import Flask, request, jsonify, abort, g
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import hmac
 import hashlib
 import os
 import logging
-import requests
-from datetime import datetime
+import json
+import time
+from uuid import uuid4
 from werkzeug.exceptions import HTTPException
+from web.cmd_handler import CommandHandler, DEFAULT_PROFILE_DIR
+from api.cmd_registry import DEFAULT_COMMAND_CONFIG
+from env.events import ResponseEvent
+from models.launch import load_scan_store_dir
+from obs.catalogue import list_observations
+from web.web import WebServer
 
 # Configure logging
 logging.basicConfig(
@@ -24,10 +31,18 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+
 # Load secrets from environment variables
 WEBHOOK_SECRET = os.getenv('WEBHOOK_SECRET')
 if not WEBHOOK_SECRET:
     raise ValueError("WEBHOOK_SECRET environment variable must be set")
+
+cmd_handler = CommandHandler(
+    profile_dir=os.getenv('WEB_PROFILE_DIR', str(DEFAULT_PROFILE_DIR)),
+    endpoint_overrides=json.loads(os.getenv('WEB_COMMAND_ENDPOINTS', '{}')),
+    command_config=os.getenv('WEB_CMD_CONFIG', str(DEFAULT_COMMAND_CONFIG)),
+    timeout=os.getenv('WEB_COMMAND_TIMEOUT', '5'),
+)
 
 # Initialize rate limiter (100 requests per hour per IP)
 limiter = Limiter(
@@ -111,6 +126,74 @@ def validate_request():
         logger.error(f"No authentication provided from {request.remote_addr}")
         abort(401, description="Missing authentication")
 
+def _trace_redact(value):
+    if isinstance(value, dict):
+        return {name: '[REDACTED]' if any(part in name.lower() for part in
+                ('token', 'authorization', 'cookie', 'signature', 'secret', 'api-key', 'password'))
+                else _trace_redact(item) for name, item in value.items()}
+    if isinstance(value, list):
+        return [_trace_redact(item) for item in value]
+    return value
+
+
+def _http_trace():
+    runtime = app.extensions.get('web_application')
+    if runtime is None or not getattr(getattr(runtime, 'app_model', None), 'app_tracing', False):
+        return None
+    trace = getattr(runtime, 'trace', None)
+    return trace if trace is not None and trace.is_started else None
+
+
+def _trace_body(data, content_type):
+    # Bound trace size; omit non-JSON bodies that may contain credentials.
+    if len(data) > 65536:
+        return '[Body omitted: exceeds 64 KiB]'
+    if not data:
+        return None
+    if 'json' in (content_type or ''):
+        try:
+            return _trace_redact(json.loads(data))
+        except (ValueError, UnicodeError):
+            pass
+    return '[Non-JSON body omitted]'
+
+
+def _trace_http_request():
+    g.http_trace_id = uuid4().hex
+    g.http_started = time.monotonic()
+    trace = _http_trace()
+    if trace is None:
+        return
+    try:
+        data = request.get_data() if request.content_length is not None and request.content_length <= 65536 else b''
+        trace.log_http('RX', request.method, request.path, g.http_trace_id, {
+            'peer': request.remote_addr,
+            'query': _trace_redact(request.args.to_dict(flat=False)),
+            'headers': _trace_redact(dict(request.headers)),
+            'body': _trace_body(data, request.content_type) if data else None,
+        })
+    except Exception:
+        logger.warning('Could not trace HTTP request', exc_info=True)
+
+
+@app.after_request
+def trace_http_response(response):
+    # Some Flask extensions (e.g. the rate limiter) reject before our hook runs.
+    if not hasattr(g, 'http_trace_id'):
+        _trace_http_request()
+    trace = _http_trace()
+    if trace is not None:
+        try:
+            trace.log_http('TX', request.method, request.path, g.http_trace_id, {
+                'headers': _trace_redact(dict(response.headers)),
+                'body': _trace_body(response.get_data(), response.content_type) if not response.is_streamed else '[Streamed body omitted]',
+                'elapsed_ms': round((time.monotonic() - g.http_started) * 1000, 3),
+            }, status=response.status_code)
+        except Exception:
+            logger.warning('Could not trace HTTP response', exc_info=True)
+    return response
+
+
 @app.before_request
 def log_request():
     """Log all incoming requests for security monitoring."""
@@ -123,6 +206,7 @@ def log_request():
     logger.info("Headers: %s", safe_headers)
     logger.info(f"Content-Type: {request.content_type}")
     logger.info(f"Content-Length: {request.content_length}")
+    _trace_http_request()
 
 @app.route('/webhook', methods=['POST'])
 @limiter.limit("100 per hour")
@@ -157,50 +241,39 @@ def webhook_receiver():
         # Log successful webhook receipt
         logger.info(f"Valid webhook received from {request.remote_addr}")
         
-        # Forward webhook data to TM application
-        is_command = data.get('event') == 'alston-rt.ui.cmd'
-        try:
-            tm_response = requests.post(
-                'http://localhost:5001/webhook',
-                json=data,
-                timeout=20 if is_command else 5,
-                allow_redirects=False
-            )
-            if is_command:
-                # Preserve TM's command result, including target rejection and
-                # timeout details, through the authenticated external endpoint.
-                try:
-                    result = tm_response.json()
-                except ValueError:
-                    return jsonify(status='error', message='Invalid command response from TM'), 502
-                if (not isinstance(result, dict) or 'status' not in result
-                        or tm_response.status_code not in (200, 400, 500, 502, 504)):
-                    return jsonify(status='error', message='Invalid command response from TM'), 502
-                return jsonify(result), tm_response.status_code
-            
-            if 200 <= tm_response.status_code < 300:
-                logger.info("Successfully forwarded webhook to TM application")
-            else:
-                logger.warning("TM application returned status %s", tm_response.status_code)
-                return jsonify(status='error', message='Telescope Manager rejected the webhook',
-                               upstream_status=tm_response.status_code), 502
-                
-        except requests.exceptions.Timeout:
-            logger.error("Timeout connecting to TM application")
-            return jsonify(status='error', message='Telescope Manager request timed out'), 504
-        except requests.exceptions.ConnectionError:
-            logger.error("Failed to connect to TM application at localhost:5001 - is it running?")
-            return jsonify(status='error', message='Could not connect to Telescope Manager'), 502
-        except requests.exceptions.RequestException:
-            logger.error("Error forwarding to TM application")
-            return jsonify(status='error', message='Could not forward webhook to Telescope Manager'), 502
-        
-        return jsonify({
-            'status': 'success',
-            'message': 'Webhook forwarded to Telescope Manager',
-            'timestamp': datetime.utcnow().isoformat()
-        }), 200
-        
+        # Commands use the target's existing TCP command API directly. Only
+        # other webhook categories retain the embedded TM HTTP route for now.
+        if data.get('event') == 'alston-rt.ui.cmd':
+            runtime = app.extensions.get('web_application')
+            handler = runtime.cmd_handler if runtime is not None else cmd_handler
+            result = handler.execute(data.get('message'))
+            # Completed command outcomes travel as ResponseEvent JSON, even
+            # when the target fails or times out. Gateways may replace 5xx bodies.
+            status = (200 if result.status == 'success' else
+                      {'invalid_request': 400, 'timeout': 200, 'command_failed': 200}.get(result.code, 500))
+            return jsonify(dict(result.to_dict(), request_id=uuid4().hex)), status
+
+        categories = {'alston-rt.ui.dig': 'DIG', 'alston-rt.ui.dsh': 'DSH',
+                      'alston-rt.ui.odt': 'ODT', 'alston-rt.ui.oet': 'OET'}
+        category = categories.get(data.get('event'))
+        if category is None:
+            return jsonify(ResponseEvent('error', 'Unsupported webhook event', code='invalid_request').to_dict()), 400
+        config = data.get('message')
+        if isinstance(config, str):
+            try:
+                config = json.loads(config)
+            except ValueError:
+                return jsonify(ResponseEvent('error', 'Configuration message is not valid JSON', code='invalid_request').to_dict()), 400
+        if not isinstance(config, dict):
+            return jsonify(ResponseEvent('error', 'Configuration message must be an object', code='invalid_request').to_dict()), 400
+        runtime = app.extensions.get('web_application')
+        if runtime is None:
+            result, request_id = (ResponseEvent('error', 'Web application is not running', code='unavailable'), uuid4().hex)
+        else:
+            result, request_id = runtime.submit_configuration(category, config)
+        # Application results retain their JSON body through HTTP gateways.
+        return jsonify(dict(result.to_dict(), request_id=request_id)), 200
+
     except HTTPException as error:
         return jsonify(status='error', message=error.description), error.code
     except Exception:
@@ -212,34 +285,31 @@ def webhook_receiver():
 
 @app.get('/api/observations')
 def observations():
-    """Authenticate catalogue requests and retrieve metadata from TM."""
+    """Search local/shared storage without requiring a TM or SDP connection."""
     try:
         validate_request()
     except HTTPException as error:
         return jsonify(status='error', message=error.description), error.code
+
     try:
-        query_options = ({'params': {'directory': request.args['directory']}}
-                         if 'directory' in request.args else {})
-        response = requests.get('http://localhost:5001/api/observations',
-                                timeout=5, allow_redirects=False, **query_options)
-    except requests.exceptions.Timeout:
-        return jsonify(status='error', message='Telescope Manager request timed out'), 504
-    except requests.exceptions.RequestException:
-        return jsonify(status='error', message='Could not connect to Telescope Manager'), 502
-    if response.status_code == 503:
-        return jsonify(status='error', message='Observation search directory is unavailable or not known to TM'), 503
-    if response.status_code == 400:
-        return jsonify(status='error', message='Invalid observation search directory'), 400
-    if response.status_code != 200:
-        return jsonify(status='error', message='Could not retrieve observations from Telescope Manager',
-                       upstream_status=response.status_code), 502
-    try:
-        payload = response.json()
-        if not isinstance(payload, dict) or not isinstance(payload.get('observations'), list):
-            raise ValueError('Invalid catalogue response')
-    except ValueError:
-        return jsonify(status='error', message='Invalid observation catalogue from Telescope Manager'), 502
-    return jsonify(payload)
+        if 'directory' in request.args:
+            store = request.args['directory'].strip()
+            if not store:
+                result = ResponseEvent('error', 'Directory must not be empty', code='invalid_request')
+                return jsonify(result.to_dict()), 400
+        else:
+            runtime = app.extensions.get('web_application')
+            store = (runtime.scan_store_dir if runtime is not None
+                     else load_scan_store_dir(profile_dir=cmd_handler.profile_dir))
+        if not store:
+            result = ResponseEvent('error', 'Observation search directory is not configured', code='store_not_known')
+            return jsonify(result.to_dict()), 503
+        result = list_observations(store)
+        return jsonify(result.to_dict()), 200 if result.status == 'success' else 503
+    except Exception:
+        logger.exception('Error listing observations')
+        result = ResponseEvent('error', 'Could not load observation catalogue configuration', code='internal_error')
+        return jsonify(result.to_dict()), 500
 
 
 @app.route('/health', methods=['GET'])
@@ -256,9 +326,12 @@ def ratelimit_handler(e):
         'message': 'Rate limit exceeded'
     }), 429
 
+def main():
+    runtime = WebServer(http_app=app)
+    with runtime.running():
+        runtime.start_http_server()
+        runtime.wait_for_stop()
+
+
 if __name__ == '__main__':
-    # Never run with debug=True in production
-    # Use a production WSGI server like gunicorn instead
-    logger.info("Starting webhook server...")
-    logger.warning("Running in development mode - use gunicorn for production")
-    app.run(host='127.0.0.1', port=8000, debug=False)
+    main()

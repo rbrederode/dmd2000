@@ -1,0 +1,11 @@
+{
+    "_type": "WebServerModel",
+    "id": "web001",
+    "app": {
+        "_type": "AppModel",
+        "app_name": "web",
+        "app_cmd_host": "127.0.0.1",
+        "app_cmd_port": 60010,
+        "msg_timeout_ms": 10000
+    }
+}

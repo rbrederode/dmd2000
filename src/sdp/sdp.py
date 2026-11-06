@@ -24,6 +24,7 @@ from models.comms import CommunicationStatus, InterfaceType
 from models.dig import DigitiserModel, DigitiserList
 from models.fil import FilterBank
 from models.health import HealthState
+from models.launch import load_scan_store_dir
 from models.pipeline import StepConfig, StepType, PipelineConfig
 from models.scan import ScanModel, ScanState, ScanType
 from models.sdp import ScienceDataProcessorModel
@@ -95,6 +96,10 @@ class SDP(App):
         arg_parser.add_argument("--dig_port", type=int, required=False, help="TCP server port for upstream Digitiser transport", default=60000)
 
         arg_parser.add_argument("--scan_store_dir", type=str, required=False, help="Directory to store captured scan samples", default=SAMPLES_DIR)
+        args, _ = arg_parser.parse_known_args()
+        store = load_scan_store_dir(profile=args.profile)
+        if store is not None:
+            arg_parser.set_defaults(scan_store_dir=store)
 
     def _load_digitiser_store(self, input_dir:str, filename:str) -> DigitiserList:
         

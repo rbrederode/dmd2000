@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- The standalone web application (`web.web_server`, with its `WebServer(App)` runtime in `web.web`) has its own model, event processors, command endpoint, tracing and managed Waitress HTTP server. Added WEB models and launch definitions to the local and Alston profiles, the Waitress dependency, and web API documentation. HTTP worker counts are configurable through `--http_threads`; the retained embedded TM API supports `--web_api_threads`.
+
+- Command webhooks execute through `web.cmd_handler` and the target application's existing TCP command API using `util.cmd_app`. Endpoint lookup uses the selected profile or configured overrides, so commands to other applications work without TM running. WEB itself supports TRACE, DEBUG and RESYNC through its command endpoint and `cmd_app`. The embedded TM HTTP API rejects CMD webhooks with guidance to use the standalone web server or command utility.
+
+- HTTP application results use the transport-independent `ResponseEvent` envelope with `status`, `message`, optional error `code` and JSON `payload`. Completed command and configuration outcomes, including target errors and timeouts, return HTTP 200 so gateways preserve the JSON body; clients must check the application status. Invalid requests, authentication failures and internal server errors retain HTTP error statuses. The Cloudflare tunnel configuration targets the standalone web server on port 8000.
+
+- DIG, DSH, ODT and OET configuration webhooks use the new `tm_web` TCP API on TM's `web` interface (default port 50004), with `web` registered as a protocol origin/destination. TM validates updates and processes them as serialized ConfigEvents; `rsp_future` resolves with contextual errors or confirmation that the configuration was handled and its actions scheduled, without waiting for those actions to finish.
+
+- WEB configuration requests are sent only while connected to TM and use unique timer Actions to carry request context and match responses. Requests are not retransmitted; timeouts, disconnects and shutdown complete waiting HTTP calls, and late responses are ignored. Replies retain the originating TCP socket, supporting concurrent callers and multiple web connections to TM. Timer cancellation actions are removed from completed Action lists so they do not falsely indicate incomplete scheduling.
+
+- WEB sends its `WebServerModel` status immediately after connecting and during the standard 30-second status cycle. The `tm_web` API accepts status advice without response timers or acknowledgements. TM maintains WEB connection flags and a web status model in the telescope model, and publishes it through the Google Sheets driver's configurable `web_range` (default `TM_UI_API++!V2:W`).
+
+- Observation listing at `/api/observations` searches storage directly in WEB without TM or SDP running. It recursively discovers observation metadata, returns relative folder names in `payload.observations` alongside `payload.count`, skips symbolic links and reports unreadable subtrees. The legacy embedded TM listing endpoint remains available and shares the catalogue implementation.
+
+- Promoted `scan_store_dir` to a profile-level `LaunchConfigModel` setting shared by SDP and WEB. Migrated existing profile values out of SDP launch arguments while retaining `--scan_store_dir` overrides and WEB's per-request `directory` override; omitted overrides use the shared value. WEB reloads its storage default on RESYNC. Existing `~` expansion is retained, and launch models now correctly deserialize timestamps when loading serialized configurations.
+
+- `obs.inject` submits observation files to the web application's REST endpoint on port 8000, authenticates using `WEBHOOK_SECRET` or `--token`, and reports TM's `ResponseEvent` result. The HTTP timeout defaults to 20 seconds, and application errors remain failures even when returned with HTTP 200.
+
+- The Google Sheets Apps Script clears and refreshes `ART!A20:D20` for each webhook, displaying the application name, response datetime, status and message; command controls use row 17. Non-JSON gateway errors report that the command outcome is unknown. Observation submission sends the structured `ObsList` JSON rather than the flattened rows used for sheet storage.
+
+- WEB HTML traces include HTTP request and response entries alongside TCP messages, covering locally serviced observation listings and error responses. Matching request IDs, HTTP status, elapsed time and expandable JSON details follow the existing TRACE switch; credential fields are redacted and body details are bounded.
+
+- TM logs Dish Manager errors using the primary error description and the advice/response `message` attribute, avoiding full model dumps.
+
+- Fixed the shared application status loop to exit as soon as shutdown is requested. Ctrl-C no longer causes repeated status dumps while waiting for main-thread cleanup; normal pending-status diagnostics remain enabled.
+
+- LAB profiler adds optional erfc fits to the positive-velocity wings of the observation and best-matching survey profile, including sweep results, fitted-edge overlays, formal errors and JSON comparison metadata.
+
 - OPT's frontend adds a scrollable observation catalogue with names, dishes, completed scan counts/types and completed integration times, plus row selection, filtering and an Open action. The connection badge now turns red with “OPT Disconnected” on lost connections and recovers through periodic health checks. Updated the workspace heading and input/aggregate/plot tab labels.
 
 - Integrated a local OPT analysis workspace into the frontend prototype's Results view, with physical-scan inclusion controls, uninterrupted background processing, completed-aggregate signal browsing, velocity/timeline/L–V views, cancellation, logs and ZIP exports. Baseline and contour changes can re-render cached spectra without replaying recorded scans. Added the localhost-only `ui.opt_service` launcher and frontend workspace documentation.

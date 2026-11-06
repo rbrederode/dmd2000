@@ -7,15 +7,13 @@ to receive webhook payloads and inject them into the TM event queue.
 
 import logging
 import json
-import os
 import threading
-from concurrent.futures import Future, TimeoutError as FutureTimeoutError
-from uuid import uuid4
-from pathlib import Path
 from flask import Flask, request, jsonify
+from werkzeug.exceptions import HTTPException
 from datetime import datetime, timezone
 from queue import Queue
 from env.events import ResponseEvent
+from obs.catalogue import list_observations
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +22,12 @@ def _event_response_http_status(response: ResponseEvent) -> int:
     """Translate application results at the HTTP boundary only."""
     if response.status == 'success':
         return 200
-    return {'invalid_request': 400, 'timeout': 504,
-            'command_failed': 502, 'dispatch_failed': 500}.get(response.code, 500)
+    return {'invalid_request': 400, 'store_not_known': 503,
+            'directory_unavailable': 503}.get(response.code, 500)
+
+
+def _json_response(result: ResponseEvent):
+    return jsonify(result.to_dict()), _event_response_http_status(result)
 
 
 class WebAPIHandler:
@@ -35,7 +37,7 @@ class WebAPIHandler:
     """
     
     def __init__(self, event_queue: Queue, host='127.0.0.1', port=5001,
-                 scan_store_provider=None, threads=4, command_wait_timeout=15.0):
+                 telmodel=None, threads=4):
         """
         Initialize the webhook handler.
         
@@ -44,23 +46,28 @@ class WebAPIHandler:
             host: Flask host (default: localhost)
             port: Flask port (default: 5001)
             threads: Number of Waitress request workers (default: 4).
-            command_wait_timeout: Maximum seconds an HTTP worker waits for CMD.
-            scan_store_provider: Callable returning SDP's current scan-store path,
-                or None until it is known. The directory must be accessible to TM.
+            telmodel: Live telescope model shared with TM, read by API handlers.
+                Model changes must be requested through the event queue.
         """
         if threads < 1:
             raise ValueError('Web API threads must be at least 1')
         self.threads = threads
-        if command_wait_timeout <= 0:
-            raise ValueError('Command wait timeout must be positive')
-        self.command_wait_timeout = command_wait_timeout
         self.event_queue = event_queue
         self.host = host
         self.port = port
-        self.scan_store_provider = scan_store_provider
+        self.telmodel = telmodel
         self.app = Flask(__name__)
+        self.app.register_error_handler(Exception, self._handle_error)
         self.server_thread = None
         self._setup_routes()
+
+    def _handle_error(self, error):
+        """Keep unhandled API failures in the common response format."""
+        if isinstance(error, HTTPException):
+            result = ResponseEvent('error', error.description, code='invalid_request')
+            return jsonify(result.to_dict()), error.code
+        logger.exception('Unhandled Web API error')
+        return _json_response(ResponseEvent('error', 'Internal server error', code='internal_error'))
         
     def _setup_routes(self):
         """Configure Flask routes."""
@@ -71,54 +78,16 @@ class WebAPIHandler:
             if 'directory' in request.args:
                 store = request.args['directory'].strip()
                 if not store:
-                    return jsonify(status='error', message='Directory must not be empty'), 400
+                    return _json_response(ResponseEvent('error', 'Directory must not be empty', code='invalid_request'))
             else:
-                store = self.scan_store_provider() if self.scan_store_provider else None
+                # Read the current SDP on every request: status updates may
+                # replace this submodel while the telescope model stays shared.
+                sdp = self.telmodel.sdp if self.telmodel is not None else None
+                arguments = sdp.app.arguments if sdp is not None else None
+                store = (arguments or {}).get('scan_store_dir')
             if not store:
-                return jsonify(status='error', message='SDP sample store is not known yet'), 503
-            try:
-                root = Path(store).expanduser().resolve(strict=True)
-                if not root.is_dir():
-                    raise NotADirectoryError
-
-                def walk_error(error):
-                    # Report an incomplete search rather than silently omit a subtree.
-                    raise error
-
-                paths = []
-                for folder, dirs, files in os.walk(root, followlinks=False, onerror=walk_error):
-                    parent = Path(folder)
-                    dirs[:] = [name for name in dirs if not (parent / name).is_symlink()]
-                    paths.extend(parent / name for name in files
-                                 if name.endswith('-obs.json')
-                                 and not (parent / name).is_symlink()
-                                 and (parent / name).is_file())
-                paths.sort(key=lambda path: path.relative_to(root).as_posix())
-            except (OSError, RuntimeError, ValueError):
-                logger.warning('Observation search directory is unavailable to TM')
-                return jsonify(status='error', message='Observation search directory is unavailable to TM'), 503
-
-            entries = []
-            for path in paths:
-                entry = {'id': path.name.removesuffix('-obs.json'), 'filename': path.name,
-                         'folder': path.parent.relative_to(root).as_posix()}
-                try:
-                    data = json.loads(path.read_text(encoding='utf-8'))
-                    if not isinstance(data, dict) or data.get('_type') != 'ObsModel':
-                        raise ValueError('Expected observation metadata')
-                    def value(field):
-                        raw = data.get(field)
-                        return raw.get('value') if isinstance(raw, dict) else raw
-                    entry.update(id=data.get('obs_id') or entry['id'],
-                                 title=data.get('title', ''), dish=data.get('dsh_id'),
-                                 state=value('obs_state'), started_at=value('start_dt'))
-                except (OSError, ValueError, UnicodeError):
-                    # A file may be incomplete while TM is updating it. Keep the
-                    # rest of the catalogue available and let the next request retry.
-                    entry['error'] = 'Observation metadata is unavailable or invalid'
-                    logger.warning('Could not read observation metadata: %s', path.name)
-                entries.append(entry)
-            return jsonify(observations=entries, count=len(entries))
+                return _json_response(ResponseEvent('error', 'SDP sample store is not known yet', code='store_not_known'))
+            return _json_response(list_observations(store, service="TM"))
         
         @self.app.route('/webhook', methods=['POST'])
         def receive_webhook():
@@ -173,13 +142,17 @@ class WebAPIHandler:
                 
                 event_type = data.get('event', 'unknown')
                 
-                if event_type in ['alston-rt.ui.cmd', 'alston-rt.ui.dig', 'alston-rt.ui.odt', 'alston-rt.ui.dsh', 'alston-rt.ui.oet']:
+                if event_type == 'alston-rt.ui.cmd':
+                    return _json_response(ResponseEvent(
+                        'error', 'TM no longer accepts CMD webhooks; use web_server or cmd_app',
+                        code='invalid_request',
+                    ))
+
+                if event_type in ['alston-rt.ui.dig', 'alston-rt.ui.odt', 'alston-rt.ui.dsh', 'alston-rt.ui.oet']:
                     message_data = data.get('message', '')
                     
                     # Extract rightmost 3 characters and convert to uppercase
                     category = event_type[-3:].upper()
-                    if category == 'CMD' and not isinstance(message_data, dict):
-                        return jsonify(status='error', message='Command message must be a JSON object'), 400
                     
                     # If message was parsed as JSON (dict), use it directly
                     if isinstance(message_data, dict):
@@ -192,24 +165,10 @@ class WebAPIHandler:
                             old_config=None,
                             new_config=message_data,
                             timestamp=datetime.fromisoformat(data.get('timestamp')) if data.get('timestamp') else datetime.now(timezone.utc),
-                            rsp_future=Future() if category == 'CMD' else None,
                         )
                         
                         self.event_queue.put(config_event)
                         logger.info(f"Injected {category} config event into TM queue")
-                        if config_event.rsp_future is not None:
-                            request_id = uuid4().hex
-                            try:
-                                result = config_event.rsp_future.result(timeout=self.command_wait_timeout)
-                            except FutureTimeoutError:
-                                cancelled = config_event.rsp_future.cancel()
-                                result = ResponseEvent(
-                                    'error',
-                                    ('Command timed out before dispatch and was cancelled'
-                                     if cancelled else 'Command response timed out; outcome is unknown'),
-                                    payload={'cancelled_before_dispatch': cancelled}, code='timeout',
-                                )
-                            return jsonify(dict(result.to_dict(), request_id=request_id)), _event_response_http_status(result)
                     else:
                         logger.info(f"Webhook received: {message_data}")
                 
