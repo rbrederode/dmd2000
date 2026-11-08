@@ -9,6 +9,7 @@ from util.xbase import XAPIValidationFailed, XAPIUnsupportedVersion
 
 API_VERSION = '1.0'
 PROPERTY_CONFIG = 'config'
+PROPERTY_MODEL = 'telescope_model'
 CONFIG_CATEGORIES = ('DIG', 'DSH', 'ODT', 'OET')
 
 
@@ -49,7 +50,9 @@ class TM_WEB(API):
             require('message' not in call or isinstance(call['message'], str), 'Invalid status message')
             return
         require(call.get('action_code') in ('get', 'set'), 'TM-WEB supports get/set only')
-        require(call.get('property') == PROPERTY_CONFIG, 'Unsupported TM-WEB property')
+        require(call.get('property') in (PROPERTY_CONFIG, PROPERTY_MODEL), 'Unsupported TM-WEB property')
+        if call.get('property') == PROPERTY_MODEL:
+            require(call.get('action_code') == 'get', 'Telescope model supports GET only')
         echo = message.get('echo_data')
         require(isinstance(echo, dict), 'Missing request correlation')
         request_id = get_request_id(message)
@@ -87,6 +90,17 @@ def configuration_request(category, config, request_id, old_config=None):
         api_call={'msg_type': 'req', 'action_code': 'set', 'property': PROPERTY_CONFIG,
                   'value': {'category': category, 'config': config, 'old_config': old_config}},
     )
+    TM_WEB().validate(message.get_json_api_header())
+    return message
+
+
+def model_request(request_id):
+    message = APIMessage()
+    message.set_json_api_header(
+        api_version=API_VERSION, dt=datetime.now(timezone.utc),
+        from_system=protocol.WEB, to_system=protocol.TM,
+        echo={'request_id': request_id},
+        api_call={'msg_type': 'req', 'action_code': 'get', 'property': PROPERTY_MODEL})
     TM_WEB().validate(message.get_json_api_header())
     return message
 

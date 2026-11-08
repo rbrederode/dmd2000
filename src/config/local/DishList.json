@@ -5,12 +5,12 @@
         {
             "_type": "DishModel",
             "dsh_id": "dish001",
-            "short_desc": "70cm Discovery Dish @ Somerford Booths",
+            "short_desc": "Updated Foobar",
             "diameter": 0.7,
             "fd_ratio": 0.37,
             "latitude": 53.187052,
             "longitude": -2.256079,
-            "height": 88.0,
+            "height": 88,
             "feed_type": {
                 "_type": "enum.IntEnum",
                 "instance": "Feed",
@@ -55,13 +55,19 @@
                 "close_enough": 0.1,
                 "last_update": {
                     "_type": "datetime",
-                    "value": "2026-01-11T13:10:03.679380+00:00"
-                }
+                    "value": "2026-11-06T07:54:43.200225+00:00"
+                },
+                "resolution": 0.1,
+                "rotation_speed": 1.5,
+                "rate_limit": 1.0,
+                "short_way": false
             },
             "last_update": {
                 "_type": "datetime",
-                "value": "2026-01-11T13:10:03.678667+00:00"
-            }
+                "value": "2026-11-06T07:54:43.200738+00:00"
+            },
+            "ws_id": null,
+            "driver_poll_period": 1000
         },
         {
             "_type": "DishModel",
@@ -69,7 +75,7 @@
             "short_desc": "3m Alston Dish @ Alston Observatory",
             "diameter": 3.0,
             "fd_ratio": 0.43,
-            "latitude": 53.8010,
+            "latitude": 53.801,
             "longitude": -2.5933,
             "height": 90.0,
             "feed_type": {
@@ -78,7 +84,7 @@
                 "value": "H3T_1420"
             },
             "feed_config": null,
-            "dig_id": "dig002",
+            "dig_id": "dig001",
             "mode": {
                 "_type": "enum.IntEnum",
                 "instance": "DishMode",
@@ -181,6 +187,6 @@
     ],
     "last_update": {
         "_type": "datetime",
-        "value": "2026-01-11T13:10:03.680299+00:00"
+        "value": "2026-11-06T08:05:06.666118+00:00"
     }
 }

@@ -166,6 +166,8 @@ class WeatherStationList(BaseModel):
         "weather_enabled": And(bool, lambda v: isinstance(v, bool)),       # Flag to enable or disable weather monitoring and alarm processing for the dishes
         "weather_stations": And(list, lambda v: isinstance(v, list)),      # List of WeatherStation objects
         "weather_data": And(list, lambda v: isinstance(v, list)),          # List of WeatherData objects
+        "weather_history": And(list, lambda v: isinstance(v, list)),       # Bounded display samples forwarded to TM
+        "weather_metrics": And(dict, lambda v: isinstance(v, dict)),       # Station alarm-window metrics at DM's latest status update
         "weather_summaries": And(list, lambda v: isinstance(v, list)),     # Compact rolling weather summaries, one per weather station
         "threshold_timeout": And(int, lambda v: v >= 0),                   # Maximum age of weather data in seconds to keep in the list
         "retention_period": And(int, lambda v: v >= 0),                    # Maximum age of weather data in seconds to retain locally
@@ -195,6 +197,8 @@ class WeatherStationList(BaseModel):
             "weather_enabled": True,                    # Default to True to enable weather monitoring and alarm processing
             "weather_stations": [],  
             "weather_data": [],
+            "weather_history": [],
+            "weather_metrics": {},
             "weather_summaries": [],
             "threshold_timeout": 30,                    # Maximum age of weather data in seconds to keep in the list
             "retention_period": 300,                   # Retain 5 minutes of weather data locally for summaries and displays
@@ -269,6 +273,43 @@ class WeatherStationList(BaseModel):
             ],
             key=lambda wd: wd.obs_time,
         )
+
+    def get_display_history(self, now: datetime = None, limit: int = 300) -> list:
+        """Return at most limit compact retained readings per station for displays.
+
+        Summaries and alarm calculations continue to use every original sample.
+        """
+        if limit < 2:
+            raise ValueError('Weather history limit must be at least two')
+        now = datetime.now(timezone.utc) if now is None else now
+        history = []
+        for station in self.get_station_ids():
+            samples = [sample for sample in self.get_station_weather(station, now, self.retention_period)
+                       if sample.obs_time <= now]
+            if len(samples) > limit:
+                samples = [samples[index * (len(samples) - 1) // (limit - 1)] for index in range(limit)]
+            for sample in samples:
+                history.append({key: value for key, value in sample.to_dict().items()
+                                if key not in ('_type', 'last_update') and value is not None})
+        return history
+
+    def get_display_metrics(self, now: datetime = None) -> dict:
+        """Publish authoritative alarm-window values without forwarding raw samples."""
+        now = datetime.now(timezone.utc) if now is None else now
+        result = {}
+        for station in self.get_station_ids():
+            metrics = self.get_alarm_metrics(station, now)
+            latest = metrics.pop('latest_sample')
+            if latest is None:
+                retained = [sample for sample in self.get_station_weather(station, now, self.retention_period)
+                            if sample.obs_time <= now]
+                latest = retained[-1] if retained else None
+                if latest is not None:
+                    metrics['latest_age_sec'] = (now - latest.obs_time).total_seconds()
+            result[station] = {**metrics, 'window_secs': self.threshold_timeout,
+                               'reported_at': BaseModel._serialise(now),
+                               'last_sample_time': BaseModel._serialise(latest.obs_time) if latest is not None else None}
+        return result
 
     def get_alarm_metrics(self, ws_id: str = None, now: datetime = None) -> Dict[str, Any]:
         """Compute weather-alarm comparison metrics for one station or for the full rolling list."""

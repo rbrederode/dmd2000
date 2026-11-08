@@ -1,6 +1,7 @@
 {
     "_type": "LaunchConfigModel",
     "profile": "patio",
+    "log_dir": "logs",
     "scan_store_dir": "~/samples",
     "launches": [
         {

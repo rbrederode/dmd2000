@@ -17,7 +17,7 @@
     "value": "00:05:10"
   },
   "dsh_id": "dish001",
-  "obs_id": "ODT-{{NOW}}-dish001-Test",
+  "obs_id": "ODT-{{NOW}}-dish003-Test",
   "obs_state": {
     "_type": "enum.IntEnum",
     "instance": "ObsState",
@@ -32,14 +32,14 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": 25,
+      "gain": "AUTO1",
       "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 6000000,
       "integration_time": 120,
       "spectral_resolution": 2048,
       "tgt_idx": 0,
-      "obs_id": "ODT-{{NOW}}-dish001-Test"
+      "obs_id": "ODT-{{NOW}}-dish003-Test"
     },
     {
       "_type": "TargetConfig",
@@ -48,21 +48,21 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 25,
+      "gain": "AUTO1",
       "center_freq": 1420000000,
       "bandwidth": 1000000,
       "sample_rate": 6000000,
       "integration_time": 120,
       "spectral_resolution": 2048,
       "tgt_idx": 1,
-      "obs_id": "ODT-{{NOW}}-dish001-Test"
+      "obs_id": "ODT-{{NOW}}-dish003-Test"
     }
   ],
   "targets": [
     {
       "_type": "TargetModel",
       "tgt_idx": 0,
-      "obs_id": "ODT-{{NOW}}-dish001-Test",
+      "obs_id": "ODT-{{NOW}}-dish003-Test",
       "id": "Stow Position: AltAz (90.0, 0.0)",
       "altaz": {
         "alt": 90.0,
@@ -77,7 +77,7 @@
     {
       "_type": "TargetModel",
       "tgt_idx": 1,
-      "obs_id": "ODT-{{NOW}}-dish001-Test",
+      "obs_id": "ODT-{{NOW}}-dish003-Test",
       "id": "Stow Position: AltAz (90.0, 0.0)",
       "altaz": {
         "alt": 90.0,

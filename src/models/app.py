@@ -21,6 +21,9 @@ class AppModel(BaseModel):
         "num_processors": And(int, lambda v: v >= 0),                                   # Number of processor instances (threads) used by the application
         "queue_size": And(int, lambda v: v >= 0),                                       # Size of the event queue for the application
         "interfaces": And(list, lambda v: isinstance(v, list)),
+        "interface_roles": And(dict, lambda v: all(
+            isinstance(peer, str) and role in {"CLIENT", "SERVER", "UNKNOWN"}
+            for peer, role in v.items())),
         "processors": And(list, lambda v: isinstance(v, list)),
         "msg_timeout_ms": And(int, lambda v: v >= 0),
         "arguments": Or(None, And(dict, lambda v: isinstance(v, dict))),
@@ -49,6 +52,7 @@ class AppModel(BaseModel):
             "num_processors": 0,
             "queue_size": 0,
             "interfaces": [],
+            "interface_roles": {},
             "processors": [],
             "msg_timeout_ms": 10000,
             "arguments": None,

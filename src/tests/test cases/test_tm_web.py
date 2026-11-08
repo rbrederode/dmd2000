@@ -43,7 +43,10 @@ def web_stub():
     web.app_model = web.web_model.app
     web.app_model.app_running = True
     web.queue = Queue()
-    web.tm_endpoint = SimpleNamespace(connected=True, client_socket=object(), send=Mock())
+    web._tm_connection = object()
+    web.tm_endpoint = SimpleNamespace(connected=True, send=Mock(), start=Mock(),
+        validate_client_socket=lambda conn: (web.tm_endpoint.connected and conn is web._tm_connection, None),
+        _process_disconnect=Mock())
     web.tm_api = TM_WEB()
     web.get_args = lambda: SimpleNamespace(request_timeout=0.2)
     web.get_interface = lambda _: (web.tm_api, web.tm_endpoint, None)
@@ -57,10 +60,41 @@ def tm_stub():
     tm.telmodel = TelescopeModel()
     tm.app_model = tm.telmodel.tel_mgr.app
     tm.queue = Queue()
+    tm.web_endpoint = SimpleNamespace(connected=True, client_socket=object())
     tm._web_connections = set()
     tm._web_connections_lock = threading.Lock()
     tm.oet = SimpleNamespace(start_next_obs_timer=Mock())
     return tm
+
+
+def test_tm_loads_configuration_before_initiating_web_connection():
+    tm = tm_stub()
+    calls = Mock()
+    action = Action()
+    tm.process_resync = calls.resync
+    calls.resync.return_value = action
+    tm.dm_endpoint = SimpleNamespace(connect=calls.dm_connect)
+    tm.dig_endpoint = SimpleNamespace(start=calls.dig_start)
+    tm.sdp_endpoint = SimpleNamespace(connect=calls.sdp_connect)
+    tm.web_endpoint = SimpleNamespace(connect=calls.web_connect)
+    tm.ws_endpoint = None
+    assert tm.process_init() is action
+    assert [call[0] for call in calls.mock_calls] == [
+        'resync', 'dm_connect', 'dig_start', 'sdp_connect', 'web_connect']
+
+
+def test_web_replacement_connection_ignores_delayed_old_disconnect():
+    web = web_stub()
+    old, current = web._tm_connection, object()
+    web.tm_endpoint.validate_client_socket = lambda conn: (conn in (old, current), None)
+    web.process_tm_connected(SimpleNamespace(remote_conn=current))
+    web.tm_endpoint._process_disconnect.assert_called_once_with(old)
+    web.process_tm_disconnected(SimpleNamespace(remote_conn=old))
+    assert web.tm_connected
+    assert web.web_model.tm_connected == CommunicationStatus.ESTABLISHED
+    web.process_tm_disconnected(SimpleNamespace(remote_conn=current))
+    assert not web.tm_connected
+    assert web.web_model.tm_connected == CommunicationStatus.NOT_ESTABLISHED
 
 
 @pytest.mark.parametrize('category', ['DIG', 'DSH', 'ODT', 'OET'])
@@ -258,10 +292,11 @@ def test_disconnect_fails_inflight_request_and_does_not_replay_on_reconnect(time
         waiting = worker.submit(web.submit_configuration, 'ODT', {'_type': 'ObsList', 'obs_list': []})
         processor.process_event(web.queue.get(timeout=1))
         web.tm_endpoint.connected = False
-        web.process_tm_disconnected(SimpleNamespace(remote_conn=None))
+        web.process_tm_disconnected(SimpleNamespace(remote_conn=web._tm_connection))
         assert waiting.result(timeout=1)[0].code == 'connection_lost'
         web.tm_endpoint.connected = True
-        web.process_tm_connected(SimpleNamespace(remote_conn=web.tm_endpoint.client_socket))
+        web._tm_connection = object()
+        web.process_tm_connected(SimpleNamespace(remote_conn=web._tm_connection))
     assert web.tm_endpoint.send.call_count == 1
 
 
@@ -273,8 +308,9 @@ def test_web_model_roundtrip_and_default_command_port():
 
 def test_web_sends_status_immediately_after_connecting():
     web = web_stub()
-    action = web.process_tm_connected(SimpleNamespace(remote_conn=web.tm_endpoint.client_socket))
-    [message] = action.msgs_to_remote
+    action = web.process_tm_connected(SimpleNamespace(remote_conn=web._tm_connection))
+    [message] = [msg for msg in action.msgs_to_remote if msg.get_api_call()['msg_type'] == 'adv']
+    assert any(msg.get_api_call().get('property') == 'telescope_model' for msg in action.msgs_to_remote)
     TM_WEB().validate(message.get_json_api_header())
     call = message.get_api_call()
     assert (call['msg_type'], call['action_code'], call['property']) == ('adv', 'set', 'status')
@@ -283,14 +319,14 @@ def test_web_sends_status_immediately_after_connecting():
     assert call['value']['tm_connected']['value'] == 'ESTABLISHED'
     assert message.get_from_system() == 'web' and message.get_to_system() == 'tm'
     assert message.get_echo_data() is None
-    assert not action.timer_actions
+    assert len(action.timer_actions) == 1  # Model-query timeout; status advice itself has no timer.
     web.get_app_processor_state.assert_called_once_with()
 
 
 def test_periodic_status_uses_current_model_and_requires_connection():
     web = web_stub()
     assert web.process_status_event(None).is_empty()
-    web.process_tm_connected(SimpleNamespace(remote_conn=web.tm_endpoint.client_socket))
+    web.process_tm_connected(SimpleNamespace(remote_conn=web._tm_connection))
     web.app_model.app_debug = True
     [message] = web.process_status_event(None).msgs_to_remote
     assert message.get_api_call()['value']['app']['app_debug'] is True
@@ -300,11 +336,12 @@ def test_periodic_status_uses_current_model_and_requires_connection():
 
 def test_tm_stores_web_status_without_queuing_config_or_reply():
     web, tm = web_stub(), tm_stub()
-    [message] = web.process_tm_connected(SimpleNamespace(remote_conn=web.tm_endpoint.client_socket)).msgs_to_remote
+    [message] = [msg for msg in web.process_tm_connected(SimpleNamespace(remote_conn=web._tm_connection)).msgs_to_remote
+                 if msg.get_api_call()['msg_type'] == 'adv']
     # Actual dispatch adds the API header echo wrapper. Status needs no request ID.
     message.add_echo_api_header()
     TM_WEB().validate(message.get_json_api_header())
-    action = tm.process_web_msg(SimpleNamespace(remote_conn=object()), message.get_json_api_header(),
+    action = tm.process_web_msg(SimpleNamespace(remote_conn=tm.web_endpoint.client_socket), message.get_json_api_header(),
                                message.get_api_call(), None)
     assert action.is_empty()
     assert tm.queue.empty()
@@ -325,14 +362,17 @@ def test_invalid_status_advice_is_rejected(change):
         TM_WEB().validate(message.get_json_api_header() | change)
 
 
-def test_web_connection_flags_remain_consistent_with_multiple_clients():
+def test_tm_ignores_disconnect_from_previous_web_connection():
     tm = tm_stub()
     a, b = object(), object()
+    tm.web_endpoint.client_socket = a
     tm.process_web_connected(SimpleNamespace(remote_conn=a, remote_addr=('host', 1)))
+    tm.web_endpoint.client_socket = b
     tm.process_web_connected(SimpleNamespace(remote_conn=b, remote_addr=('host', 2)))
     tm.process_web_disconnected(SimpleNamespace(remote_conn=a, remote_addr=('host', 1)))
     assert tm.telmodel.web_svr.tm_connected == CommunicationStatus.ESTABLISHED
     assert tm.telmodel.tel_mgr.web_connected == CommunicationStatus.ESTABLISHED
+    tm.web_endpoint.connected = False
     tm.process_web_disconnected(SimpleNamespace(remote_conn=b, remote_addr=('host', 2)))
     assert tm.telmodel.web_svr.tm_connected == CommunicationStatus.NOT_ESTABLISHED
     assert tm.telmodel.tel_mgr.web_connected == CommunicationStatus.NOT_ESTABLISHED
@@ -368,25 +408,24 @@ def test_real_web_application_http_tcp_config_completion_timeout_and_shutdown(tm
     import sys
     import requests
     from env.events import DataEvent
-    from ipc.tcp_server import TCPServer
+    from ipc.tcp_client import TCPClient
     from models.comms import InterfaceType
 
     pytest.importorskip('waitress')
     tm = tm_stub()
-    endpoint = TCPServer(description='web', queue=tm.queue, host='127.0.0.1', port=0)
-    tm_port = endpoint.server_socket.getsockname()[1]
     tm.get_interface = lambda _: (TM_WEB(), endpoint, InterfaceType.APP_APP)
     processor = AppProcessor(name='test-tm-web', event_q=tm.queue, driver=tm)
-    if tm_available:
-        endpoint.start()
     processor.start()
+    timers.start()
 
     def free_port():
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', 0))
             return sock.getsockname()[1]
 
-    http_port, cmd_port = free_port(), free_port()
+    http_port, cmd_port, tm_port = free_port(), free_port(), free_port()
+    endpoint = TCPClient(description='web', queue=tm.queue, host='127.0.0.1', port=tm_port)
+    tm.web_endpoint = endpoint
     src = Path(__file__).resolve().parents[2]
     env = os.environ.copy()
     env['WEBHOOK_SECRET'] = 'test-secret'
@@ -399,7 +438,7 @@ def test_real_web_application_http_tcp_config_completion_timeout_and_shutdown(tm
         process = subprocess.Popen([
             sys.executable, '-m', 'web.web_server', '--profile_dir', str(tmp_path),
             '--tm_port', str(tm_port), '--http_port', str(http_port), '--cmd_port', str(cmd_port),
-            '--request_timeout', '0.5', '--headless',
+            '--request_timeout', '0.5', '--headless', '--no_ui',
         ], cwd=src, env=env, stdout=output, stderr=subprocess.STDOUT)
         try:
             deadline = time.monotonic() + 10
@@ -413,6 +452,19 @@ def test_real_web_application_http_tcp_config_completion_timeout_and_shutdown(tm
                 time.sleep(0.02)
             else:
                 pytest.fail(logfile.read_text())
+
+            # WEB is already serving HTTP, but waits for the coordinator.
+            assert requests.post(url + '/webhook', json={
+                'event': 'alston-rt.ui.odt', 'message': {'_type': 'ObsList', 'obs_list': []},
+            }, headers=headers, timeout=3).json()['code'] == 'not_connected'
+            if tm_available:
+                endpoint.connect()
+                deadline = time.monotonic() + 3
+                while time.monotonic() < deadline:
+                    if tm.telmodel.web_svr.app.app_running:
+                        break
+                    time.sleep(0.01)
+                assert tm.telmodel.web_svr.app.app_running, logfile.read_text()
 
             request = {'event': 'alston-rt.ui.odt', 'message': {'_type': 'ObsList', 'obs_list': []}}
             response = requests.post(url + '/webhook', json=request, headers=headers, timeout=3)
@@ -435,8 +487,25 @@ def test_real_web_application_http_tcp_config_completion_timeout_and_shutdown(tm
             assert response.json()['status'] == 'success', response.text + logfile.read_text()
             assert tm.telmodel.web_svr.app.app_running is True
             assert tm.telmodel.web_svr.app.arguments['http_port'] == http_port
+            assert tm.telmodel.web_svr.app.interface_roles['tm'] == 'SERVER'
             assert response.json()['payload']['phase'] == 'actions_scheduled'
             tm.oet.start_next_obs_timer.assert_called_once()
+
+            # TM owns reconnects. Its retry timer must restore the connection
+            # while WEB continues listening and serving HTTP.
+            previous_update = tm.telmodel.web_svr.last_update
+            endpoint._process_disconnect(expected_socket=endpoint.client_socket)
+            assert not endpoint.connected
+            deadline = time.monotonic() + 8
+            while time.monotonic() < deadline:
+                if endpoint.connected and tm.telmodel.web_svr.last_update > previous_update:
+                    break
+                time.sleep(0.02)
+            assert endpoint.connected, logfile.read_text()
+            assert tm.telmodel.web_svr.last_update > previous_update, logfile.read_text()
+            assert tm.telmodel.tel_mgr.web_connected == CommunicationStatus.ESTABLISHED
+            recovered = requests.post(url + '/webhook', json=request, headers=headers, timeout=3)
+            assert recovered.json()['status'] == 'success', recovered.text + logfile.read_text()
 
             invalid = requests.post(url + '/webhook', json={
                 'event': 'alston-rt.ui.dig', 'message': {'dig_id': 'unknown'},
@@ -471,5 +540,5 @@ def test_real_web_application_http_tcp_config_completion_timeout_and_shutdown(tm
             processor.stop()
             processor.join(timeout=2)
             endpoint.stop()
-            endpoint.server_socket.close()
             endpoint.sel.close()
+            timers.stop()

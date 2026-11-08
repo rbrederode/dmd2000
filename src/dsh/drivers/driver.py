@@ -1006,6 +1006,18 @@ class DishDriver:
         try:
             with self._rlock:
                 self._set_operate_mode()
+
+                # Target conversion and the initial slew are part of entering
+                # OPERATE. A failure in either must invalidate the mode and
+                # pointing state through the same recovery path below.
+                self.dsh_model.mode = DishMode.OPERATE
+                self.dsh_model.pointing_state = PointingState.READY
+                self.dsh_model.last_update = datetime.now(timezone.utc)
+
+                target_id, target = self.get_target_tuple()
+                if target is not None:
+                    altaz = self.get_desired_altaz(target=target)
+                    self.slew(altaz=altaz)
         except Exception as e:
             if isinstance(e, XCommsFailure):
                 message = f"DishDriver {self.dsh_model.dsh_id} failed to communicate with dish controller: {e}" + \
@@ -1021,19 +1033,6 @@ class DishDriver:
             self.dsh_model.pointing_state = PointingState.UNKNOWN
             self.dsh_model.last_update = datetime.now(timezone.utc)
             raise e
-
-        # Set the dish mode to OPERATE, pointing state to READY
-        self.dsh_model.mode = DishMode.OPERATE
-        self.dsh_model.pointing_state = PointingState.READY
-        self.dsh_model.last_update = datetime.now(timezone.utc)
-
-        # Get the current target from the dish model
-        target_id, target = self.get_target_tuple()
-
-        if target is not None:
-            # Calculate the desired AltAz for the new target and slew the dish to it
-            altaz = self.get_desired_altaz(target=target)
-            self.slew(altaz=altaz)
 
     def track(self):
         """
@@ -1266,7 +1265,26 @@ class DishDriver:
 
     def get_desired_altaz(self, target: TargetModel) -> AltAz:
         """ Calculates the desired AltAz for the given target at the current time.
-        """  
+        """
+        try:
+            return self._calculate_desired_altaz(target)
+        except ValueError as e:
+            # Astropy raises ValueError when its IERS predictive data exceed
+            # auto_max_age. Only this known condition is a handled failure;
+            # unrelated calculation errors must retain their original type.
+            if not " ".join(str(e).split()).startswith(
+                "interpolating from IERS_Auto using predictive values that are more"
+            ):
+                raise
+            message = (
+                f"DishDriver {self.dsh_model.dsh_id} cannot calculate desired AltAz: "
+                f"IERS Earth-orientation data are out of date. Refresh the IERS "
+                f"data and restart Dish Manager. Astropy reported: {e}"
+            )
+            raise XSoftwareFailure(self.dsh_model.set_last_err(message)) from e
+
+    def _calculate_desired_altaz(self, target: TargetModel) -> AltAz:
+        """Calculate target pointing, preserving underlying calculation errors."""
         time = Time(datetime.now(timezone.utc))
         frame = AltAz(obstime=time, location=self.location)
           

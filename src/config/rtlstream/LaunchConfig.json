@@ -1,6 +1,7 @@
 {
     "_type": "LaunchConfigModel",
     "profile": "rtlstream",
+    "log_dir": "logs",
     "scan_store_dir": "~/samples",
     "launches": [
         {

@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import atexit
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -16,6 +17,8 @@ import sys
 import tempfile
 import threading
 import uuid
+from urllib.parse import urlsplit
+import requests
 
 from flask import Flask, abort, jsonify, request, send_from_directory
 from werkzeug.exceptions import HTTPException
@@ -154,21 +157,165 @@ class Jobs:
                     job["process"].wait()
 
 
-def create_app(data_roots=None, cache_dir=None):
+def create_app(data_roots=None, cache_dir=None, web_url=None, web_token=None, profile_provider=None):
     roots = [Path(p).expanduser().resolve() for p in (data_roots or [Path.home() / "samples"])]
     app = Flask(__name__, static_folder=str(FRONTEND), static_url_path="")
     app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024
+    web_url = (web_url or os.getenv('WEB_API_URL', 'http://127.0.0.1:8000')).rstrip('/')
+    address = urlsplit(web_url)
+    if address.scheme not in ('http', 'https') or not address.hostname or address.username or address.password or address.query or address.fragment or address.path:
+        raise ValueError('WEB URL must be an HTTP(S) server address without credentials or a path')
+    web_token = web_token if web_token is not None else os.getenv('WEBHOOK_SECRET')
     jobs = Jobs(cache_dir or tempfile.mkdtemp(prefix="dmd2000-opt-ui-"))
     app.extensions["opt_jobs"] = jobs
     atexit.register(jobs.close)
+
+    def diagnostic_profile():
+        if profile_provider is not None:
+            return profile_provider()
+        # The optional standalone console gets the same selection from WEB.
+        if not web_token:
+            abort(503, 'WEB authentication is not configured')
+        try:
+            upstream = requests.request('GET', web_url + '/api/profile',
+                headers={'X-Webhook-Token': web_token}, timeout=(3, 10), allow_redirects=False)
+            body = upstream.json()
+            if upstream.status_code != 200 or not isinstance(body, dict) or body.get('status') != 'success' or not isinstance(body.get('payload'), dict):
+                abort(502, 'Could not load the selected WEB profile')
+            return body['payload']
+        except (requests.exceptions.RequestException, ValueError):
+            abort(502, 'Could not load the selected WEB profile')
+
+    from ui.diagnostics import register_diagnostics
+    register_diagnostics(app, diagnostic_profile)
+
+    from ui import commands
+
+    @app.get('/api/commands')
+    def application_commands():
+        application = request.args.get('app', '')
+        if application not in commands.APPLICATIONS:
+            return jsonify(status='error', message='Choose an application type'), 400
+        try:
+            return jsonify(status='success', payload={'commands': commands.choices(application)})
+        except (OSError, ValueError):
+            return jsonify(status='error', message='Command registry is unavailable'), 503
+
+    @app.post('/api/commands')
+    def application_command():
+        data = request.get_json()
+        if not isinstance(data, dict) or set(data) - {'app', 'cmd', 'value'}:
+            return jsonify(status='error', message='Supply app, cmd and optional value'), 400
+        target, command = data.get('app'), data.get('cmd')
+        value = data.get('value')
+        if (not isinstance(target, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,127}', target)
+                or not isinstance(command, str)
+                or not re.fullmatch(r'[a-z][a-z0-9_-]*', command)
+                or (command in ('trace', 'debug') and value not in (None, 'ON', 'OFF'))
+                or (command == 'stop' and (target.lower() != 'dm' or not isinstance(value, str)
+                    or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', value)))
+                or (command == 'resync' and value is not None)):
+            return jsonify(status='error', message='Choose a valid application, command and value'), 400
+        try:
+            commands.validate(target, command, value)
+        except ValueError as exc:
+            return jsonify(status='error', message=str(exc)), 400
+        except OSError:
+            return jsonify(status='error', message='Command registry is unavailable'), 503
+        if not web_token:
+            return jsonify(status='error', message='WEB authentication is not configured'), 503
+        message = {'app': target, 'cmd': command}
+        if value is not None:
+            message['value'] = value
+        try:
+            upstream = requests.request('POST', web_url + '/webhook',
+                headers={'X-Webhook-Token': web_token},
+                json={'event': 'alston-rt.ui.cmd', 'message': message},
+                timeout=(3, 30), allow_redirects=False)
+            body = upstream.json()
+            if (not isinstance(body, dict) or body.get('status') not in ('success', 'error')
+                    or not isinstance(body.get('message'), str)):
+                raise ValueError('Invalid command response')
+            return jsonify(body), upstream.status_code
+        except (requests.exceptions.RequestException, ValueError):
+            return jsonify(status='error', code='outcome_unknown',
+                message='No valid command response was received. The outcome is unknown; check the application before retrying.'), 502
+
+    @app.post('/api/dish-control/<dish_id>')
+    def dish_control(dish_id):
+        """Live dish settings, distinct from file-backed configuration editing."""
+        from models.dsh import DishMode, Capability
+        data = request.get_json()
+        if (not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', dish_id) or not isinstance(data, dict)
+                or len(data) != 1 or not set(data) <= {'mode', 'capability'}):
+            return jsonify(status='error', message='Supply one mode or capability for a dish ID'), 400
+        field, value = next(iter(data.items()))
+        choices = DishMode if field == 'mode' else Capability
+        if not isinstance(value, str) or value not in choices.__members__:
+            return jsonify(status='error', message='Unknown dish ' + field), 400
+        if not web_token:
+            return jsonify(status='error', message='WEB authentication is not configured'), 503
+        try:
+            upstream = requests.request('POST', web_url + '/webhook',
+                headers={'X-Webhook-Token': web_token},
+                json={'event': 'alston-rt.ui.dsh', 'message': {'dsh_id': dish_id, field: value}},
+                timeout=(3, 30), allow_redirects=False)
+            body = upstream.json()
+            if (not isinstance(body, dict) or body.get('status') not in ('success', 'error')
+                    or not isinstance(body.get('message'), str)):
+                raise ValueError('Invalid configuration response')
+            return jsonify(body), upstream.status_code
+        except (requests.exceptions.RequestException, ValueError):
+            return jsonify(status='error', code='outcome_unknown',
+                message='No valid response received. The outcome is unknown; check the dish before retrying.'), 502
+
+    @app.post('/api/digitiser-control/<dig_id>')
+    def digitiser_control(dig_id):
+        if not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', dig_id):
+            return jsonify(status='error', message='Choose a valid digitiser ID'), 400
+        settings = request.get_json()
+        numeric = {'gain': (0, 100, False), 'center_freq': (0, None, False),
+            'sample_rate': (0, None, False), 'bandwidth': (0, None, False),
+            'freq_correction': (-1000, 1000, True), 'channels': (0, None, True), 'scan_duration': (0, None, True)}
+        if not isinstance(settings, dict) or not settings or set(settings) - numeric.keys() - {'load_active', 'scanning'}:
+            return jsonify(status='error', message='Supply digitiser settings or a scanning state'), 400
+        for key, value in settings.items():
+            if key in ('load_active', 'scanning'):
+                valid = type(value) is bool
+            else:
+                lower, upper, integer = numeric[key]
+                valid = (type(value) in (int, float) and math.isfinite(value) and value >= lower
+                    and (upper is None or value <= upper) and (not integer or float(value).is_integer())
+                    and (key in ('gain', 'freq_correction') or value > 0))
+            if not valid:
+                return jsonify(status='error', message='Invalid value for ' + key, code='invalid_request'), 400
+        if not web_token:
+            return jsonify(status='error', message='WEB authentication is not configured'), 503
+        try:
+            upstream = requests.request('POST', web_url + '/webhook',
+                headers={'X-Webhook-Token': web_token},
+                json={'event': 'alston-rt.ui.dig', 'message': {'dig_id': dig_id, **settings}},
+                timeout=(3, 30), allow_redirects=False)
+            body = upstream.json()
+            if (not isinstance(body, dict) or body.get('status') not in ('success', 'error')
+                    or not isinstance(body.get('message'), str)):
+                raise ValueError('Invalid configuration response')
+            return jsonify(body), upstream.status_code
+        except (requests.exceptions.RequestException, ValueError):
+            return jsonify(status='error', code='outcome_unknown',
+                message='No valid response received. Outcome unknown; check the digitiser before retrying.'), 502
 
     @app.before_request
     def local_only():
         if request.host.split(":")[0] not in ("127.0.0.1", "localhost"):
             abort(403, "This service only accepts localhost requests")
-        if request.method == "POST":
+        if request.method in ("POST", "PUT", "PATCH", "DELETE"):
             if request.headers.get("Origin") and request.headers["Origin"] != request.host_url.rstrip("/"):
                 abort(403, "Cross-origin requests are not accepted")
+            if request.endpoint and request.endpoint.startswith('security.'):
+                return
+            if request.method == 'DELETE' and not request.content_length:
+                return
             if not request.is_json:
                 abort(415, "Use application/json")
             if not isinstance(request.get_json(silent=True), dict):
@@ -177,10 +324,14 @@ def create_app(data_roots=None, cache_dir=None):
     @app.errorhandler(ValueError)
     @app.errorhandler(TypeError)
     def invalid(error):
+        if request.path.startswith('/api/web/'):
+            return jsonify(status='error', message=str(error), code='invalid_request'), 400
         return jsonify(error=str(error)), 400
 
     @app.errorhandler(HTTPException)
     def http_error(error):
+        if request.path.startswith(("/api/web/", "/api/diagnostics/")):
+            return jsonify(status='error', message=error.description, code='invalid_request'), error.code
         if request.path.startswith("/api/opt/"):
             return jsonify(error=error.description), error.code
         return error
@@ -188,6 +339,44 @@ def create_app(data_roots=None, cache_dir=None):
     @app.errorhandler(OSError)
     def unavailable(error):
         return jsonify(error=str(error)), 400
+
+    @app.route('/api/web/<path:resource>', methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE'])
+    def web_api(resource):
+        allowed = ((resource == 'profiles' and request.method == 'GET')
+                   or (resource == 'telescope/model' and request.method == 'GET')
+                   or (resource == 'profile' and request.method in ('GET', 'PUT'))
+                   or (resource in ('dishes', 'digitisers') and request.method in ('GET', 'POST'))
+                   or (re.fullmatch(r'(dishes|digitisers)/[A-Za-z0-9][A-Za-z0-9_-]{0,127}', resource)
+                       and request.method in ('GET', 'PATCH', 'DELETE')))
+        if not allowed:
+            abort(404)
+        if not web_token:
+            return jsonify(status='error', message='WEB authentication is not configured for this console', code='not_configured'), 503
+        headers = {'X-Webhook-Token': web_token}
+        for name in ('If-Match', 'X-Config-Profile'):
+            if name in request.headers:
+                headers[name] = request.headers[name]
+        try:
+            upstream = requests.request(request.method, web_url + '/api/' + resource,
+                headers=headers, json=request.get_json() if request.method not in ('GET', 'DELETE') else None,
+                timeout=(3, 10), allow_redirects=False)
+            body = upstream.json()
+            if (not isinstance(body, dict) or body.get('status') not in ('success', 'error')
+                    or not isinstance(body.get('message'), str)
+                    or (body['status'] == 'success' and not isinstance(body.get('payload'), dict))):
+                raise ValueError('Invalid WEB response')
+        except requests.exceptions.RequestException:
+            return jsonify(status='error', message='Could not reach WEB. A submitted change may have completed; refresh before trying again.', code='web_unavailable'), 502
+        except ValueError:
+            return jsonify(status='error', message='WEB returned an invalid response. Refresh to check any submitted save.', code='invalid_response'), 502
+        response = jsonify(body)
+        response.status_code = upstream.status_code
+        response.headers['Cache-Control'] = 'no-store'
+        if upstream.headers.get('ETag'):
+            response.headers['ETag'] = upstream.headers['ETag']
+        if upstream.headers.get('Location', '').startswith(('/api/dishes/', '/api/digitisers/')):
+            response.headers['Location'] = '/api/web/' + upstream.headers['Location'][5:]
+        return response
 
     def directory(value):
         path = Path(value or roots[0]).expanduser().resolve()
@@ -307,8 +496,12 @@ def main():
     parser.add_argument("--data-root", action="append", help="Permitted observation root; repeat for more roots (default ~/samples)")
     parser.add_argument("--cache-dir", help="Directory for UI result sessions; defaults to a temporary directory")
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument('--web-url', default=os.getenv('WEB_API_URL', 'http://127.0.0.1:8000'), help='WEB application address; authentication uses WEBHOOK_SECRET')
+    parser.add_argument('--state-dir', help='Shared UI authentication state directory')
     args = parser.parse_args()
-    app = create_app(args.data_root, args.cache_dir)
+    app = create_app(args.data_root, args.cache_dir, web_url=args.web_url)
+    from web.security import init_security
+    init_security(app, args.state_dir)
     print(f"OPT workspace: http://127.0.0.1:{args.port}/")
     print(f"Result sessions: {app.extensions['opt_jobs'].cache}")
     try:

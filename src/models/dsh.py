@@ -128,6 +128,7 @@ class DishModel(BaseModel):
         "driver_config": Or(None, lambda v: v is None or isinstance(v, BaseModel)),               # Dish driver configuration instance e.g. MD01Config
         "driver_poll_period": Or(None, And(int, lambda v: v > 0)),                                # Dish driver poll period in milliseconds to get altaz updates
         "driver_failures": And(int, lambda v: v >= 0),                                            # Count of consecutive driver call failures
+        "last_comms_success_dt": Or(None, And(datetime, lambda v: isinstance(v, datetime))),      # Last valid response from a network dish controller
         "health": And(HealthState, lambda v: isinstance(v, HealthState)),                         # Overall health state of the dish based on driver failures and other factors
         "weather_alarm": And(bool, lambda v: isinstance(v, bool)),                                # Weather alarm status for the dish, True when weather conditions are unsafe for operation
         "last_err_msg": Or(None, And(str, lambda v: isinstance(v, str))),                         # Last error message from the dish manager
@@ -199,6 +200,7 @@ class DishModel(BaseModel):
             "driver_config": None,                          # Initialize with None, will be set based on driver_type
             "driver_poll_period": 1000,                     # Default to 1000 ms
             "driver_failures": 0,                           # Initialize failure count to zero
+            "last_comms_success_dt": None,
             "health": HealthState.UNKNOWN,
             "weather_alarm": False,                         # Initialize weather alarm to False
             "last_err_msg": None,

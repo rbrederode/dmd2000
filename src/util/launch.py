@@ -62,6 +62,7 @@ def build_launch_command(
     keep_open: bool = True,
     columns: int | None = None,
     rows: int | None = None,
+    log_dir: str | None = None,
 ) -> list[str]:
     launcher = repo_root / "scripts" / "launch" / "launch_app.sh"
     command = [
@@ -86,7 +87,10 @@ def build_launch_command(
     if not keep_open:
         command.append("--no-keep-open")
 
-    for key, value in launch.env.items():
+    from util.log_config import resolve_log_dir
+    environment = {'DMD_LOG_DIR': os.getenv('DMD_LOG_DIR', log_dir), **launch.env}
+    environment['DMD_LOG_DIR'] = str(resolve_log_dir(environment['DMD_LOG_DIR'], repo_root))
+    for key, value in environment.items():
         command.extend(["--env", f"{key}={expand_launch_value(value)}"])
 
     launch_args = [expand_launch_value(item) for item in launch.args]
@@ -144,6 +148,7 @@ def main() -> int:
             keep_open=not args.no_keep_open,
             columns=args.columns,
             rows=args.rows,
+            log_dir=config.log_dir,
         )
 
         completed = subprocess.run(command, check=False)

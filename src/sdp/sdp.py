@@ -625,6 +625,8 @@ class SDP(App):
         for key, val in value.items():
             if key in ['dig_id', 'obs_id']:
                 continue  # skip these keys as they are identifiers and not attributes
+            if key == sdp_dig.PROPERTY_SCANNING and val is None:
+                continue  # A partial tuning update must not replace scanning with None.
 
             if key == 'filter_bank':
                 if val is None:

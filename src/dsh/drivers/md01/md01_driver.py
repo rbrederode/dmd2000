@@ -389,6 +389,7 @@ class MD01Driver(DishDriver):
         # Decode response data (bytes) to MD01Msg
         md01_rsp = MD01Msg()
         md01_rsp.from_data(bytes(rsp_data))
+        self.dsh_model.last_comms_success_dt = datetime.now(timezone.utc)
         logger.debug(f"MD01Driver for controller {self.md01_config.host} {self.md01_config.port} received response from MD01 controller:\n{md01_rsp}")
         self._trace_md01_message("RX", md01_rsp)
         return md01_rsp

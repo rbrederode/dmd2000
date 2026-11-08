@@ -77,7 +77,7 @@ class TelescopeManager(App):
         self._web_connections_lock = threading.Lock()
 
         self.web_api = tm_web.TM_WEB()
-        self.web_endpoint = TCPServer(description=dmd_protocol.WEB, queue=self.get_queue(),
+        self.web_endpoint = TCPClient(description=dmd_protocol.WEB, queue=self.get_queue(),
                                       host=self.get_args().web_host, port=self.get_args().web_port)
         self.register_interface(dmd_protocol.WEB, self.web_api, self.web_endpoint, InterfaceType.APP_APP)
         # Initialise Web application comms status.
@@ -139,8 +139,8 @@ class TelescopeManager(App):
         """
         super().add_args(arg_parser)
 
-        arg_parser.add_argument("--web_host", type=str, required=False, help="TCP server host to listen for Web Server connections", default="localhost")
-        arg_parser.add_argument("--web_port", type=int, required=False, help="TCP server port to listen for Web Server connections", default=50004)
+        arg_parser.add_argument("--web_host", type=str, required=False, help="Web Server host for TM to connect to", default="localhost")
+        arg_parser.add_argument("--web_port", type=int, required=False, help="Web Server TCP port for TM to connect to", default=50004)
 
         arg_parser.add_argument("--web_api_threads", type=_positive_int, default=4,
                                 help="Number of Waitress Web API worker threads (minimum: 1; default: 4)")
@@ -169,7 +169,7 @@ class TelescopeManager(App):
         self.dm_endpoint.connect()  # Client endpoint
         self.dig_endpoint.start()   # Server endpoint
         self.sdp_endpoint.connect() # Client endpoint
-        self.web_endpoint.start()
+        self.web_endpoint.connect() # Client endpoint; TM initiates when ready.
         if self.ws_endpoint is not None:
             self.ws_endpoint.connect()  # Client endpoint
 
@@ -221,8 +221,11 @@ class TelescopeManager(App):
         logger.info(f"Telescope Manager connected to Web Server: {event.remote_addr}")
 
         with self._web_connections_lock:
+            if not self.web_endpoint.connected or event.remote_conn is not self.web_endpoint.client_socket:
+                return Action()
             if hasattr(event.remote_conn, 'fileno') and event.remote_conn.fileno() < 0:
                 return Action()
+            self._web_connections.clear()
             self._web_connections.add(event.remote_conn)
 
             self.telmodel.web_svr.tm_connected = CommunicationStatus.ESTABLISHED
@@ -235,6 +238,8 @@ class TelescopeManager(App):
         logger.info(f"Telescope Manager disconnected from Web Server: {event.remote_addr}")
 
         with self._web_connections_lock:
+            if self.web_endpoint.connected and event.remote_conn is not self.web_endpoint.client_socket:
+                return Action()
             self._web_connections.discard(event.remote_conn)
 
             connected = (CommunicationStatus.ESTABLISHED if self._web_connections
@@ -255,8 +260,11 @@ class TelescopeManager(App):
             model = WebServerModel.from_dict(api_call['value'])
             model.last_update = datetime.fromisoformat(api_msg['timestamp'].replace('Z', '+00:00'))
             with self._web_connections_lock:
+                if not self.web_endpoint.connected or event.remote_conn is not self.web_endpoint.client_socket:
+                    return Action()
                 if hasattr(event.remote_conn, 'fileno') and event.remote_conn.fileno() < 0:
                     return Action()
+                self._web_connections.clear()
                 self._web_connections.add(event.remote_conn)
                 model.tm_connected = CommunicationStatus.ESTABLISHED
                 self.telmodel.web_svr = model
@@ -265,6 +273,18 @@ class TelescopeManager(App):
 
         if api_call['msg_type'] != 'req':
             return Action()
+        if api_call.get('property') == tm_web.PROPERTY_MODEL:
+            from web.model_snapshot import telescope_snapshot
+            try:
+                snapshot = telescope_snapshot(self.telmodel)
+                if getattr(self, 'arg_parser', None) is not None:
+                    snapshot['profile'] = self.get_args().profile
+                result = ResponseEvent('success', 'Telescope model snapshot retrieved',
+                                       payload=snapshot)
+            except Exception:
+                logger.exception('Could not build telescope model snapshot')
+                result = ResponseEvent('error', 'Could not build telescope model snapshot', code='snapshot_failed')
+            return Action().set_msg_to_remote(tm_web.configuration_response(api_msg, result))
         if api_call['action_code'] != 'set':
             return Action().set_msg_to_remote(tm_web.configuration_response(
                 api_msg, ResponseEvent('error', 'GET configuration is not implemented', code='invalid_request')))
@@ -354,7 +374,8 @@ class TelescopeManager(App):
             new_scan_config["obs_id"] = obs_id
 
             # If scanning is turned on we need to provide the observation id and tgt_idx and freq_scan
-            new_scan_config["scanning"] = {'obs_id': obs_id, 'tgt_idx': 0, 'freq_scan': 0} if scanning else scanning
+            if scanning is not None:
+                new_scan_config["scanning"] = {'obs_id': obs_id, 'tgt_idx': 0, 'freq_scan': 0} if scanning else scanning
 
             # SDP scan_config expects a concrete numeric gain. When gain is AUTO/AUTO<n>, defer the
             # gain update until the digitiser returns a resolved gain value.
@@ -1128,6 +1149,8 @@ class TelescopeManager(App):
 
                 if dig is not None:
                     for key in dig_config.keys():
+                        if key == tm_dig.PROPERTY_SCANNING and dig_config[key] is None:
+                            continue  # Legacy partial updates used null to mean unchanged.
                         if key == "filter_bank":
                             filter_bank = dig_config[key]
                             if isinstance(filter_bank, dict):

@@ -5,18 +5,18 @@
   "f/d_ratio": 2.00,
   "latitude": 53.234090,    
   "longitude": -2.305533,
-  "total_integration_time": 1000,
+  "total_integration_time": 9600,
   "estimated_slewing_time": 0,
-  "estimated_observation_duration": "00:05:00",
+  "estimated_observation_duration": "02:48:00",
   "scheduling_block_start": {
     "_type": "relativetime",
     "value": "+00:00:10"
   },
   "scheduling_block_end": {
     "_type": "relativetime",
-    "value": "00:05:10"
+    "value": "02:48:10"
   },
-  "dsh_id": "dish003",
+  "dsh_id": "dish001",
   "obs_id": "ODT-{{NOW}}-dish003-Rotation",
   "obs_state": {
     "_type": "enum.IntEnum",
@@ -32,11 +32,11 @@
         "instance": "Feed",
         "value": "LOAD"
       },
-      "gain": 30,
+      "gain": "AUTO1",
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 2048000,
-      "integration_time": 180,
+      "sample_rate": 6000000,
+      "integration_time": 10,
       "spectral_resolution": 2048,
       "tgt_idx": 0,
       "obs_id": "ODT-{{NOW}}-dish003-Rotation"
@@ -48,11 +48,11 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 30,
+      "gain": "AUTO1",
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 2048000,
-      "integration_time": 180,
+      "sample_rate": 6000000,
+      "integration_time": 10,
       "spectral_resolution": 2048,
       "tgt_idx": 1,
       "obs_id": "ODT-{{NOW}}-dish003-Rotation"
@@ -64,11 +64,11 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 30,
+      "gain": "AUTO1",
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 2048000,
-      "integration_time": 180,
+      "sample_rate": 6000000,
+      "integration_time": 10,
       "spectral_resolution": 2048,
       "tgt_idx": 2,
       "obs_id": "ODT-{{NOW}}-dish003-Rotation"
@@ -80,11 +80,11 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 30,
+      "gain": "AUTO1",
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 2048000,
-      "integration_time": 180,
+      "sample_rate": 6000000,
+      "integration_time": 10,
       "spectral_resolution": 2048,
       "tgt_idx": 3,
       "obs_id": "ODT-{{NOW}}-dish003-Rotation"
@@ -96,11 +96,11 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 30,
+      "gain": "AUTO1",
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 2048000,
-      "integration_time": 180,
+      "sample_rate": 6000000,
+      "integration_time": 10,
       "spectral_resolution": 2048,
       "tgt_idx": 4,
       "obs_id": "ODT-{{NOW}}-dish003-Rotation"
@@ -112,13 +112,429 @@
         "instance": "Feed",
         "value": "H3T_1420"
       },
-      "gain": 30,
+      "gain": "AUTO1",
       "center_freq": 1420000000,
       "bandwidth": 1000000,
-      "sample_rate": 2048000,
-      "integration_time": 180,
+      "sample_rate": 6000000,
+      "integration_time": 10,
       "spectral_resolution": 2048,
       "tgt_idx": 5,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": "AUTO1",
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 6000000,
+      "integration_time": 10,
+      "spectral_resolution": 2048,
+      "tgt_idx": 6,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": "AUTO1",
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 6000000,
+      "integration_time": 10,
+      "spectral_resolution": 2048,
+      "tgt_idx": 7,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": "AUTO1",
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 6000000,
+      "integration_time": 10,
+      "spectral_resolution": 2048,
+      "tgt_idx": 8,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": "AUTO1",
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 6000000,
+      "integration_time": 10,
+      "spectral_resolution": 2048,
+      "tgt_idx": 9,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": "AUTO1",
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 6000000,
+      "integration_time": 10,
+      "spectral_resolution": 2048,
+      "tgt_idx": 10,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": "AUTO1",
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 6000000,
+      "integration_time": 10,
+      "spectral_resolution": 2048,
+      "tgt_idx": 11,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": "AUTO1",
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 6000000,
+      "integration_time": 10,
+      "spectral_resolution": 2048,
+      "tgt_idx": 12,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": "AUTO1",
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 6000000,
+      "integration_time": 10,
+      "spectral_resolution": 2048,
+      "tgt_idx": 13,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": "AUTO1",
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 6000000,
+      "integration_time": 10,
+      "spectral_resolution": 2048,
+      "tgt_idx": 14,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": "AUTO1",
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 6000000,
+      "integration_time": 10,
+      "spectral_resolution": 2048,
+      "tgt_idx": 15,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": "AUTO1",
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 6000000,
+      "integration_time": 10,
+      "spectral_resolution": 2048,
+      "tgt_idx": 16,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": "AUTO1",
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 6000000,
+      "integration_time": 10,
+      "spectral_resolution": 2048,
+      "tgt_idx": 17,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": "AUTO1",
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 6000000,
+      "integration_time": 10,
+      "spectral_resolution": 2048,
+      "tgt_idx": 18,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": "AUTO1",
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 6000000,
+      "integration_time": 10,
+      "spectral_resolution": 2048,
+      "tgt_idx": 19,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": "AUTO1",
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 6000000,
+      "integration_time": 10,
+      "spectral_resolution": 2048,
+      "tgt_idx": 20,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": "AUTO1",
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 6000000,
+      "integration_time": 10,
+      "spectral_resolution": 2048,
+      "tgt_idx": 21,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": "AUTO1",
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 6000000,
+      "integration_time": 10,
+      "spectral_resolution": 2048,
+      "tgt_idx": 22,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": "AUTO1",
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 6000000,
+      "integration_time": 10,
+      "spectral_resolution": 2048,
+      "tgt_idx": 23,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": "AUTO1",
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 6000000,
+      "integration_time": 10,
+      "spectral_resolution": 2048,
+      "tgt_idx": 24,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": "AUTO1",
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 6000000,
+      "integration_time": 10,
+      "spectral_resolution": 2048,
+      "tgt_idx": 25,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": "AUTO1",
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 6000000,
+      "integration_time": 10,
+      "spectral_resolution": 2048,
+      "tgt_idx": 26,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": "AUTO1",
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 6000000,
+      "integration_time": 10,
+      "spectral_resolution": 2048,
+      "tgt_idx": 27,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": "AUTO1",
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 6000000,
+      "integration_time": 10,
+      "spectral_resolution": 2048,
+      "tgt_idx": 28,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": "AUTO1",
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 6000000,
+      "integration_time": 10,
+      "spectral_resolution": 2048,
+      "tgt_idx": 29,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": "AUTO1",
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 6000000,
+      "integration_time": 10,
+      "spectral_resolution": 2048,
+      "tgt_idx": 30,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": "AUTO1",
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 6000000,
+      "integration_time": 10,
+      "spectral_resolution": 2048,
+      "tgt_idx": 31,
       "obs_id": "ODT-{{NOW}}-dish003-Rotation"
     }
   ],
@@ -127,10 +543,10 @@
       "_type": "TargetModel",
       "tgt_idx": 0,
       "obs_id": "ODT-{{NOW}}-dish003-Rotation",
-      "id": "Galactic longitude 30.0, latitude 0.0",
+      "id": "Load Scan Position: AltAz (23.0, 201.0)",
       "altaz": {
-        "alt": 24.0,
-        "az": 178.0
+        "alt": 23.0,
+        "az": 201.0
       },
       "pointing": {
         "_type": "enum.IntEnum",
@@ -141,6 +557,40 @@
     {
       "_type": "TargetModel",
       "tgt_idx": 1,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
+      "id": "Galactic longitude 20.0, latitude 0.0",
+      "sky_coord": {
+        "_type": "SkyCoord",
+        "frame": "galactic",
+        "l": 20.0,
+        "b": 0.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "SIDEREAL_TRACK"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 2,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
+      "id": "Galactic longitude 25.0, latitude 0.0",
+      "sky_coord": {
+        "_type": "SkyCoord",
+        "frame": "galactic",
+        "l": 25.0,
+        "b": 0.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "SIDEREAL_TRACK"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 3,
       "obs_id": "ODT-{{NOW}}-dish003-Rotation",
       "id": "Galactic longitude 30.0, latitude 0.0",
       "sky_coord": {
@@ -157,7 +607,24 @@
     },
     {
       "_type": "TargetModel",
-      "tgt_idx": 2,
+      "tgt_idx": 4,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
+      "id": "Galactic longitude 35.0, latitude 0.0",
+      "sky_coord": {
+        "_type": "SkyCoord",
+        "frame": "galactic",
+        "l": 35.0,
+        "b": 0.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "SIDEREAL_TRACK"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 5,
       "obs_id": "ODT-{{NOW}}-dish003-Rotation",
       "id": "Galactic longitude 40.0, latitude 0.0",
       "sky_coord": {
@@ -174,7 +641,24 @@
     },
     {
       "_type": "TargetModel",
-      "tgt_idx": 3,
+      "tgt_idx": 6,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
+      "id": "Galactic longitude 45.0, latitude 0.0",
+      "sky_coord": {
+        "_type": "SkyCoord",
+        "frame": "galactic",
+        "l": 45.0,
+        "b": 0.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "SIDEREAL_TRACK"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 7,
       "obs_id": "ODT-{{NOW}}-dish003-Rotation",
       "id": "Galactic longitude 50.0, latitude 0.0",
       "sky_coord": {
@@ -191,7 +675,24 @@
     },
     {
       "_type": "TargetModel",
-      "tgt_idx": 4,
+      "tgt_idx": 8,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
+      "id": "Galactic longitude 55.0, latitude 0.0",
+      "sky_coord": {
+        "_type": "SkyCoord",
+        "frame": "galactic",
+        "l": 55.0,
+        "b": 0.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "SIDEREAL_TRACK"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 9,
       "obs_id": "ODT-{{NOW}}-dish003-Rotation",
       "id": "Galactic longitude 60.0, latitude 0.0",
       "sky_coord": {
@@ -208,13 +709,370 @@
     },
     {
       "_type": "TargetModel",
-      "tgt_idx": 5,
+      "tgt_idx": 10,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
+      "id": "Galactic longitude 65.0, latitude 0.0",
+      "sky_coord": {
+        "_type": "SkyCoord",
+        "frame": "galactic",
+        "l": 65.0,
+        "b": 0.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "SIDEREAL_TRACK"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 11,
       "obs_id": "ODT-{{NOW}}-dish003-Rotation",
       "id": "Galactic longitude 70.0, latitude 0.0",
       "sky_coord": {
         "_type": "SkyCoord",
         "frame": "galactic",
         "l": 70.0,
+        "b": 0.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "SIDEREAL_TRACK"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 12,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
+      "id": "Galactic longitude 75.0, latitude 0.0",
+      "sky_coord": {
+        "_type": "SkyCoord",
+        "frame": "galactic",
+        "l": 75.0,
+        "b": 0.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "SIDEREAL_TRACK"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 13,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
+      "id": "Galactic longitude 80.0, latitude 0.0",
+      "sky_coord": {
+        "_type": "SkyCoord",
+        "frame": "galactic",
+        "l": 80.0,
+        "b": 0.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "SIDEREAL_TRACK"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 14,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
+      "id": "Galactic longitude 85.0, latitude 0.0",
+      "sky_coord": {
+        "_type": "SkyCoord",
+        "frame": "galactic",
+        "l": 85.0,
+        "b": 0.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "SIDEREAL_TRACK"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 15,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
+      "id": "Galactic longitude 90.0, latitude 0.0",
+      "sky_coord": {
+        "_type": "SkyCoord",
+        "frame": "galactic",
+        "l": 90.0,
+        "b": 0.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "SIDEREAL_TRACK"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 16,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
+      "id": "Galactic longitude 95.0, latitude 0.0",
+      "sky_coord": {
+        "_type": "SkyCoord",
+        "frame": "galactic",
+        "l": 95.0,
+        "b": 0.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "SIDEREAL_TRACK"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 17,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
+      "id": "Galactic longitude 100.0, latitude 0.0",
+      "sky_coord": {
+        "_type": "SkyCoord",
+        "frame": "galactic",
+        "l": 100.0,
+        "b": 0.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "SIDEREAL_TRACK"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 18,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
+      "id": "Galactic longitude 105.0, latitude 0.0",
+      "sky_coord": {
+        "_type": "SkyCoord",
+        "frame": "galactic",
+        "l": 105.0,
+        "b": 0.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "SIDEREAL_TRACK"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 19,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
+      "id": "Galactic longitude 110.0, latitude 0.0",
+      "sky_coord": {
+        "_type": "SkyCoord",
+        "frame": "galactic",
+        "l": 110.0,
+        "b": 0.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "SIDEREAL_TRACK"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 20,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
+      "id": "Galactic longitude 115.0, latitude 0.0",
+      "sky_coord": {
+        "_type": "SkyCoord",
+        "frame": "galactic",
+        "l": 115.0,
+        "b": 0.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "SIDEREAL_TRACK"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 21,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
+      "id": "Galactic longitude 120.0, latitude 0.0",
+      "sky_coord": {
+        "_type": "SkyCoord",
+        "frame": "galactic",
+        "l": 120.0,
+        "b": 0.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "SIDEREAL_TRACK"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 22,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
+      "id": "Galactic longitude 125.0, latitude 0.0",
+      "sky_coord": {
+        "_type": "SkyCoord",
+        "frame": "galactic",
+        "l": 125.0,
+        "b": 0.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "SIDEREAL_TRACK"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 23,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
+      "id": "Galactic longitude 130.0, latitude 0.0",
+      "sky_coord": {
+        "_type": "SkyCoord",
+        "frame": "galactic",
+        "l": 130.0,
+        "b": 0.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "SIDEREAL_TRACK"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 24,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
+      "id": "Galactic longitude 135.0, latitude 0.0",
+      "sky_coord": {
+        "_type": "SkyCoord",
+        "frame": "galactic",
+        "l": 135.0,
+        "b": 0.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "SIDEREAL_TRACK"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 25,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
+      "id": "Galactic longitude 140.0, latitude 0.0",
+      "sky_coord": {
+        "_type": "SkyCoord",
+        "frame": "galactic",
+        "l": 140.0,
+        "b": 0.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "SIDEREAL_TRACK"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 26,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
+      "id": "Galactic longitude 145.0, latitude 0.0",
+      "sky_coord": {
+        "_type": "SkyCoord",
+        "frame": "galactic",
+        "l": 145.0,
+        "b": 0.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "SIDEREAL_TRACK"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 27,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
+      "id": "Galactic longitude 150.0, latitude 0.0",
+      "sky_coord": {
+        "_type": "SkyCoord",
+        "frame": "galactic",
+        "l": 150.0,
+        "b": 0.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "SIDEREAL_TRACK"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 28,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
+      "id": "Galactic longitude 155.0, latitude 0.0",
+      "sky_coord": {
+        "_type": "SkyCoord",
+        "frame": "galactic",
+        "l": 155.0,
+        "b": 0.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "SIDEREAL_TRACK"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 29,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
+      "id": "Galactic longitude 160.0, latitude 0.0",
+      "sky_coord": {
+        "_type": "SkyCoord",
+        "frame": "galactic",
+        "l": 160.0,
+        "b": 0.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "SIDEREAL_TRACK"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 30,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
+      "id": "Galactic longitude 165.0, latitude 0.0",
+      "sky_coord": {
+        "_type": "SkyCoord",
+        "frame": "galactic",
+        "l": 165.0,
+        "b": 0.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "SIDEREAL_TRACK"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 31,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
+      "id": "Galactic longitude 170.0, latitude 0.0",
+      "sky_coord": {
+        "_type": "SkyCoord",
+        "frame": "galactic",
+        "l": 170.0,
         "b": 0.0
       },
       "pointing": {

@@ -17,16 +17,13 @@ from env.events import ResponseEvent
 from models.launch import load_scan_store_dir
 from obs.catalogue import list_observations
 from web.web import WebServer
+from web.dish_store import DishProfileStore, DishStoreError
+from web.profiles import ProfileManager, ProfileError
+from web.resource_store import DigitiserProfileStore, WeatherStationProfileStore
+from web.profile_store import ProfileStoreError
+from web.pipeline_store import PipelineProfileStore
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('webhook.log'),
-        logging.StreamHandler()
-    ]
-)
+# The application logging router owns file handlers under the configured log root.
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
@@ -283,6 +280,209 @@ def webhook_receiver():
             'message': 'Internal server error'
         }), 500
 
+def _profiles():
+    runtime = app.extensions.get('web_application')
+    if runtime is not None and getattr(runtime, 'profile_manager', None) is not None:
+        return runtime.profile_manager
+    # Support Flask-only use as well as the managed application entry point.
+    manager = app.extensions.get('web_profiles')
+    if manager is None:
+        directory = runtime.profile_dir if runtime is not None else cmd_handler.profile_dir
+        manager = ProfileManager(directory)
+        app.extensions['web_profiles'] = manager
+    return manager
+
+
+@app.get('/api/profiles')
+@app.route('/api/profile', methods=['GET', 'PUT'])
+def profiles():
+    """Discover or switch the profile used for file-backed WEB resources."""
+    try:
+        validate_request()
+        manager = _profiles()
+        if request.path == '/api/profiles':
+            entries, selection = manager.list()
+            payload = dict(selection.to_dict(), profiles=entries, count=len(entries))
+        elif request.method == 'PUT':
+            body = request.get_json()
+            if not isinstance(body, dict) or set(body) != {'profile'}:
+                raise ProfileError('Send a JSON object containing only profile')
+            payload = manager.select(body['profile']).to_dict()
+        else:
+            payload = manager.current.to_dict()
+        response = jsonify(ResponseEvent('success', 'WEB resource profile selected' if request.method == 'PUT'
+                                        else 'WEB resource profiles retrieved', payload=payload).to_dict())
+        response.headers['Cache-Control'] = 'no-store'
+        return response
+    except HTTPException as error:
+        return jsonify(ResponseEvent('error', error.description, code='invalid_request').to_dict()), error.code
+    except ProfileError as error:
+        return jsonify(ResponseEvent('error', str(error), code=error.code).to_dict()), error.status
+    except Exception:
+        logger.exception('Could not access WEB profiles')
+        return jsonify(ResponseEvent('error', 'Could not access configuration profiles', code='configuration_unavailable').to_dict()), 503
+
+
+def _resource_directory():
+    selection = _profiles().current
+    expected = request.headers.get('X-Config-Profile')
+    if expected is not None and expected != selection.directory.name:
+        raise ProfileStoreError('The selected profile changed; refresh before saving', 'profile_changed', 409)
+    return selection.directory
+
+
+@app.route('/api/dishes', methods=['GET', 'POST'])
+@app.route('/api/dishes/<dish_id>', methods=['GET', 'PATCH', 'DELETE'])
+def dishes(dish_id=None):
+    """Read or edit the active profile's DishList.json, independently of TM."""
+    try:
+        validate_request()
+        store = DishProfileStore(_resource_directory())
+        if request.method == 'GET':
+            value, revision = store.read(dish_id)
+            payload = ({'dishes': value, 'count': len(value)} if dish_id is None else {'dish': value})
+            message, status = 'Dish configuration retrieved', 200
+        elif request.method == 'DELETE':
+            deleted, revision = store.delete(dish_id, request.if_match if 'If-Match' in request.headers else None)
+            payload = {'deleted_id': deleted, 'phase': 'stored'}
+            message, status = 'Dish configuration deleted', 200
+        else:
+            value, revision = store.save(
+                request.get_json(), dish_id=dish_id,
+                if_match=request.if_match if 'If-Match' in request.headers else None)
+            payload = {'dish': value}
+            payload['phase'] = 'stored'
+            message = 'Dish configuration created' if request.method == 'POST' else 'Dish configuration updated'
+            status = 201 if request.method == 'POST' else 200
+        payload['profile'] = store.path.parent.name
+        response = jsonify(ResponseEvent('success', message, payload=payload).to_dict())
+        response.status_code = status
+        response.set_etag(revision)
+        response.headers['Cache-Control'] = 'no-store'
+        if status == 201:
+            response.headers['Location'] = '/api/dishes/' + value['dsh_id']
+        return response
+    except HTTPException as error:
+        return jsonify(ResponseEvent('error', error.description, code='invalid_request').to_dict()), error.code
+    except DishStoreError as error:
+        return jsonify(ResponseEvent('error', str(error), code=error.code).to_dict()), error.status
+    except OSError:
+        logger.exception('Could not access profile dish configuration')
+        return jsonify(ResponseEvent('error', 'Profile dish configuration is unavailable', code='configuration_unavailable').to_dict()), 503
+    except Exception:
+        logger.exception('Could not process dish configuration request')
+        return jsonify(ResponseEvent('error', 'Could not process dish configuration request', code='internal_error').to_dict()), 500
+
+
+@app.route('/api/digitisers', defaults={'resource': 'digitisers'}, methods=['GET', 'POST'])
+@app.route('/api/digitisers/<identifier>', defaults={'resource': 'digitisers'}, methods=['GET', 'PATCH', 'DELETE'])
+@app.route('/api/weather-stations', defaults={'resource': 'weather_stations'}, methods=['GET', 'POST'])
+@app.route('/api/weather-stations/<identifier>', defaults={'resource': 'weather_stations'}, methods=['GET', 'PATCH', 'DELETE'])
+def profile_resources(resource, identifier=None):
+    """Read or edit configured digitisers and weather-station definitions."""
+    try:
+        validate_request()
+        store_class, singular = {'digitisers': (DigitiserProfileStore, 'digitiser'),
+                                 'weather_stations': (WeatherStationProfileStore, 'weather_station')}[resource]
+        store = store_class(_resource_directory())
+        if request.method == 'GET':
+            value, revision = store.read(identifier)
+            payload = ({resource: value, 'count': len(value)} if identifier is None else {singular: value})
+            message, status = 'Configuration retrieved', 200
+        elif request.method == 'DELETE':
+            deleted, revision = store.delete(identifier, request.if_match if 'If-Match' in request.headers else None)
+            payload = {'deleted_id': deleted, 'phase': 'stored'}
+            message, status = 'Configuration deleted', 200
+        else:
+            value, revision = store.save(request.get_json(), identifier,
+                request.if_match if 'If-Match' in request.headers else None)
+            payload = {singular: value, 'phase': 'stored'}
+            message = 'Configuration created' if request.method == 'POST' else 'Configuration updated'
+            status = 201 if request.method == 'POST' else 200
+        payload['profile'] = store.path.parent.name
+        response = jsonify(ResponseEvent('success', message, payload=payload).to_dict())
+        response.status_code = status
+        response.set_etag(revision)
+        response.headers['Cache-Control'] = 'no-store'
+        if status == 201:
+            response.headers['Location'] = request.path + '/' + value[store.id_field]
+        return response
+    except HTTPException as error:
+        return jsonify(ResponseEvent('error', error.description, code='invalid_request').to_dict()), error.code
+    except ProfileStoreError as error:
+        return jsonify(ResponseEvent('error', str(error), code=error.code).to_dict()), error.status
+    except OSError:
+        logger.exception('Could not access profile resource configuration')
+        return jsonify(ResponseEvent('error', 'Profile configuration is unavailable', code='configuration_unavailable').to_dict()), 503
+    except Exception:
+        logger.exception('Could not process profile configuration request')
+        return jsonify(ResponseEvent('error', 'Could not process configuration request', code='internal_error').to_dict()), 500
+
+
+@app.get('/api/pipeline')
+@app.post('/api/pipeline/steps-maps')
+@app.route('/api/pipeline/steps-maps/<name>', methods=['GET', 'DELETE'])
+@app.route('/api/pipeline/steps-maps/<name>/steps', methods=['GET', 'POST'])
+@app.route('/api/pipeline/steps-maps/<name>/steps/<int:index>', methods=['GET', 'PATCH', 'DELETE'])
+def pipeline(name=None, index=None):
+    """List, create and edit ordered steps in the selected profile's pipeline."""
+    try:
+        validate_request()
+        store = PipelineProfileStore(_resource_directory())
+        if request.method == 'GET':
+            payload, revision = store.read(name, index)
+            message, status = 'Pipeline configuration retrieved', 200
+        elif request.method == 'DELETE':
+            payload, revision = store.delete(name, index, request.if_match if 'If-Match' in request.headers else None)
+            payload['phase'] = 'stored'
+            message, status = 'Pipeline configuration deleted', 200
+        else:
+            payload, revision = store.save(request.get_json(), name, index,
+                request.if_match if 'If-Match' in request.headers else None)
+            payload['phase'] = 'stored'
+            message = 'Pipeline configuration updated'
+            status = 200 if request.method == 'PATCH' else 201
+        payload['profile'] = store.path.parent.name
+        response = jsonify(ResponseEvent('success', message, payload=payload).to_dict())
+        response.status_code = status
+        response.set_etag(revision)
+        response.headers['Cache-Control'] = 'no-store'
+        if status == 201:
+            location = '/api/pipeline/steps-maps/' + payload['name']
+            if name is not None:
+                location += '/steps/' + str(payload['step']['index'])
+            response.headers['Location'] = location
+        return response
+    except HTTPException as error:
+        return jsonify(ResponseEvent('error', error.description, code='invalid_request').to_dict()), error.code
+    except ProfileStoreError as error:
+        return jsonify(ResponseEvent('error', str(error), code=error.code).to_dict()), error.status
+    except OSError:
+        logger.exception('Could not access pipeline configuration')
+        return jsonify(ResponseEvent('error', 'Pipeline configuration is unavailable', code='configuration_unavailable').to_dict()), 503
+    except Exception:
+        logger.exception('Could not process pipeline request')
+        return jsonify(ResponseEvent('error', 'Could not process pipeline request', code='internal_error').to_dict()), 500
+
+
+@app.get('/api/telescope/model')
+@limiter.limit('120 per minute', override_defaults=True)
+def telescope_model():
+    """Read WEB's periodically refreshed cache without initiating a TM query."""
+    try:
+        validate_request()
+    except HTTPException as error:
+        return jsonify(ResponseEvent('error', error.description, code='invalid_request').to_dict()), error.code
+    runtime = app.extensions.get('web_application')
+    if runtime is None or not hasattr(runtime, 'telescope_model_response'):
+        return jsonify(ResponseEvent('error', 'Telescope model cache is unavailable', code='model_unavailable').to_dict()), 503
+    result = runtime.telescope_model_response()
+    response = jsonify(result.to_dict())
+    response.status_code = 200 if result.status == 'success' else 503
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
 @app.get('/api/observations')
 def observations():
     """Search local/shared storage without requiring a TM or SDP connection."""
@@ -299,7 +499,9 @@ def observations():
                 return jsonify(result.to_dict()), 400
         else:
             runtime = app.extensions.get('web_application')
-            store = (runtime.scan_store_dir if runtime is not None
+            manager = (getattr(runtime, 'profile_manager', None) if runtime is not None else None) or app.extensions.get('web_profiles')
+            store = (manager.current.scan_store_dir if manager is not None else
+                     runtime.scan_store_dir if runtime is not None
                      else load_scan_store_dir(profile_dir=cmd_handler.profile_dir))
         if not store:
             result = ResponseEvent('error', 'Observation search directory is not configured', code='store_not_known')

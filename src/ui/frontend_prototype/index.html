@@ -27,6 +27,7 @@
         <a class="zk-brand" href="#" aria-label="dmd2000 home">
           <span class="brand-mark" aria-hidden="true"></span>
           <span class="zk-name">dmd2000</span>
+          <span class="zk-version" data-suite-version aria-label="Suite version">—</span>
         </a>
 
         <div class="zk-appbar__context">
@@ -40,7 +41,7 @@
           <button type="button" data-tab="design"><svg class="ico"><use href="#i-target" /></svg>Design</button>
           <button type="button" data-tab="targets"><svg class="ico"><use href="#i-crosshair" /></svg>Targets</button>
           <button type="button" data-tab="results"><svg class="ico"><use href="#i-archive" /></svg>Results</button>
-          <button type="button" data-tab="admin"><svg class="ico"><use href="#i-sliders" /></svg>Admin</button>
+          <button type="button" data-tab="admin"><svg class="ico"><use href="#i-sliders" /></svg>Config</button>
           <button type="button" data-tab="access"><svg class="ico"><use href="#i-shield" /></svg>Access</button>
         </nav>
 
@@ -52,8 +53,9 @@
             <button type="button" data-theme-choice="system" aria-label="System"><svg class="ico"><use href="#i-monitor" /></svg></button>
             <button type="button" data-theme-choice="dark" aria-label="Dark"><svg class="ico"><use href="#i-moon" /></svg></button>
           </div>
-          <span class="zk-email">operator@dmd2000.local</span>
-          <span class="zk-role">operator</span>
+          <span class="zk-email">Signing in…</span>
+          <span class="zk-role">—</span>
+          <button class="zk-icon-btn" type="button" id="ui-logout" aria-label="Sign out" title="Sign out"><svg class="ico" aria-hidden="true"><use href="#i-log-out" /></svg></button>
         </div>
 
         <button class="zk-avatar-btn zk-appbar__account" type="button" aria-label="Account">
@@ -65,6 +67,7 @@
         <div class="zk-drawer__head">
           <span class="brand-mark" aria-hidden="true"></span>
           <span class="zk-name">dmd2000</span>
+          <span class="zk-version" data-suite-version aria-label="Suite version">—</span>
           <button class="zk-icon-btn" type="button" aria-label="Close menu" data-drawer-close><svg class="ico"><use href="#i-x" /></svg></button>
         </div>
         <nav class="zk-drawer__nav" aria-label="Mobile primary"></nav>
@@ -79,71 +82,89 @@
               <span class="zk-subtitle">TM, DM, DIG, SDP, weather, and current observation state.</span>
             </div>
             <div class="zk-actions">
-              <span class="zk-chip is-live"><span class="zk-dot"></span>Sim connected</span>
-              <button class="zk-btn"><svg class="ico"><use href="#i-refresh" /></svg>Refresh</button>
+              <span class="zk-chip is-empty" id="status-connection">Waiting for WEB</span>
+              <button class="zk-btn" type="button" id="status-refresh"><svg class="ico"><use href="#i-refresh" /></svg>Refresh</button>
             </div>
           </div>
 
           <div class="metric-grid">
             <article class="zk-card metric-card">
               <span class="zk-eyebrow">Telescope manager</span>
-              <strong data-status-value="tm.state">READY</strong>
-              <span class="zk-muted" data-status-value="tm.detail">Queue 2, allocations 1</span>
+              <strong data-status-value="tm.state">—</strong>
+              <span class="zk-muted" data-status-value="tm.detail">—</span>
             </article>
             <article class="zk-card metric-card">
               <span class="zk-eyebrow">Dish manager</span>
-              <strong data-status-value="dish.state">TRACKING</strong>
-              <span class="zk-muted" data-status-value="dish.detail">Alt 67.2 deg, Az 18.4 deg</span>
+              <strong data-status-value="dish.state">—</strong>
+              <span class="zk-muted" data-status-value="dish.detail">—</span>
             </article>
             <article class="zk-card metric-card">
               <span class="zk-eyebrow">Digitiser</span>
-              <strong data-status-value="digitiser.state">SCANNING</strong>
-              <span class="zk-muted" data-status-value="digitiser.detail">1.4204 GHz, 2048 channels</span>
+              <strong data-status-value="digitiser.state">—</strong>
+              <span class="zk-muted" data-status-value="digitiser.detail">—</span>
             </article>
             <article class="zk-card metric-card">
               <span class="zk-eyebrow">Weather</span>
-              <strong data-status-value="weather.state">SAFE</strong>
-              <span class="zk-muted" data-status-value="weather.detail">Wind avg 0.8 m/s, max 2.1 m/s</span>
+              <strong data-status-value="weather.state">—</strong>
+              <span class="zk-muted" data-status-value="weather.detail">—</span>
+            </article>
+            <article class="zk-card metric-card status-executions" aria-label="Observation Executions">
+              <span class="zk-eyebrow">Observation Executions</span>
+              <strong data-status-value="executions.count">—</strong>
+              <ul id="status-executions"><li class="zk-muted">Waiting for a TM snapshot.</li></ul>
             </article>
           </div>
 
-          <div class="split-grid">
-            <section class="zk-card panel">
-              <div class="panel-head">
-                <div>
-                  <h2>Subsystems</h2>
-                  <p>Live application health and last update.</p>
-                </div>
-              </div>
-              <table class="zk-tbl">
-                <thead>
-                  <tr><th>App</th><th>Health</th><th>State</th><th>Last update</th><th>Endpoint</th></tr>
-                </thead>
-                <tbody data-status-subsystems>
-                  <tr><td>TM001</td><td><span class="zk-chip is-live">OK</span></td><td>READY</td><td class="zk-mono">11:23:33Z</td><td>127.0.0.1:50000</td></tr>
-                  <tr><td>DM001</td><td><span class="zk-chip is-live">OK</span></td><td>TRACKING</td><td class="zk-mono">11:23:34Z</td><td>127.0.0.1:50002</td></tr>
-                  <tr><td>DIG001</td><td><span class="zk-chip is-warn">WARN</span></td><td>SCANNING</td><td class="zk-mono">11:23:31Z</td><td>127.0.0.1:60000</td></tr>
-                  <tr><td>SDP001</td><td><span class="zk-chip is-live">OK</span></td><td>PROCESSING</td><td class="zk-mono">11:23:30Z</td><td>127.0.0.1:60010</td></tr>
-                </tbody>
-              </table>
+          <p id="status-freshness" class="zk-muted" role="status" aria-live="polite">Waiting for the first TM snapshot. WEB polls TM every 30 seconds.</p>
+          <div class="status-workspace" id="status-workspace">
+            <section class="zk-card panel status-overview">
+              <div class="panel-head"><div><h2>Applications</h2><p>Choose an application to inspect its latest reported state.</p></div></div>
+              <div class="status-table-scroll"><table class="zk-tbl status-app-table">
+                <thead><tr><th>App</th><th>App ID</th><th>Health</th><th>State</th><th>Last update UTC</th><th>Availability</th><th>Reliability</th><th>Tracing</th><th>Debug</th></tr></thead>
+                <tbody id="status-apps"><tr><td colspan="9" class="zk-muted">No telescope model received.</td></tr></tbody>
+              </table></div>
+              <section id="status-command-response" class="status-command-response" aria-label="Command response" role="status" aria-live="polite" hidden>
+                <h3>Command response</h3><dl class="status-command-result"><div><dt>App</dt><dd id="status-command-app"></dd></div><div><dt>Response time UTC</dt><dd id="status-command-time"></dd></div><div><dt>Status</dt><dd id="status-command-status"></dd></div><div><dt>Message</dt><dd id="status-command-message"></dd></div></dl>
+              </section>
             </section>
-
-            <section class="zk-card panel">
-              <div class="panel-head">
-                <div>
-                  <h2>Current Observation</h2>
-                  <p data-status-value="observation.id">ODT-2026-06-09T1200Z-dish001</p>
-                </div>
-                <span class="zk-chip is-live" data-status-value="observation.state">Running</span>
+            <section class="zk-card panel status-detail" id="status-detail" aria-label="Selected application details" hidden>
+              <div class="panel-head"><div><h2 id="status-detail-title">Application details</h2><p id="status-detail-subtitle"></p></div><button class="zk-icon-btn" id="status-detail-close" type="button" aria-label="Close application details"><svg class="ico"><use href="#i-x" /></svg></button></div>
+              <div id="status-detail-content"></div>
+            </section>
+            <section class="zk-card panel status-detail" id="dish-status-pane" aria-label="Selected dish details" hidden>
+              <div class="panel-head"><div><h2 id="dish-status-title">Dish details</h2><p id="dish-status-freshness" class="zk-muted"></p></div><button class="zk-icon-btn" id="dish-status-close" type="button" aria-label="Close dish details"><svg class="ico"><use href="#i-x" /></svg></button></div>
+              <h3>Last error <span id="dish-status-error-time" class="status-last-error-time"></span></h3>
+              <div id="dish-status-error" class="status-last-error"></div>
+              <div class="status-diagnostics-grid">
+                <section><h3>Dish control</h3>
+                  <div class="status-table-scroll"><table class="zk-tbl dish-control-table"><thead><tr><th>Setting</th><th>Desired</th></tr></thead><tbody>
+                    <tr><th scope="row">Mode</th><td><div class="dish-control-setting"><select id="dish-status-mode" aria-label="Desired dish mode"></select><button id="dish-status-mode-send" type="button" class="zk-btn">Set mode</button></div></td></tr>
+                    <tr><th scope="row">Capability</th><td><div class="dish-control-setting"><select id="dish-status-capability" aria-label="Desired dish capability"></select><button id="dish-status-capability-send" type="button" class="zk-btn">Set capability</button></div></td></tr>
+                    <tr><th scope="row">Altitude [°]</th><td id="dish-status-alt-desired"></td></tr>
+                    <tr><th scope="row">Azimuth [°]</th><td id="dish-status-az-desired"></td></tr>
+                  </tbody></table></div>
+                  <p class="zk-muted">Mode and Capability requests use TM. Acknowledgement confirms actions were scheduled; the dish list above shows the latest reported values.</p>
+                  <button id="dish-status-stop" type="button" class="zk-btn dish-stop">STOP dish movement</button>
+                  <p class="zk-muted">STOP goes directly to Dish Manager.</p>
+                  <p id="dish-status-result" class="dish-control-result" role="status" aria-live="polite"></p>
+                </section>
+                <section><h3 class="dish-pointing-title">Pointing and driver</h3><div class="dish-pointing-layout"><div id="dish-status-polar"></div><div id="dish-status-info"></div></div></section>
               </div>
-              <dl class="kv">
-                <div><dt>Target</dt><dd data-status-value="observation.target">M82, RA 148.9685 deg, Dec 69.6797 deg</dd></div>
-                <div><dt>Mode</dt><dd data-status-value="observation.mode">Sidereal track, H3T_1420 feed</dd></div>
-                <div><dt>Progress</dt><dd><div class="bar"><span style="width: 42%"></span></div></dd></div>
-                <div><dt>Output</dt><dd data-status-value="observation.output">5 summed-power files, 1 metadata file</dd></div>
-              </dl>
+            </section>
+            <section class="zk-card panel status-file-pane" id="status-log-pane" aria-label="Application log" hidden>
+              <div class="panel-head"><h2 id="status-log-title">Application log</h2><button class="zk-icon-btn" id="status-log-close" type="button" aria-label="Close log"><svg class="ico"><use href="#i-x" /></svg></button></div>
+              <div class="zk-actions status-file-actions"><button class="zk-btn" id="status-log-refresh" type="button">Refresh log</button><a class="zk-btn" id="status-log-download" target="_blank" rel="noopener" hidden>Download</a></div>
+              <p id="status-log-meta" class="zk-muted status-file-meta" role="status" aria-live="polite"></p>
+              <pre id="status-log-content" class="status-log-content" tabindex="0" aria-label="Application log contents" hidden></pre>
+            </section>
+            <section class="zk-card panel status-file-pane" id="status-trace-pane" aria-label="Application trace" hidden>
+              <div class="panel-head"><h2 id="status-trace-title">Application trace</h2><button class="zk-icon-btn" id="status-trace-close" type="button" aria-label="Close trace"><svg class="ico"><use href="#i-x" /></svg></button></div>
+              <div class="zk-actions status-file-actions"><button class="zk-btn" id="status-trace-refresh" type="button">Refresh trace</button><a class="zk-btn" id="status-trace-download" target="_blank" rel="noopener" hidden>Download</a></div>
+              <p id="status-trace-meta" class="zk-muted status-file-meta" role="status" aria-live="polite"></p>
+              <iframe id="status-trace-content" class="status-trace-frame" title="Application HTML trace" sandbox="allow-scripts" referrerpolicy="no-referrer" hidden></iframe>
             </section>
           </div>
+
         </section>
 
         <section class="view" data-view="schedule">
@@ -333,23 +354,103 @@
         <section class="view" data-view="admin">
           <div class="zk-page-head">
             <div class="zk-title">
-              <h1>Admin Configuration</h1>
+              <h1>Configuration</h1>
               <span class="zk-subtitle">Static telescope artefacts, defaults, limits, and integration settings.</span>
             </div>
-            <div class="zk-actions"><button class="zk-btn is-primary"><svg class="ico"><use href="#i-save" /></svg>Save changes</button></div>
+            <div class="zk-actions admin-profile">
+              <label class="zk-field">Configuration Profile<select class="zk-select" id="dish-profile" aria-label="Configuration Profile" disabled><option value="">Connect to WEB</option></select></label>
+              <button class="zk-btn" type="button" id="dish-refresh">Refresh</button>
+              <span class="zk-chip is-empty" id="dish-connection">WEB not connected</span>
+            </div>
           </div>
-          <div class="zk-subtabs" data-admin-tabs>
-            <button class="is-active" type="button" data-admin-tab="dishes">Dishes</button>
-            <button type="button" data-admin-tab="digitisers">Digitisers</button>
-            <button type="button" data-admin-tab="weather">Weather</button>
-            <button type="button" data-admin-tab="defaults">Defaults</button>
-            <button type="button" data-admin-tab="limits">Limits</button>
+          <p id="dish-message" class="dish-message" role="status" aria-live="polite">Open Config to load configuration from WEB.</p>
+          <div class="config-tabs-row">
+            <div class="zk-subtabs" data-admin-tabs>
+              <button class="is-active" type="button" data-admin-tab="dishes">Dishes</button>
+              <button type="button" data-admin-tab="digitisers">Digitisers</button>
+              <button type="button" data-admin-tab="weather">Weather</button>
+              <button type="button" data-admin-tab="defaults">Defaults</button>
+              <button type="button" data-admin-tab="limits">Limits</button>
+            </div>
+            <div class="config-resync" aria-label="Resynchronise application configuration">
+              <label class="zk-field">App<select class="zk-select" id="config-resync-app" aria-label="Application to resynchronise"><option value="">Select app…</option></select></label>
+              <button class="zk-btn" id="config-resync-button" type="button" disabled>RESYNC</button>
+              <span id="config-resync-result" class="zk-muted" role="status" aria-live="polite">Reloads the app’s launch profile.</span>
+            </div>
           </div>
-          <section class="zk-card panel admin-panel is-active" data-admin-panel="dishes">
-            <table class="zk-tbl"><thead><tr><th>Dish ID</th><th>Diameter</th><th>F/D</th><th>Latitude</th><th>Longitude</th><th>Capabilities</th></tr></thead><tbody><tr><td>dish001</td><td>0.7 m</td><td>0.37</td><td>53.187052</td><td>-2.256079</td><td>Pointing, No Tracking</td></tr><tr><td>dish002</td><td>3.0 m</td><td>0.43</td><td>53.187052</td><td>-2.256079</td><td>Drift Scan over Zenith</td></tr></tbody></table>
+          <section class="admin-panel is-active" data-admin-panel="dishes" id="dish-workspace">
+            <div class="dish-layout">
+              <section class="zk-card panel dish-catalogue" aria-label="Configured dishes">
+                <div class="panel-head"><div><h2>Dishes <span id="dish-count" class="zk-muted"></span></h2><p id="dish-list-profile">No profile loaded</p></div><button class="zk-btn is-primary" type="button" id="dish-new" disabled><svg class="ico"><use href="#i-plus" /></svg>New dish</button></div>
+                <label class="zk-field">Filter dishes<input class="zk-input" id="dish-filter" type="search" placeholder="ID, description or driver" /></label>
+                <div class="dish-table-scroll"><table class="zk-tbl"><thead><tr><th>Dish</th><th>Diameter</th><th>Driver</th></tr></thead><tbody id="dish-rows"><tr><td colspan="3" class="zk-muted">No dishes loaded.</td></tr></tbody></table></div>
+              </section>
+              <section class="zk-card panel dish-editor" aria-label="Dish editor">
+                <div class="panel-head"><div><h2 id="dish-editor-title">Choose a dish</h2><p id="dish-editor-subtitle">Select a dish to view its configuration, or create a new one.</p></div><span class="zk-chip is-warn" id="dish-dirty" hidden>Unsaved changes</span></div>
+                <form id="dish-form" hidden>
+                  <fieldset id="dish-fields">
+                    <div class="form-grid">
+                      <label class="zk-field">Dish ID<input class="zk-input" name="dsh_id" required maxlength="128" pattern="[A-Za-z0-9][A-Za-z0-9_-]*" placeholder="dish004" /></label>
+                      <label class="zk-field">Description<input class="zk-input" name="short_desc" placeholder="Dish name and location" /></label>
+                      <label class="zk-field">Diameter [m]<input class="zk-input" name="diameter" type="number" min="0" step="any" required /></label>
+                      <label class="zk-field">Focal ratio (F/D)<input class="zk-input" name="fd_ratio" type="number" min="0" step="any" required /></label>
+                      <label class="zk-field">Latitude [deg]<input class="zk-input" name="latitude" type="number" min="-90" max="90" step="any" required /></label>
+                      <label class="zk-field">Longitude [deg]<input class="zk-input" name="longitude" type="number" min="-180" max="180" step="any" required /></label>
+                      <label class="zk-field">Height [m]<input class="zk-input" name="height" type="number" min="0" step="any" required /></label>
+                      <label class="zk-field">Feed<select class="zk-select" name="feed_type"><option>NONE</option><option>H3T_1420</option><option>H7T_1420</option><option>LF_400</option><option>LOAD</option></select></label>
+                      <label class="zk-field">Digitiser ID <span class="zk-muted">Optional</span><input class="zk-input" name="dig_id" placeholder="dig001" /></label>
+                      <label class="zk-field">Weather station ID <span class="zk-muted">Optional</span><input class="zk-input" name="ws_id" placeholder="ws001" /></label>
+                      <label class="zk-field">Driver<select class="zk-select" name="driver_type"><option>MD01</option><option>DRIFT</option><option>MOTION</option></select></label>
+                      <label class="zk-field">Driver polling period [ms]<input class="zk-input" name="driver_poll_period" type="number" min="1" step="1" required /></label>
+                    </div>
+                    <details class="dish-driver" open><summary>Driver settings</summary><div class="form-grid" id="dish-driver-fields"></div></details>
+                    <div class="dish-form-actions"><button class="zk-btn dish-delete" type="button" id="dish-delete" hidden>Delete dish</button><button class="zk-btn" type="button" id="dish-cancel">Cancel edits</button><button class="zk-btn is-primary" type="submit" id="dish-save" disabled><svg class="ico"><use href="#i-save" /></svg>Save dish</button></div>
+                  </fieldset>
+                </form>
+              </section>
+            </div>
           </section>
-          <section class="zk-card panel admin-panel" data-admin-panel="digitisers">
-            <table class="zk-tbl"><thead><tr><th>Digitiser</th><th>Feed</th><th>Sample rates</th><th>Gain modes</th><th>Default bandwidth</th></tr></thead><tbody><tr><td>dig001</td><td>H3T_1420</td><td>2.048, 2.4 MHz</td><td>Auto, 1..45 dB</td><td>1 MHz</td></tr><tr><td>dig002</td><td>LF_400</td><td>2.048 MHz</td><td>Auto, 12, 23 dB</td><td>2 MHz</td></tr></tbody></table>
+          <section class="admin-panel" data-admin-panel="digitisers" id="dig-workspace">
+            <div class="dish-layout">
+              <section class="zk-card panel dish-catalogue" aria-label="Configured digitisers">
+                <div class="panel-head"><div><h2>Digitisers <span id="dig-count" class="zk-muted"></span></h2><p id="dig-list-profile">No profile loaded</p></div><button class="zk-btn is-primary" type="button" id="dig-new" disabled><svg class="ico"><use href="#i-plus" /></svg>New digitiser</button></div>
+                <label class="zk-field">Filter digitisers<input class="zk-input" id="dig-filter" type="search" placeholder="ID, host or SDR type" /></label>
+                <div class="dish-table-scroll"><table class="zk-tbl"><thead><tr><th>Digitiser</th><th>SDR</th><th>Sample rate</th></tr></thead><tbody id="dig-rows"><tr><td colspan="3" class="zk-muted">Choose a profile to load digitisers.</td></tr></tbody></table></div>
+              </section>
+              <section class="zk-card panel dish-editor" aria-label="Digitiser editor">
+                <div class="panel-head"><div><h2 id="dig-editor-title">Choose a digitiser</h2><p id="dig-editor-subtitle">Select a digitiser or create a new definition.</p></div><span class="zk-chip is-warn" id="dig-dirty" hidden>Unsaved changes</span></div>
+                <form id="dig-form" hidden>
+                  <fieldset id="dig-fields">
+                    <div class="form-grid">
+                      <label class="zk-field">Digitiser ID<input class="zk-input" name="dig_id" required maxlength="128" pattern="[A-Za-z0-9][A-Za-z0-9_-]*" placeholder="dig004" /></label>
+                      <label class="zk-field">Local host <span class="zk-muted">Optional host or IP used by TM</span><input class="zk-input" name="local_host" placeholder="192.168.2.104" /></label>
+                      <label class="zk-field">Command host<input class="zk-input" name="app_cmd_host" placeholder="127.0.0.1" /></label>
+                      <label class="zk-field">Command port<input class="zk-input" name="app_cmd_port" type="number" min="1" max="65535" step="1" placeholder="60006" /></label>
+                      <label class="zk-field">SDR type<select class="zk-select" name="sdr_type"><option value="rtlsdr">RTL-SDR</option><option value="rtlstream">RTL stream</option><option value="soapy">SoapySDR</option><option value="airspy">Airspy</option><option value="airstream">Air stream</option><option value="gqrxraw">Gqrx raw</option></select></label>
+                      <label class="zk-field">Gain [dB]<input class="zk-input" name="gain" type="number" min="0" max="100" step="any" required /></label>
+                      <label class="zk-field">Sample rate [Hz]<input class="zk-input" name="sample_rate" type="number" min="0" step="any" required /></label>
+                      <label class="zk-field">Bandwidth [Hz]<input class="zk-input" name="bandwidth" type="number" min="0" step="any" required /></label>
+                      <label class="zk-field">Centre frequency [Hz]<input class="zk-input" name="center_freq" type="number" min="0" step="any" required /></label>
+                      <label class="zk-field">Frequency correction [ppm]<input class="zk-input" name="freq_correction" type="number" min="-1000" max="1000" step="1" required /></label>
+                      <label class="zk-field">Channels<input class="zk-input" name="channels" type="number" min="0" step="1" required /></label>
+                      <label class="zk-field">Bandpass filter<select class="zk-select" name="bpf_type"><option value="UNKNOWN">Unknown / unconfigured</option><option value="SAWBIRD_H1">SAWbird H1</option><option value="SAWBIRD_H1_BAREBONES">SAWbird H1 Barebones</option><option value="ZCBP6_416R5_S">ZCBP6 416R5 S</option></select></label>
+                    </div>
+                    <details class="dish-driver" open><summary>SDR options</summary>
+                      <label class="zk-field">Driver options (JSON object)<textarea class="zk-input digitiser-json" name="sdr_config" rows="5" spellcheck="false"></textarea><small class="zk-muted">Edit options supported by this SDR. Values merge with stored options; changing SDR type clears the previous options.</small></label>
+                    </details>
+                    <details class="dish-driver" open><summary>Filter GPIO controls</summary>
+                      <label class="zk-field digitiser-checkbox"><input name="bpf_enabled" type="checkbox" />Enable SAWbird H1 Barebones GPIO configuration</label>
+                      <div class="form-grid"><label class="zk-field">Power GPIO pin <span class="zk-muted">Blank disables power control</span><input class="zk-input" name="gpio_pin_power" type="number" min="0" max="27" step="1" /></label><label class="zk-field">Load GPIO pin <span class="zk-muted">Blank disables load control</span><input class="zk-input" name="gpio_pin_load" type="number" min="0" max="27" step="1" /></label></div>
+                    </details>
+                    <details class="dish-driver" open><summary>Temperature monitoring</summary>
+                      <div class="form-grid"><label class="zk-field">Sensor<select class="zk-select" name="temp_type"><option value="none">None</option><option value="bme280">BME280</option></select></label><label class="zk-field">Maximum temperature [°C]<input class="zk-input" name="temp_max" type="number" min="-100" max="100" step="any" placeholder="Optional" /></label></div>
+                      <label class="zk-field">Sensor options (JSON object)<textarea class="zk-input digitiser-json" name="temp_config" rows="3" spellcheck="false"></textarea><small class="zk-muted">For BME280, for example: {"bus_number": 1, "address": 118}.</small></label>
+                    </details>
+                    <div class="dish-form-actions"><button class="zk-btn dish-delete" type="button" id="dig-delete" hidden>Delete digitiser</button><button class="zk-btn" type="button" id="dig-cancel">Cancel edits</button><button class="zk-btn is-primary" type="submit" id="dig-save" disabled>Save digitiser</button></div>
+                  </fieldset>
+                </form>
+              </section>
+            </div>
           </section>
           <section class="zk-card panel admin-panel" data-admin-panel="weather">
             <div class="form-grid"><label class="zk-field">Station ID<input class="zk-input" value="ws001" /></label><label class="zk-field">Location<input class="zk-input" value="Jodrell Bank Observatory" /></label><label class="zk-field">Wind max threshold<input class="zk-input" value="8.0" /></label><label class="zk-field">Sample count minimum<input class="zk-input" value="10" /></label></div>
@@ -363,23 +464,18 @@
         </section>
 
         <section class="view" data-view="access">
-          <div class="zk-page-head">
-            <div class="zk-title">
-              <h1>Access</h1>
-              <span class="zk-subtitle">Users, student groups, roles, and approvals.</span>
-            </div>
-            <div class="zk-actions"><button class="zk-btn is-primary"><svg class="ico"><use href="#i-plus" /></svg>Invite user</button></div>
+          <div class="zk-page-head"><div class="zk-title"><h1>Access</h1><span class="zk-subtitle">Console accounts are shared across configuration profiles.</span></div><a class="zk-btn" href="/change">Change my password</a></div>
+          <p class="zk-muted" id="account-message" role="status">Loading your account…</p>
+          <section class="zk-card panel" id="account-viewer" hidden><h2>Your account</h2><p id="account-summary"></p><p>Contact an administrator to change account permissions.</p></section>
+          <div class="dish-layout" id="account-admin" hidden>
+            <section class="zk-card panel"><div class="panel-head"><h2>Users</h2><button class="zk-btn is-primary" type="button" id="account-new">New user</button></div><div class="dish-table-scroll"><table class="zk-tbl"><thead><tr><th>Username</th><th>Role</th><th>Enabled</th></tr></thead><tbody id="account-rows"></tbody></table></div></section>
+            <section class="zk-card panel"><h2 id="account-title">New user</h2><form id="account-form"><div class="form-grid">
+              <label class="zk-field">Username<input class="zk-input" name="username" required minlength="3" maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9_.-]*" autocomplete="off" /></label>
+              <label class="zk-field">Role<select class="zk-select" name="role"><option value="viewer">Viewer — read only</option><option value="operator">Operator — configuration and processing</option><option value="admin">Administrator — includes user management</option></select></label>
+              <label class="zk-field">Password<input class="zk-input" name="password" type="password" minlength="12" autocomplete="new-password" /><small class="zk-muted">At least 12 characters. Leave blank when editing to keep the existing password.</small></label>
+              <label class="zk-field digitiser-checkbox"><input name="active" type="checkbox" checked />Account enabled</label>
+            </div><div class="dish-form-actions"><button class="zk-btn is-primary" type="submit" id="account-save">Create user</button></div></form></section>
           </div>
-          <section class="zk-card panel">
-            <table class="zk-tbl">
-              <thead><tr><th>User</th><th>Role</th><th>Group</th><th>Enabled</th><th>Last login</th></tr></thead>
-              <tbody>
-                <tr><td>student1@example.edu</td><td><span class="zk-chip is-navy">student</span></td><td>Class A</td><td><span class="zk-chip is-live">Yes</span></td><td class="zk-mono">2026-06-09</td></tr>
-                <tr><td>teacher@example.edu</td><td><span class="zk-chip is-magenta">teacher</span></td><td>Class A</td><td><span class="zk-chip is-live">Yes</span></td><td class="zk-mono">2026-06-08</td></tr>
-                <tr><td>operator@dmd2000.local</td><td><span class="zk-chip is-magenta">operator</span></td><td>Operations</td><td><span class="zk-chip is-live">Yes</span></td><td class="zk-mono">2026-06-09</td></tr>
-              </tbody>
-            </table>
-          </section>
         </section>
       </main>
     </div>
@@ -392,6 +488,7 @@
       <symbol id="i-crosshair" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7" /><path d="M12 2v4M12 18v4M2 12h4M18 12h4" /></symbol>
       <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14" /></symbol>
       <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16" /></symbol>
+      <symbol id="i-log-out" viewBox="0 0 24 24"><path d="M9 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4M9 12h12M16 7l5 5-5 5" /></symbol>
       <symbol id="i-monitor" viewBox="0 0 24 24"><path d="M4 5h16v11H4zM9 21h6M12 16v5" /></symbol>
       <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 15.5A8 8 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5z" /></symbol>
       <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></symbol>
@@ -405,7 +502,17 @@
       <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" /></symbol>
       <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></symbol>
     </svg>
+    <script src="auth.js"></script>
     <script src="app.js"></script>
+    <script src="diagnostics.js"></script>
+    <script src="dish_status.js"></script>
+    <script src="weather_status.js"></script>
+    <script src="digitiser_status.js"></script>
+    <script src="status.js"></script>
     <script src="opt.js"></script>
+    <script src="dishes.js"></script>
+    <script src="digitisers.js"></script>
+    <script src="config_commands.js"></script>
+    <script src="accounts.js"></script>
   </body>
 </html>

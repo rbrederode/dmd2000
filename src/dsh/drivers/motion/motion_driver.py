@@ -187,6 +187,7 @@ class MotionDriver(DishDriver):
         except XStreamUnableToExtract as e:
             logger.error(f"IMUDriver for controller {self.motion_config.imu_host} {self.motion_config.imu_port} failed to decode response data: {e}")
             raise XStreamUnableToExtract(f"IMUDriver for controller {self.motion_config.imu_host} {self.motion_config.imu_port} failed to decode response data: {e}", data=rsp_data)
+        self.dsh_model.last_comms_success_dt = datetime.now(timezone.utc)
         logger.debug(f"IMUDriver for controller {self.motion_config.imu_host} {self.motion_config.imu_port} received response from IMU server:\n{imu_rsp}")
         return imu_rsp
 

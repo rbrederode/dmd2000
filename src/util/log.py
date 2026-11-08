@@ -4,6 +4,7 @@ import logging
 import shutil
 from typing import Dict
 from logging.handlers import TimedRotatingFileHandler
+from util.log_config import runtime_log_dir
 
 class MillisecondFormatter(logging.Formatter):
     def formatTime(self, record, datefmt=None):
@@ -12,14 +13,16 @@ class MillisecondFormatter(logging.Formatter):
         s = "%s:%03d" % (t, record.msecs)
         return s
 
-# repository-level logs directory (all logs stored relative to repo root)
+# Resolve storage before constructing any file handlers or application classes.
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-repo_logs_dir = os.path.join(project_root, "logs")
+repo_logs_dir = runtime_log_dir()
 os.makedirs(repo_logs_dir, exist_ok=True)
 
-# move existing src/logs/alarm and src/logs/availability into top-level logs if present (best-effort)
+# Preserve legacy migration only for the repository default; selecting another
+# root starts new logs there and never moves historical logs between locations.
 src_logs_dir = os.path.join(project_root, "src", "logs")
-for sub in ("alarm", "availability"):
+legacy_subdirs = ("alarm", "availability") if repo_logs_dir == os.path.join(project_root, "logs") else ()
+for sub in legacy_subdirs:
     old_dir = os.path.join(src_logs_dir, sub)
     new_dir = os.path.join(repo_logs_dir, sub)
     try:

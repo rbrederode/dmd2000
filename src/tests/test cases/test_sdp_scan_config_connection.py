@@ -1,4 +1,5 @@
 from queue import Queue
+import pytest
 from types import SimpleNamespace
 
 from models.comms import CommunicationStatus
@@ -81,3 +82,18 @@ def test_scan_config_accepts_matching_connected_entity(tmp_path):
         "tgt_idx": 0,
         "freq_scan": 0,
     }
+
+
+@pytest.mark.parametrize('scan_state', [False, {'obs_id': 'USR-existing', 'tgt_idx': 0, 'freq_scan': 0}])
+@pytest.mark.parametrize('include_null', [False, True])
+def test_partial_gain_preserves_scan_state_and_serializable_status(tmp_path, scan_state, include_null):
+    sdp, digitiser = _build_sdp(tmp_path, connected_id='dig001', connection_state=CommunicationStatus.ESTABLISHED)
+    digitiser.scanning = scan_state
+    value = {'dig_id': 'dig001', 'obs_id': 'USR-gain-update', 'gain': 25.0}
+    if include_null:
+        value['scanning'] = None
+    assert sdp.set_scan_config(value) is True
+    assert digitiser.gain == 25.0
+    assert digitiser.scanning == scan_state
+    received = ScienceDataProcessorModel.from_dict(sdp.sdp_model.to_dict())
+    assert received.dig_store.get_dig_by_id('dig001').scanning == scan_state

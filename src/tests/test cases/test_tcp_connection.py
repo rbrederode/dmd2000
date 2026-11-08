@@ -96,6 +96,29 @@ def test_stale_disconnect_does_not_close_newer_socket():
     client._schedule_retry.assert_not_called()
 
 
+def test_reply_for_old_socket_is_not_sent_on_reconnected_client():
+    from types import SimpleNamespace
+    from ipc.message import Message
+
+    current_socket = mock.Mock()
+    current_socket.fileno.return_value = 42
+    client = make_client(current_socket)
+    client.connected = True
+    client._send_lock = mock.MagicMock()
+    client.sel = mock.Mock()
+    client.sel.get_map.return_value = {42: SimpleNamespace(data=True, fileobj=current_socket)}
+    client.max_block_size = 65535
+    message = Message()
+    message.from_data(b'reply')
+    message.to_data = mock.Mock(wraps=message.to_data)
+
+    client.send(message, client_socket=object())
+    current_socket.sendall.assert_not_called()
+    message.to_data.assert_not_called()
+    client.send(message, client_socket=current_socket)
+    current_socket.sendall.assert_called_once_with(b'\x00\x05\x00\x00reply')
+
+
 def test_tcp_connection_events_use_timezone_aware_utc_timestamps():
     client_socket = FakeSocket(connect_result=0)
     client = make_client(client_socket)

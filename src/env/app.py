@@ -15,6 +15,7 @@ from api import protocol as dmd_protocol
 from api.cmd_api import CommandAPI
 from api.cmd_registry import CommandRegistry, DEFAULT_COMMAND_CONFIG
 from ipc.tcp_server import TCPServer
+from ipc.tcp_client import TCPClient
 from ipc.message import AppMessage, APIMessage
 from ipc.action import Action
 from models.app import AppModel
@@ -111,9 +112,13 @@ class App:
         self.app_model.health = HealthState.UNKNOWN
         self._last_heartbeat = None
         self._lock = threading.Lock()
+        trace_name = self.app_model.app_name
+        entity_id = self.get_args().entity_id
+        if entity_id not in (None, '', '<undefined>'):
+            trace_name = entity_id
         self.trace = HTMLTrace(
             output_dir=Path(log.repo_logs_dir) / "trace",
-            app_name=self.app_model.app_name,
+            app_name=trace_name,
             app_version=self.app_model.version,
             manage_trace_archives=_should_manage_trace_archives(
                 self.app_model.app_name,
@@ -216,6 +221,7 @@ class App:
         arg_parser.add_argument("--verbose", "-v",action="store_true", help="Enable verbose logging")
         arg_parser.add_argument("--num_processors", "-np", type=int, required=False, help="Number of processor threads to create", default=4)
         arg_parser.add_argument("--profile", type=str, required=False, help="Configuration profile to use e.g. default, alston etc. See ./config directory for existing profiles.", default="default")
+        arg_parser.add_argument('--log_dir', default=log.repo_logs_dir, help='Root for logs and traces; overrides DMD_LOG_DIR and profile log_dir at startup')
         arg_parser.add_argument("--entity_id", type=str, required=False, help="Alphanumeric entity ID to uniquely identify a dish or digitiser instance <[A-Z][a-z][0-9]+> e.g. dsh001", default="<undefined>")
         arg_parser.add_argument("--headless",type=fmt_bool,nargs="?",const=True,required=False,default=False,help="Disable displays and UI interactions for apps that support them. Accepts true/false.")
         arg_parser.add_argument("--queue_high_watermark", type=int, required=False, help="Queue size at which app-specific overload handling starts; 0 derives from processor count.", default=0)
@@ -389,6 +395,7 @@ class App:
             except Exception:
                 logger.exception("App %s failed to stop an interface", self.app_model.app_name)
         getattr(self, "interfaces", {}).clear()
+        self.app_model.interface_roles = {}
 
     def start_processors(self):
         """Starts all processor threads."""
@@ -529,6 +536,10 @@ class App:
 
         self.interfaces[system_name] = (api, endpoint, interface_type)
         self.app_model.interfaces.append(system_name)
+        self.app_model.interface_roles[system_name] = (
+            "CLIENT" if isinstance(endpoint, TCPClient) else
+            "SERVER" if isinstance(endpoint, TCPServer) else "UNKNOWN"
+        )
 
     def deregister_interface(self, system_name: str):
         """Deregisters an interface from the application.
@@ -536,6 +547,7 @@ class App:
         """
         if system_name in self.interfaces:
             self.app_model.interfaces.remove(system_name)
+            self.app_model.interface_roles.pop(system_name, None)
             del self.interfaces[system_name]
 
             logger.info(f"App {self.app_model.app_name} deregistered interface for system '{system_name}'")

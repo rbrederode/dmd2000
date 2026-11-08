@@ -12,6 +12,8 @@
     const active = tabs.find((tab) => tab.dataset.tab === id);
     if (currentView && active) currentView.textContent = active.textContent.trim();
     closeDrawer();
+    window.history.replaceState(null, "", "#" + id);
+    window.dispatchEvent(new CustomEvent("dmd:view", { detail: id }));
   }
 
   function openDrawer() {
@@ -72,6 +74,7 @@
       document.querySelectorAll("[data-admin-panel]").forEach((panel) => {
         panel.classList.toggle("is-active", panel.dataset.adminPanel === id);
       });
+      window.dispatchEvent(new CustomEvent("dmd:admin-tab", { detail: id }));
     });
   });
 
@@ -98,61 +101,7 @@
     });
   }
 
-  function setStatusText(key, value) {
-    const el = document.querySelector(`[data-status-value="${key}"]`);
-    if (el && value != null && value !== "") el.textContent = value;
-  }
+  const requestedView = window.location.hash.slice(1);
+  if (tabs.some((tab) => tab.dataset.tab === requestedView)) setActive(requestedView);
 
-  function chipClass(healthClass) {
-    return `zk-chip ${healthClass || "is-empty"}`;
-  }
-
-  function renderSubsystems(subsystems) {
-    const body = document.querySelector("[data-status-subsystems]");
-    if (!body || !Array.isArray(subsystems) || subsystems.length === 0) return;
-    body.innerHTML = subsystems.map((item) => `
-      <tr>
-        <td>${escapeHtml(item.name || "-")}</td>
-        <td><span class="${chipClass(item.health_class)}">${escapeHtml(item.health || "UNKNOWN")}</span></td>
-        <td>${escapeHtml(item.state || "UNKNOWN")}</td>
-        <td class="zk-mono">${escapeHtml(item.last_update || "-")}</td>
-        <td>${escapeHtml(item.endpoint || "-")}</td>
-      </tr>
-    `).join("");
-  }
-
-  function renderStatus(data) {
-    const summary = data.summary || {};
-    Object.entries(summary).forEach(([group, values]) => {
-      setStatusText(`${group}.state`, values && values.state);
-      setStatusText(`${group}.detail`, values && values.detail);
-    });
-    const observation = data.observation || {};
-    Object.entries(observation).forEach(([key, value]) => {
-      setStatusText(`observation.${key}`, value);
-    });
-    renderSubsystems(data.subsystems);
-  }
-
-  async function refreshStatus() {
-    try {
-      const response = await fetch("data/status.json", { cache: "no-store" });
-      if (!response.ok) return;
-      renderStatus(await response.json());
-    } catch (_) {
-      // Keep the indicative static values when no UI driver has written data yet.
-    }
-  }
-
-  function escapeHtml(value) {
-    return String(value)
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
-  }
-
-  refreshStatus();
-  window.setInterval(refreshStatus, 5000);
 })();

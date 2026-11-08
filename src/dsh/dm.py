@@ -515,10 +515,12 @@ class DM(App):
                     message = f"Dish Manager failed to set target id {target_id if target_id is not None else 'None'} in observation " \
                      f"{target.obs_id if target is not None else 'None' } for Dish {dish_id}: {e}"
 
-                    logger.error(dish_driver.set_last_err(message) + f"\n{target.to_dict() if target is not None else 'No Target'}")
+                    # Known failures return a correlated error to TM. Unexpected
+                    # exceptions propagate to the application's error handler.
+                    logger.exception(dish_driver.set_last_err(message))
+                    dish_driver.clear_target_tuple()
                     rsp_msg = self._construct_rsp_to_tm(status=dmd_protocol.STATUS_ERROR, message=message, api_msg=api_msg, api_call=api_call)
                     action.set_msg_to_remote(rsp_msg)
-                    dish_driver.clear_target_tuple()
                     return action
 
             message = f"Dish Manager set target {target_id if target_id is not None else 'None'} for Dish {dish_id}."
@@ -841,10 +843,13 @@ class DM(App):
         tm_adv = APIMessage(api_version=self.tm_api.get_api_version())
         dm_status = self.dm_model.to_dict()
 
-        # Keep retained weather samples local to DM and send only compact rolling summaries to TM.
+        # Keep full-rate samples local; forward bounded display history and summaries.
         weather_store = dm_status.get("weather_store")
         if isinstance(weather_store, dict):
             weather_store["weather_data"] = []
+            source = getattr(self.dm_model, 'weather_store', None)
+            weather_store["weather_history"] = source.get_display_history() if source is not None else []
+            weather_store["weather_metrics"] = source.get_display_metrics() if source is not None else {}
 
         tm_adv.set_json_api_header(
             api_version=self.tm_api.get_api_version(), 

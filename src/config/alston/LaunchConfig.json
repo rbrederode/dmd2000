@@ -1,6 +1,7 @@
 {
     "_type": "LaunchConfigModel",
     "profile": "alston",
+    "log_dir": "logs",
     "scan_store_dir": "~/samples/first_light",
     "launches": [
         {

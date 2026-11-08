@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from datetime import datetime, timezone
 import socket
 
 import pytest
@@ -6,6 +7,7 @@ import pytest
 from dsh.drivers.md01.md01_driver import MD01Driver
 from dsh.drivers.md01.md01_msg import MD01Msg
 from util.xbase import XTimeoutWaitingForResponse
+from models.dsh import DishModel
 
 
 MD01_RESPONSE = bytes.fromhex("57030600000a030600000a20")
@@ -70,6 +72,53 @@ def make_driver():
     driver._last_set_command_data = None
     driver._rate_limit_wait = lambda command: None
     return driver
+
+
+def test_last_successful_communication_records_only_valid_responses(monkeypatch):
+    sockets = iter([FakeSocket([MD01_RESPONSE]), FakeSocket([b'bad']), FakeSocket([b'bad'])])
+    monkeypatch.setattr('dsh.drivers.md01.md01_driver.socket.socket', lambda *args, **kwargs: next(sockets))
+    driver = make_driver()
+    driver.dsh_model = DishModel(dsh_id='dish001')
+    assert driver.dsh_model.last_comms_success_dt is None
+    command = MD01Msg()
+    command.set_cmd(MD01Msg.CMD_STATUS)
+    before = datetime.now(timezone.utc)
+    driver._send_md01_command(command)
+    successful_at = driver.dsh_model.last_comms_success_dt
+    assert before <= successful_at <= datetime.now(timezone.utc)
+    assert successful_at.tzinfo is timezone.utc
+    with pytest.raises(XTimeoutWaitingForResponse):
+        driver._send_md01_command(command)
+    assert driver.dsh_model.last_comms_success_dt == successful_at
+    assert DishModel.from_dict(driver.dsh_model.to_dict()).last_comms_success_dt == successful_at
+    old_snapshot = driver.dsh_model.to_dict()
+    del old_snapshot['last_comms_success_dt']
+    assert DishModel.from_dict(old_snapshot).last_comms_success_dt is None
+
+
+def test_motion_network_response_records_last_communication(monkeypatch):
+    from dsh.drivers.motion.motion_driver import MotionDriver
+    from ipc.message import APIMessage
+
+    reply = APIMessage(api_version='1.0')
+    reply.set_json_api_header(api_version='1.0', dt=datetime.now(timezone.utc),
+        from_system='imu', to_system='app', api_call={
+            'msg_type': 'rsp', 'action_code': 'get', 'property': 'imu_data',
+            'status': 'success', 'value': {}})
+    fake_socket = FakeSocket([reply.to_data()])
+    fake_socket.send = fake_socket.sendall
+    monkeypatch.setattr('dsh.drivers.motion.motion_driver.socket.socket', lambda *args, **kwargs: fake_socket)
+    driver = MotionDriver.__new__(MotionDriver)
+    driver.dsh_model = DishModel(dsh_id='dish004')
+    driver.motion_config = SimpleNamespace(imu_host='192.0.2.4', imu_port=52500)
+    driver._rate_limit_wait = lambda request: None
+    before = datetime.now(timezone.utc)
+    driver._send_imu_request(reply)
+    successful_at = driver.dsh_model.last_comms_success_dt
+    assert before <= successful_at <= datetime.now(timezone.utc)
+    with pytest.raises(XTimeoutWaitingForResponse):
+        driver._send_imu_request(reply)
+    assert driver.dsh_model.last_comms_success_dt == successful_at
 
 
 def test_set_command_consumes_position_response(monkeypatch):

@@ -77,11 +77,11 @@
     const skyIncluded = state.observation?.scans.some((s) => s.kind === "SKY" && s.status === "COMPLETE" && !state.excluded.has(s.id));
     $("find").disabled ||= state.finding;
     $("open").disabled ||= state.finding || !$("observation").value;
-    $("process").disabled = locked || !state.connected || !skyIncluded;
+    $("process").disabled = window.DmdSession?.can_edit === false || locked || !state.connected || !skyIncluded;
     $("process").textContent = state.busy ? "Processing…" : state.result ? "Reprocess observation" : "Process observation";
     $("cancel").hidden = !state.busy;
-    $("cancel").disabled = state.starting || !state.connected;
-    $("replot").disabled = locked || !state.connected || !inputsMatchResults() || !state.dirty;
+    $("cancel").disabled = window.DmdSession?.can_edit === false || state.starting || !state.connected;
+    $("replot").disabled = window.DmdSession?.can_edit === false || locked || !state.connected || !inputsMatchResults() || !state.dirty;
     $("replot").title = inputsMatchResults() ? "Update baseline and contour views from cached spectra" : "Process the current input selection first";
     $("stale").hidden = !state.dirty;
     $("input-count").textContent = state.observation?.scans.length || 0;
@@ -356,6 +356,7 @@
       error(state.connected ? failure.message : `${failure.message} Run PYTHONPATH=src python -m ui.opt_service --data-root ~/samples from the repository root, then open http://127.0.0.1:8765/#results.`);
     } finally { state.initialising = false; renderControls(); }
   }
+  window.addEventListener?.("dmd:session", renderControls);
   if (window.location.hash === "#results") document.querySelector('[data-tab="results"]')?.click();
   initialise();
   window.setTimeout(heartbeat, 5000);

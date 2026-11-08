@@ -707,3 +707,38 @@ def test_manage_trace_archives_command_line_argument(command_args, expected):
     args = parser.parse_args(command_args)
 
     assert args.manage_trace_archives is expected
+
+
+@pytest.mark.parametrize('app_name, entity_id, filename', [
+    ('dig', 'dig001', 'dig001.html'),
+    ('dig', 'dig003', 'dig003.html'),
+    ('tm', 'tm001', 'tm001.html'),
+    ('dm', 'dm001', 'dm001.html'),
+    ('sdp', 'sdp001', 'sdp001.html'),
+    ('ws', 'ws002', 'ws002.html'),
+    ('web', 'web001', 'web001.html'),
+    ('dig', '<undefined>', 'dig.html'),
+    ('tm', '', 'tm.html'),
+    ('dm', None, 'dm.html'),
+])
+def test_application_trace_files_use_entity_ids(tmp_path, monkeypatch, app_name, entity_id, filename):
+    class TraceApp(App):
+        def stop(self):
+            if hasattr(self, 'trace'):
+                self.trace.stop()
+
+    monkeypatch.setattr('sys.argv', ['trace-test'] + (['--entity_id', entity_id] if entity_id is not None else []))
+    monkeypatch.setattr('env.app.log.repo_logs_dir', str(tmp_path))
+    monkeypatch.setattr('env.app._should_manage_trace_archives', lambda *args: False)
+    monkeypatch.setattr(App, 'start_timer_manager', lambda self: None)
+    monkeypatch.setattr(App, 'report_availability', lambda self: None)
+    monkeypatch.setattr(App, 'get_availability_logger', lambda self: mock.Mock())
+    monkeypatch.setattr(CommandRegistry, 'load', mock.Mock())
+    app = TraceApp(app_name=app_name, app_model=AppModel(
+        app_name=app_name, app_cmd_host='127.0.0.1', app_cmd_port=60000, app_tracing=True))
+    try:
+        assert app.trace.path == tmp_path / 'trace' / filename
+        assert app.trace.path.exists()
+        assert app.app_model.app_name == app_name
+    finally:
+        app.stop()

@@ -314,10 +314,14 @@ class TCPClient:
         """Send a message to the server
             Parameters
                 msg: Message to send
-                client_socket: Dummy parameter for compatibility with server interface
+                client_socket: Originating socket, when replying to a received event
         """
 
         with self._send_lock:  # Ensure that only one thread can send a message at a time
+
+            if client_socket is not None and client_socket is not self.client_socket:
+                logger.debug("Ignoring reply for an obsolete connection to %s", self.description)
+                return
 
             time_enter = time.time()
 

@@ -61,6 +61,7 @@ class LaunchConfigModel(BaseModel):
         "_type": And(str, lambda v: v == "LaunchConfigModel"),
         "profile": And(str, lambda v: isinstance(v, str) and len(v) > 0),
         "scan_store_dir": Or(None, And(str, lambda v: bool(v.strip()))),
+        "log_dir": Or(None, And(str, lambda v: bool(v.strip()))),
         "launches": And(list, lambda v: isinstance(v, list) and all(isinstance(item, LaunchModel) for item in v)),
         "last_update": And(datetime, lambda v: isinstance(v, datetime)),
     })
@@ -72,6 +73,7 @@ class LaunchConfigModel(BaseModel):
             "_type": "LaunchConfigModel",
             "profile": "default",
             "scan_store_dir": None,
+            "log_dir": None,
             "launches": [],
             "last_update": datetime.now(timezone.utc),
         }

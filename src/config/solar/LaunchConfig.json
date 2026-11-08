@@ -1,6 +1,7 @@
 {
     "_type": "LaunchConfigModel",
     "profile": "solar",
+    "log_dir": "logs",
     "scan_store_dir": "~/samples/solar",
     "launches": [
         {

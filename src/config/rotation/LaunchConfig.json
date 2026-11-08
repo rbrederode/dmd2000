@@ -1,8 +1,23 @@
 {
     "_type": "LaunchConfigModel",
     "profile": "rotation",
+    "log_dir": "logs",
     "scan_store_dir": "~/samples/rotation",
     "launches": [
+        {
+            "_type": "LaunchModel",
+            "app_name": "web",
+            "entity_id": "web001",
+            "env": {},
+            "program": "python",
+            "args": [
+                "-u", "-m", "web.web_server",
+                "--profile", "rotation",
+                "--entity_id", "web001",
+                "--tm_host", "192.168.50.1",
+                "--http_port", "8000"
+            ]
+        },
         {
             "_type": "LaunchModel",
             "app_name": "dig",
@@ -13,9 +28,9 @@
                 "-m", "dig.dig",
                 "--profile", "rotation",
                 "--entity_id", "dig001",
-                "--tm_host", "127.0.0.1",
-                "--sdp_host", "127.0.0.1",
-                "--local_host", "127.0.0.1"
+                "--tm_host", "192.168.50.1",
+                "--sdp_host", "192.168.50.1",
+                "--local_host", "192.168.50.1"
             ]
         },
         {
@@ -71,6 +86,7 @@
                 "-m", "tm.tm",
                 "--profile", "rotation",
                 "--entity_id", "tm001",
+                "--web_host", "192.168.50.1",
                 "--dig_host", "192.168.50.1",
                 "--sdp_host", "192.168.50.1",
                 "--dm_host", "192.168.50.1",

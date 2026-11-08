@@ -4,9 +4,87 @@ The external web server (`web.web_server`, port 8000) validates the existing
 `WEBHOOK_SECRET` token or HMAC signature. CMD webhooks now use the target
 application's existing command TCP API through `util.cmd_app`, independently of
 TM's embedded HTTP API. DIG, DSH, ODT and OET configuration webhooks use the
-`tm_web` TCP API on TM's `web` interface. Observation listing still uses TM's
-local HTTP API (`tm.web_api`, port 5001) during this migration. Keep the tunnel
+`tm_web` TCP API on TM's `web` interface. Observation listing reads local/shared storage directly in WEB without TM. Keep the tunnel
 pointed at port 8000.
+
+## Shared log and trace root
+
+`LaunchConfig.json` has a top-level `log_dir` alongside `scan_store_dir`:
+
+```json
+{
+  "_type": "LaunchConfigModel",
+  "profile": "local",
+  "log_dir": "logs",
+  "scan_store_dir": "~/samples/local",
+  "launches": []
+}
+```
+
+The supplied profiles use `"logs"`, which resolves to the existing repository
+`dmd2000/logs` directory. Relative paths resolve against the repository root,
+independently of the terminal's working directory. Absolute paths, including
+mounted/shared storage, and `~` paths are also supported. Omitted/null settings
+retain the repository default.
+
+Continue launching applications normally:
+
+```bash
+./launch --profile local web001
+```
+
+The launcher resolves the profile path and passes `DMD_LOG_DIR` into the new
+terminal before Python imports initialize logging. Direct module launches also
+read their profile at logging startup. `--log_dir PATH` overrides the process
+`DMD_LOG_DIR` value, which overrides the profile setting. An individual launch
+entry may set `env.DMD_LOG_DIR` to override its profile's root.
+
+Application logs remain under `app/`, HTML traces under `trace/`, and telemetry
+under its existing `availability/`, `alarm/`, `pointing/` and `weather/` folders.
+Application traces use defined entity IDs, for example `trace/tm001.html` or
+`trace/dig001.html`, falling back to `trace/<app>.html` without an entity ID. Existing
+historical files are not moved into a newly configured location. Restart the
+applications after changing their output root.
+
+WEB includes the resolved `log_dir` in `GET /api/profile`, profile discovery and
+profile-selection responses. Switching the UI's resource profile selects that
+profile's log root for future file viewing; it does not redirect a running
+application's logging. WEB's startup root override is retained on RESYNC until a
+resource-profile switch clears it, as with its scan-store override. The authenticated private UI uses this setting for on-demand log/trace viewing.
+The public API listener does not expose these file routes.
+
+## Private console and shared accounts
+
+The WEB process also serves the frontend and OPT workspace on a separate,
+**loopback-only** listener at `http://127.0.0.1:8765`. The public API port (8000)
+does not serve UI, login, user-management or OPT routes. Continue exposing only
+port 8000 through the tunnel. There is no separate console process to start.
+
+Create the first administrator interactively before signing in:
+
+```bash
+PYTHONPATH=src python -m web.users create --username ray --role admin
+```
+
+Flask-Security uses SQLite and Argon2 password hashes. Users are shared across all
+configuration profiles. Its state defaults to `~/.local/share/dmd2000/web/`;
+`--ui_state_dir` / `DMD_UI_STATE_DIR` overrides it. Use the same path with the
+account CLI's `--state-dir`. There is no default password or self-registration.
+Administrators manage accounts under **Access**; viewer/operator/admin roles
+control reads, configuration/processing writes and account administration.
+Browser API calls require an active session and CSRF tokens for mutations. WEB's
+machine API continues to require its token/HMAC credentials independently of UI
+cookies. Password reset and account disabling revoke existing sessions.
+
+`--ui_port` defaults to 8765; `--ui_threads` defaults to 4. The UI always binds to
+127.0.0.1. `--ui_data_root` is repeatable and limits OPT file access (default
+`~/samples`); `--ui_cache_dir` sets the results directory. `--no_ui` runs only the
+API listener. Both listeners, TCP connections and OPT workers share WEB's startup
+and shutdown lifecycle. Stop any older `ui.opt_service` session before using the
+combined listener on the same port.
+
+See [console setup and account recovery](../src/ui/frontend_prototype/README.md)
+for the full workflow.
 
 ## Standalone web application and configuration requests
 
@@ -15,22 +93,29 @@ processors, timer manager, command endpoint, tracing and managed Waitress HTTP
 server. Install the new HTTP-server dependency in the runtime environment:
 
 ```bash
-python -m pip install waitress
+python -m pip install -r src/requirements.txt
 ```
 
 Start the two applications, for example (with `WEBHOOK_SECRET` already exported
 in the web-server environment):
 
 ```bash
-# On the TM machine; use its reachable interface address when web runs elsewhere.
+# On the TM machine; set --web_host to the WEB machine's reachable address.
 PYTHONPATH=src python -m tm.tm --profile alston --entity_id tm001 --web_host 127.0.0.1 --web_port 50004
 
-# On the web-server machine; set --tm_host to the TM machine's reachable address.
+# On the WEB machine; set --tm_host to WEB's local listening address for TM.
 PYTHONPATH=src python -m web.web_server --profile alston --entity_id web001 --tm_host 127.0.0.1 --tm_port 50004 --http_port 8000 --http_threads 10
 ```
 
+TM initiates the TCP connection during initialization, after loading its
+configuration, and owns retries after a connection failure. WEB listens for TM;
+its HTTP service can start and remain available before TM is ready. Both apps
+must be restarted when upgrading from the previous connection direction.
+
 The examples use loopback for a same-machine test. The Alston launch profile
-sets both sides to TM's existing `192.168.2.1` address. `--profile_dir` (or
+sets both sides to `192.168.2.1`, where WEB listens and TM connects. When the
+apps run on different machines, TM's `--web_host` must point to WEB, and WEB's
+`--tm_host` must name a local address on the WEB machine. `--profile_dir` (or
 `WEB_PROFILE_DIR`) selects a shared/local profile directory explicitly; otherwise
 the web application uses repository `src/config/<profile>`. Default and Alston
 profiles now include `WebServerModel.json`. The model stores the app's identity,
@@ -41,8 +126,8 @@ configuration without replacing live sockets.
 
 | Setting | Default |
 | --- | --- |
-| TM `--web_host`, `--web_port` | `127.0.0.1`, `50004` |
-| Web `--tm_host`, `--tm_port` | `127.0.0.1`, `50004` (`WEB_TM_HOST` / `WEB_TM_PORT` overrides) |
+| TM `--web_host`, `--web_port` (WEB destination) | `localhost`, `50004` |
+| Web `--tm_host`, `--tm_port` (local listener for TM) | `127.0.0.1`, `50004` (`WEB_TM_HOST` / `WEB_TM_PORT` overrides) |
 | Web `--http_host`, `--http_port`, `--http_threads` | `127.0.0.1`, `8000`, `10` |
 | Web command endpoint | `127.0.0.1:60010`, overridable with `--cmd_host` / `--cmd_port` |
 | Configuration response timeout | Profile `app.msg_timeout_ms` (default 10000); `--request_timeout` / `WEB_REQUEST_TIMEOUT` overrides in seconds |
@@ -315,6 +400,296 @@ tunnel after updating it. Copy the updated `decodeWebhookResponse` and
 `sendWebhook` functions from `src/javascript/app_scripts.js` into Google Apps
 Script to apply the improved gateway-error display.
 
+## Select a resource profile
+
+WEB starts with the profile supplied by `--profile` (or `--profile_dir`). The
+frontend can discover and switch the profile used for file-backed resources:
+
+| Method | Route | Result |
+| --- | --- | --- |
+| GET | `/api/profiles` | Available profiles and the current selection |
+| GET | `/api/profile` | Current profile and effective observation directory |
+| PUT | `/api/profile` | Select a profile using `{"profile":"local"}` |
+
+```bash
+curl -H "X-Webhook-Token: $WEBHOOK_SECRET" http://localhost:8000/api/profiles
+```
+
+```bash
+curl -X PUT -H "X-Webhook-Token: $WEBHOOK_SECRET" -H 'Content-Type: application/json' \
+  -d '{"profile":"alston"}' http://localhost:8000/api/profile
+```
+
+Responses use `ResponseEvent`. The current selection is returned as
+`payload.profile` and `payload.scan_store_dir`. The list also contains
+`payload.count` and `payload.profiles`; each entry has `profile`, `selected`,
+`scan_store_dir` and `available`. An invalid LaunchConfig is listed as unavailable
+with a message, and cannot replace the current selection.
+
+Discovery searches immediate configuration directories beside the launch profile;
+with `--profile_dir`, it searches that directory's siblings. Hidden directories,
+symlinks and directories without JSON configuration files are excluded. Selection
+accepts a profile name, not an arbitrary filesystem path.
+
+Switching atomically changes the directory used by dish, digitiser, weather-station and pipeline reads/edits and the
+observation default from the new profile's top-level `scan_store_dir` in
+`LaunchConfig.json`. It clears any startup `--scan_store_dir` override. The
+per-request observation `directory` override continues to work. A profile with no
+storage default can still be selected; observation requests without an explicit
+directory then return `store_not_known`, rather than using the previous profile.
+WEB RESYNC reloads the selected profile's storage default.
+
+The selection is shared by all callers of this WEB instance and lasts until WEB
+restarts; startup arguments select the profile again on restart. Requests already
+in progress finish against the profile they captured. This selection controls
+file-backed resources; it does not change WEB's process identity, command target
+lookup, TCP connections, or the profiles of running TM, SDP and Dish Manager.
+These calls use the existing WEB authentication and HTTP tracing.
+
+## Profile dish configuration
+
+Dish APIs read and update `DishList.json` in WEB's selected resource profile,
+initially chosen by `--profile` (or `--profile_dir`) and changeable via `/api/profile`. They work while TM and Dish Manager are offline.
+They use the same token/HMAC authentication and HTTP tracing as other WEB routes.
+
+| Method | Route | Result |
+| --- | --- | --- |
+| GET | `/api/dishes` | List configured dishes |
+| GET | `/api/dishes/<dsh_id>` | Read one configured dish |
+| POST | `/api/dishes` | Create a dish; duplicate IDs return 409 |
+| PATCH | `/api/dishes/<dsh_id>` | Update supplied fields; omitted fields are retained |
+| DELETE | `/api/dishes/<dsh_id>` | Delete one stored dish definition |
+
+List the active profile's dishes:
+
+```bash
+curl -H "X-Webhook-Token: $WEBHOOK_SECRET" http://localhost:8000/api/dishes
+```
+
+Create a fixed dish using the existing model defaults for omitted settings:
+
+```bash
+curl -X POST -H "X-Webhook-Token: $WEBHOOK_SECRET" -H 'Content-Type: application/json' \
+  -d '{"dsh_id":"dish004","short_desc":"New fixed dish","diameter":1.2,"latitude":53.801,"longitude":-2.5933,"height":90,"driver_type":"DRIFT","driver_config":{"alt":45,"az":180},"feed_type":"H3T_1420"}' \
+  http://localhost:8000/api/dishes
+```
+
+Edit its description and fixed altitude:
+
+```bash
+curl -X PATCH -H "X-Webhook-Token: $WEBHOOK_SECRET" -H 'Content-Type: application/json' \
+  -d '{"short_desc":"Updated fixed dish","driver_config":{"alt":50}}' \
+  http://localhost:8000/api/dishes/dish004
+```
+
+Responses use `ResponseEvent`. Lists have `payload.profile`, `payload.count` and
+`payload.dishes`; individual reads and writes have `payload.profile` and
+`payload.dish`. Successful creation returns HTTP 201 with a `Location` header;
+reads and updates return 200. Writes include `payload.phase: "stored"`.
+
+The editable fields are `dsh_id` (creation only), `short_desc`, `diameter`,
+`fd_ratio`, `latitude`, `longitude`, `height`, `ws_id`, `feed_type`, `feed_config`,
+`dig_id`, `driver_type`, `driver_config` and `driver_poll_period`. Enum values use
+names such as `H3T_1420`, `MD01`, `DRIFT` or `MOTION`. A new dish needs a unique
+`dsh_id` and supported `driver_type`. Driver configuration is validated using the
+existing MD01, Drift or Motion model; its omitted fields use model defaults on
+creation, and retain stored values on update. Changing driver type replaces the
+previous driver's configuration. Unknown fields and invalid values return 400.
+Runtime mode, pointing, health and observation state are excluded from this API.
+
+GET and successful write responses include an `ETag` for the entire profile dish
+file. A frontend editor should retain that value and send it in `If-Match` when
+saving, including the enclosing quotes. If another editor changed the file, the
+save returns HTTP 412 with code `version_conflict`; reload before saving again.
+Without `If-Match`, a PATCH merges its fields into the latest stored definition.
+File writes use a process/thread lock and atomic replacement, preserving other
+dishes, unrelated metadata and existing legacy fields. Other tools editing this
+file should use the same lock to coordinate simultaneous writes.
+
+These operations save profile configuration. They do not send live configuration
+commands or automatically reload running applications. Dish Manager loads the
+file on startup or a successful RESYNC, subject to its existing safe-state checks;
+TM subsequently learns the updated dish model through Dish Manager status.
+New dishes retain the model's default runtime state until the applications load
+and configure them. The frontend prototype's Admin → Dishes editor uses these routes through its
+local console bridge. It sends the expected profile in `X-Config-Profile`; a
+profile change from another session returns HTTP 409 (`profile_changed`) before
+the request accesses a different profile. This optional header also applies to
+the digitiser, weather-station and pipeline resource APIs. See the
+[frontend guide](../src/ui/frontend_prototype/README.md#admin--dishes).
+
+## Profile digitiser and weather-station configuration
+
+These APIs use WEB's selected resource profile, with the same authentication,
+HTTP tracing, `ResponseEvent` envelopes, ETags and optional `If-Match` checks as
+the dish APIs. They work independently of TM and write configuration files only.
+
+| Method | Digitiser route | Weather-station route | Result |
+| --- | --- | --- | --- |
+| GET | `/api/digitisers` | `/api/weather-stations` | List definitions |
+| GET | `/api/digitisers/<dig_id>` | `/api/weather-stations/<ws_id>` | Read one |
+| POST | `/api/digitisers` | `/api/weather-stations` | Create one |
+| PATCH | `/api/digitisers/<dig_id>` | `/api/weather-stations/<ws_id>` | Edit supplied fields |
+| DELETE | `/api/digitisers/<dig_id>` | `/api/weather-stations/<ws_id>` | Delete one definition |
+
+Lists return `payload.digitisers` or `payload.weather_stations`, together with
+`profile` and `count`. Single-resource responses return `payload.digitiser` or
+`payload.weather_station`. Creation returns 201 and a `Location` header; reads and
+updates return 200. Writes include `payload.phase: "stored"`. Duplicate IDs return
+409, missing definitions/files return 404, invalid edits return 400, and stale
+`If-Match` versions return 412. Identifiers cannot be renamed through PATCH.
+
+### Digitisers
+
+Definitions are read from `DigitiserList.json`. Editable fields are `dig_id`
+(creation only), `bpf_type`, `bpf_config`, `temp_type`, `temp_config`, `temp_max`,
+`gain`, `sample_rate`, `bandwidth`, `center_freq`, `freq_correction`, `channels`,
+`sdr_type`, `sdr_config`, `local_host`, `app_cmd_host` and `app_cmd_port`.
+The last three map to the digitiser's stored application settings; runtime app
+state, connection flags, scanning state and EEPROM readings are excluded.
+
+SDR types follow `DigitiserModel`: `rtlsdr`, `soapy`, `airspy`, `gqrxraw`,
+`airstream` and `rtlstream`. Temperature types are `none` and `bme280`.
+`bpf_type` uses a `BandpassFilterType` name. SAWBIRD_H1_BAREBONES configurations
+accept `gpio_pin_power` and `gpio_pin_load` (integer pins 0–27 or null); a null
+`bpf_config` disables its configured GPIO controls. SDR and temperature options
+are dictionaries validated to the extent provided by the existing model; saving
+does not open or test hardware. Nested configuration edits merge supplied keys.
+Changing SDR, temperature or filter type clears the previous type's settings.
+
+```bash
+curl -H "X-Webhook-Token: $WEBHOOK_SECRET" http://localhost:8000/api/digitisers
+```
+
+```bash
+curl -X POST -H "X-Webhook-Token: $WEBHOOK_SECRET" -H 'Content-Type: application/json' \
+  -d '{"dig_id":"dig004","local_host":"192.168.2.104","sdr_type":"rtlstream","sdr_config":{"ring_seconds":10,"read_timeout_sec":10}}' \
+  http://localhost:8000/api/digitisers
+```
+
+```bash
+curl -X PATCH -H "X-Webhook-Token: $WEBHOOK_SECRET" -H 'Content-Type: application/json' \
+  -d '{"temp_max":45,"sdr_config":{"read_timeout_sec":15}}' \
+  http://localhost:8000/api/digitisers/dig004
+```
+
+The frontend prototype's Admin → Digitisers view supports listing, editing,
+creation and confirmed deletion through these endpoints, under the shared Admin
+profile selector. See the [frontend guide](../src/ui/frontend_prototype/README.md#admin--digitisers).
+
+Digitisers reload their existing hardware/sensor configuration on a successful
+RESYNC when idle. Network identity and other process settings may require a
+restart; adding a definition does not launch a digitiser process.
+
+### Weather stations
+
+Station definitions are read from `WeatherStationList.json`. Editable fields are
+`ws_id` (creation only), `location`, `latitude`, `longitude` and `elevation`.
+Creation requires a unique `ws_id` and non-empty `location`. Coordinates and
+elevation may be null; otherwise they use the existing model's valid ranges.
+Other stations, weather readings, summaries and list-level alarm thresholds are
+preserved on disk.
+
+```bash
+curl -H "X-Webhook-Token: $WEBHOOK_SECRET" http://localhost:8000/api/weather-stations
+```
+
+```bash
+curl -X POST -H "X-Webhook-Token: $WEBHOOK_SECRET" -H 'Content-Type: application/json' \
+  -d '{"ws_id":"ws003","location":"New observatory","latitude":53.801,"longitude":-2.5933,"elevation":90}' \
+  http://localhost:8000/api/weather-stations
+```
+
+```bash
+curl -X PATCH -H "X-Webhook-Token: $WEBHOOK_SECRET" -H 'Content-Type: application/json' \
+  -d '{"location":"Updated observatory","elevation":95}' \
+  http://localhost:8000/api/weather-stations/ws003
+```
+
+The weather application driver settings remain in the separate
+`WeatherStationModel.json`; these station collection endpoints do not edit that
+file or its hardware driver. TM and Dish Manager load the station list during
+startup or their normal RESYNC flow. New definitions do not launch weather
+applications or alter running weather-monitoring configuration automatically.
+
+## Profile pipeline steps
+
+Pipeline operations read and edit the selected profile's `PipelineConfig.json`.
+Its `steps_map` contains named, ordered lists, commonly `default` and digitiser
+IDs such as `dig001`. These are stored configuration operations, independent of
+TM and SDP, with the existing authentication, HTTP tracing, `ResponseEvent`
+envelopes, atomic writes and optional `If-Match` version checks.
+
+| Method | Route | Result |
+| --- | --- | --- |
+| GET | `/api/pipeline` | All maps and built-in step names |
+| POST | `/api/pipeline/steps-maps` | Create a named map |
+| GET | `/api/pipeline/steps-maps/<name>` | Read an explicit map |
+| GET | `/api/pipeline/steps-maps/<name>/steps` | List its ordered steps |
+| POST | `/api/pipeline/steps-maps/<name>/steps` | Append or insert a step |
+| GET | `/api/pipeline/steps-maps/<name>/steps/<index>` | Read a step |
+| PATCH | `/api/pipeline/steps-maps/<name>/steps/<index>` | Edit a step |
+| DELETE | `/api/pipeline/steps-maps/<name>` | Delete a named map |
+| DELETE | `/api/pipeline/steps-maps/<name>/steps/<index>` | Delete a step |
+
+List the current maps or the default steps:
+
+```bash
+curl -H "X-Webhook-Token: $WEBHOOK_SECRET" http://localhost:8000/api/pipeline
+curl -H "X-Webhook-Token: $WEBHOOK_SECRET" http://localhost:8000/api/pipeline/steps-maps/default/steps
+```
+
+Create a new digitiser-specific map with initial steps (`steps` may be empty or
+omitted). If the profile has no pipeline file yet, this creates it:
+
+```bash
+curl -X POST -H "X-Webhook-Token: $WEBHOOK_SECRET" -H 'Content-Type: application/json' \
+  -d '{"name":"dig004","steps":[{"step":"DC_SPIKE","params":{"context":"spr"}},{"step":"QA","params":{"context":"mpr","window_frac":0.2}}]}' \
+  http://localhost:8000/api/pipeline/steps-maps
+```
+
+Insert a step at zero-based index 1. Omit `index` to append:
+
+```bash
+curl -X POST -H "X-Webhook-Token: $WEBHOOK_SECRET" -H 'Content-Type: application/json' \
+  -d '{"index":1,"step":"RFI_FLAG","params":{"context":"cal","threshold":5,"window_size":21}}' \
+  http://localhost:8000/api/pipeline/steps-maps/dig004/steps
+```
+
+Edit the inserted step's threshold, retaining its other parameters:
+
+```bash
+curl -X PATCH -H "X-Webhook-Token: $WEBHOOK_SECRET" -H 'Content-Type: application/json' \
+  -d '{"params":{"threshold":6}}' \
+  http://localhost:8000/api/pipeline/steps-maps/dig004/steps/1
+```
+
+GET `/api/pipeline` returns `payload.profile`, `payload.steps_map`, `payload.count`
+(number of maps) and `payload.step_types`. A map response contains `name`, `steps`
+and `count` (number of steps). Every step has a zero-based `index`, a `step` name
+and `params`. Single-step reads and step writes additionally include
+`payload.step`. Writes include `payload.phase: "stored"`. Creation returns 201
+and a `Location` header; reads and edits return 200. Duplicate map names return
+409; missing maps and step indices return 404; invalid input returns 400.
+
+Step indices change after insertion. Frontend editors should send the returned
+`ETag` in `If-Match` when editing or inserting; a stale version returns 412
+without changing the file. Other maps, step metadata and unrelated file fields
+are preserved. These explicit map endpoints return 404 for a missing digitiser
+map; they do not silently edit `default` through SDP's runtime fallback rule.
+
+A new step requires a non-empty `step` name. Built-in names are accepted without
+regard to case and stored as StepType values; custom registry keys/class paths
+remain supported as strings. WEB does not resolve or import those plugins.
+`params` must be a JSON object; omitted params start empty. PATCH merges supplied
+top-level parameter keys, preserving the others; nested values replace their
+corresponding value. Changing step type clears the old parameters before applying
+new ones. Step-specific parameter semantics and plugin availability remain the
+responsibility of the processing pipeline; saving does not execute it.
+
+Saved pipeline changes take effect when SDP loads the profile on startup or
+RESYNC. The frontend editor is not wired to these APIs yet.
+
 ## List recorded observations
 
 ```bash
@@ -337,8 +712,8 @@ curl --fail-with-body --get \
 ```
 
 The web application searches storage directly; TM and SDP do not need to be
-running. The default comes from `config/<profile>/LaunchConfig.json`, using the
-web application's `--profile` (or `--profile_dir`) setting:
+running. The default comes from the selected resource profile's
+`LaunchConfig.json`, initially chosen by WEB's `--profile` (or `--profile_dir`):
 
 ```json
 {
@@ -439,3 +814,180 @@ and elapsed processing time. Tracing does not change the HTTP response body.
 Details include headers, query parameters and JSON bodies. Credential fields are
 redacted; non-JSON, streamed and large bodies are omitted. The existing WEB TRACE
 ON/OFF command controls these entries together with the TCP trace.
+
+
+## Delete stored definitions
+
+DELETE calls remove a single dish, digitiser or weather-station definition, a
+named pipeline map, or a step at its current zero-based index. They use WEB's
+selected resource profile and the same authentication, `If-Match` and optional
+`X-Config-Profile` checks as edits. No request body is required. For example:
+
+```bash
+curl -X DELETE -H "X-Webhook-Token: $WEBHOOK_SECRET" \
+  -H 'X-Config-Profile: local' \
+  http://localhost:8000/api/dishes/dish004
+```
+
+Frontend clients should include the latest quoted ETag in `If-Match`. Success
+returns HTTP 200 with `ResponseEvent`, an updated ETag, `payload.profile` and
+`payload.phase: "stored"`. Resource deletion responses have `payload.deleted_id`;
+pipeline responses identify the map with `payload.name`, and step deletion also
+returns `deleted_index` and the remaining, reindexed `steps`. Missing definitions
+return 404, stale versions return 412, and an unexpected profile returns 409.
+Deleting the final entry leaves an empty collection; the configuration file is
+retained.
+
+Deletion is atomic and removes only the selected definition. Other definitions,
+references, pipeline maps, weather-list settings and observations are retained;
+there is no cascade into other configuration files or recorded data. Running
+applications load the changed configuration through their existing startup or
+RESYNC behaviour. The frontend dish editor asks for confirmation before deletion.
+The console bridge forwards dish DELETE calls with the same server-side token and
+cross-origin protections as other editor writes. The frontend Digitisers editor also uses the restricted console bridge for
+CRUD operations. Weather and pipeline frontend editors remain to be connected.
+
+
+## Cached live telescope model
+
+`GET /api/telescope/model` returns WEB's most recent telescope-model snapshot.
+WEB polls TM immediately on a connection/reconnection and every 30 seconds using
+`tm_web` GET requests with property `telescope_model`. Each query has a unique
+correlation ID and timeout timer; only one is outstanding at a time. No WEB
+worker waits for the response. HTTP reads share the cache and never trigger a
+new TM query. Status advice and configuration requests retain their existing flow.
+
+```bash
+curl -H "X-Webhook-Token: $WEBHOOK_SECRET" http://localhost:8000/api/telescope/model
+```
+
+A successful `ResponseEvent` contains `payload.telescope_model`, `profile` (TM's
+running profile), `snapshot_at`, `received_at`, `age_seconds`, `stale`,
+`tm_connected`, `poll_interval_seconds` and `last_error`. The model uses the
+existing `TelescopeModel.to_dict()` structure. Credential-labelled fields are
+redacted at TM before transmission; application model timestamps are retained.
+The snapshot is assembled from TM's latest known state, not an atomic fresh
+measurement of every application.
+
+Timeouts and disconnects retain the last successful snapshot and mark it stale.
+A cache older than 35 seconds is also marked stale. A valid cached response,
+including a stale snapshot, returns HTTP 200; before the first snapshot the
+endpoint returns 503 with code `model_unavailable`. Late/duplicate responses
+cannot replace a newer query result. Reconnection requests a fresh model
+immediately. The endpoint is authenticated, traced and has a separate 120/minute
+limit so routine frontend polling does not consume the configuration API's
+100/hour limit. Responses are not browser-cacheable.
+
+The frontend Status overview and selected application pane use this snapshot;
+Config profile selection does not change the TM connection or live profile.
+The full model includes observation/scan metadata and duplicated subsystem
+information. Snapshot size and serialization cost may grow with observation
+history; a narrower status representation can be added if measurements justify
+it, while keeping the same polling/cache architecture.
+
+## Private UI diagnostic file viewing
+
+The local UI listener serves `GET /api/diagnostics/<application>/<kind>`, where
+application is `tm`, `dm`, `sdp`, `ws`, `web` or `dig`, and kind is `log` or `trace`.
+UI login is required; viewer, operator and admin roles can read files. These routes
+are not registered on the public port-8000 API or its token bridge.
+
+The current resource profile supplies the log root. `profile=<name>` is an
+optional selection precondition (409 if it changed), and `entity=<entity-id>`
+selects an application's instance trace. Application logs map to `app/<app>.log`;
+traces map to `trace/<entity-id>.html`, falling back to `trace/<app>.html` when
+the entity is omitted, empty or `<undefined>`.
+Digitiser logs still share `app/dig.log`. No client-supplied path is accepted and
+symlinked file/subdirectory access is refused.
+
+A JSON ResponseEvent-style result contains profile, application/entity, relative
+filename, UTC modification time, original size, truncation/shared-log flags,
+format and content. Log previews tail 512 KiB; HTML previews are limited to 32 MiB
+(413 otherwise). `download=1` returns the complete current file as an attachment.
+All responses are non-cacheable. A file not yet generated returns 404.
+
+In the Status application table, **Debug** links to the log and **Tracing** links
+to the trace regardless of their current On/Off value. Opening either closes the
+application detail pane. Independent panes appear below the table, Log first,
+each with Refresh, Download and X. Selecting an application row returns to its
+details. File panes do not follow the automatic model refresh; HTML is isolated
+in a sandboxed frame with local expand/collapse behaviour.
+
+## Private UI application commands
+
+`POST /api/commands` on the private UI accepts `{ "app": "web", "cmd": "trace",
+"value": "ON" }`, TRACE/DEBUG values ON or OFF, or `cmd: "resync"` without a value.
+It requires an operator/admin session and CSRF token. The bridge sends a single
+`alston-rt.ui.cmd` webhook to WEB using its server-side token, and returns the
+application's ResponseEvent result. Browser requests cannot choose a host, port,
+upstream URL or arbitrary command. Transport/invalid-response failures return
+`outcome_unknown` without retrying. This route is not exposed by the public API.
+
+The Status table places TRACE/DEBUG switches beside their View file links and removes the Command dropdown. The full last error
+now appears at the top of application details with its recorded UTC timestamp.
+A response area below the table shows application, response time, status/code
+and message for the toggle command. Successful responses update the switch until
+a non-stale snapshot contains an application report newer than the command
+acknowledgement; failed commands retain the prior state.
+RESYNC is not offered in the Status table.
+
+The Config page provides a separate App selector and RESYNC button beside its
+resource subtabs. It uses the same private command endpoint with `{ "app": "dm",
+"cmd": "resync" }`. The selector includes fixed applications and configured
+digitisers. The button/message indicate pending, application success or failure;
+responses include UTC arrival time and error codes. Unsaved drafts and pending
+configuration activity disable submission, and viewer permissions remain read-only.
+RESYNC reloads the application's startup profile, independently of WEB's resource
+profile selection, and commands are never automatically retried.
+
+
+### Live dish engineering controls
+
+Status application details show App Connections and Entity Connections side by
+side (stacked on narrow screens). TM lists individual digitisers from its digitiser
+store using their `tm_connected` states; SDP uses its own digitiser store and
+`sdp_connected` states. Digitiser details put the SDR connection in the entity
+table. Entity interfaces are excluded from App Connections; missing states are
+shown as UNKNOWN. The Configured host column uses a digitiser’s
+`app.arguments.local_host` or an SDR’s `sdr_config.host`, when present. It remains
+visible when disconnected and is not a separately recorded TCP peer address.
+Server port shows the digitiser’s reported `tm_port`/`sdp_port`, falling back to
+the selected app’s `dig_port` listener configuration. For SDRs it uses
+`sdr_config.port`. These are server listening ports; digitiser TCP clients use
+dynamically assigned local source ports, which are not stored in the model. Dish Manager details then show an alphabetical engineering table of
+its reported dishes. Queue size and processor count sit below Connections; either control expands
+or collapses the processor table with current events and processing times. It
+starts collapsed for each application and retains its open state through model
+refreshes. The command endpoint is right-aligned above the Connections table. Select a dish to open its detail pane below the application
+pane. The pane compares desired and actual altitude/azimuth in degrees, shows
+Mode and Capability, target ID, target-matched PEC RMS in arcseconds, driver
+failures and timestamped errors. Desired Mode/Capability selections survive
+background model refreshes; Actual always reflects the cached dish report.
+A compact polar plot uses north-up, clockwise azimuth and a linear altitude
+scale from 0° at the horizon to 90° at the centre. Actual is a filled blue dot;
+Desired is an outlined magenta diamond, so coincident positions remain visible.
+Hover or focus a marker to read its coordinates. Missing/invalid positions are
+omitted, below-horizon positions are labelled, and stale snapshots are marked.
+The plot refreshes with the shared model cache and does not send pointing commands.
+
+Private UI endpoints (operator/admin session and CSRF token required):
+
+- `POST /api/dish-control/<dish_id>` with one property, for example
+  `{"mode":"STOW"}` or `{"capability":"STANDBY"}`. Names are validated against
+  the existing dish enums. The UI bridge sends a single `alston-rt.ui.dsh`
+  webhook with `{"dsh_id":"dish002","mode":"STOW"}` to WEB, which uses the
+  existing TM ConfigEvent processing. Success acknowledges actions scheduled,
+  not completion at the dish. TM/DM retain transition validation. Controls are
+  disabled when the TM snapshot is stale or TM is disconnected.
+- `POST /api/commands` with `{"app":"dm","cmd":"stop","value":"dish002"}`
+  sends the existing STOP command directly to Dish Manager through WEB's
+  command handler. STOP remains available with a stale TM snapshot and while
+  a Mode/Capability request is pending. It stops the selected dish's movement;
+  it is a software command, not a hardware emergency-stop circuit.
+
+Both paths show the returned application status/message with UTC response time.
+Transport failures have an unknown outcome and are not automatically retried.
+These controls do not edit `DishList.json` or change the selected file-backed
+configuration profile; they target the running applications using WEB's launch
+profile. Viewer accounts can inspect all reported details but cannot submit
+controls. The public API listener does not serve these private UI endpoints.
