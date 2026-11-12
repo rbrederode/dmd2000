@@ -33,7 +33,9 @@
                 "step": "BANDPASS_FILTER",
                 "params": {
                     "context": "cal",
-                    "ranges_pct": [[21, 86]]
+                    "ranges_pct": [
+                        [21,86]
+                    ]
                 }
             },
             {
@@ -54,7 +56,22 @@
                 "step": "BANDPASS_FILTER",
                 "params": {
                     "context": "cal",
-                    "ranges_pct": [[20, 80]]
+                    "ranges_pct": [
+                        [20,80]
+                    ]
+                }
+            },
+            {
+                "_type": "StepConfig",
+                "step": "BASELINE",
+                "params": {
+                    "context": "cal",
+                    "method": "flatten",
+                    "enabled": true,
+                    "ranges_pct": [
+                        [0,10],
+                        [90,100]
+                    ]
                 }
             },
             {

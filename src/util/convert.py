@@ -156,61 +156,34 @@ def parse_utc_datetime(value: str) -> datetime:
         raise ValueError(f"Expected an ISO datetime, e.g. 2026-10-24T11:25:50Z; got {value!r}") from exc
 
 
-def subtract_spectrum_baseline(velocity, power, method="linear", fit_mask=None):
-    """Return (power - baseline, baseline) without scaling or mutating inputs.
+def select_baseline_windows(velocity, power, vmin, vmax):
+    """Use the outermost 20% of valid channels on each displayed velocity side.
 
-    Linear/constant modes use the lowest 20% of finite, unmasked powers in
-    ``fit_mask`` (all valid channels when omitted). Linear fits a straight
-    line; constant uses their median. At least ten fit channels and three
-    lower-envelope samples are required. The fit is evaluated on the full
-    velocity grid. Negative residuals and noise-only spectra are retained.
-    ``none`` subtracts zero. ``read-ray`` retains the legacy line from the
-    first valid velocity to the interpolated power at +50 km/s.
-
-    Inputs must be matching 1D arrays. Invalid values and existing masks are
-    excluded from fitting and preserved in the returned masked arrays. Plain
-    arrays return plain arrays, with invalid samples represented as NaN.
+    These are candidate line-free windows, not an emission-detection algorithm.
+    Require at least five selected channels per side; never silently fit only
+    one end. Non-finite/masked samples do not influence the selection.
     """
     import numpy as np
 
-    v = np.ma.asarray(velocity, dtype=float)
-    p = np.ma.asarray(power, dtype=float)
-    if v.ndim != 1 or p.shape != v.shape:
-        raise ValueError("Velocity and power must be matching one-dimensional arrays")
-    x, y = v.filled(np.nan), p.filled(np.nan)
-    invalid = np.ma.getmaskarray(v) | np.ma.getmaskarray(p) | ~np.isfinite(x) | ~np.isfinite(y)
-    valid = ~invalid
-    if fit_mask is not None:
-        selection = np.asarray(fit_mask, dtype=bool)
-        if selection.shape != x.shape:
-            raise ValueError("Baseline fit mask must match the spectrum shape")
-        valid &= selection
-    if method == "none":
-        baseline = np.zeros_like(y)
-    elif method in ("linear", "constant"):
-        if valid.sum() < 10:
-            raise ValueError("Baseline fitting requires at least ten valid fitting channels")
-        threshold = np.quantile(y[valid], .2)
-        points = valid & (y <= threshold)
-        if points.sum() < 3:
-            raise ValueError("Baseline fitting requires at least three lower-envelope samples")
-        if method == "linear":
-            if np.unique(x[points]).size < 2:
-                raise ValueError("Linear baseline requires distinct fitting velocities")
-            baseline = np.polyval(np.polyfit(x[points], y[points], 1), x)
-        else:
-            baseline = np.full_like(y, np.median(y[points]))
-    elif method == "read-ray":
-        indices = np.flatnonzero(~invalid)
-        indices = indices[np.argsort(x[indices])]
-        if not len(indices) or not x[indices[0]] < 50 <= x[indices[-1]]:
-            raise ValueError("Observation must span +50 km/s with a first channel below +50 km/s")
-        x0, y0 = x[indices[0]], y[indices[0]]
-        baseline = y0 + (np.interp(50., x[indices], y[indices]) - y0) * (x - x0) / (50. - x0)
-    else:
-        raise ValueError(f"Unknown observation baseline: {method}")
-    baseline[invalid] = np.nan
-    corrected = y - baseline
-    if np.ma.isMaskedArray(velocity) or np.ma.isMaskedArray(power):
-        return np.ma.array(corrected, mask=invalid), np.ma.array(baseline, mask=invalid)
-    return corrected, baseline
+    if not np.all(np.isfinite([vmin, vmax])) or not vmin < 0 < vmax:
+        raise ValueError("--baseline-auto requires --vmin < 0 < --vmax; otherwise provide --baseline-window")
+    v = np.ma.asarray(velocity, dtype=float).filled(np.nan)
+    y = np.ma.asarray(power, dtype=float).filled(np.nan)
+    if v.ndim != 1 or v.shape != y.shape:
+        raise ValueError("Baseline selection requires matching one-dimensional arrays")
+    valid = np.isfinite(v) & np.isfinite(y) & (v >= vmin) & (v <= vmax)
+    windows = []
+    for side in (v < 0, v > 0):
+        values = np.sort(v[valid & side])
+        count = int(np.ceil(len(values)*.2))
+        if count < 5:
+            raise ValueError("--baseline-auto needs at least five outer channels per side; widen the display range or provide --baseline-window")
+        selected = values[:count] if values[-1] < 0 else values[-count:]
+        windows.append([float(selected[0]), float(selected[-1])])
+    return windows
+
+
+def subtract_spectrum_baseline(velocity, power, method="linear", fit_mask=None, *, fit_line_free=False):
+    """Compatibility wrapper for :func:`sdp.spectral_baseline.subtract_baseline`."""
+    from sdp.spectral_baseline import subtract_baseline
+    return subtract_baseline(velocity, power, method, fit_mask, fit_line_free=fit_line_free)

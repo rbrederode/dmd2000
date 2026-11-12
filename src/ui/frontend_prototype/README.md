@@ -90,19 +90,23 @@ Do not run it on the combined UI's port at the same time.
 
 1. Choose an observation directory from the suggestions or enter a path.
    Observations load automatically when the directory changes; **Find observations**
-   refreshes the list. The scrollable table shows ten rows at a time, with the
-   observation name/ID, dish, completed/total scan counts, counts by completed
-   scan type and completed integration time. Use the filter to search names,
-   IDs, dishes or types using the filter beside **Find observations**. Select a
-   row and click **Open observation** in that same control pane. The catalogue collapses after opening; expand its
-   heading to choose another observation. OPT reads the usual `<id>-obs.json` and scan products;
-   an Observation Velocity CSV alone is not a processing input.
+   refreshes the list. Results uses the expandable saved-observation layout formerly
+   shown under Schedule: ID, title, dish, saved completion status, scheduled UTC
+   start/end, observing duration, creation UTC and creator contact. Filter by name,
+   ID, dish or scan type. Expand a row to load its saved scans, including type,
+   status, digitiser, tuning, sample times, Signal preview and SPR download.
+   Reviewing a row does not select it for processing. Select its radio button to
+   prepare **Input scans**, then use **Process observation**. There is no separate
+   Open observation button. The catalogue stays expanded for further review.
+   OPT reads the usual `<id>-obs.json` and scan products; an Observation Velocity
+   CSV alone is not a processing input. Metadata loads are cached per directory;
+   failed reads offer Retry, and late responses from an old directory are ignored.
 2. In **Input scans**, use the checkboxes to include/exclude physical scan
    iterations. Selecting a row inspects it without changing its checkbox.
    Search, type filtering, Include/Exclude all, Previous/Next and arrow keys
    help navigate the list. Metadata scans not marked COMPLETE start excluded
    and their checkboxes are disabled.
-3. Choose the **Configuration profile** in **Analysis settings** at the bottom.
+3. Choose the working **Profile** in the always-visible page header.
    This selects the processing pipeline steps; changing it requires a full
    reprocess rather than a cached plot update. Click **Process observation**. A background process runs the accepted batch
    without terminal prompts, partial aggregate displays or GUI popups. Progress
@@ -110,10 +114,14 @@ Do not run it on the combined UI's port at the same time.
 4. On completion, **Aggregate scans** lists complete load/calibration and SKY results
    by target, frequency scan and digitiser. Click an aggregate for its full
    signal display. Incomplete aggregates are omitted with a warning.
-5. Switch directly between **Signal**, **Velocity**, **Total Power**,
-   **L-V Diagram**, **Aggregate**, and **Details**. Timeline, overview and L–V
-   show the observation-wide results. Velocity defaults to the selected SKY
-   aggregate; **All SKY aggregates** overlays the complete observation.
+5. Switch directly between **Signal**, **Frequency**, **Velocity**, **Total Power**,
+   **L-V Diagram**, and **Details**. L–V shows observation-wide results. Total
+   Power defaults to **All SKY aggregates**; uncheck its box to follow the selected
+   aggregate, including an individual calibration aggregate if desired. Frequency shows only the frequency spectrum, with no duplicate Total
+   Power panel. Its **All SKY aggregates** box defaults to checked; uncheck it
+   to follow the selected SKY target/frequency aggregate on the left. Velocity
+   defaults to the selected SKY aggregate and has its own independent **All SKY
+   aggregates** box. Calibration rows have no Frequency or H I Velocity view.
    **Open image** opens the full-resolution PNG. Calibration rows have a signal
    view but no H I velocity spectrum.
 6. Change baseline limits/type or contour levels/smoothing, then **Update plots**
@@ -124,11 +132,191 @@ Do not run it on the combined UI's port at the same time.
 7. **Export results** downloads a ZIP with completed plots, CSV products, native
    spectrum caches, the processing settings and a manifest.
 
+Velocity plots also place the legend outside on the right. Large overlays use
+multiple columns, and the PNG expands for the legend without shrinking the data
+axes. This applies to initial processing and **Update plots**.
+
+Total Power has its own **All SKY aggregates** checkbox, checked by default.
+Uncheck it to view the aggregate selected in the left-hand list; changing rows
+switches the image immediately without starting another processing job. Both SKY
+and calibration aggregates have individual Total Power plots. The **Resolution**
+selector offers **Per scan** (default) and **Per second**. Both use the same
+pipeline-processed physical-scan readings: Per second plots every recorded
+second, while Per scan averages those readings within each scan. It does not
+expand scan averages into invented second-by-second samples.
+
+The seconds axis uses elapsed observation time when every contributing scan has
+a recording timestamp, including real gaps between recordings. Lines are not
+joined across physical scan boundaries. If timestamps are missing, the axis is
+explicitly labelled recorded time with gaps excluded. Per-scan indices start at
+one for each target/frequency/digitiser group.
+
+Full processing exports `aggregate-NNNN-timeline.png` and
+`aggregate-NNNN-timeline-seconds.png` for each aggregate, with `timeline.png` and
+`timeline-seconds.png` for all SKY aggregates. `total-power-seconds.csv` and
+`total-power-scans.csv` export the matching readings and means, including scan
+IDs, recording timestamps where available, digitiser and scan kind. The existing
+`*-sky-apr.csv` remains the separate synthesized-spectrum power export.
+Changing resolution or selection uses existing images immediately. **Update
+plots** preserves both modes and their CSVs; interactive spectral baseline
+adjustments do not change these pipeline total-power products. Older completed
+runs need one **Reprocess observation** to generate per-second products.
+
+Spectrum and Total Power legend entries consistently use **Tgt x, Freq y**,
+matching the Velocity legends.
+
+The Total Power plot places its legend outside the data axes on the right.
+Legends use up to 16 entries per column (two columns for 31 scans), and the
+exported PNG extends to include the legend without compressing the data area.
+Repeated colours use different line styles to distinguish larger scan sets.
+Regenerate this cached product with **Reprocess observation** after an update;
+**Update plots** retains the existing Total Power image.
+
+The Frequency spectrum places its scan and diagnostic legend outside
+the plot on the right, using multiple columns for larger scan sets. It uses
+absolute MHz tick labels across the full
+sampled frequency span, rather than centre-frequency offsets or a crop to the
+requested bandwidth. Flagged samples remain masked and bandpass exclusions are
+shaded. Frequency channel centres use the same FFT grid as the velocity view.
+The worker exports `frequency.png` for the all-SKY view and
+`aggregate-NNNN-frequency.png` for each SKY aggregate. Switching the checkbox or
+selected row uses existing images without a processing job. **Update plots**
+regenerates both individual images and the all-SKY overlay from the same corrected
+spectra when baseline or MHz limits change. The overlay omits SNR/noise panels
+and median-baseline lines. **Reprocess observation** is required to generate them
+for a run created before this feature was added.
+
+Individual Frequency spectra are generated directly from native channel
+frequencies and the processed aggregate powers. They do not require pointing
+metadata or a successful Velocity plot. Frequency-only observations cache their
+powers, frequencies and flags for baseline/range updates. LSRK coordinates and
+resolved Galactic direction are cached only when available. Velocity, L–V and
+LAB comparison require the corresponding observing metadata; unavailable views
+show the recorded reason rather than suggesting that no aggregate was selected.
+Runs created before this separation need one reprocessing run to generate the
+missing individual Frequency images and native cache.
+
 Plots remain visible while a new job runs. Changed settings/exclusions show an
 out-of-date banner. A failed or cancelled job does not replace the last completed
 results. The workspace remembers directory, profile, analysis settings and scan
 exclusions in browser-local storage; a page reload does not currently reconnect
 to previous running/completed jobs automatically.
+
+### LAB survey comparison
+
+After processing, select one completed **SKY** aggregate and open **Velocity**.
+Leave **All SKY aggregates** unchecked, then enable **LAB survey**. The view
+compares the selected spectrum with the LAB survey at its cached, resolved
+Galactic coordinates. **Beam FWHM [°]** defaults to 5 degrees and can be changed
+(up to 60 degrees). It uses the LAB profiler's Gaussian extraction, paired survey
+channels and normalized shape scoring. The nominal comparison uses zero coordinate offset; optional sweeping is
+described below. This view does not estimate terminal velocity.
+
+To search for a closer spectral match, use **Sweep LAB coordinates** (enabled by default) and set
+minimum, maximum and step for both **Δl** and **Δb** in degrees. These are offsets
+from the aggregate's resolved Galactic direction. Defaults are -10 to +10 degrees
+in 1-degree steps for each axis (441 candidates). Select **Find best fit** to
+start the background search; the existing progress and Cancel controls apply.
+The plot updates to the candidate with the lowest normalized shape RMS within
+the selected velocity limits, showing its Galactic coordinates, offsets, RMS
+and correlation. Baseline correction and beam width remain fixed across the
+search. Longitude wraps through 0°; candidates outside valid latitude coverage
+are skipped. The complete candidate table is exported as `*-lab-sweep.csv`.
+
+Ranges of -10 to +10 at 0.5-degree steps are supported (1681 candidates); the
+maximum is 2500 candidates per request. A winning point on a sampled range edge
+is marked in the plot and warnings so the range can be widened. This is a grid
+minimum, not a calibrated pointing solution or confidence interval. Uncheck
+**Sweep LAB coordinates** to regenerate the nominal-coordinate comparison.
+
+The observation uses the current analysis baseline and is peak-scaled to LAB
+for this comparison only, with that scaling stated in the legend. The ordinary
+velocity view and exported calibrated powers retain their original amplitudes.
+Uncheck **LAB survey** to return to that view. Selecting another aggregate clears
+the checkbox; enable it again for the newly selected SKY aggregate. Calibration
+and **All SKY aggregates** views do not offer LAB comparison. Changing analysis
+settings and selecting **Update plots** regenerates an enabled comparison.
+
+LAB extraction runs in the existing background worker using cached spectra,
+without replaying observation recordings. The resulting comparison PNG, LAB CSV
+and JSON metadata are included in **Export results**. **Open image** opens the
+comparison at full resolution. Missing survey data or unusable spectra produce
+a warning while retaining the ordinary analysis products.
+
+The server reads `~/github/lab-fit/lab.fit` by default, matching the profiler.
+Set the server environment variable `DMD_LAB_FITS` to use another local cube.
+The cube must be the Galactic CAR/LSR FITS format supported by the profiler;
+no network download is performed.
+
+Analysis controls apply consistently to initial processing and **Update plots**:
+
+Individual-aggregate Frequency and Velocity plots show peak SNR (ratio and dB),
+Robust Noise (1.4826 × MAD), median baseline and the noise windows/sample count
+alongside the legend. The median baseline is also drawn as a labelled dashed line.
+These share pipeline QA's smoothed-peak location, peak-exclusion noise windows
+and median/MAD estimator. The pipeline's window fraction and smoothing settings
+are retained with cached spectra for consistent interactive updates. LAB
+comparisons show the same diagnostics in scaled plot
+units and export them as `observation_noise` in their JSON. Unavailable estimates
+are labelled explicitly. Changed baseline or range settings recalculate the
+metrics during **Update plots**. All SKY aggregates views omit the diagnostic
+annotations, including when only one SKY aggregate exists, and retain their
+curve legends, bandpass exclusions and RFI markers.
+
+| Control | Effect |
+|---|---|
+| Configuration profile | Selects pipeline configuration; requires **Reprocess observation** |
+| Baseline | Linear or constant subtraction, flatten retaining the lowest fitted level, or no subtraction; fits automatic outer windows for single-SKY Frequency, Velocity and L–V |
+| Velocity minimum / maximum | Velocity line-plot limits, L–V vertical limits and automatic baseline selection bounds; blank defaults to available recorded channels |
+| Frequency minimum / maximum [MHz] | Single-SKY Frequency display and baseline bounds; blank uses the available frequency span |
+| Contour smoothing | Velocity Gaussian FWHM for L–V contours only; 0 disables smoothing |
+| Contour levels | Increasing positive calibrated-power levels for L–V contours; blank selects automatic levels |
+
+Settings that do not apply to the active tab are disabled and greyed out.
+Velocity enables the baseline and velocity limits. L–V enables the baseline, velocity limits and
+contour controls. Its velocity limits remain available with **No subtraction**
+because they set the vertical display range. Signal,
+Total Power and Details disable these analysis controls and
+**Update plots**. The configuration profile remains available for reprocessing.
+Disabled controls retain their values when switching tabs.
+Velocity initially shows the entire recorded spectrum, including grey bandpass
+exclusions and red RFI markers at their transformed channel coordinates. Blank
+limits are resolved per aggregate for baseline fitting and across all displayed
+aggregates for an overlay. Enter limits to narrow the view and fitting interval;
+clear them to return to the full range. Obsolete saved -100/+100 defaults are
+reset on the first load of this version; subsequent explicit bounds are remembered.
+The cache now retains channel flags. Previously processed jobs can still be
+updated, but need one reprocessing run to display these annotations.
+Frequency enables Baseline and its MHz minimum/maximum only when **All SKY
+aggregates** is unchecked and a SKY aggregate is selected. The MHz fields sit
+below the velocity-limit fields. Velocity limits remain disabled on Frequency;
+contour controls remain disabled there as well. The all-SKY Frequency overlay
+shows the same corrected powers and MHz limits as the individual plots from the
+last completed update. Switch to an individual SKY view to edit these settings.
+
+For single-aggregate Frequency, blank MHz limits use the full available channel
+span. Baseline fitting uses the outermost 20% of valid channels in each half of
+that frequency interval (split at its midpoint), with the same symmetric-clipped
+linear/constant/flatten method as Velocity. No subtraction retains the processed aggregate powers.
+The fit is evaluated across the native spectrum and the display is cropped to
+the requested MHz bounds. Frequency and Velocity use independent fitting ranges;
+their corrected powers can therefore differ. Neither correction mutates the
+original cached data. `velocity.csv` continues to use the Velocity baseline.
+Previously completed jobs need one **Reprocess observation** to cache observed
+frequency channels; subsequent Frequency adjustments use **Update plots**.
+
+
+Automatic baseline windows use the outer 20% of valid channels on each side of
+zero within the selected limits, with symmetric outlier clipping. Linear and
+constant modes require limits spanning zero. No subtraction bypasses baseline
+selection. Bounds crop the L–V vertical display to the selected interval within
+the common valid data coverage. The shared colour scale and automatic contour
+levels use visible channel cells, excluding offscreen extremes. Bounds do not
+truncate exported CSV data or change the native spectra. Baseline controls affect derived velocity/L–V plots and `velocity.csv`;
+the saved Signal display is unchanged. Updated exports contain the new settings
+and CSV values. Saved browser preferences preserve previously selected limits.
+**Update plots** becomes available after processing and changing an analysis
+setting; a profile or scan-selection change requires full reprocessing instead.
 
 Baseline subtraction and L–V colour/contour semantics are the same as documented
 in [OPT usage](../../../docs/opt.md). Amplitudes are not normalized. Signal displays
@@ -171,7 +359,7 @@ pauses job-status polling without discarding the workspace; when the same servic
 returns, polling resumes. Restarting the backend still clears its in-memory job
 registry, as noted above. The Results heading is **Observation Processing**;
 left tabs are **Input scans** and **Aggregate scans**, and the right view tabs
-are **Signal**, **Velocity**, **Total Power**, **L-V Diagram**, **Aggregate** and
+are **Signal**, **Frequency**, **Velocity**, **Total Power**, **L-V Diagram** and
 **Details**.
 
 ## Config → Dishes
@@ -186,7 +374,7 @@ Open **http://127.0.0.1:8765/#admin** and choose **Dishes**. The combined consol
 connects automatically to WEB's API listener. The existing OPT Results view uses
 its own configured data roots.
 
-The shared profile selector above the Config tabs lists WEB's available configuration profiles. Changing it
+The shared profile selector in the page header lists WEB's available configuration profiles and also selects the Results processing profile. Changing it
 updates WEB's shared resource profile, including its default observation search
 directory; it does not switch the profiles of running telescope applications.
 The dish table shows actual configured dishes, supports filtering, and opens the
@@ -265,6 +453,57 @@ application automatically. Restart WEB after upgrading its console
 bridge, then refresh the browser. WEB's existing digitiser APIs are unchanged.
 
 
+## Schedule → Queued and running observations
+
+Schedule reads the same authenticated `/api/web/telescope/model` cache as Status.
+It shows observations in EMPTY or IDLE that have not completed or passed their
+scheduling window, and current CONFIGURING, READY and SCANNING executions.
+Current executions appear first; each group is ordered by scheduled start UTC.
+The table shows approximately ten observations before scrolling, with a sticky
+header and horizontal scrolling for narrow screens.
+
+Columns match the queue overview: ID, title, dish ID, reported status, scheduled
+start/end UTC, estimated observing duration (HH:MM:SS), creation UTC and creator
+contact. Click a row, or activate its ID button with the keyboard, to expand all
+scans prepared by TM. The scrollable scan list includes target/frequency/iteration
+indices, target name, type, reported status, digitiser, centre frequency, gain,
+duration and first/last sample UTC. The current scan is highlighted without
+replacing its reported status. Before TM prepares scans, an explicit message
+appears instead of an invented scan plan.
+
+The browser checks the shared cache every five seconds; WEB requests new TM
+snapshots every thirty seconds. Refresh rereads that cache. Expanded observations,
+keyboard focus and scroll positions survive updates. Stale/unavailable data are
+labelled, and the last successful snapshot remains visible during outages.
+
+Completed observations can remain IDLE in the model, so completed scan lists and
+the execution target cursor are also checked before including an observation.
+Saved observations are now browsed in **Results**, using the selected observation
+directory, independently of WEB's active resource profile. Schedule contains
+only the live queue and does not poll the disk catalogue. Results loads scan
+metadata on expansion; selecting a radio button prepares processing without an
+Open observation step. The completion presentation comes from saved metadata,
+so an archived SCANNING state does not establish that a service is currently
+running. Failed metadata reads offer Retry. Changing directories clears cached
+scan details and prevents late responses from populating the new selection.
+
+Each COMPLETE scan also has a **Signal** icon immediately before SPR. It opens
+the saved `*-sigfig.png` final-sample signal display in a modal preview with a
+**Download PNG** link. Close or Escape dismisses the preview. The image is
+loaded on demand; polling does not reload an open preview. Missing images are
+reported in the dialog without rerunning signal processing. The same archive,
+profile and authenticated file-access rules as SPR downloads apply.
+
+Each COMPLETE scan has a small download icon in the rightmost SPR column in
+Schedule's live details and Results' saved details. Signal and SPR in Results
+read the exact saved observation from the chosen processing directory through
+`/api/opt/observations/<file-id>/scans/<target>/<frequency>/<iteration>/<product>`
+with `directory=...`, where product is `signal` or `spr`. These read-only routes
+apply the configured data-root checks, completion checks and archive path/symlink
+restrictions; they do not depend on WEB's resource profile or a TM connection.
+Schedule's live file actions continue through the authenticated WEB bridge.
+Missing files produce errors without rerunning acquisition or processing.
+
 ## Status → Application details
 
 The Status view reads `GET /api/telescope/model` from WEB through the local
@@ -294,7 +533,7 @@ Live edits use `POST /api/digitiser-control/<dig_id>`, forwarding the normal
 `alston-rt.ui.dig` webhook with `dig_id` and the requested fields. WEB's existing
 configuration route puts a DIG ConfigEvent on TM's queue. A successful response
 acknowledges scheduled actions; Actual changes only when reports arrive. This
-does not edit saved profiles. Operator/admin access and CSRF are required;
+does not edit saved profiles unless Save Pipeline Configuration is selected. This button saves the pipeline to the selected profile and updates Reset to Config Profile. Operator/admin access and CSRF are required;
 stale or disconnected TM snapshots disable writes, pending requests prevent
 duplicate sends, and transport failures have an unknown outcome without an
 automatic retry. Restart WEB and refresh the browser to load these controls.
@@ -347,7 +586,11 @@ refresh the browser to load the weather chart. History comes through the normal
 TM snapshot cache and does not add a separate polling loop.
 
 The snapshot timestamp describes when TM assembled its latest known model;
-individual app timestamps describe their last reported state. The snapshot is
+individual app timestamps describe their last reported state. New app models
+start with `last_update: null`, displayed as `—` until populated by an app
+status update. An explicitly null app timestamp never falls back to a parent
+model creation time. Explicit timestamps loaded from saved configuration are
+preserved; these are historical values rather than proof of recent contact. The snapshot is
 not a synchronized fresh poll of every application. On a timeout, disconnection
 or old cache, the console retains the last model with a visible stale indicator.
 Before the first successful snapshot it shows an unavailable/waiting state.
@@ -443,3 +686,107 @@ returns. Operators/admins can send it; viewers see disabled controls. RESYNC
 reloads the target application's own launch profile and respects its existing
 safe-state rules. Selecting a different resource profile does not switch a
 running application's launch profile.
+
+
+The L–V longitude axis increases towards the left, with longitudes above 180°
+labelled as negative (359° appears as -1°). Nearby pointings across 0° remain
+adjacent. Display coverage follows the observed longitudes; an observation that
+only samples positive longitudes does not add an empty negative-longitude half.
+
+
+The **Processing pipeline** panel below the observation summary loads the
+selected profile's ordered steps. Enable/disable steps and choose a baseline
+method directly; expand the JSON editor for parameters and ordering. Edits are
+per-run and require **Reprocess observation**. **Reset to profile** discards
+edits; no profile files are written. Results include `pipeline-config.json`.
+A selected aggregate indicates when pipeline baseline subtraction was applied.
+Interactive No subtraction restores the processed aggregate, including any
+pipeline corrections. See [baseline configuration](../../../docs/observation_baseline.md#optional-processing-pipeline-baseline).
+
+
+### Working profile and application launch profiles
+
+The single **Profile** selector in the header controls WEB's file-backed
+configuration/resources and the Results processing pipeline. Config and Results
+have no separate selectors. It loads on any starting tab, checks unsaved Config
+edits before switching, and is disabled during OPT processing. Results uses the
+accepted WEB selection, not an independently remembered processing profile.
+Existing plots and exports remain available after changing profile; reprocessing
+is required before they represent the newly selected pipeline. Results initially uses the selected Config Profile’s `scan_store_dir` and
+resets to that directory on each profile switch, refreshing the observation
+list and clearing its previous input selection. Users may override the
+directory afterward. A profile without `scan_store_dir` uses the first
+permitted OPT data root. Existing directory-access restrictions still apply. Profiles
+without a PipelineConfig.json remain usable for configuration, but processing
+is disabled for them.
+
+The Status applications table separately shows **Launch profile**, taken from
+each application's reported `app.arguments.profile`, or — when unavailable.
+No running profile is inferred from the header, TM profile or another app.
+Stopped entries show the last reported launch profile when available.
+
+Changing the header does not switch running applications. RESYNC reloads each
+application's own launch configuration. Restart an application with a different
+`--profile` to change its running profile. WEB's explicit `--profile_dir` override,
+when used, still determines its launch configuration directory.
+
+
+The pipeline's **Pipeline Steps** section provides parameter fields beside each
+step. Context and supported methods/estimators use dropdowns; numeric settings
+use number inputs. BANDPASS_FILTER and BASELINE expose minimum/maximum
+percentage pairs with Add range and removal controls. RFI_FLAG exposes its
+sigma threshold and odd channel-window size. QA exposes its exclusion-window
+fraction, smoothing channels and noise estimator. Existing additional JSON
+parameters receive controls based on their value type. Optional default values
+are displayed without inserting them into the run configuration until edited.
+Invalid numeric values/ranges block processing and show an error. The advanced
+JSON editor remains available for adding, removing, or reordering steps and
+for digitiser-specific configurations; those edits refresh the inline fields.
+
+
+The pipeline list shows all implemented built-in steps, supplied by OPT's
+`available_steps` catalog. Unconfigured rows are unchecked with disabled
+parameter controls. Check a row to add it to that digitiser's run pipeline;
+new stages are inserted before later stages, preserving existing step order.
+Unchecking a configured row preserves its parameters with `enabled: false`.
+Merely displaying an unconfigured row does not change the JSON or run settings.
+The dedicated Add CAL baseline step button has been removed. GAIN_CAL and
+TSYS_CAL currently contain placeholder implementations and are not offered
+as working calibration steps; existing explicit profile entries are retained.
+
+
+Pipeline controls use a table with **Enabled**, **Step**, **Context**, and
+**Parameters** columns. Rows are grouped spr, cal, then mpr; configured step
+order is retained within each context and missing steps follow configured
+ones in that context. This display grouping does not reorder the configuration
+JSON. Edits continue to target the original configured entry, including
+repeated steps in different contexts. Step names use readable sentence case,
+and all table text uses the shared section text size.
+
+
+Each pipeline step has a question-mark button that displays the implementation's
+description in a help panel to the right of the table. Help is available for
+unconfigured/disabled steps and read-only viewers without changing any settings.
+The selected question mark stays highlighted while parameters are edited.
+On narrower screens the help panel sits below the table.
+
+
+The pipeline help panel uses a wider right-hand column and includes an overview,
+parameter-by-parameter explanations, and usage notes. Content comes from
+`ui.pipeline_help` through `available_steps[].help` in the OPT configuration
+response. Help is displayed as escaped text. The RFI threshold is explicitly
+labelled as a MAD multiplier, matching its implementation.
+
+The help panel scrolls only when its content exceeds the remaining height
+alongside the steps table. Its height limit follows table resizing and
+expansion; on narrow screens, stacked help keeps its natural height.
+
+
+The help panel initially shows a general pipeline guide defining SPR (summed
+power spectrum), CAL (calibrated spectrum), and MPR (mean power spectrum).
+It explains stage invocation, passing values and flags between steps, averaging,
+and when pipeline changes versus interactive plot adjustments apply. It also
+clarifies that saved SPR input does not replay spr-only steps. The question
+mark beside **Pipeline Steps** restores this overview after viewing an
+individual step. The guide is supplied as `pipeline_overview` in OPT's config
+response and does not modify processing settings.

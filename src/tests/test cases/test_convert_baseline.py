@@ -49,3 +49,23 @@ def test_baseline_retains_negative_noise_residuals_and_does_not_require_a_line()
 def test_bad_baseline_inputs(velocity, power, mask):
     with pytest.raises(ValueError):
         subtract_spectrum_baseline(velocity, power, "linear", mask)
+
+
+@pytest.mark.parametrize("method", ["linear", "constant"])
+def test_line_free_fit_uses_both_ends_and_rejects_outliers(method):
+    v = np.arange(-200., 201.)
+    expected = 10 + (.01*v if method == "linear" else np.zeros_like(v))
+    noise = .01 * np.where(np.arange(len(v)) % 2, 1, -1)
+    line = 4*np.exp(-.5*(v/10)**2)
+    power = expected + noise + line
+    power[v == -180] += 50
+    power = np.ma.array(power, mask=v == 180)
+    power[v == -160] = np.nan
+    mask = (v <= -100) | (v >= 100)
+    corrected, baseline = subtract_spectrum_baseline(v, power, method, mask, fit_line_free=True)
+    valid = ~np.ma.getmaskarray(corrected)
+    np.testing.assert_allclose(baseline.data[valid], expected[valid], atol=.002)
+    assert corrected[v == 0][0] == pytest.approx(4 + noise[v == 0][0], abs=.002)
+    assert corrected.mask[v == 180][0] and corrected.mask[v == -160][0]
+    # Removing baseline must not edit the spectral outlier itself.
+    assert corrected[v == -180][0] > 49

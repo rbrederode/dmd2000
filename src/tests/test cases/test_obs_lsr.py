@@ -77,13 +77,16 @@ def test_lsr_plot_multiple_frequencies_retains_masks_and_power(tmp_path):
     display = ObsDisplay("lsr-test")
     display.scans = [scan, second]
     path = tmp_path / "lsrk.png"
-    figure = display.display_lsr(obs, str(path), observation_baseline="none")
+    figure = display.display_lsr(obs, str(path), observation_baseline="none", show_metrics=False)
     try:
         axes = figure.axes[0]
-        assert len(axes.lines) == 4
+        assert not any(text.get_gid() == 'spectrum-noise-metrics' for text in axes.texts)
+        assert len([line for line in axes.lines if line.get_label().startswith("Tgt ")]) == 2
+        assert "RFI Flagged" in axes.get_legend_handles_labels()[1]
+        assert "Bandpass Excluded" in axes.get_legend_handles_labels()[1]
         assert "LSRK" in axes.get_xlabel()
         assert "radio convention" in axes.get_xlabel()
-        for line, source in zip(axes.lines[:2], [scan, second]):
+        for line, source in zip([line for line in axes.lines if line.get_label().startswith("Tgt ")], [scan, second]):
             assert np.all(np.diff(line.get_xdata()) > 0)
             valid = ~np.ma.getmaskarray(line.get_ydata())
             np.testing.assert_array_equal(line.get_ydata().data[valid], source.mpr[::-1][valid])
@@ -118,7 +121,7 @@ def test_lsr_csv_matches_plotted_samples_for_multiple_targets(tmp_path):
         assert len(rows) == 16
         for index, target_id in enumerate([1, 2]):
             target_rows = rows[index * 8:(index + 1) * 8]
-            line = figure.axes[0].lines[index]
+            line = [line for line in figure.axes[0].lines if line.get_label().startswith("Tgt ")][index]
             assert all(row["target_id"] == str(target_id) for row in target_rows)
             assert all(row["freq_scan"] == str(index) for row in target_rows)
             np.testing.assert_array_equal(
@@ -147,7 +150,6 @@ def test_lsr_csv_is_not_created_when_no_scans_can_be_plotted(tmp_path):
 
 def test_lsr_baselines_are_independent_and_csv_keeps_raw_powers(tmp_path, monkeypatch):
     from obs import lsr
-    from util.convert import subtract_spectrum_baseline
     obs, source = make_observation()
     velocity = np.linspace(-100., 150., 251)
     monkeypatch.setattr(lsr, "lsr_velocity", lambda *a: velocity)
@@ -173,9 +175,11 @@ def test_lsr_baselines_are_independent_and_csv_keeps_raw_powers(tmp_path, monkey
         for i, scan in enumerate(scans):
             powers = np.ma.masked_invalid(scan.mpr)
             powers.mask[20] = True
-            expected, baseline = subtract_spectrum_baseline(velocity, powers)
-            line = figure.axes[0].lines[i]
-            np.testing.assert_allclose(line.get_ydata().compressed(), expected.compressed())
+            offset, slope = [(10, .01), (20, -.01), (30, .02)][i]
+            baseline = np.ma.array(offset + slope * velocity, mask=powers.mask)
+            expected = powers - baseline
+            line = [line for line in figure.axes[0].lines if line.get_label().startswith("Tgt ")][i]
+            np.testing.assert_allclose(line.get_ydata().compressed(), expected.compressed(), atol=1e-12)
             np.testing.assert_array_equal(scan.mpr, originals[i])
             target_rows = rows[i * 251:(i + 1) * 251]
             for j, row in enumerate(target_rows):
@@ -185,9 +189,14 @@ def test_lsr_baselines_are_independent_and_csv_keeps_raw_powers(tmp_path, monkey
                     assert row["calibrated_power"] == row["baseline"] == row["baseline_subtracted_power"] == ""
                 else:
                     assert float(row["calibrated_power"]) == scan.mpr[j]
-                    assert float(row["baseline"]) == baseline[j]
-                    assert float(row["baseline_subtracted_power"]) == expected[j]
+                    np.testing.assert_allclose(float(row["baseline"]), baseline[j], atol=1e-12)
+                    np.testing.assert_allclose(float(row["baseline_subtracted_power"]), expected[j], atol=1e-12)
         assert "Baseline-subtracted" in figure.axes[0].get_ylabel()
+        axis = figure.axes[0]
+        figure.canvas.draw()
+        assert axis.get_legend().get_window_extent().x0 > axis.get_window_extent().x1
+        assert axis.get_position().height > .75
+
     finally:
         plt.close(figure)
 
@@ -221,3 +230,50 @@ def test_lsr_baseline_windows_exclude_emission(tmp_path, monkeypatch):
         np.testing.assert_allclose(actual, scan.mpr - baseline, atol=1e-12)
     finally:
         plt.close(fig)
+
+
+def test_lsr_auto_bounds_and_explicit_window_override(tmp_path, monkeypatch):
+    from obs import lsr
+    obs, scan = make_observation()
+    velocity = np.arange(-250., 251.)
+    monkeypatch.setattr(lsr, "lsr_velocity", lambda *a: velocity)
+    monkeypatch.setattr(lsr, "scan_observing_context", lambda *a: (None, None, None))
+    scan.scan_model.spectral_resolution = len(velocity)
+    baseline = 5 + .01 * velocity
+    scan.mpr = baseline + 20 * (np.abs(velocity) < 190)
+    scan.mpr_flags = empty_channel_flags(len(velocity))
+    display = ObsDisplay("bounds")
+    display.scans = [scan]
+    for kwargs in [dict(vmin=-250, vmax=250),
+                   dict(vmin=-100, vmax=100, baseline_windows=[[-250, -200], [200, 250]])]:
+        figure = display.display_lsr(obs, str(tmp_path / "bounds.png"), **kwargs)
+        try:
+            np.testing.assert_allclose(figure.axes[0].lines[0].get_ydata(), scan.mpr - baseline, atol=1e-12)
+            assert figure.axes[0].get_xlim() == (kwargs["vmin"], kwargs["vmax"])
+            assert len(display.lsr_spectra[0]["velocity"]) == len(velocity)
+            if "baseline_windows" not in kwargs:
+                assert display.lsr_spectra[0]["baseline_windows"] == [[-250., -201.], [201., 250.]]
+        finally:
+            plt.close(figure)
+
+
+def test_lsr_legacy_baseline_opt_out(tmp_path, monkeypatch):
+    from obs import lsr
+    from util.convert import subtract_spectrum_baseline
+    obs, scan = make_observation()
+    velocity = np.arange(-150., 151.)
+    monkeypatch.setattr(lsr, "lsr_velocity", lambda *a: velocity)
+    monkeypatch.setattr(lsr, "scan_observing_context", lambda *a: (None, None, None))
+    scan.scan_model.spectral_resolution = len(velocity)
+    scan.mpr = 5 + .01 * velocity + np.sin(velocity / 10.)
+    scan.mpr_flags = empty_channel_flags(len(velocity))
+    display = ObsDisplay("legacy")
+    display.scans = [scan]
+    figure = display.display_lsr(obs, str(tmp_path / "legacy.png"), baseline_auto=False,
+                                 baseline_vmin=-150, baseline_vmax=150)
+    try:
+        expected, _ = subtract_spectrum_baseline(velocity, scan.mpr)
+        np.testing.assert_allclose(figure.axes[0].lines[0].get_ydata(), expected)
+        assert display.lsr_spectra[0]["baseline_windows"] is None
+    finally:
+        plt.close(figure)

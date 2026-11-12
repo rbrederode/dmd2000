@@ -340,7 +340,7 @@ class DishManagerModel(BaseModel):
                 interfaces=[],
                 processors=[],
                 health=HealthState.UNKNOWN,
-                last_update=datetime.now(timezone.utc),
+                last_update=None,
             ),
             "tm_connected": CommunicationStatus.NOT_ESTABLISHED,
             "ws_connected": CommunicationStatus.NOT_ESTABLISHED,

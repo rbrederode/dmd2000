@@ -302,6 +302,119 @@ def test_catalogue_uses_runtime_storage_default(server, tmp_path):
     assert response.json['payload'] == {'count': 0, 'observations': []}
 
 
+def test_saved_observation_catalogue_and_scans_are_read_from_disk(server, tmp_path):
+    module, client, _ = server
+    folder = tmp_path / '2026' / 'November'
+    folder.mkdir(parents=True)
+    data = {'_type': 'ObsModel', 'obs_id': 'obs001', 'title': 'Rotation curve', 'dsh_id': 'dish003',
+            'obs_state': {'value': 'READY'}, 'created': {'value': '2026-11-08T12:00:00Z'},
+            'scheduling_block_start': {'value': '2026-11-08T13:00:00Z'},
+            'scheduling_block_end': {'value': '2026-11-08T14:00:00Z'},
+            'estimated_observation_duration': '00:07:30', 'user_email': 'observer@example.org',
+            'target_scans': [{'tgt_idx': 0, 'scans': [{'status': {'value': 'COMPLETE'}, 'gain': 37}]}],
+            'token': 'do-not-return'}
+    (folder / 'obs001-obs.json').write_text(json.dumps(data))
+    module.app.extensions['web_application'] = SimpleNamespace(scan_store_dir=str(tmp_path))
+    headers = {'X-Webhook-Token': module.WEBHOOK_SECRET}
+    assert client.get('/api/observations/obs001?folder=2026/November').status_code == 401
+    catalogue = client.get('/api/observations', headers=headers).json['payload']['observations']
+    assert len(catalogue) == 1
+    assert catalogue[0]['created'] == '2026-11-08T12:00:00Z'
+    assert catalogue[0]['scheduling_block_end'] == '2026-11-08T14:00:00Z'
+    assert catalogue[0]['user_email'] == 'observer@example.org'
+    assert catalogue[0]['completed'] is True
+    assert catalogue[0]['completed_scans'] == catalogue[0]['scan_count'] == 1
+    assert 'target_scans' not in catalogue[0]  # Scan lists load on expansion.
+    response = client.get('/api/observations/obs001?folder=2026/November', headers=headers)
+    assert response.status_code == 200
+    assert response.json['payload']['observation']['target_scans'] == data['target_scans']
+    assert response.json['payload']['observation']['token'] == '[REDACTED]'
+    assert response.headers['Cache-Control'] == 'no-store'
+
+
+def test_saved_observation_paths_and_invalid_files_are_handled(server, tmp_path):
+    module, client, _ = server
+    module.app.extensions['web_application'] = SimpleNamespace(scan_store_dir=str(tmp_path))
+    headers = {'X-Webhook-Token': module.WEBHOOK_SECRET}
+    outside = tmp_path.parent / (tmp_path.name + '-outside')
+    outside.mkdir()
+    (outside / 'obs001-obs.json').write_text('{"_type":"ObsModel"}')
+    (tmp_path / 'linked').symlink_to(outside, target_is_directory=True)
+    (tmp_path / 'linked-file-obs.json').symlink_to(outside / 'obs001-obs.json')
+    for url in ['/api/observations/obs001?folder=../outside',
+                '/api/observations/obs001?folder=/tmp',
+                '/api/observations/obs001?folder=linked',
+                '/api/observations/linked-file']:
+        response = client.get(url, headers=headers)
+        assert response.status_code == 400
+    assert client.get('/api/observations/missing', headers=headers).status_code == 404
+    (tmp_path / 'broken-obs.json').write_text('{incomplete')
+    response = client.get('/api/observations/broken', headers=headers)
+    assert response.status_code == 503 and response.json['code'] == 'invalid_metadata'
+    entries = client.get('/api/observations', headers=headers).json['payload']['observations']
+    assert entries[0]['error'] == 'Observation metadata is unavailable or invalid'
+
+
+def test_history_rejects_a_changed_resource_profile(server, monkeypatch, tmp_path):
+    module, client, _ = server
+    monkeypatch.setattr(module, '_profiles', lambda: SimpleNamespace(current=SimpleNamespace(directory=tmp_path / 'rotation')))
+    response = client.get('/api/observations', headers={
+        'X-Webhook-Token': module.WEBHOOK_SECRET, 'X-Config-Profile': 'local'})
+    assert response.status_code == 409 and response.json['code'] == 'profile_changed'
+
+
+def test_completed_scan_csv_download_uses_saved_metadata_and_survives_archive_moves(server, tmp_path):
+    module, client, _ = server
+    folder = tmp_path / '2026' / 'November'; folder.mkdir(parents=True)
+    scan = {'tgt_idx': 1, 'freq_scan': 2, 'scan_iter': 3, 'status': {'value': 'COMPLETE'},
+            'files_prefix': 'recorded-spectrum', 'files_directory': '/old-machine/recordings'}
+    data = {'_type': 'ObsModel', 'obs_id': 'observation-id', 'target_scans': [{'tgt_idx': 1, 'scans': [scan]}]}
+    (folder / 'stored-filename-obs.json').write_text(json.dumps(data))
+    csv = b'frequency,power\n1420000000,12.34\n'
+    (folder / 'recorded-spectrum-spr.csv').write_bytes(csv)
+    module.app.extensions['web_application'] = SimpleNamespace(scan_store_dir=str(tmp_path))
+    headers = {'X-Webhook-Token': module.WEBHOOK_SECRET}
+    path = '/api/observations/stored-filename/scans/1/2/3/spr?folder=2026/November'
+    assert client.get(path).status_code == 401
+    for url in [path, '/api/observations/observation-id/scans/1/2/3/spr']:
+        response = client.get(url, headers=headers)
+        assert response.status_code == 200
+        assert response.data == csv
+        assert response.mimetype == 'text/csv'
+        assert 'attachment' in response.headers['Content-Disposition']
+        assert 'recorded-spectrum-spr.csv' in response.headers['Content-Disposition']
+        assert response.headers['Cache-Control'] == 'no-store'
+        response.close()
+
+
+def test_scan_download_rejects_incomplete_missing_and_outside_archive_files(server, tmp_path):
+    module, client, _ = server
+    module.app.extensions['web_application'] = SimpleNamespace(scan_store_dir=str(tmp_path))
+    headers = {'X-Webhook-Token': module.WEBHOOK_SECRET}
+    scan = {'tgt_idx': 0, 'freq_scan': 0, 'scan_iter': 0, 'status': {'value': 'WIP'}, 'files_prefix': 'test'}
+    data = {'_type': 'ObsModel', 'obs_id': 'obs001', 'target_scans': [{'scans': [scan]}]}
+    metadata = tmp_path / 'obs001-obs.json'
+    def download():
+        metadata.write_text(json.dumps(data))
+        return client.get('/api/observations/obs001/scans/0/0/0/spr?folder=.', headers=headers)
+    assert download().status_code == 409
+    scan['status'] = {'value': 'COMPLETE'}
+    assert download().status_code == 404
+    scan['files_prefix'] = '../private'
+    assert download().status_code == 400
+    scan['files_prefix'] = 'test'
+    outside = tmp_path.parent / (tmp_path.name + '-outside'); outside.mkdir()
+    (outside / 'test-spr.csv').write_text('private')
+    scan['files_directory'] = str(outside)
+    assert download().status_code == 404
+    (tmp_path / 'test-spr.csv').symlink_to(outside / 'test-spr.csv')
+    assert download().status_code == 404
+    scan['files_directory'] = None
+    response = client.get('/api/observations/obs001/scans/0/0/0/spr?folder=..', headers=headers)
+    assert response.status_code == 400
+    assert client.get('/api/observations/obs001/scans/9/0/0/spr?folder=.', headers=headers).status_code == 404
+
+
 def test_http_catalogue_trace_records_request_response_and_redacts_credentials(server, tmp_path):
     import html
     import re
@@ -353,3 +466,32 @@ def test_http_trace_failure_does_not_break_response(server, tmp_path):
     response = client.get('/api/observations', headers={'X-Webhook-Token': module.WEBHOOK_SECRET})
     assert response.status_code == 200
     assert response.json['status'] == 'success'
+
+
+def test_completed_scan_signal_png_download_and_archive_guards(server, tmp_path):
+    module, client, _ = server
+    folder = tmp_path / 'archive'; folder.mkdir()
+    scan = {'tgt_idx': 1, 'freq_scan': 2, 'scan_iter': 3, 'status': {'value': 'COMPLETE'},
+            'files_prefix': 'recorded', 'files_directory': '/old-machine/recordings'}
+    data = {'_type': 'ObsModel', 'obs_id': 'observation-id', 'target_scans': [{'scans': [scan]}]}
+    metadata = folder / 'stored-obs.json'
+    metadata.write_text(json.dumps(data))
+    png = b'\x89PNG\r\n\x1a\nfinal-sample-image'
+    image = folder / 'recorded-sigfig.png'; image.write_bytes(png)
+    module.app.extensions['web_application'] = SimpleNamespace(scan_store_dir=str(tmp_path))
+    headers = {'X-Webhook-Token': module.WEBHOOK_SECRET}
+    path = '/api/observations/stored/scans/1/2/3/signal?folder=archive'
+    assert client.get(path).status_code == 401
+    response = client.get(path, headers=headers)
+    assert response.status_code == 200 and response.data == png
+    assert response.mimetype == 'image/png'
+    assert 'recorded-sigfig.png' in response.headers['Content-Disposition']
+    response.close()
+    scan['status'] = {'value': 'WIP'}; metadata.write_text(json.dumps(data))
+    assert client.get(path, headers=headers).status_code == 409
+    scan['status'] = {'value': 'COMPLETE'}; metadata.write_text(json.dumps(data))
+    image.unlink()
+    assert client.get(path, headers=headers).status_code == 404
+    outside = tmp_path.parent / (tmp_path.name + '-outside.png'); outside.write_bytes(png)
+    image.symlink_to(outside)
+    assert client.get(path, headers=headers).status_code == 404

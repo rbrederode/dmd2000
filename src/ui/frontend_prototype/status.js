@@ -50,10 +50,11 @@
       return { key: type + ':' + id, id, type, label, model: item, app,
         scanModel: type === 'dig' ? model.sdp?.dig_store?.dig_list?.find(dig => dig.dig_id === id) : null,
         weatherStore: type === 'ws' ? model.dsh_mgr?.weather_store : null, entityLinks: entityConnections(type, item, model),
+        profile: app.arguments?.profile ?? null,
         health: unwrap(app.health) || 'UNKNOWN',
         state: app.app_running === false ? 'STOPPED' : type === 'dig' ? (item.scanning ? 'SCANNING' : 'IDLE')
           : app.app_running === true ? 'RUNNING' : 'UNKNOWN',
-        updated: app.last_update || item.last_update };
+        updated: Object.hasOwn(app, 'last_update') ? app.last_update : item.last_update };
     });
   }
   function kv(pairs) {
@@ -133,7 +134,7 @@
     ]);
     if (item.type === 'web') return kv([
       ['HTTP endpoint', endpoint(args.http_host, args.http_port)], ['HTTP workers', args.http_threads],
-      ['TM endpoint', endpoint(args.tm_host, args.tm_port)], ['Launch profile', args.profile],
+      ['TM endpoint', endpoint(args.tm_host, args.tm_port)], ['Config Profile', args.profile],
     ]);
     const dishes = [...(model.dish_store?.dish_list || [])].sort((a, b) => String(a.dsh_id).localeCompare(String(b.dsh_id)));
     const degrees = value => typeof value === 'number' && Number.isFinite(value) ? value.toFixed(1) + '°' : '—';
@@ -272,8 +273,8 @@
       const focused = doc.activeElement?.closest?.('[data-app-key]')?.dataset.appKey;
       const focusedFile = doc.activeElement?.dataset?.statusFile;
       const focusedToggle = doc.activeElement?.dataset?.statusToggle;
-      const rows = state.apps.map((item) => `<tr data-app-key="${escape(item.key)}" tabindex="0" aria-label="Inspect ${escape(item.id)}" aria-selected="${item.key === state.selected}" class="${item.key === state.selected ? 'is-selected' : ''}"><td>${escape(item.label)}</td><td>${escape(item.id)}</td><td>${chip(item.health)}</td><td>${escape(item.state)}</td><td>${lastUpdate(item.updated, now)}</td><td>${percent(item.app.availability)}</td><td>${percent(item.app.reliability?.reliability ?? item.app.reliability?.reliability_availability)}</td><td>${flagControl(item, 'trace')}</td><td>${flagControl(item, 'debug')}</td></tr>`).join('')
-        || '<tr><td colspan="9">No applications reported</td></tr>';
+      const rows = state.apps.map((item) => `<tr data-app-key="${escape(item.key)}" tabindex="0" aria-label="Inspect ${escape(item.id)}" aria-selected="${item.key === state.selected}" class="${item.key === state.selected ? 'is-selected' : ''}"><td>${escape(item.label)}</td><td>${escape(item.id)}</td><td>${escape(display(item.profile))}</td><td>${chip(item.health)}</td><td>${escape(item.state)}</td><td>${lastUpdate(item.updated, now)}</td><td>${percent(item.app.availability)}</td><td>${percent(item.app.reliability?.reliability ?? item.app.reliability?.reliability_availability)}</td><td>${flagControl(item, 'trace')}</td><td>${flagControl(item, 'debug')}</td></tr>`).join('')
+        || '<tr><td colspan="10">No applications reported</td></tr>';
       if (renderedRows !== rows) {
         $('apps').innerHTML = rows;
         renderedRows = rows;
@@ -359,7 +360,7 @@
         state.data = envelope.payload; state.apps = applications(state.data.telescope_model);
         const stale = state.data.stale;
         badge(stale ? 'TM snapshot stale' : 'TM snapshot available', stale ? 'is-warn' : 'is-live');
-        $('freshness').textContent = (stale ? 'Stale snapshot. ' : '') + 'TM profile: ' + display(state.data.profile)
+        $('freshness').textContent = (stale ? 'Stale snapshot. ' : '') + 'TM Config Profile: ' + display(state.data.profile)
           + ' · Snapshot: ' + timestamp(state.data.snapshot_at) + ' · Received ' + Math.round(state.data.age_seconds || 0)
           + ' seconds ago. WEB polls TM every 30 seconds.' + (state.data.last_error ? ' ' + state.data.last_error : '');
         overview(); render();

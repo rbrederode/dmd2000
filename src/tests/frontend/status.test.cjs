@@ -61,6 +61,9 @@ test('selectable application pane refreshes in place and marks retained data sta
   const get = (id) => { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); };
   const doc = { getElementById: get, querySelector: (key) => get(key) };
   let payload = snapshot(), online = true, calls = 0;
+  payload.profile = 'browser-working-profile';
+  payload.telescope_model.dsh_mgr.app = {...payload.telescope_model.dsh_mgr.app, arguments: {profile: 'rotation'}};
+  payload.telescope_model.sdp.app = {...payload.telescope_model.sdp.app, arguments: {}};
   const intervals = [];
   const win = { setTimeout, clearTimeout, setInterval(fn, ms) { intervals.push({ fn, ms }); return 1; }, clearInterval() {}, addEventListener() {} };
   const controller = init(doc, win, async (url) => {
@@ -74,6 +77,10 @@ test('selectable application pane refreshes in place and marks retained data sta
   assert.match(get('status-apps').innerHTML, /<td>Telescope Manager<\/td><td>tm001<\/td>/);
   assert.match(get('status-apps').innerHTML, /<td>Science Data Processor<\/td><td>sdp001<\/td>/);
   assert.match(get('status-apps').innerHTML, /<td>Digitiser<\/td><td>dig003<\/td>/);
+  assert.match(get('status-apps').innerHTML, /<td>dm001<\/td><td>rotation<\/td>/);
+  assert.match(get('status-apps').innerHTML, /<td>tm001<\/td><td>local<\/td>/);
+  assert.match(get('status-apps').innerHTML, /<td>sdp001<\/td><td>—<\/td>/);
+  assert.doesNotMatch(get('status-apps').innerHTML, /browser-working-profile/);
   const selected = { target: { closest: () => ({ dataset: { appKey: 'tm:tm001' } }) } };
   await get('status-apps').emit('click', selected);
   assert.match(get('status-detail-title').textContent, /Telescope Manager/);
@@ -639,4 +646,19 @@ test('DM entity connections list configured network dishes and explicit last com
   assert.match(table, /dish005<\/td><td>Client - On demand<\/td><td>—<\/td><td>—<\/td><td>—/);
   assert.match(table, /dish002<\/td><td>—<\/td><td colspan="3">Not Applicable/);
   assert.doesNotMatch(table, /<host>|12:0[01]:00|ESTABLISHED/);
+});
+
+
+test('unset application timestamps do not fall back to component creation time', () => {
+  const model = snapshot().telescope_model;
+  model.dsh_mgr.app.last_update = null;
+  model.dsh_mgr.last_update = { _type: 'datetime', value: '2026-11-10T16:52:49Z' };
+  const dm = applications(model).find(item => item.type === 'dm');
+  assert.equal(dm.updated, null);
+  assert.doesNotMatch(lastUpdate(dm.updated), /2026|is-old/);
+  assert.match(lastUpdate(dm.updated), /—/);
+  // Snapshots predating app timestamps can still supply a component timestamp.
+  delete model.dsh_mgr.app.last_update;
+  assert.deepEqual(applications(model).find(item => item.type === 'dm').updated,
+                   model.dsh_mgr.last_update);
 });

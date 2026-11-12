@@ -5,6 +5,41 @@ plotting, observation comparison and Galactic offset sweeps. It reads the local 
 
 Run from the repository root with Python, NumPy, Astropy and Matplotlib installed.
 The default cube path is `~/github/lab-fit/lab.fit`; override with `--lab-fits`.
+SciPy is also required for the `connected` and `erfc` terminal methods.
+
+## Current defaults and the different velocity ranges
+
+All velocity limits below are in km/s. These settings serve different purposes:
+
+| Option | Default | Purpose |
+|---|---|---|
+| `--observation-baseline` | `linear` | Baseline model applied to the observation |
+| `--baseline-auto` / `--no-baseline-auto` | Automatic selection enabled | Select outermost 20% of valid channels on each side of zero within the displayed range; assumes both ends are line-free |
+| `--baseline-window VMIN VMAX` | Unspecified | Repeat to provide manual baseline windows, overriding automatic selection |
+| `--vmin` / `--vmax` | -100 / +100 | Display bounds, automatic baseline/noise selection bounds, and terminal search limits |
+| `--fit-vmin` / `--fit-vmax` | -150 / +150 | LAB shape-comparison scoring interval; also the baseline interval only when using lower-envelope fitting |
+| `--noise-range VMIN VMAX` | Highest-velocity 20% of valid positive channels within the display bounds | Line-free noise statistics for thresholds and observation SNR; repeat for multiple windows |
+| `--terminal-method` | `threshold` | Rightmost qualifying above-threshold run; select `connected` explicitly to follow the main wing with a common threshold, or `erfc` for a fitted midpoint |
+| `--terminal-source` | `auto` | Measure both observation and LAB when available, otherwise LAB only |
+| `--terminal-sigma` | 3 | Noise threshold multiplier for `threshold` and `connected` |
+| `--terminal-min-channels` | 3 | Above-threshold support; `connected` also requires this many consecutive below-threshold samples |
+| `--terminal-return-width` | 3 | Additional below-threshold confirmation span for `connected` only |
+| `--beam` | 5 degrees | Gaussian LAB averaging FWHM |
+| `--lon-range` / `--lat-range` | `[-3,3,1]` each | Coordinate offsets used with `--sweep`; longitude offsets also serve `--lv` |
+
+For complete, uniformly spaced data with the default display bounds, automatic
+baseline windows are approximately -100 to -80 and +80 to +100 km/s; the
+automatic noise window is approximately +80 to +100 km/s. With
+`--vmin -250 --vmax 250`, they become approximately -250 to -200 / +200 to +250, and
++200 to +250 respectively. Missing channels can change the actual endpoints.
+These are channel-count selections, not fixed windows or an emission finder.
+The -150/+150 scoring defaults do not change when the plot bounds change.
+
+OPT accepts the same `--vmin` / `--vmax` options (default -100/+100) and
+automatic outer-window baseline selection. Explicit windows override selection
+in both tools. OPT also accepts its old `--baseline-vmin` / `--baseline-vmax`
+names as aliases; those aliases are not LAB profiler options. See
+[observation baseline controls](observation_baseline.md) for examples.
 
 ## One profile
 
@@ -93,29 +128,64 @@ only matching rows are used. Non-numeric or non-finite samples are discarded,
 and channels are sorted by velocity. At least ten valid samples are required;
 duplicate velocities are rejected.
 
-The calculation is shared with observation velocity plots through
-`util.convert.subtract_spectrum_baseline()`. See
+The numerical helpers are shared with observation velocity plots through
+`util.convert.select_baseline_windows()` and `sdp.spectral_baseline.subtract_baseline()`.
+Both tools default to clipped outer-window fitting with the same velocity
+bounds; identical inputs and settings therefore use the same baseline. See
 [observation baseline controls](observation_baseline.md) for `obs/opt.py` usage.
+
+To generate the velocity CSV first, run OPT from the repository root:
+
+```bash
+PYTHONPATH=src python -m obs.opt \
+  --dir ~/samples/rotation \
+  --obs ODT-2026-11-08T175906Z-dish003-Rotation --profile rotation
+```
+
+Complete its interactive prompts. It writes
+`~/samples/rotation/ODT-2026-11-08T175906Z-dish003-Rotation_vlsr.csv`.
+Each target/frequency pair aggregates all included repeated physical scans.
+For comparison, `--obs` and a full `--scan` supply the pointing/time; `--file`,
+`--target-id` and `--freq-scan` select the aggregated measured spectrum.
+Selecting `--scan ...-15-0-2` does not restrict the CSV spectrum to iteration 2.
+The profiler reads original `calibrated_power`, not OPT's already-corrected
+`baseline_subtracted_power`, so baseline subtraction is not applied twice.
+
+For a metadata-based sweep using automatic baselines and a connected edge:
+
+```bash
+python src/util/lab_profiler.py \
+  --dir ~/samples/rotation \
+  --obs ODT-2026-11-08T175906Z-dish003-Rotation \
+  --scan ODT-2026-11-08T175906Z-dish003-Rotation-15-0-2 \
+  --file ~/samples/rotation/ODT-2026-11-08T175906Z-dish003-Rotation_vlsr.csv \
+  --target-id 15 --freq-scan 0 \
+  --sweep --lon-range '[-10,10,1]' --lat-range '[-10,10,1]' \
+  --vmin -250 --vmax 250 --noise-range 100 150 \
+  --terminal-method connected
+```
+
+`linear`, automatic baseline windows, a 3-sigma threshold and a 3 km/s
+connected return width are defaults; `connected` itself must be requested.
+The example's noise range is explicit and should be checked for emission.
 
 The baseline is selected using `--observation-baseline`:
 
-- `linear` (default): match HI4PI's lower-envelope method. Select the lowest
-  20% of raw observation powers within the fitting interval and finite survey
-  overlap, fit a straight line to those samples, and subtract it.
-- `constant`: subtract the median of that same lowest 20% of samples, as in HI4PI.
+- `linear` (default): subtract a straight line fitted to automatically selected
+  outer windows, or to explicit `--baseline-window` regions.
+- `constant`: subtract a constant fitted to the selected windows.
 - `none`: preserve the raw observation power without baseline subtraction.
-- `read-ray`: reproduce the earlier line from the first valid observation
-  channel to the interpolated observed power at +50 km/s. Only this mode
-  requires coverage of +50 km/s and a first channel below it.
 
-For example, explicitly select the HI4PI linear method with:
+To restore the earlier HI4PI-style lower-envelope linear method, use:
 
 ```bash
---observation-baseline linear
+--observation-baseline linear --no-baseline-auto
 ```
 
-The lower-envelope modes require at least ten shared fitting channels and at
-least three lower-envelope samples. The fit uses the finite survey overlap and
+With `--no-baseline-auto` and no explicit windows, linear/constant modes use
+the lowest 20% of raw powers; linear fits a straight line and constant uses
+their median. These lower-envelope modes require at least ten shared fitting
+channels and at least three lower-envelope samples. The fit uses the finite survey overlap and
 `--fit-vmin` / `--fit-vmax`, just as HI4PI does. Changing the fitting interval
 can therefore change the baseline. The fitted line or constant is evaluated
 across the full observation grid, including channels outside the fitting range.
@@ -135,9 +205,60 @@ The reference and observation are independently peak-normalized within
 `--fit-vmin` / `--fit-vmax` (default -150 to +150 km/s) for scoring. Points where
 either normalized value is at or below 0.01 are excluded. At least ten shared
 usable channels are required. RMS selects the best fit; correlation is reported
-as an additional diagnostic. The lower-envelope baseline is calculated before
-normalization; the legacy `read-ray` anchors are independent of the fitting
-interval.
+as an additional diagnostic. Baseline subtraction precedes normalization.
+Automatic/explicit baseline windows are independent of the scoring interval;
+the lower-envelope baseline uses it.
+
+### Select line-free baseline windows
+
+By default, linear/constant observation baselines select candidate windows from
+the outermost 20% of finite, unmasked negative-velocity channels and outermost
+20% of positive-velocity channels within the displayed `--vmin`/`--vmax` range.
+For uniformly sampled complete coverage from -250 to +250 km/s, this selects
+approximately -250 to -200 and +200 to +250 km/s. The same outlier-clipped
+linear/constant fit described below is then applied to both ends. Selection
+occurs once before the coordinate sweep, independently of the LAB scoring
+interval. The actual bounds are printed and saved as `baseline_windows_kms`,
+with `baseline_window_selection: automatic_outer_20_percent_per_side`.
+
+This is an outer-channel heuristic, not an automatic line finder: it assumes
+both ends are emission-free. It requires a displayed range spanning zero and
+at least five selected channels per side. Missing/non-finite channels affect
+the selected bounds. If either side lacks coverage, the run fails with a
+message rather than silently fitting one side. Explicit `--baseline-window`
+arguments override automatic selection. Use `--no-baseline-auto` to restore
+the previous lower-envelope fit, or `--observation-baseline none` to skip
+subtraction. `--baseline-auto` can explicitly re-enable automatic selection.
+Automatic selection is unused for survey-only runs and the `none`
+method. Automatic baseline selection does not override `--noise-range`; without an explicit
+noise range, the normal right-hand noise-window algorithm applies separately.
+
+If a sloping residual remains, select line-free channels on both sides of the
+emission using repeated `--baseline-window VMIN VMAX` arguments. For example:
+
+```bash
+--observation-baseline linear --baseline-window -200 -80 --baseline-window 140 200
+```
+
+These are candidate windows for target 4 of the 2026-11-08 rotation observation;
+inspect both spectra before reusing them for another target. With explicit
+windows, the linear/constant fit uses all finite selected channels, with
+symmetric 3-sigma outlier clipping (IQR/1.349, with standard deviation as a
+fallback for degenerate IQR; up to five iterations), rather than the lowest
+20% of powers. Windows are independent of the scoring interval and displayed
+limits, so the baseline can be anchored at both ends without changing the LAB
+fit range. At least ten usable channels must remain. Emission and persistent
+interference must be excluded by window selection; clipping is not a line finder.
+The estimated baseline is subtracted across the full spectrum before scoring,
+display scaling and terminal-velocity estimation. JSON records the windows and
+method, and the comparison CSV retains the evaluated baseline. A text box at
+the upper left of profile plots shows the baseline windows and the noise
+windows used by the threshold estimator, with the legend at the upper right.
+It distinguishes automatic/manual baseline windows and the common threshold's
+noise source. Erfc or disabled terminal measurements are identified as not
+using a noise threshold. These windows are separate from `--noise-range`, which
+estimates terminal-threshold noise and observation SNR, and does not fit or
+subtract a baseline.
 
 ## Sweep Galactic offsets
 
@@ -154,16 +275,20 @@ python src/util/lab_profiler.py \
 ```
 
 Ranges are `[minimum offset,maximum offset,step]` in degrees, relative to the
-nominal `--lon` and `--lat`. Both default to `[-3,3,1]`. The maximum is included
+nominal pointing from direct Galactic coordinates or `--obs`/`--scan` metadata.
+Both default to `[-3,3,1]`. The maximum is included
 when reachable by a whole number of steps. Longitude wraps into 0–360 degrees;
 latitudes outside -90–90 degrees are skipped. Offset signs are preserved across
 the longitude boundary. Steps and limits must be finite and steps positive.
 
 The plot title, terminal output and JSON report the fitted Galactic coordinates,
 signed longitude/latitude offsets, beam, selected target/frequency scan, RMS
-and correlation. The cube is opened once for the sweep. Each candidate uses
-its finite overlap for baseline estimation, matching HI4PI. The winning
-candidate's baseline is retained for the plot and exported data.
+and correlation. The cube is opened once for the sweep. Automatic or explicit
+baseline windows are independent of candidate coordinates and the score range.
+Only the lower-envelope mode (`--no-baseline-auto` with no explicit windows)
+uses each candidate's finite survey overlap and scoring interval for its
+baseline fit. The winning candidate's baseline is retained for the plot and
+exported data. Ranking uses normalized shape RMS, not terminal-velocity agreement.
 
 The output stem identifies the input CSV, target and frequency scan unless
 `--output` is supplied. Outputs are:
@@ -175,6 +300,15 @@ The output stem identifies the input CSV, target and frequency scan unless
   and interpolated LAB brightness; unavailable LAB channels are NaN.
 - `_sweep.csv`: every valid-coordinate candidate's coordinates, signed offsets,
   RMS and correlation. Candidates without a usable fit have non-finite scores.
+
+The observation ID appears above the smaller comparison-header details. The
+detail lines show target/frequency/beam, `Best FIT LAB` coordinates and offsets,
+baseline/RMS/correlation, then `Terminal Velocity (Δv_T)` when both sources are
+evaluated (shown as unavailable if either edge fails). The sign is
+**observation minus LAB**. The upper-left
+box lists baseline and noise windows on single lines, plus observation SNR,
+median baseline and Robust Noise; the legend is at the upper right. A missing ID can be
+inferred for the header from the standard `<observation_id>_vlsr.csv` filename.
 
 ## Python API
 
@@ -190,29 +324,97 @@ manager releases the memory-mapped cube; a single extractor can serve many
 positions. There is no extra Earth-motion correction because the survey's
 velocity axis already uses the LSR frame.
 
+## Scaled-observation SNR and noise diagnostics
+
+Comparison plots automatically show observation peak SNR (linear and dB),
+median noise baseline and Robust Noise in plot units in the upper-left text box.
+The inverse noise-to-peak dB ratio remains in JSON for compatibility but is
+omitted from the plot because it duplicates peak SNR. The calculation uses the
+baseline-adjusted, scaled
+observation, not the LAB noise statistics. `--noise-range` selects its line-free
+channels; otherwise pipeline QA's smoothed-peak exclusion rule applies.
+These diagnostics also work with erfc or disabled terminal measurements.
+
+Let `mu` be the median of the selected noise samples and `scatter` be
+`1.4826 * median(abs(samples - mu))`. The peak is the original sample at the
+channel selected by the same moving-average peak locator as pipeline QA, minus
+`mu`. The exported diagnostics retain their legacy keys:
+
+```text
+peak_snr = peak / scatter
+peak_snr_db = 10 * log10(peak / scatter)
+noise_rms_db_relative_to_peak = 10 * log10(scatter / peak)
+```
+
+The dB convention is explicitly a power-like brightness ratio (10 log), not
+20 log of a voltage ratio. This is a spectral peak-to-radiometric-scatter
+diagnostic, not integrated receiver S/N or an absolute dBm/dBW calibration.
+See the [ITU decibel definitions](https://www.itu.int/dms_pubrec/itu-r/rec/v/R-REC-V.574-3-199006-S%21%21PDF-E.pdf).
+Positive display scaling cancels from both ratios. Smoothing locates the supported peak but does not alter amplitudes. The
+median baseline remains in linear plot units because baseline subtraction can
+make it zero or negative, for which a logarithmic floor is undefined. Missing
+noise coverage, zero scatter or no positive peak produces an unavailable
+result rather than infinite dB. JSON records values, units, reference and
+noise windows under `observation_noise`.
+
+## Shared noise and SNR calculations
+
+The LAB profiler and pipeline QA step share the pure noise/SNR functions in
+`sdp.spectral_metrics`. The profiler keeps its mean noise floor and RMS scatter
+from the selected velocity windows; QA defaults to a median floor and MAD-based
+robust scatter from its peak-exclusion region. Their default numbers therefore
+need not match. Identical sample selections, peak definitions and estimator
+policies produce matching results. Neither calculation modifies the spectrum.
+
+Profiler JSON records the noise estimator. Noise/SNR diagnostics no longer
+invoke a terminal-velocity detector merely to obtain noise statistics; the
+terminal methods reuse the same profiler noise-window helper. Existing CLI
+thresholds and statistics retain their definitions and defaults. See
+[shared spectrum quality metrics](spectral_quality_metrics.md) for estimator
+formulas, QA's numerical floor, Python options and reproducibility requirements.
+
 ## Positive terminal velocity at a noise threshold
 
-The plot now marks the rightmost positive-velocity falling edge above a
-3-sigma noise threshold. By default it uses the baseline-corrected observation
-when an observation is loaded, otherwise the LAB profile. During sweeps this
-measurement is made on the winning comparison, without changing fit ranking.
+The default `--terminal-method threshold` marks the rightmost positive-velocity
+falling crossing above a 3-sigma noise threshold. It measures both the baseline-corrected
+observation and the LAB profile when an observation is loaded, otherwise only
+the LAB profile. Each spectrum has its own noise estimate, threshold line and
+terminal-velocity marker. The heading reports `Terminal Velocity (Δv_T)` in
+km/s when both edges are detected; otherwise it reports the difference as
+unavailable. During sweeps this measurement is made on the winning comparison,
+without changing fit ranking. The `connected` method below uses a common
+observation-derived threshold instead of independent noise thresholds.
 Use `--terminal-source lab` or `--terminal-source observation` to choose
 explicitly, or `--no-terminal-velocity` to disable the measurement.
 
-Noise is estimated independently of the observation/survey fit RMS shown in
-the title. In line-free channels, compute the mean level `mu` and the RMS
-fluctuation about it, `sigma = sqrt(mean((T - mu)^2))`. The detection threshold
-is `mu + 3*sigma`. This accounts for any residual constant noise floor after
-baseline subtraction. For observation plots these quantities are in the same
-LAB-scaled kelvin units as the red curve; multiplying the spectrum by a positive
-scale factor does not change the measured velocity.
+JSON exports include both results under `terminal_velocity.spectra`, with
+`observation_minus_lab_kms` present only when both edges are detected. Existing
+top-level threshold-result fields retain the observation result in automatic
+comparison mode, or the explicitly selected source. Erfc comparisons also
+report their terminal-velocity difference in the heading.
 
-By default the noise window is the highest-velocity 20% of finite positive
-channels within the displayed `--vmin`/`--vmax` interval. This assumes that end
-of the spectrum is emission-free. For a controlled measurement, explicitly
+Noise is estimated independently of the observation/survey fit RMS shown in
+the title. By default compute the median level `mu` and the robust scatter
+`sigma = 1.4826 * median(abs(T - mu))`. The detection threshold is `mu + 3*sigma`.
+This accounts for any residual constant noise floor after
+baseline subtraction. For observation plots these quantities are in the same
+scaled plot units as the red curve, not an independently calibrated observation
+temperature. Multiplying a spectrum by a positive scale factor and recomputing
+its own noise threshold does not change its crossing velocity.
+
+By default the same selector as pipeline QA excludes 20% of the native channel
+grid around a mask-aware smoothed peak. Defaults are `--noise-window-frac 0.2`,
+`--noise-smooth-window 10` (adjusted to an odd width) and
+`--noise-estimator median_mad`. Remaining usable displayed channels supply the
+median and MAD. Broad emission outside that exclusion can still bias the result.
+Mean/RMS remains available explicitly via `--noise-estimator mean_rms`; the old
+edge-only selection is available via `--noise-selection positive_edge`.
+For a controlled measurement, explicitly
 select line-free windows using repeated `--noise-range VMIN VMAX` arguments.
 They can lie outside the displayed interval and are limited to available data.
-At least ten finite noise samples are required. All samples in these windows
+Explicit windows require at least ten finite noise samples. Automatic QA
+selection requires three usable spectrum channels and a nonempty noise region.
+All samples in these windows
 are used; emission, baseline curvature or interference can bias the estimate.
 
 For example, add these options to the observation comparison or sweep command:
@@ -235,9 +437,11 @@ above threshold and the next channel at or below threshold. This interpolation
 does not improve the instrument's spectral resolution. Use `--terminal-sigma`
 to change the threshold multiplier from 3 if needed.
 
-A purple vertical line and dot mark the crossing, and the legend reports its
-LSR velocity. A dotted grey line shows the noise threshold. The result, noise
-mean/RMS, threshold, source, noise windows and consecutive-channel requirement
+LAB crossings are blue and observation crossings purple, with a vertical line
+and dot and the velocity in the legend. A matching-colour dashed horizontal
+line shows each median noise baseline; a dotted line shows its noise-floor-plus-N-sigma
+threshold. The result, noise
+median/robust scatter (or explicitly selected mean/RMS), threshold, source, noise windows and consecutive-channel requirement
 are also printed or recorded in the output JSON's `terminal_velocity` object.
 The JSON stores the full noise calculation; the terminal prints a short report.
 If no qualifying emission exists, the noise estimate is unavailable/zero, or
@@ -389,14 +593,86 @@ broader structures than a higher-resolution survey illustration; styling does
 not restore spatial detail removed by beam convolution.
 
 
+## Main-wing detection edge with a common threshold
+
+Use `--terminal-method connected` to follow the dominant positive emission
+wing to a sustained return below a noise threshold, rather than selecting the
+rightmost qualifying excursion or an erfc transition midpoint. For example:
+
+```bash
+--terminal-method connected --terminal-sigma 3 --noise-range 100 150 --terminal-return-width 3
+```
+
+When observation data is supplied, the baseline-corrected, peak-scaled
+observation's median noise baseline plus N times its robust scatter defines **one common
+amplitude threshold for both curves**. The shared floor line is the observation's
+reference level used in that comparison, not a claim that LAB and observation
+have identical intrinsic noise baselines or scatter. The observation is not independently
+temperature-calibrated: this is a common level in the plot's scaled units.
+Without observation data, LAB supplies its own threshold. Explicit source
+selection controls which edge is shown; an observation still supplies the
+threshold when present, including `--terminal-source lab`. Invalid reference
+noise produces an unavailable result rather than a fallback to LAB noise.
+
+The estimator splits data at missing channels or gaps exceeding 1.5 times the
+median channel spacing. In each segment a three-channel median followed by
+Gaussian smoothing (dispersion max(1 km/s, one channel spacing)) supplies a
+guide. The strongest guide peak in an above-threshold run containing at least
+`--terminal-min-channels` samples anchors the search. The actual crossings use
+the original unsmoothed samples. Starting at the anchor, it finds the first
+consecutive below-threshold run containing at least `--terminal-min-channels`
+samples (default 3) **and** spanning `--terminal-return-width` km/s (default 3).
+Brief dips are bridged; once a return is confirmed, detached later islands do
+not move the edge. Linear interpolation locates the crossing at the start of
+the confirmed run. A gap or insufficient right-hand coverage before confirmation
+gives a limited result, not a detected edge. Confirmation width is in velocity
+units, though finite channel spacing still affects the result.
+
+The plot labels these measurements as main-wing detection edges and draws the
+shared mean noise floor as a dashed horizontal line and the noise-floor-plus-N-sigma
+threshold as a dotted line, with separate legend entries. These shared lines
+are drawn once. The independent `threshold` method shows each source's mean
+floor and threshold separately. JSON records `method: connected`, `threshold_source`,
+the anchor velocity, requested and confirmed return widths, channel counts,
+noise statistics, status and the observation-minus-LAB difference when both
+edges are detected. Keep baseline and noise windows line-free and inspect the
+selected feature: this operational detection edge is not a physical tangent-point
+velocity or a claim that all emission ends there. Distinct weaker components
+and non-Gaussian noise need separate assessment. No formal positional/velocity
+uncertainty is inferred from the confirmation width. The original `threshold`
+method remains the default and `erfc` remains available.
+
 ## Complementary-error-function terminal edge
 
-Add `--terminal-method erfc --terminal-fit-range VMIN VMAX` to a profile
-comparison or sweep. With the default `--terminal-source auto`, the final plot
+Add `--terminal-method erfc` to a profile comparison or sweep to select the
+falling-wing window automatically within the positive part of the displayed
+`--vmin`/`--vmax` range. Supply `--terminal-fit-range VMIN VMAX` to override
+selection with a manual window. With the default `--terminal-source auto`, the final plot
 fits both the observation and the best-matching LAB spectrum independently.
 Use `--terminal-source observation` or `lab` to fit only one. Sweep coordinate
 selection still uses the existing full-profile RMS score; the erfc fit measures
 the edge of the winning profile and does not change coordinate selection.
+
+Automatic selection is performed independently for observation and LAB. A
+three-channel median filter suppresses isolated spikes, followed by Gaussian
+smoothing with dispersion equal to the larger of 1 km/s and one channel
+spacing. This guide is used only to locate the dominant peak and the strongest
+negative gradient after it; the fit uses original, unsmoothed samples. Gaps
+split the guide into separate segments and are never interpolated over. A
+segment must have at least 12 channels and peak-to-tail contrast exceeding five
+times the tail's IQR/1.349 scatter estimate. This is a selection heuristic, not
+a formal detection significance.
+
+The gradient width at one quarter maximum estimates the initial transition
+dispersion (at least three channel spacings). The proposed window extends
+3.5 dispersions below and five above the gradient seed, clipped to available
+segment coverage. All existing fit-validity checks still apply; an automatic
+selection may be rejected as unconstrained. JSON records the search range,
+selected and actual sampled intervals, seed, smoothing and selection method.
+The console and plot legend identify the selected window. Inspect these
+intervals: the dominant falling transition can differ from a weaker component
+at more extreme velocity, and a successful fit is not an independent physical
+terminal-velocity validation. Baseline subtraction remains a separate step.
 
 For example (replace the CSV path, pointing and fit window for your observation):
 
@@ -436,3 +712,42 @@ No instrumental-width or beam-smearing correction is applied to the fit.
 This optional single-component model is a first comparison tool, rather than a
 reproduction of the multi-component analysis in
 [McClure-Griffiths & Dickey (2007)](https://arxiv.org/abs/0708.0870).
+
+
+## Frontend Velocity comparison
+
+In the observation-processing frontend, select a completed SKY aggregate,
+choose **Velocity**, leave **All SKY aggregates** unchecked and enable
+**LAB survey**. The comparison uses this profiler's Gaussian extraction,
+paired survey channels and normalized shape scoring at the aggregate's resolved
+Galactic coordinates. The configurable beam FWHM defaults to 5 degrees. This
+view also offers an optional coordinate sweep, described below. It does not
+measure terminal velocity.
+
+The observation is corrected with the frontend's current baseline settings and
+peak-scaled to LAB for the comparison plot, explicitly labelled in its legend.
+Ordinary observation exports remain unscaled. Comparison PNG, LAB profile CSV
+and metadata JSON are included in **Export results**. The server uses
+`~/github/lab-fit/lab.fit`; override with the `DMD_LAB_FITS` environment variable.
+See [frontend workflow](../src/ui/frontend_prototype/README.md#lab-survey-comparison).
+
+
+### Frontend coordinate sweep
+
+With **LAB survey** enabled, select **Sweep LAB coordinates**, enter minimum,
+maximum and step for Galactic offsets Δl and Δb, then select **Find best fit**.
+The default is -5/+5 degrees at 0.5-degree intervals on both axes. A -10/+10
+search at the same step is also supported. Requests are limited to 2500
+candidates; narrow ranges or increase steps for larger searches.
+
+The server extracts every candidate using the selected beam FWHM and the
+profiler's paired-channel matching, then ranks normalized spectral shapes by
+minimum RMS within the frontend velocity minimum/maximum. The baseline-corrected
+observation remains fixed throughout the sweep. The winning profile replaces
+the nominal LAB curve; the plot and exported JSON include its coordinates,
+offsets, RMS, correlation, search ranges and boundary flag. All candidate scores
+are in `*-lab-sweep.csv`, included in **Export results**. Invalid latitude or
+unscorable candidates are recorded and excluded from selection. A boundary
+winner is flagged to indicate that expanding the search may improve the fit.
+The result is a best sampled spectral match, not a measured pointing uncertainty.
+Uncheck the sweep option to restore comparison at the nominal coordinates.

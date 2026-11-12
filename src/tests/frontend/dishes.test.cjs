@@ -21,7 +21,8 @@ function harness() {
   const get = (id) => { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); };
   const field = (name) => { if (!fields.has(name)) fields.set(name, new Element()); return fields.get(name); };
   const form = get('dish-form'); form.hidden = true; form.elements = { namedItem: field };
-  const win = { confirm: () => true, addEventListener: (name, fn) => { events[name] = fn; } };
+  const win = { CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options?.detail; } },
+    dispatchEvent(event) { events[event.type]?.(event); }, confirm: () => true, addEventListener: (name, fn) => { events[name] = fn; } };
   const doc = { getElementById: get, createElement: () => new Element(), querySelector: () => new Element() };
   const record = { dsh_id: 'dish001', short_desc: 'Original dish', diameter: 0.7, fd_ratio: 0.37, latitude: 53,
     longitude: -2, height: 90, feed_type: 'H3T_1420', dig_id: null, ws_id: null,
@@ -33,7 +34,7 @@ function harness() {
     calls.push({ resource, ...clone(options) });
     if (options.profile && selected !== options.profile) throw Object.assign(new Error('Profile changed'), { code: 'profile_changed' });
     if (resource === 'profiles') return { payload: { profile: selected, profiles: [{ profile: 'local', available: true }, { profile: 'other', available: true }] } };
-    if (resource === 'profile') { selected = options.body.profile; return { payload: { profile: selected } }; }
+    if (resource === 'profile') { selected = options.body.profile; return { payload: { profile: selected, scan_store_dir: '/samples/' + selected } }; }
     const etag = () => '"' + version + '"';
     if (options.method && options.etag !== etag()) throw Object.assign(new Error('Stale'), { code: 'version_conflict' });
     if (resource === 'dishes' && !options.method) return { payload: { profile: selected, dishes: clone(data[selected]) }, etag: etag() };
@@ -202,4 +203,27 @@ test('a stale deletion retains the dish and its unsaved draft', async () => {
   assert.equal(h.field('short_desc').value, 'Keep draft');
   assert.equal(h.editor.dirty(), true);
   assert.match(h.get('message').textContent, /Your edits are kept/);
+});
+
+
+test('header profile publishes successful selection and blocks switches during OPT processing', async () => {
+  const h = harness();
+  const selected = [];
+  h.events['dmd:profile'] = event => selected.push(event.detail.profile);
+  await h.editor.refresh();
+  assert.deepEqual(selected, ['local']);
+  h.win.DmdOpt = {isBusy: () => true};
+  h.editor.admin.update();
+  assert.equal(h.get('profile').disabled, true);
+  h.get('profile').value = 'other';
+  await h.editor.switchProfile();
+  assert.equal(h.get('profile').value, 'local');
+  assert.deepEqual(selected, ['local']);
+  assert.equal(h.calls.filter(call => call.resource === 'profile').length, 0);
+  h.win.DmdOpt = {isBusy: () => false};
+  h.get('profile').value = 'other';
+  await h.editor.switchProfile();
+  assert.deepEqual(selected, ['local', 'other']);
+  assert.equal(h.editor.admin.profile(), 'other');
+  assert.equal(h.editor.admin.selection().scan_store_dir, '/samples/other');
 });

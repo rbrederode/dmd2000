@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from queue import Queue
 
 import numpy as np
+import pytest
 
 from models.pipeline import StepConfig, StepType
 from models.scan import ScanModel, ScanState, ScanType
@@ -112,6 +113,7 @@ def test_qa_ignores_flagged_channels_and_preserves_original_channel_indices():
     assert result is signal
     np.testing.assert_array_equal(signal, original)
     assert qa.baseline == 2.0
+    assert qa.noise_db == -120.0  # Preserve the legacy QA floor for zero MAD.
     assert qa.signal_start == 5
     assert qa.signal_end == 6
     assert qa.fwhm == 1.0
@@ -188,3 +190,98 @@ def test_load_calibration_propagates_load_flags_and_marks_invalid_results():
     assert flags[1] & int(ChannelFlag.CALIBRATION_INVALID)
     assert flags[2] & int(ChannelFlag.CALIBRATION_INVALID)
     assert np.all((flags[1:] & int(ChannelFlag.NONFINITE)) != 0)
+
+
+def test_qa_and_profiler_agree_with_identical_noise_samples_estimators_and_peak():
+    from util.lab_profiler import observation_noise_metrics
+    for estimator in ('mean_rms', 'median_mad'):
+        scan = _scan(21)
+        signal = np.tile([1., 3.], 11)[:21]
+        signal[8:13] = [4, 8, 12, 8, 4]
+        flags = empty_channel_flags(21)
+        flags[0] |= int(ChannelFlag.BANDPASS_EXCLUDED)
+        flags[3] |= int(ChannelFlag.RFI_DETECTED)
+        signal[[0, 3]] = 1e9  # Neither caller may use flagged peaks/noise.
+        original, original_flags = signal.copy(), flags.copy()
+        step = QA(StepConfig(step=StepType.QA, params=dict(scan=scan, smooth_window=1,
+                                                         window_frac=.2, noise_estimator=estimator)))
+        returned = step.process(dict(pipeline='mpr', sec=1, channel_flags=flags), signal)
+        qa = scan.scan_qa.getQA('mpr', 0)
+        profile = np.ma.array(signal, mask=flags != 0)
+        measured = observation_noise_metrics(np.arange(21.), profile, 0, 20, [[0, 7], [13, 20]],
+                                              noise_estimator=estimator, smooth_window=1)
+        assert returned is signal
+        np.testing.assert_array_equal(signal, original)
+        np.testing.assert_array_equal(flags, original_flags)
+        assert measured['noise_sample_count'] == 14
+        assert measured['noise_estimator'] == estimator
+        assert qa.baseline == measured['noise_level_k']
+        assert qa.snr_db == measured['peak_snr_db']
+        assert qa.noise_db == 10 * np.log10(measured['noise_rms_k'])
+        assert qa.signal_db == 10 * np.log10(measured['peak_above_noise_floor'])
+
+
+def test_cal_baseline_flows_into_mpr_without_altering_spr():
+    from models.scan import ScanDataSource
+    from sdp.pipeline.steps.baseline import Baseline
+    from sdp.pipeline.pipeline_factory import ProcessingPipeline
+    scan = _scan(201)
+    x = np.arange(201.)
+    line = 10*np.exp(-((x-100)/8)**2)
+    power = 4 + .02*x + line
+    scan.spr[0] = power
+    scan.loaded_secs[0] = True
+    scan.data_source = ScanDataSource.SPR
+    scan.set_pipeline(ProcessingPipeline([Baseline(StepConfig(step=StepType.BASELINE,
+                                        params={"context": "cal", "method": "linear", "scan": scan}))]))
+    assert scan.process_pipeline()
+    np.testing.assert_array_equal(scan.spr[0], power)
+    np.testing.assert_allclose(scan.cal[0], line, atol=1e-10)
+    np.testing.assert_allclose(scan.mpr, line, atol=1e-10)
+
+
+@pytest.mark.parametrize('window_frac,smooth_window', [(.2, 10), (.35, 5)])
+def test_qa_profiler_and_both_plot_coordinates_share_default_robust_policy(window_frac, smooth_window):
+    from matplotlib import pyplot as plt
+    from obs.spectral_annotations import annotate_spectral_metrics
+    from sdp.spectral_metrics import observation_noise_metrics, select_qa_channels
+    from sdp.channel_mask import masked_values
+    scan = _scan(201)
+    x = np.arange(201.)
+    power = 5 + .2*np.sin(x) + 10*np.exp(-((x-110)/12)**2)
+    power[40] = 30  # Isolated raw maximum is not the supported smoothed peak.
+    flags = empty_channel_flags(len(x))
+    flags[:20] = flags[-15:] = ChannelFlag.BANDPASS_EXCLUDED
+    flags[70] = ChannelFlag.RFI_DETECTED
+    power[70] = 1e9
+    policy = dict(window_frac=window_frac, smooth_window=smooth_window, noise_estimator='median_mad')
+    QA(StepConfig(step=StepType.QA, params=dict(scan=scan, **policy))).process(
+        dict(pipeline='mpr', sec=1, channel_flags=flags), power)
+    qa = scan.scan_qa.getQA('mpr', 0)
+    velocity = 100-x
+    frequency = 1420.4+.004*(x-100)
+    profile = masked_values(power, flags)
+    selection = select_qa_channels(profile, window_frac=window_frac, smooth_window=smooth_window)
+    assert selection['peak_bin'] != 40
+    expected = observation_noise_metrics(velocity, profile, -100, 100, **policy)
+    assert expected['noise_sample_count'] == int(selection['noise_mask'].sum())
+    assert expected['noise_window_selection'] == 'qa_peak_exclusion'
+    assert qa.baseline == expected['noise_level_k']
+    assert qa.snr_db == expected['peak_snr_db']
+    assert qa.noise_db == 10*np.log10(expected['noise_rms_k'])
+    figure, axes = plt.subplots(1, 2)
+    try:
+        measured = [annotate_spectral_metrics(axes[0], velocity[::-1], profile[::-1], -100, 100,
+                                              label='SKY', flags=flags[::-1], qa_settings=policy),
+                    annotate_spectral_metrics(axes[1], frequency, profile, frequency.min(), frequency.max(),
+                                              label='SKY', flags=flags, velocity=velocity, unit='MHz', qa_settings=policy)]
+        for axis, metrics in zip(axes, measured):
+            assert metrics['noise_level_k'] == qa.baseline
+            assert metrics['peak_snr_db'] == qa.snr_db
+            assert metrics['noise_rms_k'] == expected['noise_rms_k']
+            baseline = next(line for line in axis.lines if line.get_label() == 'Median noise baseline')
+            np.testing.assert_array_equal(baseline.get_ydata(), [qa.baseline, qa.baseline])
+            assert 'Robust Noise:' in axis.texts[0].get_text()
+            assert 'Median baseline:' in axis.texts[0].get_text()
+    finally:
+        plt.close(figure)

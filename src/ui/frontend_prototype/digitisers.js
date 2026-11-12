@@ -73,9 +73,10 @@
       const term = $('filter').value.trim().toLowerCase();
       const visible = state.items.filter((item) => [item.dig_id, item.local_host, item.sdr_type].join(' ').toLowerCase().includes(term));
       $('count').textContent = '(' + state.items.length + ')';
-      $('list-profile').textContent = state.profile ? 'Profile: ' + state.profile : 'No profile loaded';
+      $('list-profile').textContent = state.profile ? 'Config Profile: ' + state.profile : 'No Config Profile loaded';
+      if (state.profile) $('list-profile').innerHTML = 'Config Profile: <strong>' + escape(state.profile) + '</strong>';
       $('rows').innerHTML = visible.map((item) => `<tr data-digitiser-id="${escape(item.dig_id)}" tabindex="0" aria-label="Edit ${escape(item.dig_id)}" aria-selected="${item.dig_id === state.selected && !state.isNew}" class="${item.dig_id === state.selected && !state.isNew ? 'is-selected' : ''}"><td><strong>${escape(item.dig_id)}</strong><small>${escape(item.local_host || 'No host configured')}</small></td><td>${escape(item.sdr_type)}</td><td>${escape(item.sample_rate)} Hz</td></tr>`).join('')
-        || '<tr><td colspan="3" class="zk-muted">' + (state.items.length ? 'No digitisers match your filter.' : 'No digitisers in this profile. Choose New digitiser to create one.') + '</td></tr>';
+        || '<tr><td colspan="3" class="zk-muted">' + (state.items.length ? 'No digitisers match your filter.' : 'No digitisers in this Config Profile. Choose New digitiser to create one.') + '</td></tr>';
       update();
     }
     function hide() {
@@ -99,7 +100,8 @@
       field('dig_id').readOnly = !isNew;
       form.hidden = false;
       $('editor-title').textContent = isNew ? 'New digitiser' : item.dig_id;
-      $('editor-subtitle').textContent = 'Configuration in profile ' + state.profile;
+      $('editor-subtitle').textContent = 'Config Profile: ' + state.profile;
+      if (state.profile) $('editor-subtitle').innerHTML = 'Config Profile: <strong>' + escape(state.profile) + '</strong>';
       $('save').textContent = isNew ? 'Create digitiser' : 'Save digitiser';
       state.baseline = snapshot(); renderRows();
     }
@@ -124,12 +126,12 @@
     async function activate(profile) {
       if (profile !== state.profile) reset(profile);
       if (state.loaded) {
-        admin.message('Profile ' + state.profile + '. Select a digitiser to edit.'); return;
+        admin.message('Config Profile: ' + state.profile + '. Select a digitiser to edit.'); return;
       }
       busy(true); admin.message('Loading digitisers…');
       try {
         await list(state.selected); admin.connected(true);
-        admin.message('Loaded ' + state.items.length + ' digitisers from ' + state.profile + '.');
+        admin.message('Loaded ' + state.items.length + ' digitisers from ', false, state.profile);
       } finally { busy(false); }
     }
     async function save(event) {
@@ -147,7 +149,7 @@
         }));
         saved = true; state.selected = result.digitiser.dig_id; show(result.digitiser);
         await list(state.selected); admin.connected(true);
-        admin.message('Saved ' + state.selected + ' to ' + state.profile + '. Changes apply on startup or the supported RESYNC flow.');
+        admin.message('Saved ' + state.selected + ' to Config Profile: ' + state.profile + '. Changes apply on startup or the supported RESYNC flow.');
       } catch (error) {
         if (saved) admin.message('Digitiser saved, but the list could not be refreshed. ' + error.message, true);
         else admin.failure(error);
@@ -156,7 +158,7 @@
     async function remove() {
       if (state.busy || admin.isBusy() || state.isNew || !state.selected || !state.etag) return;
       const id = state.selected;
-      if (!win.confirm('Delete ' + id + ' from profile ' + state.profile + '? This removes its stored digitiser definition.'
+      if (!win.confirm('Delete ' + id + ' from Config Profile: ' + state.profile + '? This removes its stored digitiser definition.'
         + (dirty() ? ' Unsaved edits will also be discarded.' : ''))) return;
       busy(true); admin.message('Deleting ' + id + '…');
       let deleted = false;
@@ -164,7 +166,7 @@
         check(await admin.request('digitisers/' + encodeURIComponent(id), { method: 'DELETE', profile: state.profile, etag: state.etag }));
         deleted = true; state.items = state.items.filter((item) => item.dig_id !== id);
         hide(); renderRows(); await list(); admin.connected(true);
-        admin.message('Deleted ' + id + ' from ' + state.profile + '.');
+        admin.message('Deleted ' + id + ' from Config Profile: ' + state.profile + '.');
       } catch (error) {
         if (deleted) admin.message('Digitiser deleted, but the list could not be refreshed. ' + error.message, true);
         else admin.failure(error);

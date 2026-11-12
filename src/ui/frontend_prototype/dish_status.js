@@ -109,7 +109,7 @@
       }
       if (!current) { controls(); return; }
       $('title').textContent = 'Dish — ' + current.dsh_id + (current.short_desc ? ' · ' + current.short_desc : '');
-      $('freshness').textContent = (data.stale ? 'Stale snapshot · ' : '') + 'TM profile: ' + show(data.profile) + ' · Dish updated ' + time(current.last_update);
+      $('freshness').textContent = (data.stale ? 'Stale snapshot · ' : '') + 'TM Config Profile: ' + show(data.profile) + ' · Dish updated ' + time(current.last_update);
       $('error').textContent = current.last_err_msg || 'No error reported';
       $('error-time').textContent = current.last_err_msg ? time(current.last_err_dt) : '';
       for (const axis of ['alt', 'az']) {

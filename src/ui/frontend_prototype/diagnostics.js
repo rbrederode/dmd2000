@@ -52,7 +52,7 @@
           if (typeof data.content !== 'string') throw new Error('The file service returned invalid contents.');
           const modified = new Date(data.modified_at);
           const time = Number.isNaN(modified.getTime()) ? 'unknown' : modified.toISOString().slice(0, 19).replace('T', ' ') + ' UTC';
-          $('meta').textContent = 'Profile: ' + data.profile + ' · ' + data.file + ' · Updated ' + time
+          $('meta').textContent = 'Config Profile: ' + data.profile + ' · ' + data.file + ' · Updated ' + time
             + (data.truncated ? ' · Showing the latest 512 KiB; download for the full log.' : '')
             + (data.shared_log ? ' · Shared log for all digitiser instances.' : '');
           $('download').hidden = false;

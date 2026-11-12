@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Fixed All SKY Frequency overlays retaining the earlier pipeline-only image after interactive baseline updates. Initial rendering and cached updates now build the overlay from the exact corrected individual spectra, preserving matching powers/ranges and channel annotations without adding SNR panels or median-baseline lines.
+
+- Fixed missing individual Frequency plots when an observation has no pointing metadata for LSRK conversion. Frequency rendering/caching and interactive updates now work independently of Velocity; unavailable Velocity/L–V views show the reason and older missing Frequency results request reprocessing.
+
+- Added Per second / Per scan resolution to frontend Total Power, for all SKY or selected aggregates. Both modes use processed physical-scan total-power readings; scan points are their per-scan means. Seconds preserve recording timestamps/gaps where available and explicitly use recorded time otherwise. Both plot modes and matching CSV exports survive cached spectral updates.
+
+- Interactive SNR and robust-noise diagnostics now derive smoothing and peak-exclusion widths from the min/max-selected channel range, as well as excluding out-of-range powers. Restricted Frequency/Velocity estimates match calculating on the selected spectrum alone.
+
+- Unified default noise/SNR diagnostics around pipeline QA's median/MAD and smoothed-peak exclusion policy. The selector is shared by QA, the profiler and interactive plots; plot annotations now say Robust Noise and Median baseline. Individual Frequency/Velocity plots also draw the median baseline, and cached updates retain the pipeline QA settings. Mean/RMS and legacy positive-edge noise selection remain explicit profiler options.
+
+- Restricted frontend SNR/noise annotations to individual aggregate Frequency, Velocity and LAB comparison plots. All SKY aggregates views omit these panels, including single-SKY observations; normal legends and channel flags remain visible.
+
+- Added peak SNR, RMS noise, mean floor and noise-window/sample-count annotations to frontend Frequency, Velocity and LAB comparison plots. All use the existing shared estimators and profiler diagnostic, now housed in `sdp.spectral_metrics` with profiler-compatible imports. Initial/cached updates use the same diagnostic; LAB JSON exports include the noise metrics separately from shape RMS.
+
+- Velocity analysis now defaults to the full recorded channel range instead of ±100 km/s. Blank bounds select automatic limits; explicit limits also bound baseline fitting. Initial and cached Velocity plots show grey bandpass exclusions and red RFI markers, with channel flags retained in native caches. Older jobs require reprocessing to recover these annotations. Single-aggregate Frequency updates also retain the flag annotations.
+
+- Removed the horizontal zero-power reference from initial and updated Velocity plots so it no longer expands the power scale. The vertical zero-LSRK-velocity marker remains.
+
+- Removed the zero reference line from single-aggregate Frequency plots. With no interactive subtraction, a single SKY aggregate now uses the same data-driven vertical scale as the All SKY aggregates view.
+
+- Interactive baseline settings now start at No subtraction on each page load, ignoring remembered baseline methods; omitted API baseline settings also default to none. Pipeline flattening remains enabled.
+
+- Added `Flatten (retain fitted level)` to interactive Analysis settings, supporting both initial processing and cached Frequency/Velocity plot updates on top of the configured pipeline output.
+
+- Enabled BASELINE with method `flatten` in every configuration profile, after calibration and flagging and before QA, using the outer 0–10% and 90–100% usable-channel windows. New pipeline BASELINE steps also default to `flatten`; explicit `linear` subtraction and interactive plot defaults retain their behaviour.
+
+- Added pipeline baseline method `flatten`: removes the fitted linear slope while retaining the lowest fitted background level within the usable passband. Flagged channels do not set that level; existing `linear` subtraction and defaults are unchanged.
+
+- Removed the redundant noise-RMS-to-signal-peak dB line from LAB plot annotations; peak SNR, mean noise floor and noise RMS remain visible. Existing JSON fields are retained.
+
+- LAB profile plot headers include the observation ID from metadata, or from the standard `<observation_id>_vlsr.csv` filename for direct-coordinate comparisons.
+
+- LAB comparison plots and JSON now include scaled-observation peak SNR, mean noise floor, noise RMS and RMS-noise level in dB relative to the signal peak. The documented power-like 10-log convention uses the configured noise windows independently of terminal method; unavailable or zero-noise cases do not emit infinite dB values.
+
+- LAB threshold plots show the mean noise floor as a dashed horizontal line alongside the dotted noise-floor-plus-N-sigma threshold, with separate numeric legend entries. Connected comparisons draw the shared observation-derived floor and threshold once.
+
+- LAB linear/constant observation baselines now automatically select the outermost 20% of valid channels on each side of zero within the displayed range, then use a clipped line-free fit. Explicit baseline windows override the default; `--no-baseline-auto` restores lower-envelope fitting. Actual windows are printed and recorded in JSON; insufficient two-sided coverage is rejected. Profile plots show a baseline/noise-window text box at the upper left and the legend at the upper right, identifying shared noise ranges and when a noise threshold is unused.
+
+- Added LAB `--terminal-method connected` to follow the dominant emission wing to a sustained below-threshold return, ignoring later detached islands. Comparisons use the observation's noise threshold for both peak-scaled curves. `--terminal-return-width` controls confirmation in km/s alongside the minimum-channel setting; plots and JSON identify the shared threshold and main-wing detection edges. Existing threshold and erfc methods remain available.
+
+- LAB erfc fitting automatically selects a falling-wing window when `--terminal-fit-range` is omitted. Selection uses a smoothed guide after the dominant positive-velocity peak, while fits use original channels and retain existing validity checks. Selected windows are recorded in JSON and shown in the console and plot legend; explicit windows retain manual behaviour.
+
+- LAB profiler accepts repeated `--baseline-window VMIN VMAX` options for explicit line-free baseline fits independent of the scoring range. Linear/constant fits use all selected channels with symmetric outlier clipping, allowing both ends of a sloping spectrum to anchor the baseline. Metadata records the windows and method; default lower-envelope behaviour is retained.
+
+- LAB comparison plots now measure terminal velocities independently for the observation and LAB profile at their own noise-floor-plus-3-sigma thresholds. Both markers and thresholds are shown by default, and the heading and JSON report the observation-minus-LAB terminal-velocity difference when both edges are detected. Explicit source selection and disabling terminal measurements remain available.
+
+- Fixed scan-product output paths containing `~`: scan CSV/metadata/QA saves and filterbank writers expand the home directory and record a resolved output path, preventing spectra being written to a literal `~/samples` directory beneath the launch directory. Schedule downloads validate HTTP status, CSV content type and filename before saving; missing-file and other JSON errors appear in the pane instead of becoming `spr.json` downloads.
+
+- Completed scans in both live and historic Schedule details now offer a compact rightmost SPR CSV download button. WEB resolves the spectrum from saved scan metadata, verifies completion and confines access to the selected archive, with profile-change checks and symlink/path rejection. The authenticated UI streams the unchanged CSV as an attachment using its original filename; incomplete scans have no download action.
+
+- Schedule now displays queued and running observations from WEB's shared TM snapshot cache, with running observations first and the remaining queue ordered by scheduled start. The table scrolls after approximately ten rows and includes observation ID, title, dish, reported status, scheduled start/end UTC, estimated duration, creation UTC and creator contact. Selecting a row expands its individual scans, with reported statuses, current-scan highlighting, tuning and sample timestamps; expansion and scroll positions survive polling. Finished observations retained in the live model are excluded.
+
+- Added a separate Historic observations pane below the live Schedule queue, reading saved metadata recursively from the selected profile's scan store independently of TM. History shows newest observations first, scrolls after approximately ten rows, excludes IDs in the live queue and uses the newest disk copy when an ID is duplicated. Expanding an observation loads its recorded scans on demand through an authenticated, profile-guarded WEB endpoint. Completion is derived from saved scans/target progress instead of treating saved READY/IDLE/SCANNING labels as current execution; aborted, faulted, incomplete and unreadable records remain distinguishable. Disk failures retain the previous catalogue with an explicit warning.
+
 - Dish coordinate calculations translate the known Astropy stale-IERS predictive-data error into `XSoftwareFailure`, retaining the original exception as its cause. DM returns its existing observation-correlated error response so TM cancels request retries and aborts the observation. Failed coordinate conversion or initial slew invalidates the driver's operating/pointing state, and handled target failures clear the partial target before replying, preventing a retry from falsely reporting success. DM continues to handle only `XBase` exceptions; unrelated unexpected exceptions propagate.
 
 - Application models report the local TCP role of each interface. Status connection tables distinguish Server, Client - Persistent and Client - On demand, with Unknown for unreported roles. TCP clients reject replies addressed to obsolete sockets, and TM ignores stale WEB connection/status events after reconnection.

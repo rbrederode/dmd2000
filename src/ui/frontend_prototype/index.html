@@ -46,6 +46,9 @@
         </nav>
 
         <div class="zk-grow"></div>
+        <label class="zk-global-profile" title="Working Config Profile for configuration and observation processing. Running applications keep their launch Config Profiles; RESYNC reloads those Config Profiles.">Config Profile
+          <select class="zk-select" id="dish-profile" data-global-profile aria-label="Config Profile" disabled><option value="">Connect to WEB</option></select>
+        </label>
 
         <div class="zk-user">
           <div class="zk-theme-toggle" role="radiogroup" aria-label="Theme">
@@ -120,8 +123,8 @@
             <section class="zk-card panel status-overview">
               <div class="panel-head"><div><h2>Applications</h2><p>Choose an application to inspect its latest reported state.</p></div></div>
               <div class="status-table-scroll"><table class="zk-tbl status-app-table">
-                <thead><tr><th>App</th><th>App ID</th><th>Health</th><th>State</th><th>Last update UTC</th><th>Availability</th><th>Reliability</th><th>Tracing</th><th>Debug</th></tr></thead>
-                <tbody id="status-apps"><tr><td colspan="9" class="zk-muted">No telescope model received.</td></tr></tbody>
+                <thead><tr><th>App</th><th>App ID</th><th title="Profile reported in the application’s launch arguments. Restart the application to change it; RESYNC reloads this Config Profile.">Config Profile</th><th>Health</th><th>State</th><th>Last update UTC</th><th>Availability</th><th>Reliability</th><th>Tracing</th><th>Debug</th></tr></thead>
+                <tbody id="status-apps"><tr><td colspan="10" class="zk-muted">No telescope model received.</td></tr></tbody>
               </table></div>
               <section id="status-command-response" class="status-command-response" aria-label="Command response" role="status" aria-live="polite" hidden>
                 <h3>Command response</h3><dl class="status-command-result"><div><dt>App</dt><dd id="status-command-app"></dd></div><div><dt>Response time UTC</dt><dd id="status-command-time"></dd></div><div><dt>Status</dt><dd id="status-command-status"></dd></div><div><dt>Message</dt><dd id="status-command-message"></dd></div></dl>
@@ -171,50 +174,25 @@
           <div class="zk-page-head">
             <div class="zk-title">
               <h1>Observation Schedule</h1>
-              <span class="zk-subtitle">Queued, running, completed, and aborted observations.</span>
+              <span class="zk-subtitle">Queued observations and current executions.</span>
             </div>
             <div class="zk-actions">
+              <span id="schedule-connection" class="zk-chip is-empty">Waiting for TM</span>
+              <button type="button" id="schedule-refresh" class="zk-btn"><svg class="ico"><use href="#i-refresh" /></svg>Refresh</button>
               <button class="zk-btn is-primary" data-jump="design"><svg class="ico"><use href="#i-plus" /></svg>New observation</button>
             </div>
           </div>
-          <section class="zk-card panel">
-            <table class="zk-tbl zk-tbl--cards">
-              <thead>
-                <tr><th>ID</th><th>Title</th><th>Dish</th><th>Status</th><th>Start UTC</th><th>Duration</th><th>Owner</th><th></th></tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td data-label="ID" class="zk-mono">ODT-2026-06-09T1200Z</td>
-                  <td data-label="Title">M82 hydrogen line survey</td>
-                  <td data-label="Dish">dish001</td>
-                  <td data-label="Status"><span class="zk-chip is-live">RUNNING</span></td>
-                  <td data-label="Start UTC" class="zk-mono">2026-06-09 12:00</td>
-                  <td data-label="Duration">00:30:00</td>
-                  <td data-label="Owner">student1@example.edu</td>
-                  <td class="zk-tbl__actions"><button class="zk-icon-btn" aria-label="Open observation"><svg class="ico"><use href="#i-chevron" /></svg></button></td>
-                </tr>
-                <tr>
-                  <td data-label="ID" class="zk-mono">ODT-2026-06-09T1300Z</td>
-                  <td data-label="Title">Drift scan at zenith</td>
-                  <td data-label="Dish">dish002</td>
-                  <td data-label="Status"><span class="zk-chip is-navy">QUEUED</span></td>
-                  <td data-label="Start UTC" class="zk-mono">2026-06-09 13:00</td>
-                  <td data-label="Duration">00:12:00</td>
-                  <td data-label="Owner">class-a@example.edu</td>
-                  <td class="zk-tbl__actions"><button class="zk-icon-btn" aria-label="Open observation"><svg class="ico"><use href="#i-chevron" /></svg></button></td>
-                </tr>
-                <tr>
-                  <td data-label="ID" class="zk-mono">ODT-2026-06-08T1900Z</td>
-                  <td data-label="Title">M81 reference scan</td>
-                  <td data-label="Dish">dish001</td>
-                  <td data-label="Status"><span class="zk-chip is-empty">COMPLETE</span></td>
-                  <td data-label="Start UTC" class="zk-mono">2026-06-08 19:00</td>
-                  <td data-label="Duration">00:20:00</td>
-                  <td data-label="Owner">student2@example.edu</td>
-                  <td class="zk-tbl__actions"><button class="zk-icon-btn" aria-label="Open observation"><svg class="ico"><use href="#i-chevron" /></svg></button></td>
-                </tr>
-              </tbody>
-            </table>
+          <section class="zk-card panel schedule-panel" aria-labelledby="schedule-heading">
+            <div class="panel-head"><h2 id="schedule-heading">Queued and running observations <span id="schedule-count" class="schedule-count">—</span></h2></div>
+            <p class="zk-muted schedule-hint">Running observations appear first, followed by the queue in start-time order. Select an observation to expand its scans.</p>
+            <p id="schedule-freshness" class="zk-muted" role="status" aria-live="polite">Waiting for a TM snapshot.</p>
+            <p id="schedule-download-result" class="schedule-download-result" role="status" aria-live="polite" hidden></p>
+            <div id="schedule-scroll" class="schedule-scroll" tabindex="0" role="region" aria-label="Queued and running observations">
+              <table class="zk-tbl schedule-table">
+                <thead><tr><th>ID</th><th>Title</th><th>Dish ID</th><th>Status</th><th>Start (UTC)</th><th>End (UTC)</th><th>Observing duration<br><small>HH:MM:SS</small></th><th>Created (UTC)</th><th>Created by contact</th></tr></thead>
+                <tbody id="schedule-observations"><tr><td colspan="9" class="zk-muted">Waiting for the observation queue from TM.</td></tr></tbody>
+              </table>
+            </div>
           </section>
         </section>
 
@@ -310,19 +288,40 @@
             <button class="zk-btn" id="opt-find" type="button">Find observations</button>
             <label class="zk-field">Filter observations<input class="zk-input" id="opt-observation-search" type="search" placeholder="Name, ID, dish or scan type…" /></label>
             <input id="opt-observation" type="hidden" />
-            <button class="zk-btn is-primary" id="opt-open" type="button">Open observation</button>
           </section>
           <details class="zk-card opt-observation-browser" id="opt-observation-browser" open>
             <summary>Observations in this directory <span id="opt-observation-count" class="zk-muted">Choose a directory</span><span class="opt-observation-selection">Selected: <strong id="opt-observation-choice">Choose a row below</strong></span></summary>
+            <p class="zk-muted opt-catalogue-hint">Expand an observation to review its scans. Select its radio button, then Process observation.</p>
+            <p id="opt-download-result" class="schedule-download-result" role="status" aria-live="polite" hidden></p>
             <div class="opt-observation-scroll" role="region" aria-label="Scrollable observation catalogue" tabindex="0">
-              <table class="opt-observation-table">
-                <thead><tr><th scope="col"><span class="sr-only">Select</span></th><th scope="col">Observation</th><th scope="col">Dish</th><th scope="col">Completed scans</th><th scope="col">Completed types</th><th scope="col">Completed time</th></tr></thead>
-                <tbody id="opt-observation-rows"><tr><td colspan="6" class="opt-empty-small">Choose an observation directory to list its observations.</td></tr></tbody>
+              <table class="zk-tbl schedule-table opt-results-table">
+                <thead><tr><th>ID / Select</th><th>Title</th><th>Dish ID</th><th>Status</th><th>Start (UTC)</th><th>End (UTC)</th><th>Observing duration<br><small>HH:MM:SS</small></th><th>Created (UTC)</th><th>Created by contact</th></tr></thead>
+                <tbody id="opt-observation-rows"><tr><td colspan="9" class="opt-empty-small">Choose an observation directory to list its observations.</td></tr></tbody>
               </table>
             </div>
           </details>
+          <details class="zk-card opt-pipeline-panel" id="opt-pipeline-panel">
+            <summary>Processing pipeline</summary>
+            <div class="opt-pipeline-body">
+            <p class="zk-muted">Changes apply to this run after processing. Interactive plot adjustments start from the processed aggregates. Use Save Pipeline Configuration to keep these settings in the selected Config Profile.</p>
+            <div class="opt-pipeline-layout">
+              <div id="opt-pipeline-summary" class="opt-pipeline-summary"></div>
+              <aside id="opt-pipeline-step-help" class="opt-pipeline-step-help" tabindex="0" aria-labelledby="opt-pipeline-help-title">
+                <h3 id="opt-pipeline-help-title">How the pipeline works</h3>
+                <p id="opt-pipeline-help-description" role="status" aria-live="polite">A context identifies the stage at which a pipeline step operates on a spectrum. The normal flow is spr → cal → mpr. At each stage, the processor executes only enabled steps assigned to that context, in their configured order. The first step receives that stage&#x27;s input spectrum; its output spectrum and channel-quality flags become the input to the next step, and so on until the last matching step returns the stage&#x27;s result. Disabled steps and steps assigned to other contexts are skipped. For example, in cal, LOAD normalization can feed bandpass selection, then RFI flagging, then baseline subtraction.</p>
+                <div id="opt-pipeline-help-details"><h4>1. spr — Summed Power Spectrum</h4><p>The spr context processes summed power per channel per second. During acquisition, FFT power samples are summed within each frequency channel over one second, producing one summed-power spectrum for that second. Enabled spr steps run on each of these spectra in order, for example to remove a DC spike. The resulting per-channel, per-second SPR data is recorded in spectrum files in the scan store for processing and reprocessing. Keep spr processing minimal because these saved spectra are the starting point for future reprocessing.</p><h4>2. cal — Calibrated Spectrum</h4><p>The cal context applies calibration and correction steps to the summed power per channel per second. For each second, the processor takes a copy of its SPR spectrum and passes it through the enabled cal steps in order, with each step receiving the previous step&#x27;s result. The output remains one calibrated value per channel per second; this stage does not average the seconds together. It runs during acquisition and again when saved spectra are processed, preserving the saved SPR data as the starting point for reprocessing. A typical sequence is LOAD normalization, bandpass selection, RFI flagging, then optional baseline subtraction. Corrections change spectral values; flagging steps mark channels to exclude from subsequent calculations without replacing their measured values.</p><h4>3. mpr — Mean Power Spectrum</h4><p>The mpr context operates on reduced data: the mean of the calibrated per-second samples in each channel. The processor first averages the usable per-second values across the loaded seconds, separately for each channel, reducing the series of calibrated spectra to one mean spectrum with one value per channel. For example, ten usable one-second samples in a channel are summed and divided by ten. Flagged samples are excluded from that channel&#x27;s mean and channel-quality flags are carried forward. Enabled mpr steps then process this mean spectrum in order, passing their results from step to step. QA normally runs here to measure noise, SNR and other quality statistics without changing the spectrum. As samples arrive, MPR and its statistics are updated.</p><h4>When changes take effect and how to return to SPR</h4><p>During observation processing, OPT reads saved SPR files and forms target/frequency aggregates. Saved SPR data already starts after the original spr stage; this input path does not replay spr steps. It runs cal processing and rebuilds MPR instead. Changing a spr-only step here therefore does not redo that correction on saved SPR files.</p><p>Selecting a context does not run a step immediately. The processor invokes that context when it reaches the corresponding stage. The table groups spr, cal and mpr to show this flow; the configuration order is retained within each group.</p><p>Checking an unconfigured step adds it to this run. Unchecking a step skips it while retaining its settings. Process or Reprocess observation applies pipeline changes to the aggregates. Use Save Pipeline Configuration to keep changes in the selected Config Profile.</p><p>You can always return to the saved SPR starting point by reprocessing the spectrum files. Each processing run reads those files afresh and rebuilds the calibrated and mean spectra; it does not apply the new pipeline on top of the previous run&#x27;s corrected results. To recover the saved SPR spectrum without calibration or other corrections, uncheck the cal and mpr steps that change spectral values, then choose Process or Reprocess observation. The mean is then formed from the saved SPR samples. Reprocessing does not overwrite the source spectrum files, so you can change the settings and try again. This restores the saved SPR, including any spr-stage corrections already recorded during acquisition; undoing those requires the original raw IQ samples.</p><p>Interactive plot adjustments start from the processed aggregates and do not rerun this pipeline. Update plots changes derived views; selecting no interactive baseline subtraction restores the processed aggregate, including any pipeline correction already applied.</p><p>Choose a question mark beside an individual step for its purpose, parameters and usage notes. The question mark beside Pipeline Steps returns to this guide.</p></div>
+              </aside>
+            </div>
+            <details><summary>Advanced JSON editor</summary><p class="zk-muted">Use the fields beside each step to adjust its parameters. Steps run in listed order within each context. Use JSON for adding, removing or reordering steps and digitiser-specific lists. Keep LOAD calibration references intact. Baseline ranges_pct selects percentiles of usable channels.</p><label class="zk-field">Pipeline by digitiser (JSON)<textarea id="opt-pipeline-editor" class="zk-input" rows="14" spellcheck="false" aria-describedby="opt-pipeline-help"></textarea></label><small id="opt-pipeline-help">Use default for all digitisers, or add a digitiser-specific list. An empty list disables processing for that entry.</small></details>
+            <div class="opt-pipeline-actions">
+              <button class="zk-btn is-primary is-sm" id="opt-pipeline-save" type="button">Save Pipeline Configuration</button>
+              <button class="zk-btn is-sm" id="opt-pipeline-reset" type="button">Reset to Config Profile</button>
+              <span id="opt-pipeline-save-status" class="zk-muted" role="status" aria-live="polite"></span>
+            </div>
+            </div>
+          </details>
           <section class="opt-runbar zk-card">
-            <div><strong id="opt-observation-title">No observation loaded</strong><span class="zk-muted" id="opt-summary">Open a recorded observation to review its scans.</span></div>
+            <div><strong id="opt-observation-title">No observation loaded</strong><span class="zk-muted" id="opt-summary">Select a recorded observation to review and process its scans.</span></div>
             <div class="zk-actions"><button class="zk-btn is-primary" id="opt-process" type="button" disabled>Process observation</button><button class="zk-btn" id="opt-cancel" type="button" hidden>Cancel</button></div>
           </section>
           <div class="opt-progress" id="opt-progress" hidden><progress max="1" value="0"></progress><span aria-live="polite">Starting…</span></div>
@@ -338,15 +337,27 @@
             </aside>
             <section class="zk-card opt-viewer" aria-label="Analysis views">
               <div class="opt-view-tabs" role="tablist" aria-label="Analysis view">
-                <button class="is-active" data-opt-view="signal" type="button" role="tab" aria-selected="true">Signal</button><button data-opt-view="velocity" type="button" role="tab" aria-selected="false">Velocity</button><button data-opt-view="timeline" type="button" role="tab" aria-selected="false">Total Power</button><button data-opt-view="lv" type="button" role="tab" aria-selected="false">L-V Diagram</button><button data-opt-view="overview" type="button" role="tab" aria-selected="false">Aggregate</button><button data-opt-view="details" type="button" role="tab" aria-selected="false">Details</button>
+                <button class="is-active" data-opt-view="signal" type="button" role="tab" aria-selected="true">Signal</button><button data-opt-view="frequency" type="button" role="tab" aria-selected="false">Frequency</button><button data-opt-view="velocity" type="button" role="tab" aria-selected="false">Velocity</button><button data-opt-view="timeline" type="button" role="tab" aria-selected="false">Total Power</button><button data-opt-view="lv" type="button" role="tab" aria-selected="false">L-V Diagram</button><button data-opt-view="details" type="button" role="tab" aria-selected="false">Details</button>
               </div>
-              <div class="opt-plot-head"><div><strong id="opt-selected-title">Select a scan</strong><span class="zk-muted" id="opt-selected-detail">Completed aggregates are available after processing.</span></div><div class="zk-actions"><label id="opt-overlay-label" hidden><input id="opt-overlay" type="checkbox" /> All SKY aggregates</label><a class="zk-btn is-sm" id="opt-image-link" target="_blank" rel="noopener" hidden>Open image ↗</a></div></div>
+              <div class="opt-plot-head"><div><strong id="opt-selected-title">Select a scan</strong><span class="zk-muted" id="opt-selected-detail">Completed aggregates are available after processing.</span></div><div class="zk-actions"><span id="opt-lab-controls" hidden><label><input id="opt-lab" type="checkbox" /> LAB survey</label> <label>Beam FWHM [°] <input id="opt-lab-beam" class="zk-input opt-lab-beam" type="number" value="5" min="0.1" max="60" step="0.5" /></label></span><label id="opt-timeline-resolution-label" hidden>Resolution <select id="opt-timeline-resolution" class="zk-select"><option value="seconds">Per second</option><option value="scans" selected>Per scan</option></select></label><label id="opt-timeline-overlay-label" hidden><input id="opt-timeline-overlay" type="checkbox" checked /> All SKY aggregates</label><label id="opt-frequency-overlay-label" hidden><input id="opt-frequency-overlay" type="checkbox" checked /> All SKY aggregates</label><label id="opt-overlay-label" hidden><input id="opt-overlay" type="checkbox" /> All SKY aggregates</label><a class="zk-btn is-sm" id="opt-image-link" target="_blank" rel="noopener" hidden>Open image ↗</a></div>
+                <div id="opt-lab-sweep-controls" class="opt-lab-sweep-controls" hidden>
+                  <label><input id="opt-lab-sweep" type="checkbox" checked /> Sweep LAB coordinates</label>
+                  <label>Δl min [°] <input class="zk-input" id="opt-lab-lon-min" type="number" value="-10" min="-180" max="180" /></label>
+                  <label>Δl max [°] <input class="zk-input" id="opt-lab-lon-max" type="number" value="10" min="-180" max="180" /></label>
+                  <label>Δl step [°] <input class="zk-input" id="opt-lab-lon-step" type="number" value="1" min="0.01" step="0.1" /></label>
+                  <label>Δb min [°] <input class="zk-input" id="opt-lab-lat-min" type="number" value="-10" min="-90" max="90" /></label>
+                  <label>Δb max [°] <input class="zk-input" id="opt-lab-lat-max" type="number" value="10" min="-90" max="90" /></label>
+                  <label>Δb step [°] <input class="zk-input" id="opt-lab-lat-step" type="number" value="1" min="0.01" step="0.1" /></label>
+                  <button id="opt-lab-find" class="zk-btn is-sm" type="button">Find best fit</button>
+                </div>
+              </div>
               <div class="opt-canvas" id="opt-canvas"><div id="opt-placeholder" class="opt-empty"><span class="opt-empty-icon">⌁</span><h2>From recorded scans to a clearer view</h2><p>Choose an observation, review the included scans, then process the complete batch. Select any aggregate to inspect its signal.</p><div class="opt-empty-steps"><span>1 · Review inputs</span><span>2 · Process once</span><span>3 · Explore results</span></div></div><img id="opt-plot" alt="Selected observation analysis plot" hidden /><div id="opt-details" hidden></div></div>
             </section>
           </div>
           <section class="zk-card opt-settings">
-            <div><h2>Analysis settings</h2><p class="zk-muted">Applied to each target/frequency scan. Power amplitudes are preserved.</p><button class="zk-btn is-sm" id="opt-replot" type="button" disabled>Update plots</button></div>
-            <div class="opt-settings-fields"><label class="zk-field opt-pipeline-profile">Configuration profile<select class="zk-select" id="opt-profile" aria-describedby="opt-profile-help"><option>default</option></select><small id="opt-profile-help" class="zk-muted">Selects pipeline steps; changes require reprocessing.</small></label><label class="zk-field">Baseline<select class="zk-select" id="opt-baseline"><option value="linear">Linear lower envelope</option><option value="constant">Constant lower envelope</option><option value="none">No subtraction</option></select></label><label class="zk-field">Fit minimum [km/s]<input class="zk-input" type="number" id="opt-vmin" value="-150" /></label><label class="zk-field">Fit maximum [km/s]<input class="zk-input" type="number" id="opt-vmax" value="150" /></label><label class="zk-field">Contour smoothing [km/s]<input class="zk-input" type="number" min="0" step="0.5" id="opt-smoothing" value="2" /></label><label class="zk-field">Contour levels [a.u.]<input class="zk-input" id="opt-contours" placeholder="Automatic; e.g. 0.01, 0.02, 0.04" /></label></div>
+            <div><h2>Analysis settings</h2><p class="zk-muted">Applied to each target/frequency scan. Power amplitudes are preserved.</p></div>
+            <div class="opt-settings-fields"><label class="zk-field">Baseline<select class="zk-select" id="opt-baseline"><option value="linear">Linear (automatic outer windows)</option><option value="constant">Constant (automatic outer windows)</option><option value="flatten">Flatten (retain fitted level)</option><option value="none" selected>No subtraction</option></select></label><div class="opt-axis-limits"><label class="zk-field">Frequency minimum [MHz]<input class="zk-input" type="number" id="opt-fmin" min="0" step="0.001" placeholder="Automatic" /></label><label class="zk-field">Frequency maximum [MHz]<input class="zk-input" type="number" id="opt-fmax" min="0" step="0.001" placeholder="Automatic" /></label></div><div class="opt-axis-limits"><label class="zk-field">Velocity minimum [km/s]<input class="zk-input" type="number" id="opt-vmin" placeholder="Automatic (full range)" title="Blank shows the full recorded range; a value sets the plot limit and baseline window bound" /></label><label class="zk-field">Velocity maximum [km/s]<input class="zk-input" type="number" id="opt-vmax" placeholder="Automatic (full range)" title="Blank shows the full recorded range; a value sets the plot limit and baseline window bound" /></label></div><div class="opt-axis-limits"><label class="zk-field">Contour smoothing [km/s]<input class="zk-input" type="number" min="0" step="0.5" id="opt-smoothing" value="2" /></label><label class="zk-field">Contour levels [a.u.]<input class="zk-input" id="opt-contours" placeholder="Automatic; e.g. 0.01, 0.02, 0.04" /></label></div></div>
+            <div class="opt-settings-action"><button class="zk-btn is-primary" id="opt-replot" type="button" disabled>Update plots</button></div>
           </section>
           <details class="zk-card opt-log"><summary>Processing log <span id="opt-log-status" class="zk-muted">No processing run yet</span></summary><pre id="opt-log-output">Processing messages will appear here.</pre></details>
         </section>
@@ -358,7 +369,6 @@
               <span class="zk-subtitle">Static telescope artefacts, defaults, limits, and integration settings.</span>
             </div>
             <div class="zk-actions admin-profile">
-              <label class="zk-field">Configuration Profile<select class="zk-select" id="dish-profile" aria-label="Configuration Profile" disabled><option value="">Connect to WEB</option></select></label>
               <button class="zk-btn" type="button" id="dish-refresh">Refresh</button>
               <span class="zk-chip is-empty" id="dish-connection">WEB not connected</span>
             </div>
@@ -375,13 +385,13 @@
             <div class="config-resync" aria-label="Resynchronise application configuration">
               <label class="zk-field">App<select class="zk-select" id="config-resync-app" aria-label="Application to resynchronise"><option value="">Select app…</option></select></label>
               <button class="zk-btn" id="config-resync-button" type="button" disabled>RESYNC</button>
-              <span id="config-resync-result" class="zk-muted" role="status" aria-live="polite">Reloads the app’s launch profile.</span>
+              <span id="config-resync-result" class="zk-muted" role="status" aria-live="polite">Reloads the app’s launch Config Profile. Restart the app to use a different Config Profile.</span>
             </div>
           </div>
           <section class="admin-panel is-active" data-admin-panel="dishes" id="dish-workspace">
             <div class="dish-layout">
               <section class="zk-card panel dish-catalogue" aria-label="Configured dishes">
-                <div class="panel-head"><div><h2>Dishes <span id="dish-count" class="zk-muted"></span></h2><p id="dish-list-profile">No profile loaded</p></div><button class="zk-btn is-primary" type="button" id="dish-new" disabled><svg class="ico"><use href="#i-plus" /></svg>New dish</button></div>
+                <div class="panel-head"><div><h2>Dishes <span id="dish-count" class="zk-muted"></span></h2><p id="dish-list-profile">No Config Profile loaded</p></div><button class="zk-btn is-primary" type="button" id="dish-new" disabled><svg class="ico"><use href="#i-plus" /></svg>New dish</button></div>
                 <label class="zk-field">Filter dishes<input class="zk-input" id="dish-filter" type="search" placeholder="ID, description or driver" /></label>
                 <div class="dish-table-scroll"><table class="zk-tbl"><thead><tr><th>Dish</th><th>Diameter</th><th>Driver</th></tr></thead><tbody id="dish-rows"><tr><td colspan="3" class="zk-muted">No dishes loaded.</td></tr></tbody></table></div>
               </section>
@@ -413,9 +423,9 @@
           <section class="admin-panel" data-admin-panel="digitisers" id="dig-workspace">
             <div class="dish-layout">
               <section class="zk-card panel dish-catalogue" aria-label="Configured digitisers">
-                <div class="panel-head"><div><h2>Digitisers <span id="dig-count" class="zk-muted"></span></h2><p id="dig-list-profile">No profile loaded</p></div><button class="zk-btn is-primary" type="button" id="dig-new" disabled><svg class="ico"><use href="#i-plus" /></svg>New digitiser</button></div>
+                <div class="panel-head"><div><h2>Digitisers <span id="dig-count" class="zk-muted"></span></h2><p id="dig-list-profile">No Config Profile loaded</p></div><button class="zk-btn is-primary" type="button" id="dig-new" disabled><svg class="ico"><use href="#i-plus" /></svg>New digitiser</button></div>
                 <label class="zk-field">Filter digitisers<input class="zk-input" id="dig-filter" type="search" placeholder="ID, host or SDR type" /></label>
-                <div class="dish-table-scroll"><table class="zk-tbl"><thead><tr><th>Digitiser</th><th>SDR</th><th>Sample rate</th></tr></thead><tbody id="dig-rows"><tr><td colspan="3" class="zk-muted">Choose a profile to load digitisers.</td></tr></tbody></table></div>
+                <div class="dish-table-scroll"><table class="zk-tbl"><thead><tr><th>Digitiser</th><th>SDR</th><th>Sample rate</th></tr></thead><tbody id="dig-rows"><tr><td colspan="3" class="zk-muted">Choose a Config Profile to load digitisers.</td></tr></tbody></table></div>
               </section>
               <section class="zk-card panel dish-editor" aria-label="Digitiser editor">
                 <div class="panel-head"><div><h2 id="dig-editor-title">Choose a digitiser</h2><p id="dig-editor-subtitle">Select a digitiser or create a new definition.</p></div><span class="zk-chip is-warn" id="dig-dirty" hidden>Unsaved changes</span></div>
@@ -464,7 +474,7 @@
         </section>
 
         <section class="view" data-view="access">
-          <div class="zk-page-head"><div class="zk-title"><h1>Access</h1><span class="zk-subtitle">Console accounts are shared across configuration profiles.</span></div><a class="zk-btn" href="/change">Change my password</a></div>
+          <div class="zk-page-head"><div class="zk-title"><h1>Access</h1><span class="zk-subtitle">Console accounts are shared across Config Profiles.</span></div><a class="zk-btn" href="/change">Change my password</a></div>
           <p class="zk-muted" id="account-message" role="status">Loading your account…</p>
           <section class="zk-card panel" id="account-viewer" hidden><h2>Your account</h2><p id="account-summary"></p><p>Contact an administrator to change account permissions.</p></section>
           <div class="dish-layout" id="account-admin" hidden>
@@ -502,6 +512,15 @@
       <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" /></symbol>
       <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></symbol>
     </svg>
+    <dialog id="schedule-signal-dialog" class="schedule-signal-dialog" aria-labelledby="schedule-signal-title">
+      <div class="schedule-signal-toolbar">
+        <h2 id="schedule-signal-title">Scan signal</h2>
+        <a id="schedule-signal-download" class="zk-btn" hidden>Download PNG</a>
+        <button id="schedule-signal-close" type="button" class="zk-btn">Close</button>
+      </div>
+      <p id="schedule-signal-message" role="status" aria-live="polite"></p>
+      <img id="schedule-signal-image" alt="Final-sample signal display" hidden />
+    </dialog>
     <script src="auth.js"></script>
     <script src="app.js"></script>
     <script src="diagnostics.js"></script>
@@ -509,8 +528,9 @@
     <script src="weather_status.js"></script>
     <script src="digitiser_status.js"></script>
     <script src="status.js"></script>
-    <script src="opt.js"></script>
+    <script src="schedule.js"></script>
     <script src="dishes.js"></script>
+    <script src="opt.js"></script>
     <script src="digitisers.js"></script>
     <script src="config_commands.js"></script>
     <script src="accounts.js"></script>

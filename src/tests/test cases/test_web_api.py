@@ -77,10 +77,17 @@ def test_catalogue_uses_live_sdp_store_and_reads_metadata_only(tmp_path):
     assert response.status_code == 200
     assert response.json['status'] == 'success'
     assert response.json['message'] == 'Found 1 observations'
-    assert response.json['payload'] == {'count': 1, 'observations': [{
+    expected = {
         'id': 'obs:001', 'filename': 'obs001-obs.json', 'folder': '.', 'title': 'Test observation',
         'dish': 'dish003', 'state': 'COMPLETE', 'started_at': '2026-11-05T12:00:00+00:00',
-    }]}
+    }
+    assert response.json['payload']['count'] == 1
+    entries = response.json['payload']['observations']
+    assert len(entries) == 1
+    assert {key: entries[0][key] for key in expected} == expected
+    assert entries[0]['completed'] is True
+    assert entries[0]['scan_count'] == 0
+    assert 'target_scans' not in entries[0]
     # Status messages can replace the SDP submodel on the same telescope model.
     replacement = tmp_path / 'replacement'
     replacement.mkdir()

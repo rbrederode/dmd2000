@@ -38,3 +38,18 @@ def test_get_app_model_by_name_rejects_names_outside_ui_contract(app_name):
 
     with pytest.raises(ValueError, match="Unknown application name"):
         telmodel.get_app_model_by_name(app_name)
+
+
+def test_application_timestamps_start_unset_and_survive_serialisation():
+    from datetime import datetime, timezone
+    telmodel = TelescopeModel()
+    for model in [telmodel.tel_mgr, telmodel.dsh_mgr, telmodel.sdp,
+                  telmodel.wtr_stn, telmodel.web_svr, DigitiserModel(dig_id="dig001")]:
+        assert model.app.last_update is None
+        restored = type(model).from_dict(model.to_dict())
+        assert restored.app.last_update is None
+    app = AppModel()
+    assert AppModel.from_dict(app.to_dict()).last_update is None
+    now = datetime.now(timezone.utc)
+    app.last_update = now
+    assert AppModel.from_dict(app.to_dict()).last_update == now

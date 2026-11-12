@@ -48,7 +48,7 @@ class ScienceDataProcessorModel(BaseModel):
                 interfaces=[],
                 processors=[],
                 health=HealthState.UNKNOWN,
-                last_update=datetime.now(timezone.utc),
+                last_update=None,
             ),
             "dig_store": DigitiserList(list_id="sdplist001"),
             "scans_created": 0,

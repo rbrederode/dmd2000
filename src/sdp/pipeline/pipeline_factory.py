@@ -86,7 +86,7 @@ class ProcessingPipeline:
             pipeline_context = context.get("pipeline", "unknown pipeline context") if isinstance(context, dict) else "non-dict context"
             
             # Apply the step only if its context matches the pipeline context. 
-            if step_context == pipeline_context:
+            if step_context == pipeline_context and step.config.params.get("enabled", True):
 
                 start_time = time.time()
                 signal = step.process(context=context, signal=signal)
@@ -139,6 +139,7 @@ class ProcessingPipelineFactory:
         from sdp.pipeline.steps.rfi import RFIFlag
         from sdp.pipeline.steps.qa import QA
         from sdp.pipeline.steps.bpf import BandpassFilter
+        from sdp.pipeline.steps.baseline import Baseline
 
         builtin_steps = {
             StepType.NOP.name.lower(): Nop,
@@ -149,6 +150,7 @@ class ProcessingPipelineFactory:
             StepType.RFI_FLAG.name.lower(): RFIFlag,
             StepType.QA.name.lower(): QA,
             StepType.BANDPASS_FILTER.name.lower(): BandpassFilter,
+            StepType.BASELINE.name.lower(): Baseline,
             "bpf": BandpassFilter,
         }
         for name, ctor in builtin_steps.items():

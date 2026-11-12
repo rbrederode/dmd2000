@@ -9,7 +9,9 @@
                     "instance": "StepType",
                     "value": "DC_SPIKE"
                 },
-                "params": {"context": "spr"},
+                "params": {
+                    "context": "spr"
+                },
                 "last_update": {
                     "_type": "datetime",
                     "value": "2026-03-14T10:27:33.526265+00:00"
@@ -22,7 +24,9 @@
                     "instance": "StepType",
                     "value": "LOAD"
                 },
-                "params": {"context": "cal"},
+                "params": {
+                    "context": "cal"
+                },
                 "last_update": {
                     "_type": "datetime",
                     "value": "2026-03-14T10:27:33.526265+00:00"
@@ -33,7 +37,9 @@
                 "step": "BANDPASS_FILTER",
                 "params": {
                     "context": "cal",
-                    "ranges_pct": [[10, 90]]
+                    "ranges_pct": [
+                        [10,85]
+                    ]
                 }
             },
             {
@@ -43,10 +49,27 @@
                     "instance": "StepType",
                     "value": "RFI_FLAG"
                 },
-                "params": {"context": "cal", "threshold": 5, "window_size": 21},
+                "params": {
+                    "context": "cal",
+                    "threshold": 5,
+                    "window_size": 21
+                },
                 "last_update": {
                     "_type": "datetime",
                     "value": "2026-03-14T10:27:33.526265+00:00"
+                }
+            },
+            {
+                "_type": "StepConfig",
+                "step": "BASELINE",
+                "params": {
+                    "context": "cal",
+                    "method": "flatten",
+                    "enabled": true,
+                    "ranges_pct": [
+                        [0,10],
+                        [90,100]
+                    ]
                 }
             },
             {
@@ -56,7 +79,10 @@
                     "instance": "StepType",
                     "value": "QA"
                 },
-                "params": {"context": "mpr", "window_frac": 0.2},
+                "params": {
+                    "context": "mpr",
+                    "window_frac": 0.2
+                },
                 "last_update": {
                     "_type": "datetime",
                     "value": "2026-03-14T10:27:33.526265+00:00"

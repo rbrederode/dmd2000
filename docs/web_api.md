@@ -782,6 +782,50 @@ that recording has completed. Ordering is by relative metadata path. Entries
 with the same filename or observation ID in different folders are retained;
 use `folder` and `filename` together to identify the metadata file.
 
+Catalogue entries also include scheduled start/end, estimated observing duration,
+total integration time, creation time, creator contact, end/last-update times,
+scan counts, completion and an opaque file `revision`. Individual scan lists are
+not transferred by the catalogue endpoint.
+
+`GET /api/observations/<filename-id>?folder=<relative-folder>` retrieves the saved
+`ObsModel` in `payload.observation`, including its target scan sets. `filename-id`
+is `filename` without the `-obs.json` suffix, which may differ from the observation
+ID stored inside the metadata. The storage root follows the same profile/default
+and optional `directory` selection as the catalogue. Absolute/traversing folders
+and symbolic links are rejected. Responses are non-cacheable and credential fields
+are redacted. Invalid paths return 400, missing observations 404 and unavailable
+or invalid metadata 503.
+
+Catalogue and detail requests accept `X-Config-Profile` as a selection precondition
+(409 if it changed). The private UI bridges these read-only routes using WEB's
+selected storage root and relative `folder` values; it does not accept arbitrary
+`directory` overrides. The Schedule history view excludes queued/running IDs,
+collapses duplicate disk IDs to the newest modified copy and loads scans only on
+expansion. Saved execution states do not establish whether recording completed;
+the history view uses scan completion and saved target progress.
+
+`GET /api/observations/<observation-id>/scans/<target>/<frequency>/<iteration>/spr`
+downloads a completed scan's SPR CSV as `text/csv` with an attachment filename.
+The same authentication and `X-Config-Profile` guard apply. With `folder`, the
+observation identifier is the metadata filename without `-obs.json`; without
+`folder`, WEB locates the newest saved copy matching the observation ID.
+WEB checks the saved scan status and uses `files_prefix` to locate its spectrum,
+preferring the metadata folder so relocated archives work. A recorded
+`files_directory` is considered only within the selected archive. Arbitrary
+filenames, outside paths and symbolic links cannot be downloaded. Incomplete
+scans return 409; missing scans/files return 404. No processing is performed.
+
+`GET /api/observations/<observation-id>/scans/<target>/<frequency>/<iteration>/signal`
+returns the saved final-sample `files_prefix` + `-sigfig.png` as `image/png`,
+with its original attachment filename. It applies the same completion, archive,
+authentication and profile checks as SPR. Missing PNGs return 404. No image is
+regenerated. The private `/api/web/…/signal` bridge streams the PNG for the
+Schedule preview and download controls.
+
+The private `/api/web/…/spr` bridge streams the CSV without exposing WEB's token.
+For browser download links, its optional `profile` query parameter is forwarded
+as `X-Config-Profile`; only relative `folder` and `profile` parameters are accepted.
+
 An empty store returns HTTP 200, `status: "success"`, and a payload containing
 `count: 0` and `observations: []`. Errors have `status: "error"` and `message`,
 with an optional `code` such as `invalid_request`, `store_not_known`, or
@@ -991,3 +1035,70 @@ These controls do not edit `DishList.json` or change the selected file-backed
 configuration profile; they target the running applications using WEB's launch
 profile. Viewer accounts can inspect all reported details but cannot submit
 controls. The public API listener does not serve these private UI endpoints.
+
+
+### Results observation review and saved scan files
+
+The Results frontend uses the expandable saved-observation presentation formerly
+shown in Schedule. Expanding a row reads `/api/opt/open` for the selected directory
+and filename ID, including redacted saved metadata for its scan table. Selecting
+a radio button prepares that observation for processing; the UI has no separate
+Open observation step. Schedule now displays only queued/running observations.
+
+The local authenticated frontend service provides the read-only route
+`GET /api/opt/observations/<file-id>/scans/<target>/<frequency>/<iteration>/<product>?directory=...`,
+where product is `signal` (saved final-sample PNG) or `spr` (spectrum CSV).
+It resolves against the chosen Results directory within configured data roots,
+independently of WEB's active profile. It uses the same completion and safe file
+lookup as WEB scan downloads: 409 for incomplete scans, 404 for missing/unsafe
+files, and 400 for invalid product/directory input. No processing is launched.
+
+
+OPT configuration responses include `pipelines`, a profile-to-digitiser-map of
+editable `{step, params}` lists. `POST /api/opt/process` accepts an optional
+`pipeline` digitiser map for that run. Overrides allow built-in step names only,
+contexts spr/cal/mpr, and serializable parameters; runtime scan/queue references
+are rejected. BASELINE requires cal context and linear/constant/none method.
+The server snapshots the effective profile even without overrides. Profile
+files are not written. Results export `pipeline-config.json`; aggregates include
+`pipeline_baseline_applied`. Cached reanalysis retains the snapshot and applies
+only interactive plot adjustments to processed spectra.
+
+
+The console header provides one working-profile selector for both file-backed
+WEB resources and OPT processing. Selection still uses `PUT /api/profile` (or
+its `/api/web/profile` proxy), and OPT sends that accepted profile with the next
+processing request. This selection does not change application launch arguments
+or send RESYNC. Each Status application row shows its reported
+`app.arguments.profile`; unavailable values are shown as unknown. RESYNC reloads
+an application's launch profile; changing that profile requires restarting it.
+
+
+The shared Config Profile selection forwards `scan_store_dir` from WEB's
+profile response to Results. Initial loading and profile switches use this
+directory and refresh observation discovery; the directory remains manually
+editable afterward. Missing scan_store_dir falls back to OPT's first permitted
+data root. This does not expand the server's allowed data roots.
+
+
+`GET /api/opt/config` also returns `available_steps`, containing implemented
+built-in step names, initial `params`, and descriptions. The pipeline editor
+uses it to display unconfigured steps without modifying the profile or run.
+Only checking a step adds an entry to the submitted pipeline.
+
+### Total Power during OPT plot updates
+
+OPT analysis settings accept `total_power_basis: "frequency" | "velocity"`
+(default `frequency`). The frontend sends the active spectral view when Update
+plots is clicked; L–V uses `velocity`. This selects which aggregate fit supplies
+the correction for both Total Power resolutions, individual/all-SKY images and
+their CSV exports. Frequency and Velocity retain their own fitting bounds.
+Original pipeline totals and affine reconstruction responses are cached once;
+updates do not replay scans or accumulate corrections. Legacy results without
+this cache require reprocessing before corrected Total Power can be displayed.
+
+`POST /api/opt/pipeline` accepts `{ "profile": "rotation", "pipeline": {"default": [...]}}`
+to validate and atomically save the edited pipeline to that existing profile's
+`PipelineConfig.json`. The response supplies `profile`, normalized editable
+`pipeline`, and a success `message`. Numeric range pairs remain on one line.
+This write uses the private UI's operator/admin and CSRF requirements.

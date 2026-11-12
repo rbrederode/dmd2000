@@ -81,7 +81,7 @@ def test_background_processing_uses_validated_snapshot_and_no_stdin(workspace):
     job = app.extensions["opt_jobs"].jobs[response.json["id"]]
     data = json.loads((job["folder"] / "request.json").read_text())
     assert data["excluded"] == [scans[0].scan_id]
-    assert data["settings"]["baseline"] == "linear"
+    assert data["settings"]["baseline"] == "none"
     assert job["process"].options["stdin"] == service.subprocess.DEVNULL
     assert job["process"].options["env"]["MPLBACKEND"] == "Agg"
     assert client.post("/api/opt/process", json=configuration(root)).status_code == 409
@@ -103,17 +103,18 @@ def test_completed_files_are_scoped_to_the_manifest(workspace):
     assert client.get("/api/opt/jobs/unknown").status_code == 404
 
 
-def test_reanalysis_uses_only_server_owned_cached_results(workspace):
+@pytest.mark.parametrize("method", ["constant", "flatten"])
+def test_reanalysis_uses_only_server_owned_cached_results(workspace, method):
     app, client, root, scans = workspace
     first = client.post("/api/opt/process", json=configuration(root)).json["id"]
     source = ready_job(app, first)
-    response = client.post("/api/opt/reanalyse", json={"job": first, "settings": {"baseline": "constant"},
+    response = client.post("/api/opt/reanalyse", json={"job": first, "settings": {"baseline": method},
                                                       "source_results": "/untrusted/path"})
     assert response.status_code == 202
     job = app.extensions["opt_jobs"].jobs[response.json["id"]]
     cached_configuration = json.loads((job["folder"] / "request.json").read_text())
     assert cached_configuration["source_results"] == str(source["folder"] / "out")
-    assert cached_configuration["settings"]["baseline"] == "constant"
+    assert cached_configuration["settings"]["baseline"] == method
     assert cached_configuration["excluded"] == []
 
 
@@ -190,3 +191,212 @@ def test_health_endpoint_is_available_without_loading_observations(workspace, mo
     response = client.get("/api/opt/health")
     assert response.status_code == 200
     assert response.json == {"status": "ok"}
+
+
+def test_analysis_settings_defaults_and_one_sided_baseline_validation():
+    defaults = service.validate_settings({})
+    assert defaults['baseline'] == 'none'
+    assert (defaults['baseline_vmin'], defaults['baseline_vmax']) == (None, None)
+    with pytest.raises(ValueError, match='minimum < 0 < maximum'):
+        service.validate_settings(dict(baseline='linear', baseline_vmin=10, baseline_vmax=200))
+    assert service.validate_settings(dict(baseline='none', baseline_vmin=10, baseline_vmax=200))['baseline'] == 'none'
+    assert service.validate_settings(dict(baseline='flatten', baseline_vmin='', baseline_vmax=None))['baseline_vmin'] is None
+    assert service.validate_settings(dict(baseline_vmin=-200))['baseline_vmax'] is None
+
+
+def test_plot_metric_policy_uses_enabled_digitiser_mpr_qa_settings():
+    from ui.opt_pipeline import qa_metric_settings
+    snapshot = {"steps_map": {
+        "default": [{"step": "QA", "params": {"context": "mpr", "window_frac": .3, "smooth_window": 7}}],
+        "dig003": [
+            {"step": "QA", "params": {"context": "cal", "smooth_window": 1}},
+            {"step": {"value": "QA"}, "params": {"context": "mpr", "window_frac": .4, "smooth_window": 5}},
+            {"step": "QA", "params": {"context": "mpr", "enabled": False, "noise_estimator": "mean_rms"}},
+        ],
+    }}
+    assert qa_metric_settings(snapshot, "dig003") == dict(noise_estimator="median_mad", window_frac=.4, smooth_window=5)
+    assert qa_metric_settings(snapshot, "other") == dict(noise_estimator="median_mad", window_frac=.3, smooth_window=7)
+
+
+def test_lab_comparison_request_is_scoped_to_cached_sky_aggregate(workspace):
+    app, client, root, scans = workspace
+    first = client.post("/api/opt/process", json=configuration(root)).json["id"]
+    source = ready_job(app, first)
+    service.atomic_json(source["folder"] / "out/result.json", dict(files=[], aggregates=[
+        dict(id="sky", kind="SKY"), dict(id="load", kind="LOAD")]))
+    for selection in [dict(aggregate_id="load"), dict(aggregate_id="missing"),
+                      dict(aggregate_id="sky", beam=-1), dict(aggregate_id="sky", beam=100),
+                      dict(aggregate_id="sky", beam="nan")]:
+        response = client.post("/api/opt/reanalyse", json=dict(job=first, lab_comparison=selection))
+        assert response.status_code == 400
+    response = client.post("/api/opt/reanalyse", json=dict(job=first,
+                            lab_comparison=dict(aggregate_id="sky", beam=8, fits_file="/untrusted/cube",
+                                                sweep=dict(longitude=[-5, 5, .5], latitude=[-5, 5, .5]))))
+    assert response.status_code == 202
+    request = json.loads((app.extensions["opt_jobs"].jobs[response.json["id"]]["folder"] / "request.json").read_text())
+    assert request["lab_comparison"] == dict(aggregate_id="sky", beam=8,
+                                               sweep=dict(longitude=[-5, 5, .5], latitude=[-5, 5, .5]))
+    assert request["source_results"] == str(source["folder"] / "out")
+
+
+@pytest.mark.parametrize('sweep', [
+    {}, {'longitude': [-5, 5, 0], 'latitude': [-5, 5, 1]},
+    {'longitude': [5, -5, 1], 'latitude': [-5, 5, 1]},
+    {'longitude': [-5, 5, .01], 'latitude': [-5, 5, .01]},
+    {'longitude': [-5, float('nan'), 1], 'latitude': [-5, 5, 1]},
+    {'longitude': [-181, 5, 1], 'latitude': [-5, 5, 1]},
+])
+def test_invalid_lab_sweep_rejected(sweep):
+    with pytest.raises(ValueError):
+        service.validate_lab_sweep(sweep)
+
+
+def test_lab_sweep_accepts_extended_ten_degree_grid():
+    sweep = dict(longitude=[-10, 10, .5], latitude=[-10, 10, .5])
+    assert service.validate_lab_sweep(sweep) == sweep
+
+
+@pytest.mark.parametrize('values', [dict(frequency_min_mhz=-1), dict(frequency_max_mhz=float('nan')),
+                                   dict(frequency_min_mhz=1421, frequency_max_mhz=1420)])
+def test_invalid_frequency_limits_rejected(values):
+    with pytest.raises(ValueError):
+        service.validate_settings(values)
+
+
+def test_saved_observation_details_and_scan_products_use_selected_results_directory(workspace):
+    app, client, root, scans = workspace
+    metadata_path = root / 'example-obs.json'
+    metadata = json.loads(metadata_path.read_text())
+    scan = metadata['target_scans'][0]['scans'][0]
+    scan['files_prefix'] = 'recorded-scan'
+    scan['files_directory'] = '/previous/machine'
+    metadata_path.write_text(json.dumps(metadata))
+    png = b'\x89PNG\r\n\x1a\nimage'
+    (root / 'recorded-scan-sigfig.png').write_bytes(png)
+    (root / 'recorded-scan-spr.csv').write_bytes(b'frequency,power\n1420,1\n')
+    summary = client.post('/api/opt/open', json=configuration(root)).json
+    assert summary['metadata']['_type'] == 'ObsModel'
+    assert summary['metadata']['target_scans'][0]['scans'][0]['files_prefix'] == 'recorded-scan'
+    entry = client.get('/api/opt/observations', query_string=dict(directory=str(root))).json['entries'][0]
+    assert entry['completed'] is True
+    for key in ['obs_state', 'scheduling_block_start', 'scheduling_block_end', 'created', 'user_email']:
+        assert key in entry
+    base = '/api/opt/observations/example/scans/1/0/0/'
+    response = client.get(base + 'signal', query_string=dict(directory=str(root)))
+    assert response.status_code == 200 and response.data == png
+    assert response.mimetype == 'image/png'
+    assert 'recorded-scan-sigfig.png' in response.headers['Content-Disposition']
+    response.close()
+    response = client.get(base + 'spr', query_string=dict(directory=str(root)))
+    assert response.status_code == 200 and response.mimetype == 'text/csv'
+    response.close()
+    assert client.get(base + 'signal', query_string=dict(directory=str(root.parent))).status_code == 400
+    scan['status']['value'] = 'WIP'; metadata_path.write_text(json.dumps(metadata))
+    assert client.get(base + 'signal', query_string=dict(directory=str(root))).status_code == 409
+    scan['status']['value'] = 'COMPLETE'; metadata_path.write_text(json.dumps(metadata))
+    (root / 'recorded-scan-sigfig.png').unlink()
+    assert client.get(base + 'signal', query_string=dict(directory=str(root))).status_code == 404
+    outside = root.parent / 'outside.png'; outside.write_bytes(png)
+    (root / 'recorded-scan-sigfig.png').symlink_to(outside)
+    assert client.get(base + 'signal', query_string=dict(directory=str(root))).status_code == 404
+
+
+def test_saved_filename_is_preserved_when_observation_id_differs(workspace):
+    app, client, root, scans = workspace
+    (root / 'archived-copy-obs.json').write_bytes((root / 'example-obs.json').read_bytes())
+    response = client.post('/api/opt/open', json=configuration(root, observation='archived-copy'))
+    assert response.status_code == 200
+    assert response.json['id'] == 'example'
+    assert response.json['file_id'] == 'archived-copy'
+    response = client.post('/api/opt/process', json=configuration(root, observation='archived-copy'))
+    assert response.status_code == 202
+    job = app.extensions['opt_jobs'].jobs[response.json['id']]
+    assert json.loads((job['folder'] / 'request.json').read_text())['observation'] == 'archived-copy'
+
+
+@pytest.mark.parametrize("method", ["constant", "flatten"])
+def test_run_pipeline_snapshot_does_not_change_profile(workspace, method):
+    app, client, root, scans = workspace
+    profile = service.SRC / "config/default/PipelineConfig.json"
+    original = profile.read_bytes()
+    pipeline = {"default": [{"step": "BASELINE", "params": {"context": "cal", "method": method}}]}
+    response = client.post("/api/opt/process", json=configuration(root, pipeline=pipeline))
+    assert response.status_code == 202
+    job = app.extensions["opt_jobs"].jobs[response.json["id"]]
+    snapshot = json.loads((job["folder"] / "request.json").read_text())["pipeline_config"]
+    assert snapshot["steps_map"]["default"][0]["params"]["method"] == method
+    assert profile.read_bytes() == original
+
+
+@pytest.mark.parametrize("pipeline", [
+    {"default": [{"step": "os.system", "params": {"context": "cal"}}]},
+    {"default": [{"step": "BASELINE", "params": {"context": "mpr"}}]},
+    {"default": [{"step": "BASELINE", "params": {"context": "cal", "method": "bad"}}]},
+    {"default": [{"step": "BASELINE", "params": {"context": "cal", "scan": {}}}]},
+])
+def test_invalid_pipeline_overrides_fail_before_worker_launch(workspace, pipeline):
+    app, client, root, scans = workspace
+    response = client.post("/api/opt/process", json=configuration(root, pipeline=pipeline))
+    assert response.status_code == 400
+    assert not app.extensions["opt_jobs"].jobs
+
+
+
+def test_available_pipeline_steps_are_discovered_without_altering_profile(workspace):
+    app, client, root, scans = workspace
+    response = client.get("/api/opt/config")
+    assert response.status_code == 200
+    overview = response.json["pipeline_overview"]
+    assert [stage["title"].split(" — ")[0] for stage in overview["stages"]] == ["1. spr", "2. cal", "3. mpr"]
+    assert "does not replay spr steps" in " ".join(overview["notes"])
+    steps = {entry["step"]: entry for entry in response.json["available_steps"]}
+    assert set(steps) == {"DC_SPIKE", "LOAD", "BANDPASS_FILTER", "RFI_FLAG", "BASELINE", "QA"}
+    assert steps["BASELINE"]["params"]["method"] == "flatten"
+    assert steps["BASELINE"]["params"]["context"] == "cal"
+    assert steps["BANDPASS_FILTER"]["params"]["ranges_pct"] == [[0, 100]]
+    assert all(entry["description"] for entry in steps.values())
+    for entry in steps.values():
+        assert entry["help"]["overview"]
+        assert entry["help"]["notes"]
+        assert set(entry["params"]) | {"enabled"} <= set(entry["help"]["parameters"])
+    assert "not rescaled" in steps["RFI_FLAG"]["help"]["parameters"]["threshold"]
+    assert "usable channels" in steps["BASELINE"]["help"]["parameters"]["ranges_pct"]
+
+
+def test_total_power_basis_validation():
+    for basis in ("frequency", "velocity"):
+        assert service.validate_settings({"total_power_basis": basis})["total_power_basis"] == basis
+    with pytest.raises(ValueError, match="Total Power baseline source"):
+        service.validate_settings({"total_power_basis": "other"})
+
+
+def test_save_pipeline_validates_and_persists_only_selected_profile(workspace, tmp_path, monkeypatch):
+    import shutil
+    _, client, _, _ = workspace
+    original = service.SRC/'config/default/PipelineConfig.json'
+    config_root = tmp_path/'source'
+    for profile in ('default', 'rotation'):
+        folder = config_root/'config'/profile
+        folder.mkdir(parents=True)
+        shutil.copy2(original, folder/'PipelineConfig.json')
+    monkeypatch.setattr(service, 'SRC', config_root)
+    untouched = (config_root/'config/default/PipelineConfig.json').read_bytes()
+    pipeline = {'default': [{'step':'BASELINE', 'params': {'context':'cal', 'method':'flatten',
+                                                          'ranges_pct':[[0,10],[90,100]]}}]}
+    response = client.post('/api/opt/pipeline', json={'profile':'rotation', 'pipeline':pipeline})
+    assert response.status_code == 200
+    assert response.json['pipeline'] == pipeline
+    saved = config_root/'config/rotation/PipelineConfig.json'
+    content = saved.read_text()
+    assert '[0,10]' in content and '[90,100]' in content
+    from models.pipeline import PipelineConfig
+    from ui.opt_pipeline import editable_pipeline
+    assert editable_pipeline(PipelineConfig.load_from_disk(str(saved.parent), saved.name).to_dict()) == pipeline
+    assert (config_root/'config/default/PipelineConfig.json').read_bytes() == untouched
+    before = saved.read_bytes()
+    for body in ({'profile':'../rotation','pipeline':pipeline}, {'profile':'missing','pipeline':pipeline},
+                 {'profile':'rotation'}, {'profile':'rotation','pipeline':{}},
+                 {'profile':'rotation','pipeline':{'default':[{'step':'UNKNOWN','params':{}}]}}):
+        assert client.post('/api/opt/pipeline', json=body).status_code == 400
+        assert saved.read_bytes() == before
+    assert not list(saved.parent.glob('.PipelineConfig-*.tmp'))

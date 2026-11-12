@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
+import os
 
 from models.fil import FilterBank
 from models.scan import ScanDataSource, ScanModel, ScanState, ScanType
@@ -29,6 +30,20 @@ def _build_scan_model(**overrides) -> ScanModel:
     return ScanModel(
         **params
     )
+
+
+def test_scan_save_expands_home_path_and_records_resolved_directory(tmp_path, monkeypatch):
+    destination = tmp_path / 'home' / 'samples'
+    original_expanduser = os.path.expanduser
+    monkeypatch.setattr(os.path, 'expanduser', lambda path: str(destination) if path == '~/samples' else original_expanduser(path))
+    monkeypatch.chdir(tmp_path)
+    scan = Scan(_build_scan_model(status=ScanState.COMPLETE, scan_iter=0,
+        read_start=datetime(2026, 11, 8, 12, 0, tzinfo=timezone.utc)))
+    assert scan.save_to_disk('~/samples')
+    assert scan.scan_model.files_directory == str(destination)
+    assert len(list(destination.glob('*-spr.csv'))) == 1
+    assert len(list(destination.glob('*-meta.json'))) == 1
+    assert not (tmp_path / '~').exists()
 
 
 def test_scan_does_not_retain_iq_by_default():

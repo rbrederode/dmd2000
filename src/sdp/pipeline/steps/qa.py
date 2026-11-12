@@ -4,6 +4,7 @@ from typing import Any, List, Dict
 
 from models.pipeline import StepConfig, StepType
 from sdp.channel_mask import empty_channel_flags, valid_channels
+from sdp.spectral_metrics import NOISE_ESTIMATORS, estimate_noise, peak_snr, select_qa_channels
 from sdp.pipeline.pipeline_factory import ProcessingStep, ProcessingPipeline
 
 logger = logging.getLogger(__name__)
@@ -37,10 +38,10 @@ class QA(ProcessingStep):
     def process(self, context: Any, signal: Any) -> Any:
         """
         Calculate Quality Attributes for the signal array using parameters from context and update the scan QA attributes.
-            - Baseline (robust): median of noise region
+            - Noise estimator: median/MAD by default; optional mean/RMS
             - Signal (peak above baseline): max of signal region minus baseline
             - Signal Power (sum above baseline): sum of signal region minus baseline
-            - Noise (robust RMS via MAD): 1.4826 * median absolute deviation of noise region
+            - Noise scatter: 1.4826 * MAD by default, or population RMS about mean
             - SNR (linear): signal / noise
             - SNR (dB): 10 * log10(signal / noise)
             - Dynamic range (dB): 10 * log10(peak signal / noise)
@@ -92,6 +93,10 @@ class QA(ProcessingStep):
         if isinstance(smooth_window, bool) or not isinstance(smooth_window, (int, np.integer)) or smooth_window < 1:
             raise ValueError("smooth_window must be a positive integer.")
 
+        noise_estimator = context.get("noise_estimator", self.config.params.get("noise_estimator", "median_mad"))
+        if noise_estimator not in NOISE_ESTIMATORS:
+            raise ValueError(f"noise_estimator must be one of {NOISE_ESTIMATORS}")
+
         channels = len(signal)
         valid = valid_channels(signal, channel_flags)
 
@@ -111,43 +116,18 @@ class QA(ProcessingStep):
             logger.warning("QA requires at least three usable channels; metrics were left unset.")
             return signal
 
-        smooth_window = min(int(smooth_window), channels if channels % 2 == 1 else channels - 1)
-        if smooth_window % 2 == 0:
-            smooth_window += 1
-
-        if smooth_window > 1:
-            kernel = np.ones(smooth_window, dtype=np.float64)
-            smoothed_sum = np.convolve(np.where(valid, signal, 0.0), kernel, mode="same")
-            smoothed_count = np.convolve(valid.astype(np.float64), kernel, mode="same")
-            smoothed_signal = np.divide(
-                smoothed_sum,
-                smoothed_count,
-                out=np.full(signal.shape, -np.inf, dtype=np.float64),
-                where=smoothed_count > 0,
-            )
-        else:
-            smoothed_signal = np.where(valid, signal, -np.inf)
-
-        # A flagged channel cannot be selected merely because valid neighbours
-        # make its smoothed value large.
-        smoothed_signal[~valid] = -np.inf
-
-        peak_bin = int(np.argmax(smoothed_signal))
-
-        # Estimate baseline using all but a window around the peak
-        window_width = max(3, int(window_frac * channels))
-        half_width = window_width // 2
-        exclude_start = max(0, peak_bin - half_width)
-        exclude_end = min(channels, peak_bin + half_width + 1)
-        noise_mask = valid.copy()
-        noise_mask[exclude_start:exclude_end] = False
+        selection = select_qa_channels(np.ma.array(signal, mask=~valid), window_frac=window_frac, smooth_window=smooth_window)
+        smoothed_signal = selection["smoothed_signal"]
+        peak_bin = selection["peak_bin"]
+        noise_mask = selection["noise_mask"]
         noise_region = signal[noise_mask]
         if noise_region.size == 0:
             logger.warning("QA found no usable noise channels outside the signal window; metrics were left unset.")
             return signal
 
         # --- Baseline (robust)
-        baseline = np.median(noise_region)
+        noise_stats = estimate_noise(noise_region, estimator=noise_estimator)
+        baseline = noise_stats.level
 
         # --- FWHM-based signal region detection around the peak bin ---
         peak = signal[peak_bin]
@@ -169,22 +149,20 @@ class QA(ProcessingStep):
         signal_region = signal[signal_start:signal_end][signal_region_mask]
 
         # --- Signal (peak above baseline)
-        signal_lin = max(peak - baseline, 1e-12)  # avoid log(0)
+        snr_stats = peak_snr(peak, baseline, noise_stats.scatter, minimum=1e-12)
+        signal_lin = snr_stats.signal
 
         # --- Signal Power (sum above baseline)
         signal_power = np.sum(signal_region - baseline)
 
-        # --- Noise (robust RMS via MAD)
-        noise_std = 1.4826 * np.median(np.abs(noise_region - baseline))
-        noise_lin = max(noise_std, 1e-12)   # avoid log(0)
-
-        # --- SNR (linear)
-        snr = signal_lin / noise_lin
+        # The legacy QA floor remains explicit; the shared estimator itself
+        # does not fabricate nonzero scatter for a flat noise region.
+        noise_lin = snr_stats.noise
 
         # --- Convert to dB
         signal_db = 10 * np.log10(signal_lin)
         noise_db = 10 * np.log10(noise_lin)
-        snr_db = 10 * np.log10(snr)
+        snr_db = snr_stats.db
         signal_pwr_db = 10 * np.log10(max(signal_power, 1e-12))
 
         # --- Dynamic range (peak signal - noise floor in dB)

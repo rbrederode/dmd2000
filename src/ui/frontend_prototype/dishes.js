@@ -44,7 +44,7 @@
     if (!$('workspace')) return;
     const form = $('form');
     const field = (name) => form.elements.namedItem(name);
-    const state = { profile: '', dishes: [], selected: null, original: null,
+    const state = { profile: '', scanStoreDir: null, dishes: [], selected: null, original: null,
       etag: null, baseline: '', isNew: false, busy: false, loaded: false };
     const driverInputs = new Map();
     const peers = new Map();
@@ -74,7 +74,7 @@
       $('delete').hidden = form.hidden || state.isNew;
       $('delete').disabled = readOnly || processing || !state.etag;
       $('fields').disabled = readOnly || processing;
-      $('profile').disabled = readOnly || anyBusy() || !state.loaded;
+      $('profile').disabled = readOnly || anyBusy() || !!win.DmdOpt?.isBusy() || !state.loaded;
       $('refresh').disabled = anyBusy();
       (doc.querySelectorAll?.('[data-admin-tab]') || []).forEach((tab) => { tab.disabled = anyBusy(); });
       peers.forEach((editor) => editor.update());
@@ -84,9 +84,14 @@
         row.setAttribute('aria-disabled', String(processing));
       });
     }
-    function busy(value) { state.busy = value; $('workspace').setAttribute('aria-busy', String(value)); update(); }
-    function message(text, error = false) {
-      $('message').textContent = text;
+    function busy(value) {
+      state.busy = value;
+      if (win.dispatchEvent && win.CustomEvent) win.dispatchEvent(new win.CustomEvent('dmd:profile-state'));
+      $('workspace').setAttribute('aria-busy', String(value)); update();
+    }
+    function message(text, error = false, profile = null) {
+      $('message').textContent = profile === null ? text : text + 'Config Profile: ' + profile + '.';
+      if (profile !== null) $('message').innerHTML = escape(text) + 'Config Profile: <strong>' + escape(profile) + '</strong>.';
       $('message').classList.toggle('is-error', error);
       $('message').setAttribute('role', error ? 'alert' : 'status');
     }
@@ -100,7 +105,7 @@
       message(error.code === 'version_conflict'
         ? 'This configuration changed since you opened it. Your edits are kept here; refresh and review the latest version before saving.'
         : error.code === 'profile_changed'
-          ? 'Another session selected a different profile. Your edits are kept here; refresh before continuing.'
+          ? 'Another session selected a different Config Profile. Your edits are kept here; refresh before continuing.'
           : error.message, true);
     }
     function discard() { return !dirty() || win.confirm('Discard unsaved dish changes?'); }
@@ -108,9 +113,10 @@
       const term = $('filter').value.trim().toLowerCase();
       const dishes = state.dishes.filter((dish) => [dish.dsh_id, dish.short_desc, dish.driver_type].join(' ').toLowerCase().includes(term));
       $('count').textContent = '(' + state.dishes.length + ')';
-      $('list-profile').textContent = state.profile ? 'Profile: ' + state.profile : 'No profile loaded';
+      $('list-profile').textContent = state.profile ? 'Config Profile: ' + state.profile : 'No Config Profile loaded';
+      if (state.profile) $('list-profile').innerHTML = 'Config Profile: <strong>' + escape(state.profile) + '</strong>';
       $('rows').innerHTML = dishes.map((dish) => `<tr data-dish-id="${escape(dish.dsh_id)}" tabindex="0" aria-label="Edit ${escape(dish.dsh_id)}" aria-selected="${dish.dsh_id === state.selected && !state.isNew}" class="${dish.dsh_id === state.selected && !state.isNew ? 'is-selected' : ''}"><td><strong>${escape(dish.dsh_id)}</strong><small>${escape(dish.short_desc || 'No description')}</small></td><td>${escape(dish.diameter)} m</td><td>${escape(dish.driver_type)}</td></tr>`).join('')
-        || '<tr><td colspan="3" class="zk-muted">' + (state.dishes.length ? 'No dishes match your filter.' : 'No dishes in this profile. Choose New dish to create one.') + '</td></tr>';
+        || '<tr><td colspan="3" class="zk-muted">' + (state.dishes.length ? 'No dishes match your filter.' : 'No dishes in this Config Profile. Choose New dish to create one.') + '</td></tr>';
       update();
     }
     function renderDriver(type, config = {}) {
@@ -140,7 +146,8 @@
       renderDriver(dish.driver_type, dish.driver_config);
       form.hidden = false;
       $('editor-title').textContent = isNew ? 'New dish' : dish.dsh_id;
-      $('editor-subtitle').textContent = 'Configuration in profile ' + state.profile;
+      $('editor-subtitle').textContent = 'Config Profile: ' + state.profile;
+      if (state.profile) $('editor-subtitle').innerHTML = 'Config Profile: <strong>' + escape(state.profile) + '</strong>';
       $('save').textContent = isNew ? 'Create dish' : 'Save dish';
       state.baseline = JSON.stringify(payload());
       renderRows();
@@ -168,21 +175,27 @@
       if (selected) await readDish(selected.dsh_id); else hideEditor();
       dishesReady = true;
     }
-    function resetResources(profile) {
-      state.profile = profile; state.dishes = []; state.etag = null; dishesReady = false;
+    function resetResources(profile, scanStoreDir = null) {
+      state.profile = profile; state.scanStoreDir = scanStoreDir; state.dishes = []; state.etag = null; dishesReady = false;
       hideEditor(); renderRows();
       peers.forEach((editor) => editor.reset(profile));
     }
     async function loadActive(preferred) {
       if (activeResource === 'dishes') {
         await list(preferred);
-        message('Loaded ' + state.dishes.length + ' dishes from ' + state.profile + '.');
+        message('Loaded ' + state.dishes.length + ' dishes from ', false, state.profile);
       } else if (peers.has(activeResource)) {
         await peers.get(activeResource).activate(state.profile);
-      } else message('Loaded profile ' + state.profile + '.');
+      } else message('Loaded Config Profile: ' + state.profile + '.');
+    }
+    let publishedProfile = null;
+    function notifyProfile() {
+      if (publishedProfile === state.profile) return;
+      publishedProfile = state.profile;
+      if (win.dispatchEvent && win.CustomEvent) win.dispatchEvent(new win.CustomEvent('dmd:profile', { detail: { profile: state.profile, scan_store_dir: state.scanStoreDir } }));
     }
     async function refresh() {
-      if (anyBusy() || !discardAll()) return;
+      if (anyBusy() || win.DmdOpt?.isBusy() || !discardAll()) return;
       busy(true); message('Loading configuration…');
       try {
         const result = await api('profiles');
@@ -193,19 +206,21 @@
           option.disabled = !profile.available;
           return option;
         }));
-        resetResources(result.payload.profile);
+        resetResources(result.payload.profile, result.payload.scan_store_dir);
         $('profile').value = state.profile;
         state.loaded = true;
+        notifyProfile();
         await loadActive(preferred); connected(true);
       } catch (error) { failure(error); } finally { busy(false); }
     }
     async function switchProfile() {
       const name = $('profile').value;
-      if (anyBusy() || !discardAll()) { $('profile').value = state.profile; return; }
-      busy(true); message('Selecting profile…');
+      if (anyBusy() || win.DmdOpt?.isBusy() || !discardAll()) { $('profile').value = state.profile; return; }
+      busy(true); message('Selecting Config Profile…');
       try {
         const result = await api('profile', { method: 'PUT', body: { profile: name } });
-        resetResources(result.payload.profile);
+        resetResources(result.payload.profile, result.payload.scan_store_dir);
+        notifyProfile();
         await loadActive(); connected(true);
       } catch (error) { $('profile').value = state.profile; failure(error); } finally { busy(false); }
     }
@@ -214,14 +229,14 @@
       activeResource = name;
       if (!state.loaded) return refresh();
       if (name === 'dishes' && dishesReady) {
-        message('Profile ' + state.profile + '. Select a dish to edit.'); return;
+        message('Config Profile: ' + state.profile + '. Select a dish to edit.'); return;
       }
       busy(true);
       try { await loadActive(state.selected); }
       catch (error) { failure(error); } finally { busy(false); }
     }
     const admin = {
-      request: api, profile: () => state.profile, isBusy: anyBusy, isDirty: anyDirty,
+      request: api, profile: () => state.profile, selection: () => ({profile: state.profile, scan_store_dir: state.scanStoreDir}), isBusy: anyBusy, isDirty: anyDirty,
       update, message, connected, failure,
       register(name, editor) {
         peers.set(name, editor);
@@ -245,7 +260,7 @@
         saved = true; state.etag = result.etag; state.selected = result.payload.dish.dsh_id;
         show(result.payload.dish);
         await list(state.selected); connected(true);
-        message('Saved ' + state.selected + ' to ' + state.profile + '. Dish Manager loads this on startup or RESYNC.');
+        message('Saved ' + state.selected + ' to Config Profile: ' + state.profile + '. Dish Manager loads this on startup or RESYNC.');
       } catch (error) {
         if (saved) message('Dish saved, but the list could not be refreshed. ' + error.message, true);
         else failure(error);
@@ -254,7 +269,7 @@
     async function deleteDish() {
       if (state.busy || state.isNew || !state.selected || !state.etag) return;
       const id = state.selected;
-      const prompt = 'Delete ' + id + ' from profile ' + state.profile + '? This removes its stored dish definition.'
+      const prompt = 'Delete ' + id + ' from Config Profile: ' + state.profile + '? This removes its stored dish definition.'
         + (dirty() ? ' Unsaved edits to this dish will also be discarded.' : '');
       if (!win.confirm(prompt)) return;
       busy(true); message('Deleting ' + id + '…');
@@ -267,7 +282,7 @@
         state.dishes = state.dishes.filter((dish) => dish.dsh_id !== id);
         hideEditor(); renderRows();
         await list(); connected(true);
-        message('Deleted ' + id + ' from ' + state.profile + '. Dish Manager loads this on startup or RESYNC.');
+        message('Deleted ' + id + ' from Config Profile: ' + state.profile + '. Dish Manager loads this on startup or RESYNC.');
       } catch (error) {
         if (deleted) message('Dish deleted, but the list could not be refreshed. ' + error.message, true);
         else failure(error);
@@ -316,7 +331,7 @@
     win.addEventListener('dmd:session', update);
     win.addEventListener('dmd:admin-tab', (event) => activateResource(event.detail));
     win.addEventListener('dmd:view', (event) => { if (event.detail === 'admin' && !state.loaded) refresh(); });
-    if (doc.querySelector('[data-view="admin"]')?.classList.contains('is-active')) refresh();
+    if ($('profile').dataset?.globalProfile !== undefined || doc.querySelector('[data-view="admin"]')?.classList.contains('is-active')) refresh();
     return { refresh, switchProfile, save, payload, dirty, state, admin };
   }
   if (typeof module !== 'undefined' && module.exports) module.exports = { init, requestApi, DRIVER_DEFAULTS };

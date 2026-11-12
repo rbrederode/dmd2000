@@ -194,7 +194,8 @@ class Scan:
         if self._fb_file is not None:
             return
 
-        output_dir = self.scan_model.files_directory or "./"
+        output_dir = os.path.abspath(os.path.expanduser(self.scan_model.files_directory or "./"))
+        self.scan_model.files_directory = output_dir
         os.makedirs(output_dir, exist_ok=True)
 
         if not self.scan_model.files_prefix:
@@ -762,6 +763,7 @@ class Scan:
 
         if output_dir is None or output_dir == '':
             output_dir = "./"
+        output_dir = os.path.abspath(os.path.expanduser(output_dir))
 
         # Ensure output directory exists
         os.makedirs(output_dir, exist_ok=True)

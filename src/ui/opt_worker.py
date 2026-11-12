@@ -15,11 +15,13 @@ from matplotlib import pyplot as plt
 import numpy as np
 
 from models.scan import ScanState, ScanType
-from obs.obs_display import ObsDisplay
+from obs.obs_display import ObsDisplay, save_frequency_record, save_frequency_overlay
 from obs.opt import process_observation, save_aggregated_power_csv
-from sdp.channel_mask import valid_channels
+from sdp.channel_mask import valid_channels, masked_values
 from sdp.signal_display import SignalDisplay
 from ui.opt_service import atomic_json
+from ui.opt_pipeline import baseline_applied, qa_metric_settings
+from obs.total_power import physical_power_records, save_power_cache, render_power_products
 
 
 def finish(request, out, result, progress):
@@ -57,18 +59,26 @@ def run(folder):
         finish(request, out, result, progress)
         return
     native_arrays, native_labels = {}, []
+    frequency_records = []
+    velocity_power_records = []
     progress("Loading and processing calibration and SKY scans", .05)
     obs, sky_queue, cal_queue, _ = process_observation(
         request["directory"], request["observation"], profile=request["profile"],
         blacklist=request["excluded"], signal_displays=None,
+        pipeline_config=request.get("pipeline_config"), cache_power_moments=True,
         progress_callback=lambda message, fraction: progress(message, fraction * .6))
     sky = [scan for scan in list(sky_queue.queue) if scan.get_status() == ScanState.COMPLETE]
     calibration = [scan for scan in list(cal_queue.queue) if scan.get_status() == ScanState.COMPLETE]
     if not sky:
         raise ValueError("No completed SKY aggregates were produced. Check exclusions, scan files and calibration in the log.")
     aggregates = sorted(calibration + sky, key=lambda scan: (scan.scan_model.tgt_idx, scan.scan_model.freq_scan, scan.scan_model.dig_id))
+    power_records = physical_power_records(obs, request["excluded"])
+    save_power_cache(power_records, out)
     result = {"observation": obs.obs_model.obs_id, "directory": request["directory"], "profile": request["profile"],
               "settings": settings, "excluded": request["excluded"], "aggregates": [], "views": {}, "warnings": []}
+    if request.get("pipeline_config"):
+        result["pipeline_config"] = request["pipeline_config"]
+        atomic_json(out / "pipeline-config.json", request["pipeline_config"])
     incomplete = [scan.scan_model.scan_id for scan in list(sky_queue.queue) + list(cal_queue.queue) if scan.get_status() != ScanState.COMPLETE]
     if incomplete:
         result["warnings"].append(f"{len(incomplete)} incomplete aggregates were omitted; inspect the processing log.")
@@ -82,7 +92,9 @@ def run(folder):
                         if physical.tgt_idx == model.tgt_idx and physical.freq_scan == model.freq_scan
                         and physical.dig_id == model.dig_id and physical.scan_type == model.scan_type
                         and physical.scan_id not in request["excluded"]]
-        row = {"id": identifier, "scan_id": model.scan_id, "target_id": model.tgt_idx,
+        row = {"pipeline_baseline_applied": bool(request.get("pipeline_config") and model.scan_type != ScanType.LOAD
+                                                     and baseline_applied(request["pipeline_config"], model.dig_id)),
+               "id": identifier, "scan_id": model.scan_id, "target_id": model.tgt_idx,
                "freq_scan": model.freq_scan, "digitiser": model.dig_id, "kind": model.scan_type.name,
                "status": model.status.name, "frequency_mhz": model.center_freq / 1e6,
                "iterations": int(scan.get_loaded_seconds()), "input_scans": len(contributing),
@@ -110,53 +122,99 @@ def run(folder):
             logging.exception("Could not render signal view for %s", model.scan_id)
             result["warnings"].append(f"Signal view unavailable for {model.scan_id}: {exc}")
             plt.close("all")
+        selected = ObsDisplay(obs.obs_model.obs_id)
+        selected.set_scan([scan], obs.obs_model)
         if model.scan_type == ScanType.SKY:
-            selected = ObsDisplay(obs.obs_model.obs_id)
-            selected.set_scan([scan], obs.obs_model)
+            # Frequency requires native bins and powers, independently of LSRK metadata.
+            frequency = (model.center_freq + np.fft.fftshift(np.fft.fftfreq(
+                model.spectral_resolution, d=1/model.sample_rate))) / 1e6
+            flags = getattr(scan, "mpr_flags", None)
+            raw_power = masked_values(scan.mpr, flags) if flags is not None else np.ma.masked_invalid(scan.mpr)
+            policy = qa_metric_settings(request.get("pipeline_config"), model.dig_id)
+            native = dict(target_id=model.tgt_idx, freq_scan=model.freq_scan, raw_power=raw_power,
+                          power=raw_power, channel_flags=flags, qa_settings=policy)
+            galactic = coordinates
             filename = f"{identifier}-velocity.png"
             try:
                 fig = selected.display_lsr(obs.obs_model, str(out / filename), blacklist=request["excluded"],
-                                          observation_baseline=settings["baseline"], baseline_vmin=settings["baseline_vmin"],
-                                          baseline_vmax=settings["baseline_vmax"])
+                                          observation_baseline=settings["baseline"], vmin=settings["baseline_vmin"],
+                                          vmax=settings["baseline_vmax"], metric_settings=policy)
                 if fig is not None:
                     row["views"]["velocity"] = filename
                     native = selected.lsr_spectra[0]
-                    native_index = len(native_labels)
-                    native_arrays[f"{native_index}_velocity"] = native["velocity"]
-                    native_arrays[f"{native_index}_power"] = native["raw_power"].filled(np.nan)
+                    # LSRK order is the reverse of native increasing frequency.
+                    frequency = np.sort(frequency)[::-1]
                     galactic = native["direction"].galactic
-                    native_labels.append({"id": identifier, "target_id": int(model.tgt_idx),
-                                          "freq_scan": int(model.freq_scan), "center_freq": float(model.center_freq),
-                                          "longitude": float(galactic.l.deg), "latitude": float(galactic.b.deg)})
                     plt.close(fig)
+                else:
+                    reason = ("This observation has no recorded target sky coordinates or Alt/Az, so an LSRK velocity axis cannot be calculated."
+                              if target is None or (getattr(target, "sky_coord", None) is None and getattr(target, "altaz", None) is None)
+                              else "No LSRK spectrum could be generated with the recorded observing metadata and selected baseline limits.")
+                    row.setdefault("view_errors", {})["velocity"] = reason
+                    result["warnings"].append(f"Velocity unavailable for target {model.tgt_idx}: {reason}")
             except Exception as exc:
+                row.setdefault("view_errors", {})["velocity"] = str(exc)
                 result["warnings"].append(f"Velocity view unavailable for {model.scan_id}: {exc}")
                 logging.exception("Could not render velocity view")
                 plt.close("all")
+            native["digitiser"] = model.dig_id
+            if native.get("baseline") is not None:
+                velocity_power_records.append({**native, "frequency_mhz": frequency,
+                                               "frequency_correction": native["baseline"]})
+            native_index = len(native_labels)
+            native_arrays[f"{native_index}_power"] = native["raw_power"].filled(np.nan)
+            if native.get("channel_flags") is not None:
+                native_arrays[f"{native_index}_channel_flags"] = native["channel_flags"]
+            native_arrays[f"{native_index}_frequency_mhz"] = frequency
+            if native.get("velocity") is not None:
+                native_arrays[f"{native_index}_velocity"] = native["velocity"]
+            native_labels.append(dict(id=identifier, target_id=int(model.tgt_idx), freq_scan=int(model.freq_scan), digitiser=model.dig_id,
+                                      qa_settings=policy, center_freq=float(model.center_freq),
+                                      longitude=float(galactic.l.deg) if galactic is not None else None,
+                                      latitude=float(galactic.b.deg) if galactic is not None else None,
+                                      velocity_error=row.get("view_errors", {}).get("velocity")))
+            try:
+                frequency_filename = f"{identifier}-frequency.png"
+                corrected_frequency = save_frequency_record({**native, "frequency_mhz": frequency}, out / frequency_filename,
+                                      obs.obs_model.obs_id, settings["baseline"],
+                                      fmin=settings.get("frequency_min_mhz"), fmax=settings.get("frequency_max_mhz"))
+                row["views"]["frequency"] = frequency_filename
+                frequency_records.append(corrected_frequency)
+            except ValueError as exc:
+                row.setdefault("view_errors", {})["frequency"] = str(exc)
+                result["warnings"].append(f"Frequency view unavailable for {model.scan_id}: {exc}")
         result["aggregates"].append(row)
 
     progress("Rendering observation-wide plots and exports", .88)
     display = ObsDisplay(obs.obs_model.obs_id)
     display.set_scan(sky, obs.obs_model)
     save_aggregated_power_csv(obs.obs_model.obs_id, sky, str(out))
-    display.save_integrated_total_power(str(out / "timeline.png"))
-    result["views"]["timeline"] = "timeline.png"
-    display.display()
-    display.fig.savefig(out / "overview.png", dpi=150, bbox_inches="tight")
-    result["views"]["overview"] = "overview.png"
-    plt.close(display.fig)
+    power_basis = settings.get("total_power_basis", "frequency")
+    render_power_products(power_records, velocity_power_records if power_basis == "velocity" else frequency_records,
+                          result, out, settings["baseline"], basis=power_basis)
+    if frequency_records:
+        save_frequency_overlay(frequency_records, out / "frequency.png", obs.obs_model.obs_id, settings["baseline"])
+        result["views"]["frequency"] = "frequency.png"
+    else:
+        result.setdefault("view_errors", {})["frequency"] = "No SKY spectra could be plotted with the selected Frequency limits and baseline settings."
     try:
         fig = display.display_lsr(obs.obs_model, str(out / "velocity.png"), blacklist=request["excluded"],
                                   csv_path=str(out / "velocity.csv"), observation_baseline=settings["baseline"],
-                                  baseline_vmin=settings["baseline_vmin"], baseline_vmax=settings["baseline_vmax"])
+                                  vmin=settings["baseline_vmin"], vmax=settings["baseline_vmax"], show_metrics=False)
         if fig is not None:
             result["views"]["velocity"] = "velocity.png"
             plt.close(fig)
             fig = display.display_lv(obs.obs_model, str(out / "lv.png"), contour_levels=settings["contours"],
-                                     contour_smoothing=settings["contour_smoothing"])
+                                     contour_smoothing=settings["contour_smoothing"],
+                                     vmin=settings["baseline_vmin"], vmax=settings["baseline_vmax"])
             if fig is not None:
                 result["views"]["lv"] = "lv.png"
                 plt.close(fig)
+        else:
+            reason = next((row.get("view_errors", {}).get("velocity") for row in result["aggregates"]
+                           if row.get("view_errors", {}).get("velocity")), "No usable LSRK velocity spectrum is available.")
+            result.setdefault("view_errors", {})["velocity"] = reason
+            result["view_errors"]["lv"] = f"The L–V view requires velocity coordinates. {reason}"
     except Exception as exc:
         logging.exception("Could not render observation velocity/L–V view")
         result["warnings"].append(f"Observation velocity/L–V view unavailable: {exc}")

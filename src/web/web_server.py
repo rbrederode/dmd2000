@@ -1,6 +1,6 @@
 """Authenticate HTTP calls, dispatch TCP requests, and list stored observations."""
 
-from flask import Flask, request, jsonify, abort, g
+from flask import Flask, request, jsonify, abort, g, send_file
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import hmac
@@ -15,7 +15,7 @@ from web.cmd_handler import CommandHandler, DEFAULT_PROFILE_DIR
 from api.cmd_registry import DEFAULT_COMMAND_CONFIG
 from env.events import ResponseEvent
 from models.launch import load_scan_store_dir
-from obs.catalogue import list_observations
+from obs.catalogue import list_observations, read_observation, scan_spectrum_file
 from web.web import WebServer
 from web.dish_store import DishProfileStore, DishStoreError
 from web.profiles import ProfileManager, ProfileError
@@ -484,7 +484,10 @@ def telescope_model():
 
 
 @app.get('/api/observations')
-def observations():
+@app.get('/api/observations/<observation_id>')
+@app.get('/api/observations/<observation_id>/scans/<int:target>/<int:frequency>/<int:iteration>/spr', defaults={'product': 'spr'})
+@app.get('/api/observations/<observation_id>/scans/<int:target>/<int:frequency>/<int:iteration>/signal', defaults={'product': 'signal'})
+def observations(observation_id=None, target=None, frequency=None, iteration=None, product='spr'):
     """Search local/shared storage without requiring a TM or SDP connection."""
     try:
         validate_request()
@@ -492,6 +495,9 @@ def observations():
         return jsonify(status='error', message=error.description), error.code
 
     try:
+        expected_profile = request.headers.get('X-Config-Profile')
+        if expected_profile and expected_profile != _profiles().current.directory.name:
+            return jsonify(ResponseEvent('error', 'The selected profile changed; refresh the catalogue', code='profile_changed').to_dict()), 409
         if 'directory' in request.args:
             store = request.args['directory'].strip()
             if not store:
@@ -506,8 +512,24 @@ def observations():
         if not store:
             result = ResponseEvent('error', 'Observation search directory is not configured', code='store_not_known')
             return jsonify(result.to_dict()), 503
-        result = list_observations(store)
-        return jsonify(result.to_dict()), 200 if result.status == 'success' else 503
+        if target is not None:
+            result = scan_spectrum_file(store, observation_id, target, frequency, iteration, request.args.get('folder'), product=product)
+            if result.status == 'success':
+                response = send_file(result.payload['path'], mimetype='text/csv' if product == 'spr' else 'image/png', as_attachment=True,
+                                     download_name=result.payload['filename'], conditional=False)
+                response.headers['Cache-Control'] = 'no-store'
+                return response
+        else:
+            result = (read_observation(store, observation_id, request.args.get('folder', '.'))
+                      if observation_id is not None else list_observations(store))
+        if result.status == 'success' and observation_id is not None:
+            from web.model_snapshot import redact_credentials
+            result = ResponseEvent(result.status, result.message, payload=redact_credentials(result.payload))
+        response = jsonify(result.to_dict())
+        response.headers['Cache-Control'] = 'no-store'
+        response.status_code = 200 if result.status == 'success' else {
+            'invalid_request': 400, 'not_found': 404, 'scan_incomplete': 409}.get(result.code, 503)
+        return response
     except Exception:
         logger.exception('Error listing observations')
         result = ResponseEvent('error', 'Could not load observation catalogue configuration', code='internal_error')

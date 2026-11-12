@@ -171,6 +171,16 @@ class Observation:
             cal_flags[:loaded_seconds, :],
         )
         self.int_data_arrays[(tgt_idx, freq_scan, scan_iter)]["int_tpw"] += total_power.tolist()
+        if getattr(self, "cache_power_moments", False):
+            # Reconstruction is linear for a fixed flag/finite mask. Cache its
+            # responses to affine corrections, without retaining full spectra.
+            values = scan.cal[:loaded_seconds, :]
+            flags = cal_flags[:loaded_seconds, :]
+            finite = np.isfinite(values)
+            for name, basis in (("count", np.ones(values.shape[-1])),
+                                ("channel", np.arange(values.shape[-1], dtype=float))):
+                moment, _, _ = reconstructed_total_power(np.where(finite, basis, np.nan), flags)
+                self.int_data_arrays[(tgt_idx, freq_scan, scan_iter)].setdefault("power_" + name, []).extend(moment.tolist())
 
         self.int_data_arrays[(tgt_idx, freq_scan, scan_iter)]["secs"] += loaded_seconds
         self.int_data_arrays[(tgt_idx, freq_scan, scan_iter)]["scans"] += 1

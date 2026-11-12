@@ -73,7 +73,7 @@ class DigitiserModel(BaseModel):
                 interfaces=[],
                 processors=[],
                 health=HealthState.UNKNOWN,
-                last_update=datetime.now(timezone.utc),
+                last_update=None,
             ),
             "load_active": False,
             "bpf_type": BandpassFilterType.UNKNOWN,

@@ -20,11 +20,13 @@ import uuid
 from urllib.parse import urlsplit
 import requests
 
-from flask import Flask, abort, jsonify, request, send_from_directory
+from flask import Flask, abort, jsonify, request, send_from_directory, send_file, Response, stream_with_context
 from werkzeug.exceptions import HTTPException
 
 from models.obs import ObsModel
 from util.convert import datetime_to_utc
+from ui.opt_pipeline import pipeline_snapshot, editable_pipeline, available_pipeline_steps
+from ui.pipeline_help import PIPELINE_OVERVIEW
 
 SRC = Path(__file__).resolve().parents[1]
 FRONTEND = SRC / "ui/frontend_prototype"
@@ -51,7 +53,9 @@ def observation_summary(directory, obs_id):
                          "frequency_mhz": scan.center_freq / 1e6,
                          "longitude": float(galactic.l.deg) if galactic is not None else None,
                          "latitude": float(galactic.b.deg) if galactic is not None else None})
-    return {"id": model.obs_id, "dish": model.dsh_id, "scans": rows}
+    from web.model_snapshot import redact_credentials
+    return {"id": model.obs_id, "file_id": obs_id, "dish": model.dsh_id, "scans": rows,
+            "metadata": redact_credentials(model.to_dict())}
 
 
 def observation_catalogue_entry(directory, obs_id):
@@ -62,10 +66,14 @@ def observation_catalogue_entry(directory, obs_id):
     counts = {}
     for scan in completed:
         counts[scan.scan_type.name] = counts.get(scan.scan_type.name, 0) + 1
-    return {"id": obs_id, "name": model.title.strip() or obs_id, "dish": model.dsh_id,
+    metadata = model.to_dict()
+    header = {key: metadata.get(key) for key in ("title", "obs_state", "scheduling_block_start", "scheduling_block_end",
+                                                "total_integration_time", "estimated_observation_duration", "created", "user_email")}
+    return {**header, "id": obs_id, "name": model.title.strip() or obs_id, "dish": model.dsh_id,
             "completed_scans": len(completed), "total_scans": len(scans),
             "completed_types": counts,
             "completed_integration_s": float(sum(scan.duration for scan in completed)),
+            "completed": bool(scans) and len(completed) == len(scans),
             "started_at": datetime_to_utc(model.start_dt).isoformat(), "error": None}
 
 
@@ -73,17 +81,35 @@ def validate_settings(data):
     import math
     if not isinstance(data, dict):
         raise ValueError("Analysis settings must be a JSON object")
-    settings = {"baseline": data.get("baseline", "linear"),
-                "baseline_vmin": float(data.get("baseline_vmin", -150)),
-                "baseline_vmax": float(data.get("baseline_vmax", 150)),
+    settings = {"baseline": data.get("baseline", "none"),
+                "baseline_vmin": None if data.get("baseline_vmin") in (None, "") else float(data["baseline_vmin"]),
+                "baseline_vmax": None if data.get("baseline_vmax") in (None, "") else float(data["baseline_vmax"]),
                 "contour_smoothing": float(data.get("contour_smoothing", 2)),
                 "contours": data.get("contours", None)}
-    if settings["baseline"] not in ("none", "constant", "linear"):
-        raise ValueError("Choose a linear, constant or no baseline")
-    if not all(math.isfinite(settings[k]) for k in ("baseline_vmin", "baseline_vmax", "contour_smoothing")):
+    if "total_power_basis" in data:
+        if data["total_power_basis"] not in ("frequency", "velocity"):
+            raise ValueError("Total Power baseline source must be frequency or velocity")
+        settings["total_power_basis"] = data["total_power_basis"]
+    for key in ("frequency_min_mhz", "frequency_max_mhz"):
+        value = data.get(key)
+        try:
+            settings[key] = None if value is None else float(value)
+        except (ValueError, TypeError) as exc:
+            raise ValueError("Frequency limits must be positive finite MHz values or blank") from exc
+        if settings[key] is not None and (not math.isfinite(settings[key]) or settings[key] <= 0):
+            raise ValueError("Frequency limits must be positive finite MHz values or blank")
+    if (settings["frequency_min_mhz"] is not None and settings["frequency_max_mhz"] is not None
+            and settings["frequency_min_mhz"] >= settings["frequency_max_mhz"]):
+        raise ValueError("Frequency minimum must be less than maximum")
+    if settings["baseline"] not in ("none", "constant", "linear", "flatten"):
+        raise ValueError("Choose a linear, constant, flatten or no baseline")
+    if not all(settings[k] is None or math.isfinite(settings[k]) for k in ("baseline_vmin", "baseline_vmax", "contour_smoothing")):
         raise ValueError("Analysis settings must be finite numbers")
-    if settings["baseline_vmin"] >= settings["baseline_vmax"] or settings["contour_smoothing"] < 0:
+    low, high = settings["baseline_vmin"], settings["baseline_vmax"]
+    if (low is not None and high is not None and low >= high) or settings["contour_smoothing"] < 0:
         raise ValueError("Check baseline limits and contour smoothing")
+    if settings["baseline"] != "none" and ((low is not None and low >= 0) or (high is not None and high <= 0)):
+        raise ValueError("Automatic baseline windows require velocity minimum < 0 < maximum")
     if settings["contours"] is not None:
         if not isinstance(settings["contours"], list):
             raise ValueError("Contours must be a list of power levels")
@@ -92,6 +118,34 @@ def validate_settings(data):
         if any(not math.isfinite(v) or v <= 0 for v in levels) or any(a >= b for a, b in zip(levels, levels[1:])):
             raise ValueError("Contour levels must be positive, finite and increasing")
     return settings
+
+
+def validate_lab_sweep(data):
+    """Validate offset grids before starting a background worker."""
+    if data is None:
+        return None
+    if not isinstance(data, dict):
+        raise ValueError("LAB sweep requires longitude and latitude offset ranges")
+    ranges, candidates = {}, 1
+    for axis, limit in (("longitude", 180), ("latitude", 90)):
+        values = data.get(axis)
+        if not isinstance(values, list) or len(values) != 3:
+            raise ValueError(f"LAB {axis} sweep needs minimum, maximum and step")
+        try:
+            low, high, step = map(float, values)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("LAB sweep values must be finite numbers") from exc
+        if (not all(math.isfinite(v) for v in (low, high, step)) or step <= 0
+                or low > high or low < -limit or high > limit):
+            raise ValueError(f"Invalid LAB {axis} offsets or step (allowed offsets: {-limit} to {limit} degrees)")
+        intervals = (high - low) / step
+        if not math.isfinite(intervals) or intervals > 2500:
+            raise ValueError("LAB sweep exceeds 2500 candidates; increase the step or narrow the ranges")
+        candidates *= int(math.floor(intervals + 1e-9)) + 1
+        ranges[axis] = [low, high, step]
+    if candidates > 2500:
+        raise ValueError("LAB sweep exceeds 2500 candidates; increase the step or narrow the ranges")
+    return ranges
 
 
 class Jobs:
@@ -342,7 +396,11 @@ def create_app(data_roots=None, cache_dir=None, web_url=None, web_token=None, pr
 
     @app.route('/api/web/<path:resource>', methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE'])
     def web_api(resource):
+        spectrum = bool(re.fullmatch(r'observations/[A-Za-z0-9][A-Za-z0-9_.:+-]{0,254}/scans/\d+/\d+/\d+/(?:spr|signal)', resource))
         allowed = ((resource == 'profiles' and request.method == 'GET')
+                   or (spectrum and request.method == 'GET')
+                   or (resource == 'observations' and request.method == 'GET')
+                   or (re.fullmatch(r'observations/[A-Za-z0-9][A-Za-z0-9_.:+-]{0,254}', resource) and request.method == 'GET')
                    or (resource == 'telescope/model' and request.method == 'GET')
                    or (resource == 'profile' and request.method in ('GET', 'PUT'))
                    or (resource in ('dishes', 'digitisers') and request.method in ('GET', 'POST'))
@@ -356,18 +414,47 @@ def create_app(data_roots=None, cache_dir=None, web_url=None, web_token=None, pr
         for name in ('If-Match', 'X-Config-Profile'):
             if name in request.headers:
                 headers[name] = request.headers[name]
+        if spectrum and 'profile' in request.args:
+            headers['X-Config-Profile'] = request.args['profile']
+        upstream = None
         try:
+            if resource == 'observations' or resource.startswith('observations/'):
+                if set(request.args) - ({'folder', 'profile'} if spectrum else {'folder'}):
+                    abort(400, 'Only relative observation folders are accepted')
+                query = {'params': {'folder': request.args['folder']}} if 'folder' in request.args else {}
+            else:
+                query = {}
             upstream = requests.request(request.method, web_url + '/api/' + resource,
                 headers=headers, json=request.get_json() if request.method not in ('GET', 'DELETE') else None,
-                timeout=(3, 10), allow_redirects=False)
+                timeout=(3, 10), allow_redirects=False, **({'stream': True} if spectrum else {}), **query)
+            if spectrum and upstream.status_code == 200:
+                content_type = 'image/png' if resource.endswith('/signal') else 'text/csv'
+                if upstream.headers.get('Content-Type', '').split(';')[0] != content_type:
+                    raise ValueError('WEB returned an invalid spectrum response')
+                def content():
+                    try:
+                        yield from upstream.iter_content(chunk_size=64 * 1024)
+                    finally:
+                        upstream.close()
+                response = Response(stream_with_context(content()), content_type=content_type)
+                response.headers['Content-Disposition'] = upstream.headers.get('Content-Disposition', 'attachment; filename="scan-spr.csv"')
+                response.headers['Cache-Control'] = 'no-store'
+                response.call_on_close(upstream.close)
+                return response
             body = upstream.json()
+            if spectrum:
+                upstream.close()
             if (not isinstance(body, dict) or body.get('status') not in ('success', 'error')
                     or not isinstance(body.get('message'), str)
                     or (body['status'] == 'success' and not isinstance(body.get('payload'), dict))):
                 raise ValueError('Invalid WEB response')
         except requests.exceptions.RequestException:
+            if spectrum and upstream is not None:
+                upstream.close()
             return jsonify(status='error', message='Could not reach WEB. A submitted change may have completed; refresh before trying again.', code='web_unavailable'), 502
         except ValueError:
+            if spectrum and upstream is not None:
+                upstream.close()
             return jsonify(status='error', message='WEB returned an invalid response. Refresh to check any submitted save.', code='invalid_response'), 502
         response = jsonify(body)
         response.status_code = upstream.status_code
@@ -411,7 +498,41 @@ def create_app(data_roots=None, cache_dir=None, web_url=None, web_token=None, pr
         for root in roots:
             if root.is_dir():
                 folders += [str(root)] + [str(p) for p in sorted(root.iterdir()) if p.is_dir() and not p.is_symlink()]
-        return jsonify(roots=[str(p) for p in roots], directories=folders, profiles=profiles)
+        return jsonify(roots=[str(p) for p in roots], directories=folders, profiles=profiles,
+                       available_steps=available_pipeline_steps(), pipeline_overview=PIPELINE_OVERVIEW,
+                       pipelines={profile: editable_pipeline(pipeline_snapshot(SRC / "config" / profile)) for profile in profiles})
+
+    @app.post("/api/opt/pipeline")
+    def save_pipeline():
+        data = request.get_json()
+        if not isinstance(data, dict):
+            raise ValueError("Supply a profile and pipeline configuration")
+        profile = data.get("profile")
+        if not isinstance(profile, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", profile):
+            raise ValueError("Choose an available configuration profile")
+        profile_path = SRC / "config" / profile
+        destination = profile_path / "PipelineConfig.json"
+        if not destination.is_file() or destination.resolve().parent != profile_path.absolute():
+            raise ValueError("Choose an available configuration profile")
+        if not isinstance(data.get("pipeline"), dict):
+            raise ValueError("Supply the pipeline configuration to save")
+        snapshot = pipeline_snapshot(profile_path, data["pipeline"])
+        content = json.dumps(snapshot, indent=4, allow_nan=False) + "\n"
+        # Keep numeric range pairs compact and readable.
+        content = re.sub(r"\[\s*([-+\d.eE]+),\s*([-+\d.eE]+)\s*\]", r"[\1,\2]", content)
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=profile_path,
+                                             prefix=".PipelineConfig-", suffix=".tmp", delete=False) as stream:
+                temporary = Path(stream.name)
+                stream.write(content)
+            temporary.chmod(destination.stat().st_mode & 0o777)
+            temporary.replace(destination)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+        return jsonify(profile=profile, pipeline=editable_pipeline(snapshot),
+                       message=f"Pipeline configuration saved to {profile}/PipelineConfig.json")
 
     @app.get("/api/opt/health")
     def health():
@@ -432,6 +553,19 @@ def create_app(data_roots=None, cache_dir=None, web_url=None, web_token=None, pr
         entries.sort(key=lambda item: (not bool(item.get("error")), item.get("started_at", ""), item["id"]), reverse=True)
         return jsonify(directory=str(folder), observations=ids, entries=entries)
 
+    @app.get("/api/opt/observations/<observation_id>/scans/<int:target>/<int:frequency>/<int:iteration>/<product>")
+    def saved_scan_file(observation_id, target, frequency, iteration, product):
+        from obs.catalogue import scan_spectrum_file
+        folder = directory(request.args.get("directory"))
+        result = scan_spectrum_file(str(folder), observation_id, target, frequency, iteration, ".", product=product)
+        if result.status != "success":
+            return jsonify(error=result.message, message=result.message), {
+                "invalid_request": 400, "not_found": 404, "scan_incomplete": 409}.get(result.code, 503)
+        response = send_file(result.payload["path"], mimetype="image/png" if product == "signal" else "text/csv",
+                             as_attachment=True, download_name=result.payload["filename"], conditional=False)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
     @app.post("/api/opt/open")
     def open_observation():
         folder, obs_id, summary = load_configuration(request.get_json())
@@ -451,9 +585,10 @@ def create_app(data_roots=None, cache_dir=None, web_url=None, web_token=None, pr
         if not any(scan["kind"] == "SKY" and scan["status"] == "COMPLETE" and scan["id"] not in excluded for scan in summary["scans"]):
             raise ValueError("Include at least one completed SKY scan")
         settings = validate_settings(data.get("settings", {}))
+        pipeline = pipeline_snapshot(SRC / "config" / profile, data.get("pipeline"))
         try:
             payload = jobs.start({"directory": str(folder), "observation": obs_id, "profile": profile,
-                                  "excluded": excluded, "settings": settings})
+                                  "excluded": excluded, "settings": settings, "pipeline_config": pipeline})
         except RuntimeError as exc:
             return jsonify(error=str(exc)), 409
         return jsonify(payload), 202
@@ -466,6 +601,23 @@ def create_app(data_roots=None, cache_dir=None, web_url=None, web_token=None, pr
             raise ValueError("Process the observation first to cache its spectra")
         configuration = json.loads((source["folder"] / "request.json").read_text())
         configuration["settings"] = validate_settings(data.get("settings", {}))
+        configuration.pop("lab_comparison", None)
+        lab = data.get("lab_comparison")
+        if lab is not None:
+            if not isinstance(lab, dict):
+                raise ValueError("Choose a SKY aggregate for LAB comparison")
+            aggregate_id = lab.get("aggregate_id")
+            result = json.loads((source["folder"] / "out/result.json").read_text())
+            aggregate = next((row for row in result.get("aggregates", []) if row.get("id") == aggregate_id), None)
+            if aggregate is None or aggregate.get("kind") != "SKY":
+                raise ValueError("LAB comparison requires a completed SKY aggregate")
+            beam = float(lab.get("beam", 5))
+            if not math.isfinite(beam) or not 0 < beam <= 60:
+                raise ValueError("LAB beam FWHM must be greater than 0 and at most 60 degrees")
+            configuration["lab_comparison"] = {"aggregate_id": aggregate_id, "beam": beam}
+            sweep = validate_lab_sweep(lab.get("sweep"))
+            if sweep is not None:
+                configuration["lab_comparison"]["sweep"] = sweep
         configuration["source_results"] = str(source["folder"] / "out")
         try:
             return jsonify(jobs.start(configuration)), 202

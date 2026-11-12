@@ -111,6 +111,56 @@ def test_proxy_is_not_an_unrestricted_gateway(console, monkeypatch, url):
     assert console[1].get(url).status_code == 404
 
 
+def test_history_proxy_forwards_relative_folders_and_profile_without_arbitrary_roots(console, monkeypatch):
+    calls = []
+    def call(method, url, **kwargs):
+        calls.append((method, url, kwargs))
+        return SimpleNamespace(status_code=200, headers={}, json=lambda: {
+            'status': 'success', 'message': 'Saved observation', 'payload': {'observation': {}}})
+    monkeypatch.setattr(opt_service.requests, 'request', call)
+    client = console[1]
+    response = client.get('/api/web/observations/obs001?folder=2026%2FNovember', headers={'X-Config-Profile': 'rotation'})
+    assert response.status_code == 200
+    assert calls[0][0:2] == ('GET', 'http://127.0.0.1:8000/api/observations/obs001')
+    assert calls[0][2]['params'] == {'folder': '2026/November'}
+    assert calls[0][2]['headers']['X-Config-Profile'] == 'rotation'
+    assert client.get('/api/web/observations?directory=/private').status_code == 400
+    assert client.post('/api/web/observations/obs001', json={}).status_code == 404
+    assert len(calls) == 1
+
+
+def test_completed_scan_download_streams_csv_and_guards_its_profile(console, monkeypatch):
+    from unittest.mock import Mock
+    calls = []
+    upstream = SimpleNamespace(status_code=200, headers={
+        'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="real-spectrum-spr.csv"'},
+        iter_content=lambda chunk_size: iter([b'frequency,power\n', b'1420,12.3\n']), close=Mock())
+    def call(method, url, **kwargs):
+        calls.append((method, url, kwargs)); return upstream
+    monkeypatch.setattr(opt_service.requests, 'request', call)
+    response = console[1].get('/api/web/observations/obs001/scans/0/1/2/spr?folder=2026%2FNovember&profile=rotation')
+    assert response.status_code == 200
+    assert response.data == b'frequency,power\n1420,12.3\n'
+    assert response.mimetype == 'text/csv'
+    assert response.headers['Content-Disposition'] == upstream.headers['Content-Disposition']
+    assert calls[0][2]['stream'] is True
+    assert calls[0][2]['headers']['X-Config-Profile'] == 'rotation'
+    assert calls[0][2]['params'] == {'folder': '2026/November'}
+    assert calls[0][2]['allow_redirects'] is False
+    response.close(); assert upstream.close.called
+
+
+def test_scan_download_preserves_json_errors_instead_of_downloading_them_as_csv(console, monkeypatch):
+    from unittest.mock import Mock
+    upstream = SimpleNamespace(status_code=404, headers={}, close=Mock(), json=lambda: {
+        'status': 'error', 'message': 'Spectrum not found', 'code': 'not_found'})
+    monkeypatch.setattr(opt_service.requests, 'request', lambda *args, **kwargs: upstream)
+    response = console[1].get('/api/web/observations/obs001/scans/0/0/0/spr')
+    assert response.status_code == 404 and response.json['code'] == 'not_found'
+    assert 'Content-Disposition' not in response.headers
+    upstream.close.assert_called_once()
+
+
 def test_proxy_reports_unknown_save_outcome_on_network_failure(console, monkeypatch):
     def fail(*args, **kwargs):
         raise requests.exceptions.Timeout()
@@ -306,3 +356,16 @@ def test_live_dish_control_reports_unknown_outcome_without_retry(console, monkey
     response = console[1].post('/api/dish-control/dish002', json={'mode': 'STOW'})
     assert response.status_code == 502 and response.json['code'] == 'outcome_unknown'
     assert len(calls) == 1
+
+
+def test_completed_scan_signal_proxy_streams_png(console, monkeypatch):
+    from unittest.mock import Mock
+    upstream = SimpleNamespace(status_code=200, headers={
+        'Content-Type': 'image/png', 'Content-Disposition': 'attachment; filename="scan-sigfig.png"'},
+        iter_content=lambda chunk_size: iter([b'\x89PNG\r\n']), close=Mock())
+    monkeypatch.setattr(opt_service.requests, 'request', lambda *args, **kwargs: upstream)
+    response = console[1].get('/api/web/observations/obs001/scans/0/0/0/signal?profile=rotation')
+    assert response.status_code == 200 and response.mimetype == 'image/png'
+    assert response.data == b'\x89PNG\r\n'
+    assert 'scan-sigfig.png' in response.headers['Content-Disposition']
+    response.close(); assert upstream.close.called

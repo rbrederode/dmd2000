@@ -13,6 +13,7 @@ class StepType(enum.IntEnum):
     RFI_FLAG = 5            # Flag radio frequency interference
     QA = 6                  # Calculate signal quality attributes (SNR, signal power, noise power, etc.)
     BANDPASS_FILTER = 7     # Flag channels outside configured percentage ranges
+    BASELINE = 8            # Subtract a fitted spectral baseline
     # Add more step types as needed
 
 class StepConfig(BaseModel):

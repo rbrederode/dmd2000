@@ -73,12 +73,16 @@ def test_lv_frequency_panels_and_longitude_wrap(tmp_path):
     try:
         assert len(fig.axes) == 3  # Two frequency panels plus shared colour bar.
         for axis in fig.axes[:2]:
-            np.testing.assert_allclose(axis.get_xlim(), [358, 362])
-            assert axis.xaxis.get_major_formatter()(361, 0) == "1°"
+            np.testing.assert_allclose(axis.get_xlim(), [362, 358])
+            formatter = axis.xaxis.get_major_formatter()
+            assert formatter(361, 0) == "1°"
+            assert formatter(359, 0) == "-1°"
+            assert formatter(360, 0) == "0°"
+            assert axis.xaxis_inverted()
         norms = [mesh.norm for axis in fig.axes[:2] for mesh in axis.collections if isinstance(mesh, QuadMesh)]
         assert all(norm is norms[0] for norm in norms)
         assert "Frequency scan 1" in fig.axes[1].get_title()
-        assert "359.000° to 1.000° (across 0°)" in fig.axes[0].get_title()
+        assert "-1.000° to 1.000° (across 0°)" in fig.axes[0].get_title()
     finally:
         plt.close(fig)
 
@@ -92,7 +96,7 @@ def test_lv_single_longitude_and_repeated_targets_are_not_overpainted(tmp_path):
         assert len(fig.axes) == 3
         assert "Galactic longitude 30.000° to 30.000°" in fig.axes[0].get_title()
         assert "targets" not in fig.axes[1].get_title()
-        np.testing.assert_allclose(fig.axes[0].get_xlim(), [29.5, 30.5])
+        np.testing.assert_allclose(fig.axes[0].get_xlim(), [30.5, 29.5])
     finally:
         plt.close(fig)
 
@@ -236,3 +240,40 @@ def test_lv_contour_smoothing_is_display_only_and_does_not_bridge_masks():
     assert np.std(result[10:40]) < np.std(power[10:40])
     np.testing.assert_array_equal(power.data, original.data)
     np.testing.assert_array_equal(power.mask, original.mask)
+
+
+def test_lv_selected_velocity_limits_also_exclude_offscreen_colour_extremes(tmp_path):
+    display = ObsDisplay("limits")
+    display.lsr_baseline_method = "none"
+    velocity = np.arange(-100., 101., 10.)
+    spectrum = prepared_spectrum(1, 30, velocity=velocity)
+    spectrum["power"] = np.ma.array(np.full(len(velocity), 4.), mask=False)
+    spectrum["power"][-1] = 10000  # Outside the requested display range.
+    display.lsr_spectra = [spectrum]
+    original = spectrum["power"].copy()
+    for low, high in [(-20, 30), (0, 30)]:
+        fig = display.display_lv(observation({1: 30}), str(tmp_path / "limited.png"),
+                                 vmin=low, vmax=high)
+        try:
+            np.testing.assert_allclose(fig.axes[0].get_ylim(), [low, high])
+            mesh = next(item for item in fig.axes[0].collections if isinstance(item, QuadMesh))
+            assert mesh.norm.vmax == 4
+            np.testing.assert_array_equal(mesh.get_array().reshape(-1), original)
+            np.testing.assert_array_equal(spectrum["power"], original)
+        finally:
+            plt.close(fig)
+
+
+def test_lv_limits_are_clamped_to_coverage_and_empty_range_is_reported(tmp_path, caplog):
+    display = ObsDisplay("coverage")
+    display.lsr_baseline_method = "none"
+    display.lsr_spectra = [prepared_spectrum(1, 30)]
+    fig = display.display_lv(observation({1: 30}), str(tmp_path / "limited.png"), vmin=-200, vmax=300)
+    try:
+        np.testing.assert_allclose(fig.axes[0].get_ylim(), [-15, 25])
+    finally:
+        plt.close(fig)
+    path = tmp_path / "empty.png"
+    assert display.display_lv(observation({1: 30}), str(path), vmin=100, vmax=200) is None
+    assert not path.exists()
+    assert "selected limits" in caplog.text

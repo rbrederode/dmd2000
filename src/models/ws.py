@@ -559,7 +559,7 @@ class WeatherStationModel(BaseModel):
                 interfaces=[],
                 processors=[],
                 health=HealthState.UNKNOWN,
-                last_update=datetime.now(timezone.utc),
+                last_update=None,
             ),
             "id": "<undefined>",
             "tm_connected": CommunicationStatus.NOT_ESTABLISHED,

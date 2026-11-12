@@ -22,7 +22,12 @@ from astropy.io import fits
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from util.convert import subtract_spectrum_baseline
+from util.convert import select_baseline_windows
+from sdp.spectral_baseline import subtract_baseline as subtract_spectrum_baseline
+from sdp.spectral_metrics import (
+    NOISE_ESTIMATORS, estimate_noise, peak_snr,
+    estimate_profile_noise, observation_noise_metrics,
+)
 from util.lv_plot import reference_lv_colormap
 
 from obs.obs_pointing import (
@@ -135,13 +140,23 @@ def load_observation(path, target_id, freq_scan):
     return data[:, 0], data[:, 1]
 
 
-def subtract_baseline(velocity, power, method="read-ray", fit_mask=None):
+def subtract_baseline(velocity, power, method="linear", fit_mask=None, baseline_windows=None):
     """Shared baseline subtraction, plus the profiler's positive-peak check.
 
     The helper preserves amplitudes; LAB peak scaling happens only in the plot.
-    The legacy Python API default remains read-ray; the CLI defaults to linear.
+    Linear subtraction is the default for both the Python API and CLI.
     """
-    corrected, baseline = subtract_spectrum_baseline(velocity, power, method, fit_mask)
+    if baseline_windows:
+        if method not in ("linear", "constant"):
+            raise ValueError("--baseline-window requires a linear or constant observation baseline")
+        # Baseline windows are independent of the LAB scoring interval/overlap.
+        fit_mask = np.zeros(np.shape(velocity), dtype=bool)
+        for low, high in baseline_windows:
+            if not np.all(np.isfinite([low, high])) or low >= high:
+                raise ValueError("Baseline windows must be finite with minimum < maximum")
+            fit_mask |= (velocity >= low) & (velocity <= high)
+    corrected, baseline = subtract_spectrum_baseline(velocity, power, method, fit_mask,
+                                                    fit_line_free=bool(baseline_windows))
     if not np.any(np.isfinite(corrected)) or np.nanmax(corrected) <= 0:
         raise ValueError("Observation has no positive peak after baseline subtraction")
     return corrected, baseline
@@ -150,7 +165,7 @@ def subtract_baseline(velocity, power, method="read-ray", fit_mask=None):
 def match_channels(velocity, temperature):
     """Average adjacent LAB pairs, dropping the leading channel for odd cubes.
 
-    For the 891-channel LAB cube this exactly reproduces read_ray's 445 pairs.
+    The 891-channel LAB cube produces 445 pairs after dropping its first channel.
     Interpolation onto observation centres is performed separately for scoring.
     """
     start = len(velocity) % 2
@@ -206,57 +221,38 @@ def compare_spectra(velocity, corrected, reference_velocity, temperature, vmin, 
     return rms, correlation
 
 
-def estimate_terminal_velocity(velocity, brightness, vmin, vmax, noise_ranges=None,
-                               sigma=3., min_channels=3):
-    """Find the rightmost positive emission edge above noise mean + N RMS.
 
-    Noise RMS is measured about the mean in the supplied line-free windows.
-    By default use the highest-velocity 20% of finite positive channels in the
-    displayed interval. Search only the displayed positive interval. Reject
+
+def estimate_terminal_velocity(velocity, brightness, vmin, vmax, noise_ranges=None,
+                               sigma=3., min_channels=3, *, noise_estimator="median_mad",
+                               window_frac=.2, smooth_window=10, noise_selection="qa_peak_exclusion"):
+    """Find the rightmost positive emission edge above the noise level + N scatter.
+
+    Default noise selection and median/MAD match pipeline QA. Explicit noise
+    windows and mean/RMS remain available. Search only the displayed positive interval. Reject
     short above-threshold runs and do not bridge missing channels. Interpolate
     the final falling crossing; report a lower bound if coverage ends first.
-    This is a threshold-based estimate, not an optical-depth/dispersion model.
+    The default scatter is 1.4826 * MAD about the median baseline. This is a threshold edge, not an optical-depth/dispersion model.
     """
     if not np.all(np.isfinite([vmin, vmax, sigma])) or vmin >= vmax or sigma <= 0 or min_channels < 1:
         raise ValueError("Terminal limits and sigma must be finite; sigma and minimum channels positive")
-    velocity, brightness = np.asarray(velocity), np.asarray(brightness)
+    velocity = np.ma.asarray(velocity, dtype=float).filled(np.nan)
+    brightness = np.ma.asarray(brightness, dtype=float).filled(np.nan)
+    if velocity.ndim != 1 or velocity.shape != brightness.shape:
+        raise ValueError("Profile coordinates and powers must be matching one-dimensional arrays")
     order = np.argsort(velocity)
     velocity, brightness = velocity[order], brightness[order]
     finite = np.isfinite(velocity) & np.isfinite(brightness)
     search = finite & (velocity > 0) & (velocity >= vmin) & (velocity <= vmax)
-    result = {"status": "not_detected", "velocity_lsr_kms": None,
-              "sigma_multiplier": float(sigma), "minimum_channels": int(min_channels),
-              "search_range_kms": [float(max(0, vmin)), float(vmax)],
-              "noise_level_k": None, "noise_rms_k": None, "threshold_k": None,
-              "noise_sample_count": 0, "noise_ranges_kms": [],
-              "noise_window_selection": "explicit" if noise_ranges else "highest positive-velocity 20% of displayed finite channels"}
-    if noise_ranges:
-        noise = np.zeros(len(velocity), dtype=bool)
-        for low, high in noise_ranges:
-            if not np.all(np.isfinite([low, high])) or low >= high:
-                raise ValueError("Noise windows must be finite with minimum < maximum")
-            noise |= (velocity >= low) & (velocity <= high)
-        result["noise_ranges_kms"] = [[float(low), float(high)] for low, high in noise_ranges]
-        noise &= finite
-    else:
-        indices = np.flatnonzero(search)
-        count = int(np.ceil(len(indices) * .2))
-        noise = np.zeros(len(velocity), dtype=bool)
-        if count:
-            selected = indices[-count:]
-            noise[selected] = True
-            result["noise_ranges_kms"] = [[float(velocity[selected[0]]), float(velocity[selected[-1]])]]
-    result["noise_sample_count"] = int(noise.sum())
-    if noise.sum() < 10:
-        result["status"] = "insufficient_noise_channels"
+    noise = estimate_profile_noise(velocity, brightness, vmin, vmax, noise_ranges, sigma,
+                                   noise_estimator=noise_estimator, window_frac=window_frac,
+                                   smooth_window=smooth_window, noise_selection=noise_selection)
+    result = {**noise, "status": "not_detected", "velocity_lsr_kms": None,
+              "minimum_channels": int(min_channels), "search_range_kms": [float(max(0, vmin)), float(vmax)]}
+    if noise["status"] != "measured":
+        result["status"] = noise["status"]
         return result
-    level = float(np.mean(brightness[noise]))
-    rms = float(np.sqrt(np.mean((brightness[noise] - level)**2)))
-    threshold = level + sigma * rms
-    result.update(noise_level_k=level, noise_rms_k=rms, threshold_k=float(threshold))
-    if rms <= 0:
-        result["status"] = "zero_noise_rms"
-        return result
+    threshold = noise["threshold_k"]
     indices = np.flatnonzero(search & (brightness > threshold))
     if not len(indices):
         return result
@@ -282,25 +278,194 @@ def estimate_terminal_velocity(velocity, brightness, vmin, vmax, noise_ranges=No
     return result
 
 
+def estimate_connected_terminal_velocity(velocity, brightness, vmin, vmax, noise_ranges=None,
+                                        sigma=3., min_channels=3, return_width=3.,
+                                        threshold_reference=None, threshold_source="self", *,
+                                        noise_estimator="median_mad", window_frac=.2, smooth_window=10,
+                                        noise_selection="qa_peak_exclusion"):
+    """Follow the dominant emission to a sustained below-threshold return.
+
+    A smoothed guide locates the strongest supported emission run; crossings
+    use original samples. Short dips are bridged until at least min_channels
+    consecutive samples spanning return_width km/s are below threshold. Stop
+    at that first confirmed return, never at a later detached emission island.
+    A reference noise estimate allows both spectra to use one detection level
+    in their common plotting units. This is a detection edge, not an erfc
+    midpoint or an independently determined Galactic tangent-point velocity.
+    """
+    from scipy.ndimage import gaussian_filter1d, median_filter
+    if (not np.all(np.isfinite([vmin, vmax, sigma, return_width])) or vmin >= vmax
+            or sigma <= 0 or min_channels < 1 or return_width <= 0):
+        raise ValueError("Connected-edge limits must be finite; sigma, channels and return width positive")
+    noise = (estimate_profile_noise(velocity, brightness, vmin, vmax, noise_ranges, sigma, noise_estimator=noise_estimator,
+                                    window_frac=window_frac, smooth_window=smooth_window, noise_selection=noise_selection)
+             if threshold_reference is None else threshold_reference)
+    keys = ("noise_level_k", "noise_rms_k", "threshold_k", "noise_sample_count", "noise_ranges_kms",
+            "noise_window_selection", "sigma_multiplier")
+    result = {key: noise[key] for key in keys}
+    result["noise_estimator"] = noise.get("noise_estimator", "median_mad")
+    result.update(status="not_detected", velocity_lsr_kms=None, minimum_channels=int(min_channels),
+                  search_range_kms=[float(max(0, vmin)), float(vmax)],
+                  threshold_source=threshold_source, return_width_kms=float(return_width),
+                  edge_definition="first sustained below-threshold return after dominant positive emission")
+    if noise["threshold_k"] is None or noise["noise_rms_k"] is None or noise["noise_rms_k"] <= 0:
+        result["status"] = (noise["status"] if threshold_reference is None else "invalid_threshold_reference")
+        return result
+    v = np.ma.asarray(velocity, dtype=float).filled(np.nan)
+    t = np.ma.asarray(brightness, dtype=float).filled(np.nan)
+    order = np.argsort(v)
+    v, t = v[order], t[order]
+    finite = np.isfinite(v) & np.isfinite(t)
+    search = finite & (v > 0) & (v >= vmin) & (v <= vmax)
+    spacing = np.diff(v[np.isfinite(v)])
+    spacing = spacing[spacing > 0]
+    if not len(spacing):
+        return result
+    step = float(np.median(spacing))
+    max_gap = 1.5*step
+    indices = np.flatnonzero(search)
+    if not len(indices):
+        return result
+    breaks = (np.diff(indices)>1) | (np.diff(v[indices])>max_gap)
+    candidates = []
+    threshold = result["threshold_k"]
+    for segment in np.split(indices, np.flatnonzero(breaks)+1):
+        guide = gaussian_filter1d(median_filter(t[segment], size=3, mode="nearest"),
+                                   max(1., step)/step, mode="nearest")
+        above = np.flatnonzero(t[segment] > threshold)
+        runs = np.split(above, np.flatnonzero(np.diff(above)>1)+1)
+        for run in runs:
+            if len(run) >= min_channels:
+                peak = run[np.argmax(guide[run])]
+                candidates.append((float(guide[peak]), int(segment[peak]), len(run)))
+    if not candidates:
+        return result
+    _, peak, run_channels = max(candidates)
+    result.update(peak_velocity_kms=float(v[peak]), emission_run_channels=int(run_channels),
+                  selection_smoothing_sigma_kms=max(1., step))
+    last_above = peak
+    below_start = None
+    for index in range(peak+1, len(v)):
+        if v[index] > vmax:
+            break
+        if not finite[index] or v[index]-v[index-1] > max_gap:
+            result.update(status="gap_limited", last_above_threshold_velocity_kms=float(v[last_above]))
+            return result
+        if t[index] > threshold:
+            last_above = index
+            below_start = None
+        else:
+            if below_start is None:
+                below_start = index
+            count = index-below_start+1
+            width = v[index]-v[below_start]
+            if count >= min_channels and width >= return_width:
+                before = below_start-1
+                fraction = (t[before]-threshold)/(t[before]-t[below_start])
+                crossing = v[before]+fraction*(v[below_start]-v[before])
+                result.update(status="detected", velocity_lsr_kms=float(crossing),
+                              last_above_threshold_velocity_kms=float(v[before]),
+                              return_below_threshold_channels=int(count),
+                              return_confirmed_width_kms=float(width))
+                return result
+    result.update(status="edge_limited", last_above_threshold_velocity_kms=float(v[last_above]))
+    return result
+
+
+
+
 def erfc_edge(velocity, baseline, amplitude, terminal, width):
     """Falling edge; width is the Gaussian dispersion in km/s."""
     from scipy.special import erfc
     return baseline + .5 * amplitude * erfc((np.asarray(velocity) - terminal) / (np.sqrt(2) * width))
 
 
-def fit_terminal_erfc(velocity, brightness, fit_range):
-    """Fit an explicitly selected positive wing, without rescaling the data.
+def select_falling_wing(velocity, brightness, search_range):
+    """Select a strong positive emission's falling wing on a smoothed guide.
+
+    Smoothing is only for selection; the erfc fit uses original samples. Gaps
+    split the guide into independent segments and are never interpolated over.
+    This heuristic selects a dominant falling transition, not necessarily the
+    most extreme weak component or a physical Galactic tangent-point edge.
+    """
+    from scipy.ndimage import gaussian_filter1d, median_filter
+    low, high = search_range
+    if not np.all(np.isfinite([low, high])) or low < 0 or low >= high:
+        raise ValueError("Automatic erfc search requires finite limits with 0 <= minimum < maximum")
+    result = dict(status="insufficient_channels", window_selection="automatic_falling_wing",
+                  search_range_kms=[float(low), float(high)], velocity_lsr_kms=None)
+    v, t = np.asarray(velocity), np.asarray(brightness)
+    mask = np.isfinite(v) & np.isfinite(t) & (v >= low) & (v <= high)
+    order = np.argsort(v[mask])
+    v, t = v[mask][order], t[mask][order]
+    if len(v) < 12 or np.any(np.diff(v) <= 0):
+        return result
+    step = float(np.median(np.diff(v)))
+    segments = np.split(np.arange(len(v)), np.flatnonzero(np.diff(v) > 1.5*step)+1)
+    candidates = []
+    for segment in segments:
+        if len(segment) < 12:
+            continue
+        x, y = v[segment], t[segment]
+        smoothing_sigma = max(1., step)  # km/s, never narrower than one channel.
+        smooth = gaussian_filter1d(median_filter(y, size=3, mode="nearest"),
+                                   smoothing_sigma/step, mode="nearest")
+        tail = max(3, int(np.ceil(len(y)*.2)))
+        floor = float(np.median(y[-tail:]))
+        q25, q75 = np.quantile(y[-tail:], [.25, .75])
+        noise = float((q75-q25)/1.349)
+        peak = int(np.argmax(smooth))
+        contrast = float(smooth[peak]-floor)
+        if contrast <= max(5*noise, np.finfo(float).eps*max(1., np.max(np.abs(y)))):
+            continue
+        gradient = np.gradient(smooth, x)
+        edge = peak + int(np.argmin(gradient[peak:]))
+        if edge <= peak or gradient[edge] >= 0:
+            continue
+        # An erfc derivative is Gaussian: estimate dispersion from the width
+        # at one quarter of the maximum negative gradient.
+        left = right = edge
+        cutoff = gradient[edge]*.25
+        while left > peak and gradient[left] < cutoff:
+            left -= 1
+        while right < len(x)-1 and gradient[right] < cutoff:
+            right += 1
+        width = max(3*step, float((x[right]-x[left])/(2*np.sqrt(2*np.log(4)))))
+        selected = [max(float(x[0]), float(x[edge]-3.5*width)),
+                    min(float(x[-1]), float(x[edge]+5*width))]
+        candidates.append((contrast, dict(result, status="selected", selected_range_kms=selected,
+            seed_velocity_kms=float(x[edge]), seed_width_kms=width,
+            selection_smoothing_sigma_kms=smoothing_sigma,
+            selection_guide="three-channel median then Gaussian; original channels used for fitting",
+            segment_range_kms=[float(x[0]), float(x[-1])],
+            selection_tail_level=floor, selection_tail_noise=noise)))
+    if not candidates:
+        return dict(result, status="no_falling_edge")
+    return max(candidates, key=lambda item: item[0])[1]
+
+
+def fit_terminal_erfc(velocity, brightness, fit_range=None, *, search_range=None):
+    """Fit a manual or automatically selected positive wing in native units.
 
     The midpoint of the fitted step is a model edge, not a noise crossing.
     Formal covariance errors exclude baseline, beam and model uncertainties.
     """
+    if fit_range is None:
+        if search_range is None:
+            raise ValueError("Automatic erfc fitting requires a positive search range")
+        selection = select_falling_wing(velocity, brightness, search_range)
+        if selection["status"] != "selected":
+            return selection
+        fit = fit_terminal_erfc(velocity, brightness, selection["selected_range_kms"])
+        return {**selection, **fit, "window_selection": selection["window_selection"]}
     import warnings
     from scipy.optimize import curve_fit, OptimizeWarning
     low, high = fit_range
     if not np.all(np.isfinite([low, high])) or low < 0 or low >= high:
         raise ValueError("Erfc fit range must be finite with 0 <= minimum < maximum")
     result = dict(status="insufficient_channels", model="baseline + amplitude/2 * erfc((v-v_terminal)/(sqrt(2)*width))",
-                  fit_range_kms=[float(low), float(high)], velocity_lsr_kms=None)
+                  fit_range_kms=[float(low), float(high)], velocity_lsr_kms=None,
+                  window_selection="manual")
     v, t = np.asarray(velocity), np.asarray(brightness)
     mask = np.isfinite(v) & np.isfinite(t) & (v >= low) & (v <= high)
     v, t = v[mask], t[mask]
@@ -374,22 +539,36 @@ def build_parser():
     parser.add_argument("--lat-range", default="[-3,3,1]", help="Latitude offsets [min,max,step] in degrees")
     parser.add_argument("--fit-vmin", type=float, default=-150.)
     parser.add_argument("--fit-vmax", type=float, default=150.)
-    parser.add_argument("--observation-baseline", choices=("none", "constant", "linear", "read-ray"), default="linear",
-                        help="HI4PI lower-envelope baseline (default linear); read-ray restores the +50 km/s anchor method")
+    parser.add_argument("--observation-baseline", choices=("none", "constant", "linear"), default="linear",
+                        help="Baseline model (default linear with automatic outer windows); --no-baseline-auto uses lower-envelope fitting")
+    parser.add_argument("--baseline-window", nargs=2, type=float, action="append", metavar=("VMIN", "VMAX"),
+                        help="Line-free observation baseline window (km/s); repeat for multiple windows. Uses all selected channels with symmetric outlier clipping, independently of --fit-vmin/--fit-vmax")
+    parser.add_argument("--baseline-auto", action=argparse.BooleanOptionalAction, default=True,
+                        help="Automatically select outer 20%% baseline windows on both sides within --vmin/--vmax (default enabled for linear/constant observation baselines). Explicit --baseline-window overrides this; --no-baseline-auto restores lower-envelope fitting")
     parser.add_argument("--vmin", type=float, default=-100., help="Plot minimum LSR velocity")
     parser.add_argument("--vmax", type=float, default=100., help="Plot maximum LSR velocity")
+    parser.add_argument("--noise-estimator", choices=NOISE_ESTIMATORS, default="median_mad",
+                        help="Noise estimator (default median_mad, matching pipeline QA)")
+    parser.add_argument("--noise-window-frac", type=float, default=.2,
+                        help="Fraction of native channels excluded around the smoothed peak (default 0.2)")
+    parser.add_argument("--noise-smooth-window", type=int, default=10,
+                        help="QA peak-location smoothing window (default 10, adjusted to odd)")
+    parser.add_argument("--noise-selection", choices=("qa_peak_exclusion", "positive_edge"), default="qa_peak_exclusion",
+                        help="QA peak exclusion by default; positive_edge explicitly restores legacy edge selection")
     parser.add_argument("--noise-range", nargs=2, type=float, action="append", metavar=("VMIN", "VMAX"),
-                        help="Line-free LSR noise window (km/s); repeat for multiple windows. Default: highest positive-velocity 20%% of displayed channels")
+                        help="Explicit LSR noise window (km/s); repeat for multiple windows. Default: pipeline QA peak exclusion")
     parser.add_argument("--terminal-source", choices=("auto", "observation", "lab"), default="auto",
-                        help="Spectrum for terminal velocity; auto uses observation when available, otherwise LAB")
-    parser.add_argument("--terminal-sigma", type=float, default=3., help="Threshold above mean noise level in RMS units (default 3)")
+                        help="Spectrum for terminal velocity; auto compares observation and LAB when available, otherwise LAB")
+    parser.add_argument("--terminal-sigma", type=float, default=3., help="Threshold above the configured noise baseline in scatter units (default 3)")
     parser.add_argument("--terminal-min-channels", type=int, default=3,
                         help="Minimum consecutive channels above threshold (default 3; use 1 for the rightmost individual channel)")
     parser.add_argument("--no-terminal-velocity", action="store_true", help="Disable terminal-velocity estimation")
-    parser.add_argument("--terminal-method", choices=("threshold", "erfc"), default="threshold",
-                        help="Terminal estimator (default threshold); erfc auto fits both available spectra")
+    parser.add_argument("--terminal-method", choices=("threshold", "connected", "erfc"), default="threshold",
+                        help="Terminal estimator: threshold finds the rightmost run; connected follows the main wing using a shared observation threshold; erfc fits the transition midpoint")
+    parser.add_argument("--terminal-return-width", type=float, default=3., metavar="KM_S",
+                        help="For connected edges, require below-threshold samples spanning this velocity width (default 3 km/s), plus --terminal-min-channels samples")
     parser.add_argument("--terminal-fit-range", nargs=2, type=float, metavar=("VMIN", "VMAX"),
-                        help="Required for erfc: positive falling-wing window in km/s, including the line-free tail")
+                        help="Manual erfc falling-wing window in km/s; omit to select automatically within the positive displayed range")
     parser.add_argument("--output", type=Path, help="CSV output path; PNG/JSON use the same stem")
     parser.add_argument("--display-only", action="store_true", help="Show a plot without saving files")
     return parser
@@ -546,10 +725,16 @@ def plot_result(result, args, context, observation=None):
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(figsize=(12, 6))
     ax.plot(result.velocity, result.temperature, color="black", linestyle="--", label="LAB Survey")
+    noise_metrics = None
+    noise_policy = dict(noise_estimator=args.noise_estimator, window_frac=args.noise_window_frac,
+                        smooth_window=args.noise_smooth_window, noise_selection=args.noise_selection)
     if observation is not None:
         velocity, corrected, baseline = observation
         scaled = corrected * np.nanmax(result.temperature) / np.max(corrected)
+        noise_metrics = observation_noise_metrics(velocity, scaled, args.vmin, args.vmax, args.noise_range, **noise_policy)
         baseline_label = "no baseline subtraction" if args.observation_baseline == "none" else f"{args.observation_baseline} baseline removed"
+        if args.baseline_auto and args.baseline_window:
+            baseline_label = f"auto {args.observation_baseline} baseline"
         ax.plot(velocity, scaled, color="red", label=f"Observation ({baseline_label}; scaled to LAB peak)")
     terminal = {"status": "disabled"}
     if not args.no_terminal_velocity and args.terminal_method == "erfc":
@@ -560,15 +745,21 @@ def plot_result(result, args, context, observation=None):
         for source, (edge_v, edge_t, scale) in spectra.items():
             if args.terminal_source not in ("auto", source):
                 continue
-            fit = fit_terminal_erfc(edge_v, edge_t, args.terminal_fit_range)
+            fit = fit_terminal_erfc(edge_v, edge_t, args.terminal_fit_range,
+                                    search_range=[max(0., args.vmin), args.vmax])
             fit["amplitude_unit"] = "K" if source == "lab" else "observation input power units"
             terminal["spectra"][source] = fit
+            if "selected_range_kms" in fit:
+                low, high = fit["selected_range_kms"]
+                print(f"Automatic erfc window ({source}): {low:.3f} to {high:.3f} km/s")
             if fit["status"] == "fitted":
                 terminal_v = fit["velocity_lsr_kms"]
                 colour = "tab:blue" if source == "lab" else "tab:orange"
                 sample = np.linspace(*fit["sampled_range_kms"], 300)
+                window_label = (f" (auto {sample[0]:.1f}–{sample[-1]:.1f} km/s)"
+                                if fit["window_selection"] == "automatic_falling_wing" else "")
                 ax.plot(sample, scale * erfc_edge(sample, fit["baseline"], fit["amplitude"], terminal_v, fit["width_kms"]),
-                        color=colour, linewidth=2, label=f"{source.upper()} erfc wing fit")
+                        color=colour, linewidth=2, label=f"{source.upper()} erfc wing fit{window_label}")
                 ax.axvline(terminal_v, color=colour, linestyle=":",
                            label=f"{source.upper()} erfc edge: {terminal_v:+.2f} ± {fit['velocity_formal_error_kms']:.2f} km/s")
                 print(f"Erfc edge ({source}): {terminal_v:+.3f} ± {fit['velocity_formal_error_kms']:.3f} km/s (formal); width={fit['width_kms']:.3f} km/s")
@@ -580,41 +771,132 @@ def plot_result(result, args, context, observation=None):
         if all(fits_by_source.get(source, {}).get("status") == "fitted" for source in ("lab", "observation")):
             difference = fits_by_source["observation"]["velocity_lsr_kms"] - fits_by_source["lab"]["velocity_lsr_kms"]
             terminal["observation_minus_lab_kms"] = difference
-            ax.text(.02, .95, f"Erfc Δv (observation − LAB): {difference:+.2f} km/s", transform=ax.transAxes, va="top")
             print(f"Erfc edge difference (observation − LAB): {difference:+.3f} km/s")
     elif not args.no_terminal_velocity:
-        source = args.terminal_source
-        if source == "auto":
-            source = "observation" if observation is not None else "lab"
-        terminal_velocity, terminal_brightness = (velocity, scaled) if source == "observation" else (result.velocity, result.temperature)
-        terminal = estimate_terminal_velocity(terminal_velocity, terminal_brightness, args.vmin, args.vmax,
-                                              args.noise_range, args.terminal_sigma, args.terminal_min_channels)
-        terminal["source"] = source
-        if terminal["threshold_k"] is not None:
-            ax.axhline(terminal["threshold_k"], color="grey", linestyle=":",
-                       label=f"Noise floor + {args.terminal_sigma:g}σ ({terminal['threshold_k']:.2f} K)")
-        if terminal["status"] == "detected":
-            terminal_v = terminal["velocity_lsr_kms"]
-            ax.axvline(terminal_v, color="tab:purple", linestyle="-.",
-                       label=f"Terminal velocity ({source}): {terminal_v:+.2f} km/s")
-            ax.plot(terminal_v, terminal["threshold_k"], "o", color="tab:purple")
-            print(f"Terminal LSR velocity ({source}): {terminal_v:+.3f} km/s; noise RMS={terminal['noise_rms_k']:.4f} K; threshold={terminal['threshold_k']:.4f} K")
-        else:
-            reason = terminal["status"].replace("_", " ")
-            if terminal["status"] in ("edge_limited", "gap_limited"):
-                reason += f"; emission extends to {terminal['last_above_threshold_velocity_kms']:+.2f} km/s"
-            ax.text(.02, .02, f"Terminal velocity: {reason}", transform=ax.transAxes, fontsize=9,
-                    bbox={"facecolor": "white", "alpha": .8, "edgecolor": "none"})
-            print(f"Terminal velocity ({source}): {reason}")
+        spectra = {"lab": (result.velocity, result.temperature)}
+        if observation is not None:
+            spectra["observation"] = (velocity, scaled)
+        estimates = {}
+        connected = args.terminal_method == "connected"
+        threshold_source = "observation" if observation is not None else "lab"
+        reference = None
+        if connected:
+            reference_v, reference_t = spectra[threshold_source]
+            reference = estimate_terminal_velocity(reference_v, reference_t, args.vmin, args.vmax,
+                                                   args.noise_range, args.terminal_sigma, args.terminal_min_channels, **noise_policy)
+        threshold_drawn = False
+        for source, (edge_v, edge_t) in spectra.items():
+            if args.terminal_source not in ("auto", source):
+                continue
+            if connected:
+                estimate = estimate_connected_terminal_velocity(edge_v, edge_t, args.vmin, args.vmax,
+                    args.noise_range, args.terminal_sigma, args.terminal_min_channels,
+                    return_width=args.terminal_return_width, threshold_reference=reference,
+                    threshold_source=threshold_source, **noise_policy)
+            else:
+                estimate = estimate_terminal_velocity(edge_v, edge_t, args.vmin, args.vmax,
+                                                       args.noise_range, args.terminal_sigma, args.terminal_min_channels, **noise_policy)
+            estimate["source"] = source
+            estimates[source] = estimate
+            colour = "tab:blue" if source == "lab" else "tab:purple"
+            if estimate["threshold_k"] is not None and (not connected or not threshold_drawn):
+                floor_label = (f"Shared {threshold_source} noise floor ({estimate['noise_level_k']:.2f}, plot units)"
+                               if connected else f"{source.upper()} noise floor ({estimate['noise_level_k']:.2f} K)")
+                ax.axhline(estimate["noise_level_k"], color=colour, linestyle="--", linewidth=1., alpha=.7,
+                           label=floor_label)
+                label = (f"Shared {threshold_source} noise floor + {args.terminal_sigma:g}σ ({estimate['threshold_k']:.2f}, plot units)"
+                         if connected else f"{source.upper()} noise floor + {args.terminal_sigma:g}σ ({estimate['threshold_k']:.2f} K)")
+                ax.axhline(estimate["threshold_k"], color=colour, linestyle=":", alpha=.7,
+                           label=label)
+                threshold_drawn = True
+            if estimate["status"] == "detected":
+                terminal_v = estimate["velocity_lsr_kms"]
+                ax.axvline(terminal_v, color=colour, linestyle="-.",
+                           label=f"{'Main-wing detection edge' if connected else 'Terminal velocity'} ({source}): {terminal_v:+.2f} km/s")
+                ax.plot(terminal_v, estimate["threshold_k"], "o", color=colour)
+                print(f"Terminal LSR velocity ({source}): {terminal_v:+.3f} km/s; noise scatter={estimate['noise_rms_k']:.4f} K; threshold={estimate['threshold_k']:.4f} K")
+            else:
+                reason = estimate["status"].replace("_", " ")
+                if estimate["status"] in ("edge_limited", "gap_limited"):
+                    reason += f"; emission extends to {estimate['last_above_threshold_velocity_kms']:+.2f} km/s"
+                ax.text(.02, .02 if source == "lab" else .07, f"Terminal velocity ({source}): {reason}",
+                        transform=ax.transAxes, fontsize=9, bbox={"facecolor": "white", "alpha": .8, "edgecolor": "none"})
+                print(f"Terminal velocity ({source}): {reason}")
+        # Keep the previously selected source's top-level fields for JSON consumers.
+        primary = "observation" if "observation" in estimates else "lab"
+        terminal = {**estimates[primary], "method": args.terminal_method, "spectra": estimates}
+        if all(estimates.get(source, {}).get("status") == "detected" for source in ("lab", "observation")):
+            difference = estimates["observation"]["velocity_lsr_kms"] - estimates["lab"]["velocity_lsr_kms"]
+            terminal["observation_minus_lab_kms"] = difference
+            print(f"Terminal velocity difference (observation − LAB): {difference:+.3f} km/s")
     title = f"LAB: l={result.longitude:.3f}°, b={result.latitude:.3f}° | Beam FWHM={args.beam:g}°"
+    observation_id = context.obs_id
+    if observation_id is None and args.file is not None and args.file.stem.endswith("_vlsr"):
+        observation_id = args.file.stem.removesuffix("_vlsr")
+    if observation_id:
+        fig.set_figheight(6.4)
     if observation is not None:
-        title += (f"\nOffsets: Δl={result.lon_offset:+.3f}°, Δb={result.lat_offset:+.3f}°"
-                  f" | Target={args.target_id}, frequency scan={args.freq_scan}"
-                  f"\nFit RMS={result.rms:.5f}, correlation={result.correlation:.5f} | Baseline={args.observation_baseline}")
+        title = (f"Target={args.target_id} | Frequency scan={args.freq_scan} | Beam FWHM={args.beam:g}°"
+                 f"\nBest FIT LAB: l={result.longitude:.3f}°, b={result.latitude:.3f}°"
+                 f" | Offsets: Δl={result.lon_offset:+.3f}°, Δb={result.lat_offset:+.3f}°"
+                 f"\nBaseline={args.observation_baseline} | Fit RMS={result.rms:.5f} | Correlation={result.correlation:.5f}")
+    if all(source in terminal.get("spectra", {}) for source in ("lab", "observation")):
+        difference = terminal.get("observation_minus_lab_kms")
+        title += (f"\nTerminal Velocity (Δv_T): {difference:+.2f} km/s (observation − LAB)" if difference is not None
+                  else "\nTerminal Velocity (Δv_T): unavailable (observation − LAB)")
     ax.set(title=title, xlabel="LSR velocity [km/s]", ylabel="Brightness temperature / scaled observation [K]" if observation else "Brightness temperature [K]", xlim=(args.vmin, args.vmax))
+    if observation_id:
+        header_size = ax.title.get_fontsize()
+        fig.suptitle(f"Observation: {observation_id}", fontsize=header_size).set_in_layout(False)
+        ax.title.set_fontsize(max(8., header_size-3.))
     ax.grid(alpha=.3)
-    ax.legend()
-    fig.tight_layout()
+    ax.legend(loc="upper right", fontsize=9)
+    def ranges_text(windows):
+        return "; ".join(f"{low:.1f} to {high:.1f}" for low, high in windows) + " km/s"
+    window_notes = []
+    if observation is not None:
+        if args.baseline_window:
+            mode = "auto" if args.baseline_auto else "manual"
+            window_notes.append(f"Baseline ({mode}): {ranges_text(args.baseline_window)}")
+        elif args.observation_baseline in ("linear", "constant"):
+            window_notes.append("Baseline: lowest 20% of scoring channels")
+        else:
+            window_notes.append("Baseline: none")
+    if args.no_terminal_velocity:
+        window_notes.append("Noise threshold: disabled")
+    elif args.terminal_method == "erfc":
+        window_notes.append("Noise threshold: not used (erfc)")
+    elif args.terminal_method == "connected" and terminal.get("noise_ranges_kms"):
+        window_notes.append(f"Noise ({terminal['threshold_source']}, shared): {ranges_text(terminal['noise_ranges_kms'])}")
+    else:
+        noise_windows = {}
+        for source, estimate in terminal.get("spectra", {}).items():
+            windows = estimate.get("noise_ranges_kms", [])
+            if windows:
+                key = tuple(tuple(bounds) for bounds in windows)
+                noise_windows.setdefault(key, []).append(source)
+        for windows, sources in noise_windows.items():
+            window_notes.append(f"Noise ({', '.join(sources)}): {ranges_text(windows)}")
+    if noise_metrics is not None:
+        if (args.no_terminal_velocity or args.terminal_method == "erfc"
+                or "observation" not in terminal.get("spectra", {})) and noise_metrics["noise_ranges_kms"]:
+            window_notes.append(f"Observation SNR noise window: {ranges_text(noise_metrics['noise_ranges_kms'])}")
+        if noise_metrics["status"] == "measured":
+            ratio_label = (f"{noise_metrics['peak_snr']:.1f}" if noise_metrics["peak_snr"] is not None else "out of range")
+            window_notes.append(f"Obs peak SNR: {ratio_label} ({noise_metrics['peak_snr_db']:.2f} dB, 10 log)")
+            robust = noise_metrics["noise_estimator"] == "median_mad"
+            window_notes.append(f"Obs {'median baseline' if robust else 'mean floor'}: {noise_metrics['noise_level_k']:.3g}; "
+                                f"{'Robust Noise' if robust else 'RMS'}: {noise_metrics['noise_rms_k']:.3g} (plot units)")
+        else:
+            window_notes.append(f"Obs SNR/noise: {noise_metrics['status'].replace('_', ' ')}")
+    if window_notes:
+        ax.text(.015, .98, "\n".join(window_notes), transform=ax.transAxes, va="top", ha="left",
+                fontsize=8, bbox={"boxstyle": "round,pad=0.4", "facecolor": "white", "edgecolor": "0.7", "alpha": .9})
+    if observation_id:
+        header_margin = (header_size+6.)/(72.*fig.get_figheight())
+        fig.tight_layout(rect=(0, 0, 1, 1-header_margin))
+    else:
+        fig.tight_layout()
     if not args.display_only:
         prefix = args.output.expanduser().with_suffix("") if args.output else Path(args.output_dir or args.dir).expanduser() / (f"{context.output_name}-lab-profile" if observation is None else f"{args.file.stem}_target{args.target_id}_scan{args.freq_scan}_lab_fit")
         prefix.parent.mkdir(parents=True, exist_ok=True)
@@ -632,14 +914,15 @@ def plot_result(result, args, context, observation=None):
                     "correlation": result.correlation if np.isfinite(result.correlation) else None,
                     "terminal_velocity": terminal}
         if observation is not None:
-            metadata.update(observation_baseline=args.observation_baseline,
-                            baseline_method={"linear": "linear fit to lowest 20% of powers on shared fitting channels (HI4PI method)",
+            metadata.update(observation_noise=noise_metrics,
+                            observation_baseline=args.observation_baseline,
+                            baseline_windows_kms=args.baseline_window,
+                            baseline_window_selection=("automatic_outer_20_percent_per_side" if args.baseline_auto and args.baseline_window
+                                                       else "explicit" if args.baseline_window else "method_default"),
+                            baseline_method=(f"{args.observation_baseline} fit to {'automatically selected outer' if args.baseline_auto else 'explicit line-free'} windows with symmetric 3-sigma clipping (IQR/1.349, standard deviation fallback; up to five iterations)" if args.baseline_window else {"linear": "linear fit to lowest 20% of powers on shared fitting channels (HI4PI method)",
                                              "constant": "median of lowest 20% of powers on shared fitting channels (HI4PI method)",
-                                             "none": "no subtraction",
-                                             "read-ray": "line from first valid observation channel to interpolated power at +50 km/s"}[args.observation_baseline],
+                                             "none": "no subtraction"}[args.observation_baseline]),
                             channel_matching="drop leading LAB channel if odd; average pairs; interpolate for scoring", fit_velocity_range_kms=[args.fit_vmin, args.fit_vmax], observation_peak_scale=float(np.nanmax(result.temperature) / np.max(corrected)))
-            if args.observation_baseline == "read-ray":
-                metadata.update(baseline_start_velocity_kms=float(velocity[0]), baseline_reference_velocity_kms=50.)
             reference = np.interp(velocity, result.velocity, result.temperature, left=np.nan, right=np.nan)
             np.savetxt(destination("_comparison.csv"), np.column_stack([velocity, baseline, corrected, scaled, reference]), delimiter=",", header="velocity_lsr_kms,baseline,baseline_subtracted_power,observation_scaled_to_lab_K,lab_K", comments="")
         destination(".json").write_text(json.dumps(metadata, indent=2, allow_nan=False) + "\n")
@@ -658,6 +941,19 @@ def main(argv=None):
                 raise ValueError("Provide both --lon and --lat, or --galactic L B")
             args.galactic = [args.lon, args.lat]
         context = resolve_profile_context(args)
+        # Manual windows take precedence. Modes that do not fit line-free
+        # channels (or have no observation) do not need automatic selection.
+        if args.baseline_window or args.file is None or args.observation_baseline not in ("linear", "constant"):
+            args.baseline_auto = False
+        if args.baseline_auto:
+            if not args.vmin < 0 < args.vmax:
+                raise ValueError("--baseline-auto requires --vmin < 0 < --vmax")
+        if args.baseline_window:
+            if args.file is None or args.observation_baseline not in ("linear", "constant"):
+                raise ValueError("--baseline-window requires --file and a linear or constant observation baseline")
+            for low, high in args.baseline_window:
+                if not np.all(np.isfinite([low, high])) or low >= high:
+                    raise ValueError("Baseline windows must be finite with minimum < maximum")
         if not np.isfinite(args.beam) or args.beam <= 0:
             raise ValueError("Beam must be finite and positive")
         if args.lv:
@@ -679,9 +975,7 @@ def main(argv=None):
         if args.file is None and (args.target_id is not None or args.freq_scan is not None or args.sweep):
             raise ValueError("--file, --target-id and --freq-scan are required for observation comparisons and sweeps")
         if args.terminal_method == "erfc" and not args.no_terminal_velocity:
-            if args.terminal_fit_range is None:
-                raise ValueError("--terminal-method erfc requires --terminal-fit-range VMIN VMAX")
-            low, high = args.terminal_fit_range
+            low, high = args.terminal_fit_range or [max(0., args.vmin), args.vmax]
             if not np.all(np.isfinite([low, high])) or low < 0 or low >= high:
                 raise ValueError("Erfc fit range must be finite with 0 <= minimum < maximum")
             if low < args.vmin or high > args.vmax:
@@ -692,8 +986,12 @@ def main(argv=None):
             raise ValueError("--display-only cannot be combined with --no-show or --output")
         if args.terminal_source == "observation" and args.file is None and not args.no_terminal_velocity:
             raise ValueError("--terminal-source observation requires --file, --target-id and --freq-scan")
+        if not np.isfinite(args.noise_window_frac) or not 0 < args.noise_window_frac < 1 or args.noise_smooth_window < 1:
+            raise ValueError("Noise window fraction must be between zero and one; smoothing must be positive")
         if not np.isfinite(args.terminal_sigma) or args.terminal_sigma <= 0 or args.terminal_min_channels < 1:
             raise ValueError("Terminal sigma must be finite and positive; minimum channels must be positive")
+        if not np.isfinite(args.terminal_return_width) or args.terminal_return_width <= 0:
+            raise ValueError("Terminal return width must be finite and positive")
         for low, high in args.noise_range or []:
             if not np.all(np.isfinite([low, high])) or low >= high:
                 raise ValueError("Noise windows must be finite with minimum < maximum")
@@ -717,6 +1015,10 @@ def main(argv=None):
         observation = None
         if args.file is not None:
             velocity, power = load_observation(args.file, args.target_id, args.freq_scan)
+            if args.baseline_auto:
+                args.baseline_window = select_baseline_windows(velocity, power, args.vmin, args.vmax)
+                for low, high in args.baseline_window:
+                    print(f"Automatic baseline window: {low:.3f} to {high:.3f} km/s")
         longitude, latitude = context.galactic.l.deg, context.galactic.b.deg
         best, rows = None, []
         with LABGaussianExtractor(args.lab_fits) as extractor:
@@ -735,7 +1037,8 @@ def main(argv=None):
                         reference = np.interp(velocity, ref_v, ref_t, left=np.nan, right=np.nan)
                         fit_mask = np.isfinite(reference) & (velocity >= args.fit_vmin) & (velocity <= args.fit_vmax)
                         if fit_mask.sum() >= 10:
-                            corrected, baseline = subtract_baseline(velocity, power, args.observation_baseline, fit_mask)
+                            corrected, baseline = subtract_baseline(velocity, power, args.observation_baseline, fit_mask,
+                                                                    baseline_windows=args.baseline_window)
                             candidate_observation = velocity, corrected, baseline
                             rms, correlation = compare_spectra(velocity, corrected, ref_v, ref_t, args.fit_vmin, args.fit_vmax)
                         else:

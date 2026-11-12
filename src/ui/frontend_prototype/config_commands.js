@@ -21,7 +21,7 @@
       $('button').disabled = !state.profile || !$('app').value || dirty || state.loading || admin.isBusy() || readOnly;
       $('button').textContent = state.busy ? 'Sending…' : 'RESYNC';
       for (const status of ['success', 'error', 'pending']) $('button').classList.toggle('is-' + status, status === state.status);
-      const message = state.message || (dirty ? 'Save changes before RESYNC.' : 'Reloads the app’s launch profile.');
+      const message = state.message || (dirty ? 'Save changes before RESYNC.' : 'Reloads the app’s launch Config Profile. Restart the app to use a different Config Profile.');
       if ($('result').textContent !== message) $('result').textContent = message;
     }
     async function reset(profile) {

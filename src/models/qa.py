@@ -15,10 +15,10 @@ class QA(BaseModel):
     schema = Schema({
         "_type":            And(str, lambda v: v == "QA"),
         "idx":              And(Or(None, int, np.integer), lambda v: v is None or v >= 0),  # Index of the QA attributes (e.g., second index for spr/cal pipelines)
-        "baseline":         Or(None, float),                                                # Baseline level from the noise region median
+        "baseline":         Or(None, float),                                                # Noise-region level (median by default)
         "snr_db":           Or(None, float),                                                # SNR (dB): 10 * log10(signal / noise)
         "signal_db":        Or(None, float),                                                # Signal (peak above baseline): max of signal region minus baseline, converted to dB        
-        "noise_db":         Or(None, float),                                                # Noise (robust RMS via MAD): 1.4826 * median absolute deviation of noise region, converted to dB
+        "noise_db":         Or(None, float),                                                # Noise scatter in dB (MAD by default; mean/RMS estimator optional)
         "signal_start":     And(Or(None, int, np.integer), lambda v: v is None or v >= 0),  # Start channel of signal region
         "signal_end":       And(Or(None, int, np.integer), lambda v: v is None or v >= 0),  # End channel of signal region (inclusive)
         "rfi_fraction":     And(Or(None, float), lambda v: v is None or 0.0 <= v <= 1.0),   # RFI fraction: fraction of channels in signal region flagged as RFI
