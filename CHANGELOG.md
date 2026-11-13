@@ -7,9 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- SDP now matches pending scans by observation, target and frequency-scan identity as well as radio settings and read-counter range. Target/configuration changes retire unfinished scans from the previous identity without completion advice; late ODT packets cannot modify the current target. Configuration and sample handling share the per-digitiser lock, while completed scans, LOAD calibration data and other digitisers are preserved. Pending-scan counts account for retired scans across digitisers, and manual scans retain their existing metadata compatibility. This fixes cross-target sample assignment; overload handling and retry limits are unchanged.
+
 - Downgraded rtlstream/airstream sample-age threshold exceedances from hardware errors to warnings. Reads continue with their original timestamps, sample age and dropped-sample metadata, avoiding observation aborts caused solely by buffered age. Actual read, producer and reset failures remain errors.
 
 - Column headings remain visible while scrolling Engineering Status, dish inspection, Configuration, Schedule and Results catalogue tables, including the corner heading for tables with a frozen first column.
+
+- Results connection messages now say OPT connected and refer to the OPT service without the ambiguous Local prefix, distinguishing service availability from the separately selected Config Profile.
 
 - Stale snapshot and refresh-failure messages use the amber warning badge styling consistently in Engineering Status, Schedule and dish inspection, including when TM remains connected without providing updates. Healthy snapshot messages return to their normal muted appearance.
 
@@ -49,13 +53,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Dish pointing offset and position angle accept unavailable values and are updated from measured Alt/Az on the regular current-pointing poll, using the shared target-centre calculation. The pointing log appends both values, and TM's first/last scan pointing references retain `pointing_offset` and `pointing_position_angle` alongside datetime and Alt/Az. Legacy records without the additional fields remain readable.
 
-- RTL and Airspy streaming drivers now timestamp sample blocks from measured producer read-start/end wall-clock intervals, preserving timing through ring-buffer splits, merges, drops and resets. Freshness measures how long buffered reads have waited since completion, so normal read overhead does not accumulate into false stale-sample aborts. Genuine stale buffers and reset failures still raise errors. Targeted DEBUG diagnostics report read duration, delivery rate, nominal timeline lag and ring occupancy; these host-read timestamps do not claim hardware acquisition timing.
+- RTL and Airspy streaming drivers now timestamp sample blocks from measured producer read-start/end wall-clock intervals, preserving timing through ring-buffer splits, merges, drops and resets. Freshness measures how long buffered reads have waited since completion, so normal read overhead does not accumulate into false sample age. Exceeding the age threshold now logs a warning and continues delivery; actual read, producer and reset failures remain errors. Targeted DEBUG diagnostics report read duration, delivery rate, nominal timeline lag and ring occupancy; these host-read timestamps do not claim hardware acquisition timing.
 
 - Fixed repeated aborts after a configuration failure races with dish target acquisition. Cleanup always sends standby and target-clear commands despite stale TM state; standby READY polls cannot restart scanning/tracking, DM forwards the actual acquisition failure message, and inactive observations do not receive repeated abort transitions. Repeated OET abort events leave cleanup and the release timer unchanged.
 
 - Added Save Pipeline Configuration to persist OPT's edited pipeline atomically to the selected Config Profile. Expanded pipeline help explains SPR per-channel/per-second storage, CAL corrections, MPR reduction, step ordering and reprocessing. Pipeline/observation pane ordering, spacing and parameter-field alignment were improved. LAB sweep defaults are ±10 degrees in longitude and latitude with one-degree steps; RESYNC help now explicitly describes reloading the app's Config Profile from disk.
 
 - Added local and rotation solar-offset observation examples, including five- and ten-minute outbound/return passes, and refreshed commissioning load/rotation settings and local digitiser backend selection.
+
+- Updated rotation commissioning observations to five-minute integrations at 35 dB gain, with a three-hour scheduling block, and added rotation-continuation and Sadr tracking examples. The five-minute solar drive example includes a short AUTO1 gain acquisition, a LOAD measurement and outbound/return SKY passes. The rotation profile's flatten baseline step is currently configured as disabled.
 
 - Fixed All SKY Frequency overlays retaining the earlier pipeline-only image after interactive baseline updates. Initial rendering and cached updates now build the overlay from the exact corrected individual spectra, preserving matching powers/ranges and channel annotations without adding SNR panels or median-baseline lines.
 
@@ -77,7 +83,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Removed the zero reference line from single-aggregate Frequency plots. With no interactive subtraction, a single SKY aggregate now uses the same data-driven vertical scale as the All SKY aggregates view.
 
-- Interactive baseline settings now start at No subtraction on each page load, ignoring remembered baseline methods; omitted API baseline settings also default to none. Pipeline flattening remains enabled.
+- Interactive baseline settings now start at No subtraction on each page load, ignoring remembered baseline methods; omitted API baseline settings also default to none. This display setting does not change the pipeline baseline configuration in the selected profile.
 
 - Added `Flatten (retain fitted level)` to interactive Analysis settings, supporting both initial processing and cached Frequency/Velocity plot updates on top of the configured pipeline output.
 

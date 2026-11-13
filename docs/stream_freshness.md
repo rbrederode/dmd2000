@@ -84,3 +84,25 @@ With DEBUG enabled, `Stream SDR timing` records report measured block intervals,
 buffer age, producer read timing, effective delivery rate, and ring occupancy.
 `producer_timeline_lag_sec` remains a diagnostic comparison against nominal sample
 time; it does not trigger the sample-age warning.
+
+
+## SDP scan identity at target boundaries
+
+SDP checks each ODT sample block against the active digitiser configuration before
+loading it. Pending scans must also match the observation ID, target index and
+frequency-scan index; identical radio settings or overlapping read-counter ranges
+are insufficient to identify a scan.
+
+Scan configuration changes and sample handling share the per-digitiser lock.
+When the active identity changes, SDP marks unfinished scans from the previous
+identity as aborted and removes them from the pending queue. This cleanup sends
+no scan-complete advice to TM. Approved sample handling also applies the same
+cleanup defensively before matching a pending scan. A late ODT packet is
+acknowledged and discarded before cleanup, so it cannot retire or modify scans
+for the new target. Manual scans retain their existing metadata compatibility
+and match against the active SDP identity.
+
+Completed scans and LOAD calibration data are retained under the existing
+calibration policy. Other digitisers' pending scans are unaffected, and pending
+scan counts include all digitisers. This identity check does not change overload
+sample dropping, the completion requirement or the number of retry attempts.

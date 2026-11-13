@@ -28,6 +28,7 @@ def _build_sdp(tmp_path, *, connected_id=None, connection_state=None):
         else {}
     )
     sdp.stop = lambda: None
+    sdp._dig_locks = {}
     sdp.sky_q = Queue()
     sdp.cal_q = Queue()
     sdp.get_args = lambda: SimpleNamespace(scan_store_dir=str(tmp_path))
