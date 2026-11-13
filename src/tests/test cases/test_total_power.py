@@ -6,6 +6,7 @@ import matplotlib
 matplotlib.use("Agg")
 from matplotlib import pyplot as plt
 import numpy as np
+import pytest
 
 from models.scan import ScanType
 from obs.total_power import physical_power_records, power_series, timeline_origin, save_total_power, save_power_csv
@@ -78,6 +79,26 @@ def test_plots_switch_axes_and_do_not_draw_through_recording_gaps(tmp_path, monk
     np.testing.assert_array_equal(captured[0][1][1][0], [11, 12, 13])
     assert captured[1][0] == 'Scan number'
     np.testing.assert_array_equal(captured[1][1][0][1], [15, 40])
+
+
+@pytest.mark.parametrize('resolution', ['seconds', 'scans'])
+def test_mean_toggle_only_changes_reference_lines(tmp_path, monkeypatch, resolution):
+    import obs.total_power as module
+    records = physical_power_records(observation_data())
+    captured = []
+    def capture(figure, axis, path):
+        captured.append([(line.get_linestyle(), np.asarray(line.get_xdata()).copy(),
+                          np.asarray(line.get_ydata()).copy()) for line in axis.lines])
+    monkeypatch.setattr(module, 'save_velocity_figure', capture)
+    for mean in (True, False):
+        save_total_power(records, tmp_path/'plot.png', 'solar', resolution=resolution, show_mean=mean)
+    assert any(style == '--' for style, _, _ in captured[0])
+    assert all(style != '--' for style, _, _ in captured[1])
+    signal = [line for line in captured[0] if line[0] != '--']
+    assert len(signal) == len(captured[1])
+    for before, after in zip(signal, captured[1]):
+        np.testing.assert_array_equal(before[1], after[1])
+        np.testing.assert_array_equal(before[2], after[2])
 
 
 def test_affine_corrections_match_direct_flagged_reconstruction_and_are_not_cumulative(tmp_path):

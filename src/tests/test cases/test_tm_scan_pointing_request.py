@@ -167,12 +167,16 @@ def test_pointing_response_updates_and_saves_scan_metadata():
             "requested_datetime": read_start.isoformat(),
             "offset_seconds": 0.1,
             "pointing_altaz": {"alt": 35.0, "az": 180.0},
+            "pointing_offset": 1.25,
+            "pointing_position_angle": 270.0,
         },
         {
             "datetime": end_recorded.isoformat(),
             "requested_datetime": read_end.isoformat(),
             "offset_seconds": -0.2,
             "pointing_altaz": {"alt": 36.0, "az": 181.0},
+            "pointing_offset": None,
+            "pointing_position_angle": None,
         },
     ]
     response_timestamp = datetime.now(timezone.utc).isoformat()
@@ -197,10 +201,14 @@ def test_pointing_response_updates_and_saves_scan_metadata():
         {
             "datetime": start_recorded,
             "pointing_altaz": {"alt": 35.0, "az": 180.0},
+            "pointing_offset": 1.25,
+            "pointing_position_angle": 270.0,
         },
         {
             "datetime": end_recorded,
             "pointing_altaz": {"alt": 36.0, "az": 181.0},
+            "pointing_offset": None,
+            "pointing_position_angle": None,
         },
     ]
     assert {
@@ -209,3 +217,14 @@ def test_pointing_response_updates_and_saves_scan_metadata():
         f"dish001_req_timer_retry:{response_timestamp}",
         f"dish001_req_timer_final:{response_timestamp}",
     }
+
+
+def test_pointing_reference_normalisation_accepts_legacy_and_rejects_invalid_offsets():
+    point = {'datetime': '2026-11-12T10:00:00Z', 'pointing_altaz': {'alt':35., 'az':180.}}
+    legacy = TelescopeManager._normalise_scan_pointing_ref(point)
+    assert legacy['pointing_offset'] is None
+    assert legacy['pointing_position_angle'] is None
+    for name, value in [('pointing_offset', 181), ('pointing_offset', float('nan')),
+                        ('pointing_position_angle', -1), ('pointing_position_angle', 361),
+                        ('pointing_position_angle', '90')]:
+        assert TelescopeManager._normalise_scan_pointing_ref({**point, name:value}) is None

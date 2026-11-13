@@ -7,6 +7,7 @@
   const show = value => { value = unwrap(value); return value == null ? '—' : String(value); };
   const time = value => { const date = new Date(unwrap(value)); return value && !Number.isNaN(+date) ? date.toISOString().slice(0, 19).replace('T', ' ') + ' UTC' : '—'; };
   const degrees = value => typeof value === 'number' && Number.isFinite(value) ? value.toFixed(4) : '—';
+  const threeDecimals = value => typeof value === 'number' && Number.isFinite(value) ? value.toFixed(3) : '—';
   // Zenith-distance projection: north up, east right, horizon at radius 104.
   function polarPoint(position) {
     const alt = position?.alt, az = position?.az;
@@ -56,8 +57,8 @@
     const pec = dish.tgt_id ? (dish.tgt_pec || []).find(item => item.tgt_id === dish.tgt_id) : null;
     const pairs = [['Target ID', dish.tgt_id],
       ['Pointing measured UTC', time(dish.pointing_altaz_dt)], ['Target acquired UTC', time(dish.tgt_acq_dt)],
-      ['PEC altitude RMS [arcsec]', pec?.alt_rms], ['PEC azimuth RMS [arcsec]', pec?.az_rms],
-      ['Altitude velocity [°/s]', dish.velocity_altaz?.alt], ['Azimuth velocity [°/s]', dish.velocity_altaz?.az],
+      ['PEC altitude RMS [arcsec]', threeDecimals(pec?.alt_rms)], ['PEC azimuth RMS [arcsec]', threeDecimals(pec?.az_rms)],
+      ['Altitude velocity [°/s]', threeDecimals(dish.velocity_altaz?.alt)], ['Azimuth velocity [°/s]', threeDecimals(dish.velocity_altaz?.az)],
       ['Weather station', dish.ws_id], ['Polling period [ms]', dish.driver_poll_period]];
     pairs.push(['Diameter [m]', dish.diameter], ['F/D', dish.fd_ratio], ['Digitiser', dish.dig_id],
       ['Latitude [°]', dish.latitude], ['Longitude [°]', dish.longitude], ['Height [m]', dish.height]);

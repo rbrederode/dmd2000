@@ -186,6 +186,7 @@
             <div class="panel-head"><h2 id="schedule-heading">Queued and running observations <span id="schedule-count" class="schedule-count">—</span></h2></div>
             <p class="zk-muted schedule-hint">Running observations appear first, followed by the queue in start-time order. Select an observation to expand its scans.</p>
             <p id="schedule-freshness" class="zk-muted" role="status" aria-live="polite">Waiting for a TM snapshot.</p>
+            <p id="schedule-action-result" class="schedule-download-result" role="status" aria-live="polite" hidden></p>
             <p id="schedule-download-result" class="schedule-download-result" role="status" aria-live="polite" hidden></p>
             <div id="schedule-scroll" class="schedule-scroll" tabindex="0" role="region" aria-label="Queued and running observations">
               <table class="zk-tbl schedule-table">
@@ -335,11 +336,11 @@
               <div class="opt-scan-list" id="opt-scan-list" aria-label="Scan selection"><div class="opt-empty-small">Your scans will appear here.</div></div>
               <div class="opt-sidebar-foot"><button class="zk-btn is-sm" id="opt-previous" type="button">← Previous</button><button class="zk-btn is-sm" id="opt-next" type="button">Next →</button></div>
             </aside>
-            <section class="zk-card opt-viewer" aria-label="Analysis views">
+            <section class="zk-card opt-viewer" id="opt-viewer" aria-label="Analysis views">
               <div class="opt-view-tabs" role="tablist" aria-label="Analysis view">
-                <button class="is-active" data-opt-view="signal" type="button" role="tab" aria-selected="true">Signal</button><button data-opt-view="frequency" type="button" role="tab" aria-selected="false">Frequency</button><button data-opt-view="velocity" type="button" role="tab" aria-selected="false">Velocity</button><button data-opt-view="timeline" type="button" role="tab" aria-selected="false">Total Power</button><button data-opt-view="lv" type="button" role="tab" aria-selected="false">L-V Diagram</button><button data-opt-view="details" type="button" role="tab" aria-selected="false">Details</button>
+                <button class="is-active" data-opt-view="signal" type="button" role="tab" aria-selected="true">Signal</button><button data-opt-view="frequency" type="button" role="tab" aria-selected="false">Frequency</button><button data-opt-view="velocity" type="button" role="tab" aria-selected="false">Velocity</button><button data-opt-view="timeline" type="button" role="tab" aria-selected="false">Total Power</button><button data-opt-view="lv" type="button" role="tab" aria-selected="false">L-V Diagram</button><button data-opt-view="pointing" type="button" role="tab" aria-selected="false">Pointing</button><button data-opt-view="details" type="button" role="tab" aria-selected="false">Details</button>
               </div>
-              <div class="opt-plot-head"><div><strong id="opt-selected-title">Select a scan</strong><span class="zk-muted" id="opt-selected-detail">Completed aggregates are available after processing.</span></div><div class="zk-actions"><span id="opt-lab-controls" hidden><label><input id="opt-lab" type="checkbox" /> LAB survey</label> <label>Beam FWHM [°] <input id="opt-lab-beam" class="zk-input opt-lab-beam" type="number" value="5" min="0.1" max="60" step="0.5" /></label></span><label id="opt-timeline-resolution-label" hidden>Resolution <select id="opt-timeline-resolution" class="zk-select"><option value="seconds">Per second</option><option value="scans" selected>Per scan</option></select></label><label id="opt-timeline-overlay-label" hidden><input id="opt-timeline-overlay" type="checkbox" checked /> All SKY aggregates</label><label id="opt-frequency-overlay-label" hidden><input id="opt-frequency-overlay" type="checkbox" checked /> All SKY aggregates</label><label id="opt-overlay-label" hidden><input id="opt-overlay" type="checkbox" /> All SKY aggregates</label><a class="zk-btn is-sm" id="opt-image-link" target="_blank" rel="noopener" hidden>Open image ↗</a></div>
+              <div class="opt-plot-head"><div><strong id="opt-selected-title">Select a scan</strong><span class="zk-muted" id="opt-selected-detail">Completed aggregates are available after processing.</span></div><div class="zk-actions"><span id="opt-lab-controls" hidden><label><input id="opt-lab" type="checkbox" /> LAB survey</label> <label>Beam FWHM [°] <input id="opt-lab-beam" class="zk-input opt-lab-beam" type="number" value="5" min="0.1" max="60" step="0.5" /></label></span><label id="opt-terminal-label" hidden>Terminal velocity <select id="opt-terminal" class="zk-select" title="Measure the positive LSRK edge of the observation within the selected velocity limits. Threshold and Connected use the pipeline QA noise policy; Erfc fits an automatically selected falling wing."><option value="none" selected>No method</option><option value="threshold">Threshold edge</option><option value="connected">Connected edge</option><option value="erfc">Erfc wing fit</option></select></label><label id="opt-timeline-resolution-label" hidden>Resolution <select id="opt-timeline-resolution" class="zk-select"><option value="seconds" selected>Per second</option><option value="scans">Per scan</option></select></label><label id="opt-timeline-mean-label" hidden><input id="opt-timeline-mean" type="checkbox" checked /> Show mean</label><label id="opt-timeline-overlay-label" hidden><input id="opt-timeline-overlay" type="checkbox" checked /> All SKY aggregates</label><label id="opt-frequency-overlay-label" hidden><input id="opt-frequency-overlay" type="checkbox" checked /> All SKY aggregates</label><label id="opt-overlay-label" hidden><input id="opt-overlay" type="checkbox" checked /> All SKY aggregates</label><a class="zk-btn is-sm" id="opt-image-link" target="_blank" rel="noopener" hidden>Open image ↗</a></div>
                 <div id="opt-lab-sweep-controls" class="opt-lab-sweep-controls" hidden>
                   <label><input id="opt-lab-sweep" type="checkbox" checked /> Sweep LAB coordinates</label>
                   <label>Δl min [°] <input class="zk-input" id="opt-lab-lon-min" type="number" value="-10" min="-180" max="180" /></label>
@@ -351,7 +352,24 @@
                   <button id="opt-lab-find" class="zk-btn is-sm" type="button">Find best fit</button>
                 </div>
               </div>
-              <div class="opt-canvas" id="opt-canvas"><div id="opt-placeholder" class="opt-empty"><span class="opt-empty-icon">⌁</span><h2>From recorded scans to a clearer view</h2><p>Choose an observation, review the included scans, then process the complete batch. Select any aggregate to inspect its signal.</p><div class="opt-empty-steps"><span>1 · Review inputs</span><span>2 · Process once</span><span>3 · Explore results</span></div></div><img id="opt-plot" alt="Selected observation analysis plot" hidden /><div id="opt-details" hidden></div></div>
+              <div class="opt-canvas" id="opt-canvas"><div id="opt-placeholder" class="opt-empty"><span class="opt-empty-icon">⌁</span><h2>From recorded scans to a clearer view</h2><p>Choose an observation, review the included scans, then process the complete batch. Select any aggregate to inspect its signal.</p><div class="opt-empty-steps"><span>1 · Review inputs</span><span>2 · Process once</span><span>3 · Explore results</span></div></div><img id="opt-plot" alt="Selected observation analysis plot" hidden /><aside id="opt-pointing-details" class="opt-pointing-details" aria-label="Target and scan position details" hidden></aside><div id="opt-details" hidden></div></div>
+              <div id="opt-pointing-controls" class="opt-pointing-controls" hidden>
+                <p id="opt-pointing-summary" class="zk-muted">Markers use each physical scan's first recorded pointing and timestamp.</p>
+                <div class="zk-actions">
+                  <button id="opt-pointing-show-sky" class="zk-btn is-sm" type="button" aria-pressed="true" hidden>Sky view</button>
+                  <button id="opt-pointing-show-animation" class="zk-btn is-sm" type="button" aria-pressed="false" hidden>Play animation</button>
+                  <button id="opt-pointing-render" class="zk-btn is-sm" type="button">Generate sky view</button>
+                  <label>Frame interval [ms] <input id="opt-animation-interval" class="zk-input opt-animation-interval" type="number" value="100" min="100" max="500" step="10" title="Suggested for roughly a 10-second loop, between 100 and 500 ms per frame. Change this value, then generate the animation." /></label>
+                  <button id="opt-animation-generate" class="zk-btn is-primary is-sm" type="button">Generate Animation</button>
+                  <a id="opt-animation-download" class="zk-btn is-sm" hidden>Download animation GIF</a>
+                </div>
+                <div id="opt-pointing-progress" class="opt-progress" hidden>
+                  <progress max="1" value="0" aria-label="Pointing generation progress"></progress>
+                  <span role="status" aria-live="polite">Preparing animation…</span>
+                </div>
+                <p id="opt-animation-timing" class="zk-muted" role="status" hidden></p>
+                <p class="zk-muted">Animation includes all included SKY scans, with one frame per physical scan and its pipeline-processed MPR spectrum.</p>
+              </div>
             </section>
           </div>
           <section class="zk-card opt-settings">
@@ -385,7 +403,7 @@
             <div class="config-resync" aria-label="Resynchronise application configuration">
               <label class="zk-field">App<select class="zk-select" id="config-resync-app" aria-label="Application to resynchronise"><option value="">Select app…</option></select></label>
               <button class="zk-btn" id="config-resync-button" type="button" disabled>RESYNC</button>
-              <span id="config-resync-result" class="zk-muted" role="status" aria-live="polite">Reloads the app’s launch Config Profile. Restart the app to use a different Config Profile.</span>
+              <span id="config-resync-result" class="zk-muted" role="status" aria-live="polite">Reloads the app's Config Profile from disk. Restart the app to use a different Config Profile.</span>
             </div>
           </div>
           <section class="admin-panel is-active" data-admin-panel="dishes" id="dish-workspace">

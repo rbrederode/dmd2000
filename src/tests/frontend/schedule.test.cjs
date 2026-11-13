@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { init, observations, scansFor, completed, historyObservations, historyStatus, rows, scanDetails, timestamp, duration } = require('../../ui/frontend_prototype/schedule.js');
+const { init, observations, scansFor, completed, historyObservations, historyStatus, rows, scanDetails, timestamp, duration, controlOperation } = require('../../ui/frontend_prototype/schedule.js');
 const en = value => ({ _type: 'enum.IntEnum', value });
 const dt = value => ({ _type: 'datetime', value });
 const now = Date.parse('2026-11-08T15:00:00Z');
@@ -39,7 +39,7 @@ test('running observations precede the pending queue, ordered by scheduled start
     obs('scanning', 'SCANNING'), obs('configuring', 'CONFIGURING', '2026-11-08T14:00:00Z'),
     obs('aborted', 'ABORTED'), obs('fault', 'FAULT'),
   ]), now);
-  assert.deepEqual(list.map(item => item.obs_id), ['configuring', 'scanning', 'earlier', 'later']);
+  assert.deepEqual(list.map(item => item.obs_id), ['configuring', 'scanning', 'earlier', 'aborted', 'later']);
 });
 
 test('completed observations retained in the model are excluded from the live queue', () => {
@@ -78,10 +78,18 @@ test('expanded scans retain individual statuses, tuning, sample times and curren
   item.target_scans[0].scans[1].read_start = dt('2026-11-08T15:00:02Z');
   assert.deepEqual(scansFor(item).map(scan => scan.current), [false, true]);
   const html = scanDetails(item);
+  assert.match(html, /<progress class="schedule-scan-progress" value="1" max="2"/);
+  assert.match(html, /aria-valuetext="1 of 2 scans complete"/);
   for (const text of ['1 of 2 complete', 'Galactic longitude 20', '>LOAD<', '>SKY<', '>COMPLETE<', '>WIP<', '1420.000', 'dig001', '2026-11-08 15:00:02', '>Current<']) assert.ok(html.includes(text), text);
   assert.equal(timestamp(null), '—'); assert.equal(timestamp('invalid'), '—');
   assert.equal(timestamp(dt('2026-11-08T16:00:00+01:00')), '2026-11-08 15:00:00');
   assert.equal(duration(450), '00:07:30'); assert.equal(duration(90000), '25:00:00');
+  item.target_scans[0].scans[1].status = en('COMPLETE');
+  assert.match(scanDetails(item), /schedule-scan-progress" value="2" max="2"/);
+  item.target_scans[0].scans.forEach(scan => { scan.status = en('WIP'); });
+  assert.match(scanDetails(item), /schedule-scan-progress" value="0" max="2"/);
+  item.target_scans = [];
+  assert.doesNotMatch(scanDetails(item), /<progress/);
 });
 
 
@@ -123,6 +131,7 @@ function harness({ history = true } = {}) {
     addEventListener(name, fn) { events[name] = fn; },
   }, async (url, options) => {
     calls.push({ url, options });
+    if (url.startsWith('/api/observation-control/')) return h.controlResponse || { ok: true, json: async () => ({status: 'success', message: 'Actions scheduled'}) };
     if (url.includes('/spr?')) return h.spectrum;
     if (url.includes('/signal?')) return h.signal;
     if (url === '/api/web/profile') return { ok: true, json: async () => ({ status: 'success', payload: { profile: h.profile, scan_store_dir: '~/samples/' + h.profile } }) };
@@ -138,7 +147,7 @@ function harness({ history = true } = {}) {
     if (h.error) throw new Error(h.error);
     return { ok: true, json: async () => ({ status: 'success', payload: h.data }) };
   });
-  h.toggle = id => h.get('observations').listeners.click({ target: { closest: selector => ['[data-scan-download]', '[data-scan-signal]'].includes(selector) ? null : ({ dataset: { scheduleObservation: id } }) } });
+  h.toggle = id => h.get('observations').listeners.click({ target: { closest: selector => ['[data-schedule-control]', '[data-scan-download]', '[data-scan-signal]'].includes(selector) ? null : ({ dataset: { scheduleObservation: id } }) } });
   h.toggleHistory = key => h.get('history-observations').listeners.click({ target: { closest: selector => ['[data-history-retry]', '[data-scan-download]', '[data-scan-signal]'].includes(selector) ? null : ({ dataset: { scheduleObservation: key } }) } });
   return h;
 }
@@ -308,4 +317,62 @@ test('Schedule without historic pane only polls live snapshots', async () => {
   assert.ok(!h.calls.some(call => call.url === '/api/web/observations' || call.url === '/api/web/profile'));
   await h.controller.refreshHistory(true);
   assert.ok(!h.calls.some(call => call.url === '/api/web/observations'));
+});
+
+
+test('schedule controls follow authoritative state and scheduling deadline', () => {
+  const queued = obs('queued'); queued.target_scans[0].scans.forEach(scan => { scan.status = en('EMPTY'); });
+  assert.equal(controlOperation(queued, now), 'delete');
+  queued.obs_state = en('IDLE'); assert.equal(controlOperation(queued, now), 'delete');
+  queued.target_scans[0].scans[0].tgt_acq_dt = dt('2026-11-08T14:00:00Z');
+  assert.equal(controlOperation(queued, now), null);
+  for (const state of ['CONFIGURING', 'READY', 'SCANNING']) assert.equal(controlOperation(obs('active', state), now), 'abort');
+  const aborted = obs('aborted', 'ABORTED'); aborted.tgt_idx = 100;
+  assert.equal(controlOperation(aborted, now), 'restart');
+  assert.equal(observations(model([aborted]), now).length, 1);
+  assert.equal(controlOperation(aborted, Date.parse('2026-11-09T00:00:00Z')), null);
+  assert.deepEqual(observations(model([aborted]), Date.parse('2026-11-09T00:00:00Z')), []);
+  aborted.scheduling_block_end = null;
+  assert.equal(controlOperation(aborted, now), null);
+});
+
+test('abort is submitted once and stays pending until TM confirms the state', async () => {
+  const h = harness(); await new Promise(setImmediate);
+  const first = h.controller.controlObservation('obs001', 'abort');
+  await h.controller.controlObservation('obs001', 'abort'); await first;
+  const posts = h.calls.filter(call => call.url.startsWith('/api/observation-control/'));
+  assert.equal(posts.length, 1);
+  assert.deepEqual(JSON.parse(posts[0].options.body), {operation: 'abort'});
+  assert.equal(posts[0].options.credentials, 'same-origin');
+  assert.equal(h.controller.state.pendingControls.size, 1);
+  const item = h.data.telescope_model.oda.obs_store.obs_list[0];
+  item.obs_state = en('ABORTED'); item.scheduling_block_end = dt(new Date(Date.now()+3600000).toISOString());
+  await h.controller.refresh();
+  assert.equal(h.controller.state.pendingControls.size, 0);
+  assert.match(h.get('observations').innerHTML, /Restart/);
+  assert.equal(h.controller.state.expanded.size, 0);
+});
+
+test('stale snapshots cannot submit controls and rejected commands are not retried', async () => {
+  const h = harness(); await new Promise(setImmediate);
+  h.data.stale = true; await h.controller.controlObservation('obs001', 'abort');
+  assert.equal(h.calls.filter(call => call.options?.method === 'POST').length, 0);
+  h.data.stale = false;
+  h.controlResponse = {ok:false, json:async()=>({status:'error',message:'Only an executing observation can be aborted'})};
+  await h.controller.controlObservation('obs001', 'abort'); await h.controller.refresh();
+  assert.equal(h.calls.filter(call => call.options?.method === 'POST').length, 1);
+  assert.equal(h.controller.state.pendingControls.size, 0);
+  assert.match(h.get('action-result').textContent, /Only an executing/);
+});
+
+
+test('Refresh button explicitly requests a new TM snapshot; automatic refresh reads the cache', async () => {
+  const h = harness(); await new Promise(setImmediate);
+  h.get('refresh').listeners.click();
+  assert.equal(h.get('refresh').disabled, true);
+  await new Promise(setImmediate);
+  assert.equal(h.get('refresh').disabled, false);
+  assert.equal(h.calls.filter(call => call.url === '/api/web/telescope/model?refresh=1').length, 1);
+  await h.controller.refresh();
+  assert.equal(h.calls.at(-1).url, '/api/web/telescope/model');
 });

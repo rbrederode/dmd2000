@@ -14,13 +14,14 @@ matplotlib.use("Agg")
 from matplotlib import pyplot as plt
 import numpy as np
 
-from models.scan import ScanState, ScanType
+from models.scan import ScanModel, ScanState, ScanType
 from obs.obs_display import ObsDisplay, save_frequency_record, save_frequency_overlay
 from obs.opt import process_observation, save_aggregated_power_csv
 from sdp.channel_mask import valid_channels, masked_values
 from sdp.signal_display import SignalDisplay
 from ui.opt_service import atomic_json
 from ui.opt_pipeline import baseline_applied, qa_metric_settings
+from ui.opt_targets import target_display_metadata
 from obs.total_power import physical_power_records, save_power_cache, render_power_products
 
 
@@ -52,12 +53,24 @@ def run(folder):
     def progress(message, fraction):
         atomic_json(folder / "progress.json", {"message": message, "progress": fraction})
 
+    if request.get("pointing_product"):
+        from ui.opt_pointing import render_pointing_product
+        result = render_pointing_product(request, out, progress)
+        finish(request, out, result, progress)
+        return
     if request.get("source_results"):
+        if request.get("aggregate_product"):
+            from ui.opt_selected import render_selected_product
+            result = render_selected_product(request, out, progress)
+            finish(request, out, result, progress)
+            return
         from ui.opt_reanalysis import reanalyse
         progress("Updating plots from cached spectra", .05)
         result = reanalyse(request, out, progress)
         finish(request, out, result, progress)
         return
+    from ui.opt_pointing import PointingCache, pointing_details, suggested_animation_interval
+    pointing_cache = PointingCache()
     native_arrays, native_labels = {}, []
     frequency_records = []
     velocity_power_records = []
@@ -66,6 +79,7 @@ def run(folder):
         request["directory"], request["observation"], profile=request["profile"],
         blacklist=request["excluded"], signal_displays=None,
         pipeline_config=request.get("pipeline_config"), cache_power_moments=True,
+        processed_scan_callback=pointing_cache.capture,
         progress_callback=lambda message, fraction: progress(message, fraction * .6))
     sky = [scan for scan in list(sky_queue.queue) if scan.get_status() == ScanState.COMPLETE]
     calibration = [scan for scan in list(cal_queue.queue) if scan.get_status() == ScanState.COMPLETE]
@@ -100,8 +114,8 @@ def run(folder):
                "iterations": int(scan.get_loaded_seconds()), "input_scans": len(contributing),
                "integration_s": float(sum(entry.get("secs", 0) for key, entry in obs.int_data_arrays.items()
                                     if key[0] == model.tgt_idx and key[1] == model.freq_scan)),
-               "longitude": float(coordinates.l.deg) if coordinates is not None else None,
-               "latitude": float(coordinates.b.deg) if coordinates is not None else None,
+               **target_display_metadata(target),
+               "pointing_details": pointing_details(target, [physical for physical in contributing if physical.status == ScanState.COMPLETE]),
                "usable_channels": int(valid_channels(scan.mpr, getattr(scan, "mpr_flags", None)).sum()),
                "channels": int(model.spectral_resolution),
                "views": {}}
@@ -223,6 +237,9 @@ def run(folder):
         raise ValueError("Signal displays could not be rendered. Inspect the processing log.")
     np.savez_compressed(out / "native-spectra.npz", **native_arrays)
     atomic_json(out / "native-spectra.json", native_labels)
+    result["pointing_cache"] = pointing_cache.save(out, obs.obs_model)
+    result["animation_default_interval_ms"] = suggested_animation_interval(
+        sum(ScanModel.from_dict(item).scan_type == ScanType.SKY for item in pointing_cache.scans))
     finish(request, out, result, progress)
 
 

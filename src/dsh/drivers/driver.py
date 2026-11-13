@@ -100,7 +100,7 @@ class DishDriver:
     def _parse_pointing_log_line(line: str) -> dict | None:
         """Parse one pointing log row, ignoring incomplete or malformed rows."""
         fields = [field.strip() for field in line.split("|")]
-        if len(fields) != 10:
+        if len(fields) not in (10, 12):
             return None
 
         try:
@@ -126,6 +126,8 @@ class DishDriver:
                     "az": coordinate(fields[8]),
                     "alt": coordinate(fields[9]),
                 },
+                "pointing_offset": coordinate(fields[10]) if len(fields) == 12 else None,
+                "pointing_position_angle": coordinate(fields[11]) if len(fields) == 12 else None,
                 "_recorded_at": recorded_at,
             }
         except (TypeError, ValueError):
@@ -547,6 +549,8 @@ class DishDriver:
         pointing_altaz_dt = datetime.now(timezone.utc)
         now = Time(pointing_altaz_dt)
         altaz = AltAz(obstime=now, location=self.location, alt=alt*u.deg, az=az*u.deg)
+
+        self._update_pointing_offset(self.dsh_model.target, altaz)
 
         # Timestamp every successful pointing measurement, including readings
         # where the Alt/Az values have not changed since the previous poll.
@@ -1263,9 +1267,56 @@ class DishDriver:
         self.dsh_model.pointing_state = PointingState.SLEW
         self.dsh_model.last_update = datetime.now(timezone.utc)
 
+    def _get_target_centre_altaz(self, target: TargetModel, frame: AltAz):
+        """Resolve the true target centre, without applying scan offsets."""
+        if target is None:
+            return None
+        if target.pointing == PointingType.DRIFT_SCAN:
+            coordinates = target.altaz
+            if coordinates is None:
+                return None
+            if isinstance(coordinates, dict):
+                alt, az = coordinates.get("alt"), coordinates.get("az")
+                if alt is None or az is None:
+                    return None
+            else:
+                alt, az = coordinates.alt, coordinates.az
+            return AltAz(alt=u.Quantity(alt, u.deg), az=u.Quantity(az, u.deg),
+                         obstime=frame.obstime, location=frame.location)
+        if target.pointing == PointingType.NON_SIDEREAL_TRACK:
+            return get_body(body=target.id, time=frame.obstime, location=self.location).transform_to(frame)
+        if target.sky_coord is not None:
+            return target.sky_coord.transform_to(frame)
+        if target.id is not None:
+            return get_body(body=target.id, time=frame.obstime, location=self.location).transform_to(frame)
+        return None
+
+    def _update_pointing_offset(self, target, pointing):
+        """Record spherical target-to-dish displacement, separately from PEC.
+
+        Distance is 0..180 degrees; position angle is 0..360 in the
+        target's AltAz tangent plane (0 toward increasing altitude, 90
+        toward increasing azimuth), matching directional_offset_by scans.
+        At the target centre the position angle is defined as zero.
+        """
+        self.dsh_model.pointing_offset = None
+        self.dsh_model.pointing_position_angle = None
+        if target is None or pointing is None:
+            return
+        centre = self._get_target_centre_altaz(target, pointing)
+        if centre is None:
+            return
+        centre, measured = SkyCoord(centre), SkyCoord(pointing)
+        offset = float(centre.separation(measured).to_value(u.deg))
+        angle = float(centre.position_angle(measured).to_value(u.deg)) % 360.0 if offset > 1e-12 else 0.0
+        self.dsh_model.pointing_offset = offset
+        self.dsh_model.pointing_position_angle = angle
+
     def get_desired_altaz(self, target: TargetModel) -> AltAz:
         """ Calculates the desired AltAz for the given target at the current time.
         """
+        if target is None:
+            return None
         try:
             return self._calculate_desired_altaz(target)
         except ValueError as e:
@@ -1288,27 +1339,11 @@ class DishDriver:
         time = Time(datetime.now(timezone.utc))
         frame = AltAz(obstime=time, location=self.location)
           
-        if target.pointing == PointingType.SIDEREAL_TRACK:
-            # Sidereal target
-            desired_altaz = target.sky_coord.transform_to(frame)
-            
-        elif target.pointing == PointingType.NON_SIDEREAL_TRACK:
-            # Non-sidereal target (solar system body)
-            body_coord = get_body(body=target.id, time=time, location=self.location)
-            desired_altaz = body_coord.transform_to(frame)
-
-        elif target.pointing == PointingType.DRIFT_SCAN:
-
-            if target.altaz is None or target.altaz.get("alt") is None or target.altaz.get("az") is None:
+        if target.pointing in (PointingType.SIDEREAL_TRACK, PointingType.NON_SIDEREAL_TRACK, PointingType.DRIFT_SCAN):
+            desired_altaz = self._get_target_centre_altaz(target, frame)
+            if target.pointing == PointingType.DRIFT_SCAN and desired_altaz is None:
                 message = f"DishDriver {self.dsh_model.dsh_id} cannot calculate desired AltAz for DRIFT_SCAN target without valid altaz parameters.\n{self._diagnostic_snapshot()}"
                 raise XStreamUnableToExtract(self.dsh_model.set_last_err(message))
-            else:
-                # Drift scan target
-                alt = target.altaz.get("alt")
-                az = target.altaz.get("az")
-                alt_q = alt if hasattr(alt, 'unit') else float(alt) * u.deg
-                az_q = az if hasattr(az, 'unit') else float(az) * u.deg
-                desired_altaz = AltAz(obstime=time, location=self.location, alt=alt_q, az=az_q)
 
         elif target.pointing == PointingType.OFFSET_SCAN:
 
@@ -1317,12 +1352,8 @@ class DishDriver:
                 raise XStreamUnableToExtract(self.dsh_model.set_last_err(message))
 
             # Step 1: Compute true target position in AltAz at current time
-            if target.sky_coord is not None:
-                true_altaz = target.sky_coord.transform_to(frame)
-            elif target.id is not None:
-                body_coord = get_body(body=target.id, time=time, location=self.location)
-                true_altaz = body_coord.transform_to(frame)
-            else:
+            true_altaz = self._get_target_centre_altaz(target, frame)
+            if true_altaz is None:
                 message = f"DishDriver {self.dsh_model.dsh_id} cannot calculate desired AltAz for OFFSET_SCAN target without valid sky_coord, altaz or target id.\n{self._diagnostic_snapshot()}"
                 raise XStreamUnableToExtract(self.dsh_model.set_last_err(message))
             
@@ -1347,12 +1378,8 @@ class DishDriver:
                 raise XStreamUnableToExtract(self.dsh_model.set_last_err(message))
 
             # Step 1: Compute true target position in AltAz at current time
-            if target.sky_coord is not None:
-                true_altaz = target.sky_coord.transform_to(frame)
-            elif target.id is not None:
-                body_coord = get_body(body=target.id, time=time, location=self.location)
-                true_altaz = body_coord.transform_to(frame)
-            else:
+            true_altaz = self._get_target_centre_altaz(target, frame)
+            if true_altaz is None:
                 message = f"DishDriver {self.dsh_model.dsh_id} cannot calculate desired AltAz for FIVE_POINT_SCAN target without valid sky_coord, altaz or target id.\n{self._diagnostic_snapshot()}"
                 raise XStreamUnableToExtract(self.dsh_model.set_last_err(message))
                 

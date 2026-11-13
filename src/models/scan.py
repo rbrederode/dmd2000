@@ -77,6 +77,10 @@ class ScanModel(BaseModel):
             and isinstance(ref.get("pointing_altaz"), dict)
             and isinstance(ref["pointing_altaz"].get("alt"), (int, float))
             and isinstance(ref["pointing_altaz"].get("az"), (int, float))
+            and all(ref.get(name) is None or (
+                isinstance(ref[name], (int, float)) and low <= ref[name] <= high
+            ) for name, low, high in (("pointing_offset", -180.0, 180.0),
+                                      ("pointing_position_angle", 0.0, 360.0)))
             for ref in refs
         )),  # Ordered dish pointing samples nearest the scan start and end timestamps
         "tgt_alt_pec_rms": Or(None, And(Or(int, float), lambda v: v >= 0.0)),       # Target-level RMS periodic error correction in altitude (degrees)

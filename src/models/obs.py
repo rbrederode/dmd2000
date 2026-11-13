@@ -70,6 +70,27 @@ ACTIVE_OBSERVATION_STATES = frozenset(
 )
 
 
+def validate_observation_control(obs, operation, now=None):
+    """Validate schedule controls against the authoritative observation state."""
+    now = now or datetime.now(timezone.utc)
+    if operation == 'abort':
+        if obs.obs_state not in ACTIVE_OBSERVATION_STATES:
+            raise ValueError('Only an executing observation can be aborted')
+    elif operation == 'restart':
+        if obs.obs_state != ObsState.ABORTED:
+            raise ValueError('Only an aborted observation can be restarted')
+        if obs.scheduling_block_end is None or obs.scheduling_block_end <= now:
+            raise ValueError('The scheduling block has ended; this observation cannot be restarted')
+    elif operation == 'delete':
+        scans = [scan for group in obs.target_scans for scan in group.scans]
+        if (obs.obs_state not in (ObsState.EMPTY, ObsState.IDLE) or obs.tgt_idx > 0 or obs.tgt_scan > 0
+                or any(scan.status != ScanState.EMPTY or scan.read_start is not None
+                       or scan.read_end is not None or scan.tgt_acq_dt is not None for scan in scans)):
+            raise ValueError('Only an observation that has not started execution can be deleted')
+    else:
+        raise ValueError('Unsupported observation operation')
+
+
 class ObsTransition (enum.IntEnum):
     """Python enumerated type for observation workflow transitions."""
 

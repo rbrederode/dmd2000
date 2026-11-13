@@ -542,3 +542,39 @@ def test_real_web_application_http_tcp_config_completion_timeout_and_shutdown(tm
             endpoint.stop()
             endpoint.sel.close()
             timers.stop()
+
+
+@pytest.mark.parametrize('kind,operation', [('ObservationDelete','delete'), ('ObservationAbort','abort'), ('ObservationRestart','restart')])
+def test_schedule_control_webhook_routes_to_live_oet(kind, operation):
+    from models.obs import ObsModel
+    tm = tm_stub()
+    tm.telmodel.oda.obs_store.obs_list.append(ObsModel(obs_id='scheduled'))
+    expected = Action()
+    tm.oet.control_observation = Mock(return_value=expected)
+    event = ConfigEvent(category='OET', new_config={'_type':kind, 'obs_id':'scheduled'}, rsp_future=Future())
+    assert tm.process_config(event) is expected
+    assert tm.oet.control_observation.call_args.args[:2] == ('scheduled', operation)
+    event.new_config['obs_id'] = 'missing'
+    tm.oet.control_observation.reset_mock()
+    with pytest.raises(ValueError, match='known obs_id'):
+        tm.process_config(event)
+    tm.oet.control_observation.assert_not_called()
+
+
+@pytest.mark.parametrize('kind,status', [('ObservationDelete','success'), ('ObservationAbort','success'), ('ObservationRestart','success'), ('ObservationAbort','error')])
+def test_schedule_command_reply_requests_immediate_snapshot(timers, kind, status):
+    web = web_stub()
+    processor = AppProcessor(event_q=web.queue, driver=web)
+    with ThreadPoolExecutor(max_workers=1) as worker:
+        waiting = worker.submit(web.submit_configuration, 'OET', {'_type':kind, 'obs_id':'scheduled'})
+        processor.process_event(web.queue.get(timeout=1))
+        request = web.tm_endpoint.send.call_args.args[0]
+        response = configuration_response(request.get_json_api_header(), ResponseEvent(status, 'Control result'))
+        action = web.process_tm_msg(None, response.get_json_api_header(), response.get_api_call(), None)
+        result, _ = waiting.result(timeout=1)
+    assert result.status == status
+    if status == 'success':
+        assert len(action.msgs_to_remote) == 1
+        assert action.msgs_to_remote[0].get_api_call()['property'] == 'telescope_model'
+    else:
+        assert not action.msgs_to_remote

@@ -215,8 +215,11 @@ def test_create_animation_writes_gif(monkeypatch, tmp_path):
     )
     output_path = tmp_path / "animation.gif"
 
-    result = create_animation([frame], location, output_path, interval_ms=100)
+    progress = []
+    result = create_animation([frame, frame], location, output_path, interval_ms=100,
+                              progress_callback=lambda index, total: progress.append((index, total)))
 
     assert result == output_path
     assert output_path.is_file()
     assert output_path.stat().st_size > 0
+    assert progress == [(1, 2), (2, 2)]

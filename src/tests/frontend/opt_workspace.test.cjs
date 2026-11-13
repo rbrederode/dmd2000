@@ -7,12 +7,13 @@ const vm = require('node:vm');
 const schedule = require('../../ui/frontend_prototype/schedule.js');
 const source = fs.readFileSync(path.join(__dirname, '../../ui/frontend_prototype/opt.js'), 'utf8');
 
-async function workspace({ sharedProfile = null, scanStoreDir = null, overviewAvailable = true, savedPreferences = {}, perSecondAvailable = true, individualFrequencyAvailable = true, velocityAvailable = true } = {}) {
+async function workspace({ sharedProfile = null, scanStoreDir = null, overviewAvailable = true, savedPreferences = {}, perSecondAvailable = true, individualFrequencyAvailable = true, velocityAvailable = true, targetDisplay = null, legacyTargetDisplay = false, pointingAvailable = false, pointingFailure = false, pointingPending = false, animationDefault = 100, ignoredAnimationInterval = false, ignoredTerminalMethod = false } = {}) {
   const elements = new Map();
   const timers = new Map();
   let nextTimer = 0;
   let online = true;
   const calls = [];
+  let completedResult = null;
   const windowEvents = new Map();
   const openResponses = new Map();
   class Element {
@@ -28,6 +29,8 @@ async function workspace({ sharedProfile = null, scanStoreDir = null, overviewAv
     replaceChildren(...children) { this.nodes = children; }
     setAttribute(name, value) { this[name] = value; }
     click() {}
+    focus() {}
+    scrollIntoView() {}
   }
   const get = (id) => { if (id === 'dish-profile') id = 'opt-profile'; if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); };
   const html = fs.readFileSync(path.join(__dirname, '../../ui/frontend_prototype/index.html'), 'utf8');
@@ -36,13 +39,13 @@ async function workspace({ sharedProfile = null, scanStoreDir = null, overviewAv
     get(`opt-pipeline-help-${name}`).textContent = markup.replace(/<[^>]*>/g, '');
     get(`opt-pipeline-help-${name}`).innerHTML = markup;
   }
-  for (const [name, value] of Object.entries({ baseline: 'none', vmin: '', vmax: '', smoothing: '2', 'lab-beam': '5', kind: 'all', profile: 'default' })) get(`opt-${name}`).value = value;
+  for (const [name, value] of Object.entries({ baseline: 'none', terminal: 'none', vmin: '', vmax: '', smoothing: '2', 'lab-beam': '5', kind: 'all', profile: 'default' })) get(`opt-${name}`).value = value;
   if (sharedProfile) get('dish-profile').value = sharedProfile;
   const entries = [
     { id: 'obs-new', name: 'Galactic plane', dish: 'dish003', completed_scans: 3, total_scans: 4, completed_types: { SKY: 2, LOAD: 1 }, completed_integration_s: 135 },
     { id: 'obs-old', name: 'Earlier observation', dish: 'dish002', completed_scans: 1, total_scans: 2, completed_types: { SKY: 1 }, completed_integration_s: 60 },
   ];
-  const tabs = Object.fromEntries(['signal', 'frequency', 'velocity', 'timeline', 'lv', 'details'].map(view => { const tab = new Element(); tab.dataset = { optView: view }; return [view, tab]; }));
+  const tabs = Object.fromEntries(['signal', 'frequency', 'velocity', 'timeline', 'lv', 'pointing', 'details'].map(view => { const tab = new Element(); tab.dataset = { optView: view }; return [view, tab]; }));
   for (const axis of ['lon', 'lat']) {
     get('opt-lab-' + axis + '-min').value = '-10';
     get('opt-lab-' + axis + '-max').value = '10';
@@ -50,9 +53,10 @@ async function workspace({ sharedProfile = null, scanStoreDir = null, overviewAv
   }
   get('opt-lab-sweep').checked = true;
   const velocityTab = tabs.velocity;
-  get("opt-frequency-overlay").checked = true;
-  get("opt-timeline-overlay").checked = true;
-  get("opt-timeline-resolution").value = 'scans';
+  for (const id of ['overlay', 'frequency-overlay', 'timeline-overlay', 'timeline-mean']) {
+    get(`opt-${id}`).checked = /\bchecked\b/.test(html.match(new RegExp(`<input id="opt-${id}"[^>]*>`))[0]);
+  }
+  get('opt-timeline-resolution').value = html.match(/<select id="opt-timeline-resolution"[^>]*>([\s\S]*?)<\/select>/)[1].match(/<option value="([^"]+)" selected>/)[1];
   const context = vm.createContext({
     AbortController, console,
     document: { getElementById: get, querySelectorAll: selector => selector === '[data-opt-view]' ? Object.values(tabs) : [], querySelector: () => new Element() },
@@ -88,6 +92,22 @@ async function workspace({ sharedProfile = null, scanStoreDir = null, overviewAv
           target_scans: [{tgt_idx: 1, scans: [{tgt_idx: 1, freq_scan: 0, scan_iter: 0,
             scan_type: {value: 'SKY'}, status: {value: 'COMPLETE'}, dig_id: 'dig003', center_freq: 1420e6, duration: 60}]}] } };
       }
+      else if (url.endsWith('/pointing')) data = {id:'pointing-job'};
+      else if (url.endsWith('/jobs/pointing-job')) {
+        const specification = [...calls].reverse().find(call => call.url.endsWith('/pointing')).body;
+        const result = JSON.parse(JSON.stringify(completedResult));
+        const row = result.aggregates.find(row => row.id === specification.aggregate_id);
+        row.views.pointing = 'sky-pointing.png';
+        row.pointing_details = [{title:'Target',rows:[{label:'Target ID',value:'Sun <test>'}]}];
+        row.pointing_summary = {scans:2,first_references:2,target_midpoints:0,omitted:0};
+        if (specification.animation) {
+          result.animation_interval_ms = ignoredAnimationInterval ? 100 : specification.interval_ms;
+          result.views.animation = 'pointing-animation.gif'; result.animation_frames = 2;
+          result.pointing_charts_complete = true;
+          result.aggregates.forEach(item => { item.views.pointing ||= `${item.id}-pointing.png`; item.pointing_details ||= []; });
+        }
+        data = pointingFailure ? {state:'failed',message:'No recorded pointing references for this offset scan.'} : pointingPending ? {state:'running',progress:.65,message:specification.animation ? 'Rendering animation — 1/2 scan frames rendered' : 'Rendering sky view'} : {state:'ready',result};
+      }
       else if (url.endsWith('/pipeline')) data = {profile: body.profile, pipeline: body.pipeline, message: `Pipeline configuration saved to ${body.profile}/PipelineConfig.json`};
       else if (url.endsWith('/process') || url.endsWith('/reanalyse')) data = { id: 'job1' };
       else if (url.endsWith('/jobs/job1')) {
@@ -95,8 +115,14 @@ async function workspace({ sharedProfile = null, scanStoreDir = null, overviewAv
         data = { state: 'ready', result: { observation: input.observation, directory: input.directory,
           profile: input.profile, pipeline_config: {steps_map: input.pipeline}, excluded: input.excluded, aggregates: [
             { id: 'sky', scan_id: 'sky-scan', kind: 'SKY', target_id: 15, freq_scan: 0, views: { velocity: 'sky-velocity.png', frequency: 'sky-frequency.png', timeline: 'sky-timeline.png', timeline_seconds: 'sky-timeline-seconds.png' } },
-            { id: 'sky2', scan_id: 'sky2-scan', kind: 'SKY', target_id: 2, freq_scan: 0, views: { frequency: 'sky2-frequency.png', timeline: 'sky2-timeline.png', timeline_seconds: 'sky2-timeline-seconds.png' } },
+            { id: 'sky2', scan_id: 'sky2-scan', kind: 'SKY', target_id: 2, freq_scan: 0, views: { velocity: 'sky2-velocity.png', frequency: 'sky2-frequency.png', timeline: 'sky2-timeline.png', timeline_seconds: 'sky2-timeline-seconds.png' } },
             { id: 'load', scan_id: 'load-scan', kind: 'LOAD', views: {timeline: 'load-timeline.png', timeline_seconds: 'load-timeline-seconds.png'} }], views: {frequency: 'frequency.png', timeline: 'timeline.png', timeline_seconds: 'timeline-seconds.png'}, warnings: [] } };
+        data.result.animation_default_interval_ms = animationDefault;
+        for (const owner of [data.result, ...data.result.aggregates]) {
+          for (const key of ['timeline', 'timeline_seconds']) {
+            if (owner.views[key]) owner.views[`${key}_no_mean`] = owner.views[key].replace('.png', '-no-mean.png');
+          }
+        }
         if (!perSecondAvailable) {
           delete data.result.views.timeline_seconds;
           data.result.aggregates.forEach(row => delete row.views.timeline_seconds);
@@ -109,12 +135,34 @@ async function workspace({ sharedProfile = null, scanStoreDir = null, overviewAv
           });
         }
         const latest = [...calls].reverse().find(call => call.url.endsWith('/reanalyse'))?.body;
+        if (latest?.selection_only && completedResult) data.result=JSON.parse(JSON.stringify(completedResult));
         if (latest?.lab_comparison) {
-          data.result.aggregates[0].views.lab = 'sky-lab.png';
-          data.result.lab_comparison = { beam_fwhm_deg: latest.lab_comparison.beam, sweep_ranges: latest.lab_comparison.sweep || null };
+          const row=data.result.aggregates.find(row=>row.id===latest.lab_comparison.aggregate_id);
+          row.views.lab = `${row.id}-lab.png`;
+          data.result.lab_comparison = row.lab_comparison = { aggregate_id:row.id, beam_fwhm_deg: latest.lab_comparison.beam, sweep_ranges: latest.lab_comparison.sweep || null };
+        }
+        if (latest?.terminal_velocity && !ignoredTerminalMethod) {
+          const row=data.result.aggregates.find(row=>row.id===latest.terminal_velocity.aggregate_id);
+          row.terminal_velocity={method:latest.terminal_velocity.method,status:'detected',velocity_lsr_kms:75};
+          row.views.velocity_terminal=`${row.id}-velocity-terminal.png`;
+          if(latest.lab_comparison) row.views.lab_terminal=`${row.id}-lab-terminal.png`;
+        }
+        if (latest?.selection_only && !ignoredTerminalMethod) {
+          const id=(latest.lab_comparison || latest.terminal_velocity).aggregate_id;
+          const row=data.result.aggregates.find(row=>row.id===id);
+          const selection={lab_comparison:latest.lab_comparison || null,terminal_velocity:latest.terminal_velocity || null};
+          row.velocity_products ||= {};
+          const product={selection,views:{}};
+          for(const view of ['lab','lab_terminal','velocity_terminal']) if(row.views[view]) product.views[view]=row.views[view];
+          if(latest.lab_comparison) product.lab_comparison=row.lab_comparison;
+          if(latest.terminal_velocity) product.terminal_velocity=row.terminal_velocity;
+          row.velocity_products[JSON.stringify(selection)]=product;
         }
       }
       else throw new Error(`Unexpected API request: ${url}`);
+      if (data.result) { data.result.pointing_cache = pointingAvailable; completedResult = data.result; }
+      if (targetDisplay && data.scans) data.scans.forEach(row => Object.assign(row, {target_id: 15, freq_scan: 0, digitiser: 'dig003'}, targetDisplay));
+      if (targetDisplay && !legacyTargetDisplay && data.result?.aggregates) data.result.aggregates.forEach(row => Object.assign(row, targetDisplay));
       return { ok: true, status: 200, json: async () => data };
     },
   });
@@ -237,6 +285,7 @@ test('blank velocity limits show the full range and obsolete saved defaults are 
 test('LAB comparison is requested for one SKY aggregate and excluded from all-SKY and calibration views', async () => {
   const app = await workspace();
   app.element('lab-sweep').checked = false;
+  app.element('overlay').checked = false;
   await app.select();
   await app.element('process').listeners.click[0]();
   await new Promise(setImmediate);
@@ -264,6 +313,7 @@ test('LAB comparison is requested for one SKY aggregate and excluded from all-SK
 
 test('analysis settings follow the selected tab and retain values while disabled', async () => {
   const app = await workspace();
+  app.element('overlay').checked = false;
   await app.select();
   await app.element('process').listeners.click[0]();
   await new Promise(setImmediate);
@@ -305,6 +355,7 @@ test('analysis settings follow the selected tab and retain values while disabled
 
 test('sweep controls send offset grids and disabling sweep restores nominal comparison', async () => {
   const app = await workspace();
+  app.element('overlay').checked = false;
   await app.select();
   await app.element('process').listeners.click[0]();
   await new Promise(setImmediate);
@@ -359,6 +410,7 @@ test('Frequency shows all SKY aggregates by default and switches to the selected
 
 test('individual Frequency remains usable without velocity and explains missing pointing on Velocity', async () => {
   const app = await workspace({velocityAvailable: false});
+  app.element('overlay').checked = false;
   await app.select();
   await app.element('process').listeners.click[0]();
   await new Promise(setImmediate);
@@ -456,6 +508,23 @@ test('selection preserves a saved filename that differs from the observation ID'
 });
 
 
+test('All SKY aggregates is enabled by default on Frequency, Velocity and Total Power', async () => {
+  const app = await workspace();
+  await app.select();
+  await app.element('process').listeners.click[0]();
+  await new Promise(setImmediate);
+  for (const [view, control] of [['frequency', 'frequency-overlay'], ['velocity', 'overlay'], ['timeline', 'timeline-overlay']]) {
+    app.tabs[view].listeners.click[0]();
+    assert.equal(app.element(control).checked, true);
+    assert.equal(app.element(`${control}-label`).hidden, false);
+  }
+  app.element('overlay').checked = false;
+  app.element('overlay').listeners.change[0]();
+  app.tabs.frequency.listeners.click[0]();
+  app.tabs.velocity.listeners.click[0]();
+  assert.equal(app.element('overlay').checked, false);
+});
+
 test('Total Power switches between all SKY aggregates and the selected aggregate', async () => {
   const app = await workspace();
   await app.select();
@@ -464,18 +533,18 @@ test('Total Power switches between all SKY aggregates and the selected aggregate
   app.tabs.timeline.listeners.click[0]();
   assert.equal(app.element('timeline-overlay-label').hidden, false);
   assert.equal(app.element('frequency-overlay-label').hidden, true);
-  assert.match(app.element('plot').src, /files\/timeline.png$/);
+  assert.match(app.element('plot').src, /files\/timeline-seconds.png$/);
   const calls = app.calls.length;
   app.element('timeline-overlay').checked = false;
   app.element('timeline-overlay').listeners.change[0]();
-  assert.match(app.element('plot').src, /files\/sky-timeline.png$/);
+  assert.match(app.element('plot').src, /files\/sky-timeline-seconds.png$/);
   app.element('scan-list').listeners.click[0]({target: {closest: () => ({dataset: {optRow: 'sky2'}})}});
-  assert.match(app.element('plot').src, /files\/sky2-timeline.png$/);
+  assert.match(app.element('plot').src, /files\/sky2-timeline-seconds.png$/);
   app.element('scan-list').listeners.click[0]({target: {closest: () => ({dataset: {optRow: 'load'}})}});
-  assert.match(app.element('plot').src, /files\/load-timeline.png$/);
+  assert.match(app.element('plot').src, /files\/load-timeline-seconds.png$/);
   app.element('timeline-overlay').checked = true;
   app.element('timeline-overlay').listeners.change[0]();
-  assert.match(app.element('plot').src, /files\/timeline.png$/);
+  assert.match(app.element('plot').src, /files\/timeline-seconds.png$/);
   assert.equal(app.calls.length, calls);
   assert.equal(app.element('frequency-overlay').checked, true);
 });
@@ -488,8 +557,7 @@ test('Total Power switches resolution locally for overlay and individual scans',
   await app.tabs.timeline.listeners.click[0]();
   const requests = app.calls.length;
   assert.equal(app.element('timeline-resolution-label').hidden, false);
-  app.element('timeline-resolution').value = 'seconds';
-  app.element('timeline-resolution').listeners.change[0]();
+  assert.equal(app.element('timeline-resolution').value, 'seconds');
   assert.match(app.element('plot').src, /files\/timeline-seconds.png$/);
   app.element('timeline-overlay').checked = false;
   app.element('timeline-overlay').listeners.change[0]();
@@ -502,6 +570,32 @@ test('Total Power switches resolution locally for overlay and individual scans',
   assert.equal(app.calls.length, requests);
   app.tabs.frequency.listeners.click[0]();
   assert.equal(app.element('timeline-resolution-label').hidden, true);
+});
+
+test('Show mean switches Total Power locally for both resolutions and aggregate selections', async () => {
+  const app = await workspace();
+  await app.select();await app.element('process').listeners.click[0]();await new Promise(setImmediate);
+  app.tabs.timeline.listeners.click[0]();
+  assert.equal(app.element('timeline-mean-label').hidden,false);
+  assert.equal(app.element('timeline-mean').checked,true);
+  const requests = app.calls.length;
+  for (const [resolution, suffix] of [['seconds','timeline-seconds'], ['scans','timeline']]) {
+    app.element('timeline-resolution').value = resolution;
+    for (const overlay of [true,false]) {
+      app.element('timeline-overlay').checked = overlay;
+      for (const mean of [false,true]) {
+        app.element('timeline-mean').checked = mean;
+        app.element('timeline-mean').listeners.change[0]();
+        const filename = `${overlay ? '' : 'sky-'}${suffix}${mean ? '' : '-no-mean'}.png`;
+        assert.ok(app.element('plot').src.endsWith(`/files/${filename}`));
+        assert.equal(app.element('plot').hidden,false);
+        assert.ok(app.element('image-link').href.endsWith(`/files/${filename}`));
+      }
+    }
+  }
+  assert.equal(app.calls.length,requests);
+  app.tabs.frequency.listeners.click[0]();
+  assert.equal(app.element('timeline-mean-label').hidden,true);
 });
 
 test('old results request reprocessing rather than relabelling scans as seconds', async () => {
@@ -792,4 +886,290 @@ test('Save Pipeline Configuration saves the selected profile and refreshes Reset
   app.element('pipeline-editor').value = '{';
   app.element('pipeline-editor').listeners.input[0]();
   assert.equal(app.element('pipeline-save').disabled, true);
+});
+
+
+for (const [mode, label, coordinates, expected, excluded] of [
+  ['SIDEREAL_TRACK', 'SIDEREAL TRACK', {kind:'equatorial', ra_deg:180, dec_deg:25, longitude:210, latitude:70}, ['RA=180.000°', 'Dec=25.000°', 'Galactic l=210.000°', 'b=70.000°'], ['Alt=','Body:']],
+  ['SIDEREAL_TRACK', 'SIDEREAL TRACK', {kind:'galactic', longitude:30, latitude:5}, ['Galactic l=30.000°','b=5.000°'], ['RA=','Dec=','Alt=','Body:']],
+  ['DRIFT_SCAN', 'DRIFT SCAN', {kind:'altaz',alt_deg:30,az_deg:180}, ['Alt=30.000°','Az=180.000°'], ['RA=','Galactic','Body:']],
+  ['NON_SIDEREAL_TRACK', 'NON-SIDEREAL TRACK', {kind:'body',id:'Sun'}, ['Body: Sun'], ['RA=','Galactic','Alt=']],
+  ['OFFSET_SCAN', 'OFFSET SCAN', {kind:'body',id:'Sun'}, ['Target centre','Body: Sun'], ['RA=','Galactic','Alt=']],
+  ['FIVE_POINT_SCAN', 'FIVE POINT SCAN', {kind:'equatorial',ra_deg:180,dec_deg:25,longitude:210,latitude:70}, ['Target centre','RA=180.000°','Galactic l=210.000°'], ['Alt=','Body:']],
+]) {
+  test(`scan list and every tab show ${label} with ${coordinates.kind} target definition`, async () => {
+    const app = await workspace({targetDisplay:{pointing:mode,target_coordinates:coordinates}});
+    await app.select();
+    const verify = () => {
+      assert.ok(app.element('scan-list').innerHTML.includes(label));
+      assert.ok(app.element('selected-title').textContent.endsWith(` · SKY · ${label}`));
+      for (const text of expected) {
+        assert.ok(app.element('scan-list').innerHTML.includes(text), text);
+        assert.ok(app.element('selected-detail').textContent.includes(text), text);
+      }
+      for (const text of excluded) assert.ok(!app.element('selected-detail').textContent.includes(text), text);
+      assert.ok(!app.element('selected-detail').textContent.includes('l=—'));
+    };
+    verify();
+    await app.element('process').listeners.click[0]();
+    await new Promise(setImmediate);
+    for (const tab of Object.values(app.tabs)) { tab.listeners.click[0](); verify(); }
+  });
+}
+
+test('older aggregate results use fresh input target definitions without reprocessing', async () => {
+  const app = await workspace({targetDisplay:{pointing:'OFFSET_SCAN',target_coordinates:{kind:'body',id:'Sun'}},legacyTargetDisplay:true});
+  await app.select();
+  await app.element('process').listeners.click[0](); await new Promise(setImmediate);
+  assert.ok(app.element('selected-title').textContent.endsWith(' · OFFSET SCAN'));
+  assert.ok(app.element('selected-detail').textContent.includes('Target centre · Body: Sun'));
+});
+
+
+test('Pointing tab generates its chart from cache and displays downloadable animation', async () => {
+  const app = await workspace({pointingAvailable:true});
+  await app.select();
+  await app.element('process').listeners.click[0]();await new Promise(setImmediate);
+  app.tabs.pointing.listeners.click[0]();await new Promise(setImmediate);
+  const chart=app.calls.find(call=>call.url.endsWith('/pointing')).body;
+  assert.deepEqual(chart,{job:'job1',aggregate_id:'sky',animation:false});
+  assert.ok(app.element('plot').src.endsWith('/sky-pointing.png'));
+  assert.equal(app.element('pointing-details').hidden,false);
+  assert.match(app.element('pointing-details').innerHTML,/Sun &lt;test&gt;/);
+  assert.equal(app.element('viewer').classes.has('has-pointing-details'),true);
+  assert.equal(app.element('pointing-controls').hidden,false);
+  assert.equal(app.element('animation-generate').disabled,false);
+  assert.equal(app.element('pointing-show-sky').hidden,true);
+  await app.element('animation-generate').listeners.click[0]();await new Promise(setImmediate);
+  const request=[...app.calls].reverse().find(call=>call.url.endsWith('/pointing')).body;
+  assert.equal(request.animation,true);
+  assert.ok(app.element('plot').src.endsWith('/pointing-animation.gif'));
+  assert.equal(app.element('pointing-details').hidden,true);
+  assert.equal(app.element('viewer').classes.has('has-pointing-details'),false);
+  assert.equal(app.element('pointing-show-animation').hidden,false);
+  assert.equal(app.element('pointing-show-sky').hidden,false);
+  app.element('pointing-show-sky').listeners.click[0]();
+  assert.ok(app.element('plot').src.endsWith('/sky-pointing.png'));
+  app.element('pointing-show-animation').listeners.click[0]();
+  assert.ok(app.element('plot').src.endsWith('/pointing-animation.gif'));
+  assert.ok(app.element('animation-download').href.endsWith('/pointing-animation.gif?download=1'));
+  assert.equal(app.element('animation-generate').disabled,true);
+  assert.equal(app.element('pointing-progress').hidden,true);
+  app.element('animation-interval').value = '300';
+  app.element('animation-interval').listeners.input[0]();
+  assert.equal(app.element('animation-generate').disabled,false);
+  assert.equal(app.element('animation-generate').textContent,'Regenerate Animation');
+  await app.element('animation-generate').listeners.click[0]();await new Promise(setImmediate);
+  assert.equal([...app.calls].reverse().find(call=>call.url.endsWith('/pointing')).body.interval_ms,300);
+  assert.equal(app.element('animation-generate').disabled,true);
+  const pointingRequests=app.calls.filter(call=>call.url.endsWith('/pointing')).length;
+  app.element('next').listeners.click[0]();
+  assert.ok(app.element('plot').src.endsWith('/sky2-pointing.png'));
+  assert.equal(app.calls.filter(call=>call.url.endsWith('/pointing')).length,pointingRequests);
+  app.tabs.signal.listeners.click[0]();
+  assert.equal(app.element('pointing-controls').hidden,true);
+});
+
+test('legacy results explain that the Pointing cache needs a fresh processing run', async () => {
+  const app = await workspace();await app.select();
+  await app.element('process').listeners.click[0]();await new Promise(setImmediate);
+  app.tabs.pointing.listeners.click[0]();
+  assert.equal(app.element('animation-generate').disabled,true);
+  assert.match(app.element('placeholder').querySelector('p').textContent,/Reprocess.*once/);
+  assert.equal(app.calls.filter(call=>call.url.endsWith('/pointing')).length,0);
+});
+
+
+test('failed Pointing rendering keeps processed plots and permits a manual retry', async () => {
+  const app = await workspace({pointingAvailable:true,pointingFailure:true});
+  await app.select();await app.element('process').listeners.click[0]();await new Promise(setImmediate);
+  app.tabs.pointing.listeners.click[0]();await new Promise(setImmediate);
+  assert.equal(app.element('aggregate-count').textContent,3);
+  assert.match(app.element('placeholder').querySelector('p').textContent,/No recorded pointing references/);
+  assert.equal(app.element('pointing-render').disabled,false);
+  assert.equal(app.calls.filter(call=>call.url.endsWith('/pointing')).length,1);
+  app.tabs.frequency.listeners.click[0]();
+  assert.equal(app.element('plot').hidden,false);
+  assert.ok(app.element('plot').src.endsWith('/frequency.png'));
+});
+
+
+test('Pointing shows a generation status rather than an unavailable view while rendering', async () => {
+  const app=await workspace({pointingAvailable:true,pointingPending:true});
+  await app.select();await app.element('process').listeners.click[0]();await new Promise(setImmediate);
+  app.tabs.pointing.listeners.click[0]();await new Promise(setImmediate);
+  assert.equal(app.element('placeholder').querySelector('h2').textContent,'Generating sky view…');
+  assert.equal(app.element('placeholder').querySelector('.opt-empty-steps').hidden,true);
+  assert.match(app.element('placeholder').querySelector('p').textContent,/Generating/);
+});
+
+test('animation progress appears beside its controls with the server frame count', async () => {
+  const app=await workspace({pointingAvailable:true,pointingPending:true});
+  await app.select();await app.element('process').listeners.click[0]();await new Promise(setImmediate);
+  await app.element('animation-generate').listeners.click[0]();await new Promise(setImmediate);
+  app.tabs.pointing.listeners.click[0]();
+  assert.equal(app.element('pointing-progress').hidden,false);
+  assert.equal(app.element('pointing-progress').querySelector('progress').value,.65);
+  assert.equal(app.element('pointing-progress').querySelector('span').textContent,'Rendering animation — 1/2 scan frames rendered');
+});
+
+
+test('animation interval uses the server suggestion, preserves edits and rejects out-of-range values', async () => {
+  const app=await workspace({pointingAvailable:true,animationDefault:500});
+  assert.equal(Number(app.element('animation-interval').value),100);
+  await app.select();await app.element('process').listeners.click[0]();await new Promise(setImmediate);
+  assert.equal(Number(app.element('animation-interval').value),500);
+  app.tabs.pointing.listeners.click[0]();await new Promise(setImmediate);
+  app.element('animation-interval').value='250';
+  app.element('animation-interval').listeners.input[0]();
+  app.tabs.frequency.listeners.click[0]();app.tabs.pointing.listeners.click[0]();
+  assert.equal(Number(app.element('animation-interval').value),250);
+  await app.element('animation-generate').listeners.click[0]();await new Promise(setImmediate);
+  assert.equal([...app.calls].reverse().find(call=>call.url.endsWith('/pointing')).body.interval_ms,250);
+  const requests=app.calls.length;
+  for (const value of ['99','501','bad','']) {
+    app.element('animation-interval').value=value;
+    app.element('animation-interval').listeners.input[0]();
+    assert.equal(app.element('animation-generate').disabled,true);
+    await app.element('animation-generate').listeners.click[0]();
+    assert.equal(app.calls.length,requests);
+  }
+});
+
+
+test('animation generation warns when an older server ignores the requested interval', async () => {
+  const app=await workspace({pointingAvailable:true,ignoredAnimationInterval:true});
+  await app.select();await app.element('process').listeners.click[0]();await new Promise(setImmediate);
+  app.element('animation-interval').value='410';
+  app.element('animation-interval').listeners.input[0]();
+  await app.element('animation-generate').listeners.click[0]();await new Promise(setImmediate);
+  assert.match(app.element('error').textContent,/100 ms\/frame instead of 410 ms\/frame/);
+  assert.match(app.element('error').textContent,/Restart the web server/);
+  assert.match(app.element('animation-timing').textContent,/Saved animation: 100 ms\/frame/);
+  assert.equal(app.element('animation-generate').disabled,false);
+});
+
+
+test('terminal methods are opt-in, limited to individual Velocity, and reset for another aggregate', async () => {
+  const app=await workspace();
+  assert.equal(app.element('terminal').value,'none');
+  await app.select();await app.element('process').listeners.click[0]();await new Promise(setImmediate);
+  assert.equal(app.calls.find(call=>call.url.endsWith('/process')).body.terminal_velocity,undefined);
+  app.tabs.velocity.listeners.click[0]();
+  assert.equal(app.element('terminal-label').hidden,true);
+  app.element('overlay').checked=false;app.element('overlay').listeners.change[0]();
+  assert.equal(app.element('terminal-label').hidden,false);
+  assert.equal(app.element('terminal').value,'none');
+  for (const method of ['threshold','connected','erfc']) {
+    app.element('terminal').value=method;
+    await app.element('terminal').listeners.change[0]();await new Promise(setImmediate);
+    const request=[...app.calls].reverse().find(call=>call.url.endsWith('/reanalyse')).body;
+    assert.deepEqual(request.terminal_velocity,{aggregate_id:'sky',method});
+    assert.ok(app.element('plot').src.endsWith('/sky-velocity-terminal.png'));
+    const calls=app.calls.length;
+    app.element('terminal').value='none';
+    await app.element('terminal').listeners.change[0]();
+    assert.ok(app.element('plot').src.endsWith('/sky-velocity.png'));
+    assert.equal(app.calls.length,calls);
+  }
+  app.element('terminal').value='erfc';
+  await app.element('terminal').listeners.change[0]();
+  app.element('next').listeners.click[0]();
+  assert.equal(app.element('terminal').value,'none');
+  app.tabs.frequency.listeners.click[0]();
+  assert.equal(app.element('terminal-label').hidden,true);
+});
+
+
+test('terminal annotation also appears with LAB comparison and stays out of all-SKY views', async () => {
+  const app=await workspace();await app.select();
+  await app.element('process').listeners.click[0]();await new Promise(setImmediate);
+  app.tabs.velocity.listeners.click[0]();
+  app.element('overlay').checked=false;app.element('overlay').listeners.change[0]();
+  app.element('terminal').value='threshold';
+  await app.element('terminal').listeners.change[0]();await new Promise(setImmediate);
+  app.element('lab').checked=true;
+  await app.element('lab').listeners.change[0]();await new Promise(setImmediate);
+  assert.ok(app.element('plot').src.endsWith('/sky-lab-terminal.png'));
+  app.element('terminal').value='none';await app.element('terminal').listeners.change[0]();
+  assert.ok(app.element('plot').src.endsWith('/sky-lab.png'));
+  app.element('overlay').checked=true;app.element('overlay').listeners.change[0]();
+  assert.equal(app.element('terminal-label').hidden,true);
+  assert.equal(app.element('terminal').value,'none');
+});
+
+
+test('a stale server that drops terminal selection reports a restart message', async () => {
+  const app=await workspace({ignoredTerminalMethod:true});await app.select();
+  await app.element('process').listeners.click[0]();await new Promise(setImmediate);
+  app.tabs.velocity.listeners.click[0]();
+  app.element('overlay').checked=false;app.element('overlay').listeners.change[0]();
+  app.element('terminal').value='threshold';
+  await app.element('terminal').listeners.change[0]();await new Promise(setImmediate);
+  assert.match(app.element('error').textContent,/did not return.*terminal-velocity/);
+  assert.equal(app.element('terminal').value,'none');
+});
+
+
+test('LAB and terminal choices are cached and restored independently for each aggregate', async () => {
+  const app=await workspace();await app.select();
+  await app.element('process').listeners.click[0]();await new Promise(setImmediate);
+  app.tabs.velocity.listeners.click[0]();
+  app.element('overlay').checked=false;await app.element('overlay').listeners.change[0]();
+  app.element('lab-sweep').checked=false;
+  app.element('lab').checked=true;await app.element('lab').listeners.change[0]();await new Promise(setImmediate);
+  app.element('terminal').value='threshold';await app.element('terminal').listeners.change[0]();await new Promise(setImmediate);
+  app.element('next').listeners.click[0]();
+  assert.equal(app.element('lab').checked,false);
+  assert.equal(app.element('terminal').value,'none');
+  app.element('lab-beam').value='8';app.element('lab').checked=true;
+  await app.element('lab').listeners.change[0]();await new Promise(setImmediate);
+  app.element('terminal').value='erfc';await app.element('terminal').listeners.change[0]();await new Promise(setImmediate);
+  const count=app.calls.filter(call=>call.url.endsWith('/reanalyse')).length;
+  assert.equal(count,4);
+  assert.ok(app.calls.filter(call=>call.url.endsWith('/reanalyse')).every(call=>call.body.selection_only===true));
+  app.element('previous').listeners.click[0]();
+  assert.equal(app.element('lab').checked,true);
+  assert.equal(Number(app.element('lab-beam').value),5);
+  assert.equal(app.element('terminal').value,'threshold');
+  assert.ok(app.element('plot').src.endsWith('/sky-lab-terminal.png'));
+  app.element('next').listeners.click[0]();
+  assert.equal(Number(app.element('lab-beam').value),8);
+  assert.equal(app.element('terminal').value,'erfc');
+  assert.ok(app.element('plot').src.endsWith('/sky2-lab-terminal.png'));
+  assert.equal(app.calls.filter(call=>call.url.endsWith('/reanalyse')).length,count);
+  app.element('baseline').value='constant';app.element('baseline').listeners.change[0]();
+  await app.element('replot').listeners.click[0]();await new Promise(setImmediate);
+  assert.equal([...app.calls].reverse().find(call=>call.url.endsWith('/reanalyse')).body.selection_only,undefined);
+});
+
+
+test('changing LAB parameters back to a cached variant does not submit another job', async () => {
+  const app=await workspace();await app.select();
+  await app.element('process').listeners.click[0]();await new Promise(setImmediate);
+  app.tabs.velocity.listeners.click[0]();
+  app.element('overlay').checked=false;await app.element('overlay').listeners.change[0]();
+  app.element('lab-sweep').checked=false;app.element('lab').checked=true;
+  await app.element('lab').listeners.change[0]();await new Promise(setImmediate);
+  app.element('lab-beam').value='8';await app.element('lab-beam').listeners.change[0]();await new Promise(setImmediate);
+  const count=app.calls.filter(call=>call.url.endsWith('/reanalyse')).length;
+  app.element('lab-beam').value='5';await app.element('lab-beam').listeners.change[0]();
+  assert.equal(app.calls.filter(call=>call.url.endsWith('/reanalyse')).length,count);
+});
+
+
+test('navigation and overlay toggles do not apply pending shared analysis settings', async () => {
+  const app=await workspace();await app.select();
+  await app.element('process').listeners.click[0]();await new Promise(setImmediate);
+  app.tabs.velocity.listeners.click[0]();
+  app.element('overlay').checked=false;await app.element('overlay').listeners.change[0]();
+  app.element('terminal').value='threshold';await app.element('terminal').listeners.change[0]();await new Promise(setImmediate);
+  app.element('baseline').value='constant';app.element('baseline').listeners.change[0]();
+  const count=app.calls.filter(call=>call.url.endsWith('/reanalyse')).length;
+  app.element('next').listeners.click[0]();app.element('previous').listeners.click[0]();
+  app.element('overlay').checked=true;await app.element('overlay').listeners.change[0]();
+  app.element('overlay').checked=false;await app.element('overlay').listeners.change[0]();
+  await new Promise(setImmediate);
+  assert.equal(app.calls.filter(call=>call.url.endsWith('/reanalyse')).length,count);
+  assert.equal(app.element('replot').disabled,false);
 });

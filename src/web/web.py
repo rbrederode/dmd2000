@@ -142,8 +142,23 @@ class WebServer(App):
                 self._telescope_cache = TelescopeModelCache()
             return self._telescope_cache
 
-    def telescope_model_response(self):
-        return self._model_cache().response(self.tm_connected)
+    def telescope_model_response(self, refresh=False):
+        if not refresh:
+            return self._model_cache().response(self.tm_connected)
+        future = Future()
+        cache = self._model_cache()
+        def request_snapshot():
+            with cache.lock:
+                if future.done():
+                    return Action()
+                return cache.poll(self.tm_connected, self.request_timeout, force=True, waiter=future)
+        self.get_queue().put(CallbackEvent(request_snapshot))
+        try:
+            return future.result(timeout=self.request_timeout + 1)
+        except TimeoutError:
+            with cache.lock:
+                future.cancel()
+            return ResponseEvent('error', 'Fresh TM snapshot request timed out', code='timeout')
 
     def process_resync(self):
         self._load_configuration()
@@ -271,6 +286,7 @@ class WebServer(App):
         if api_call.get('property') == tm_web.PROPERTY_MODEL:
             return self._model_cache().complete(api_msg, api_call)
         name = TIMER_PREFIX + tm_web.get_request_id(api_msg)
+        refresh_model = False
         with self._requests_lock:
             for timer in self._request_timers():
                 if timer.name == name and timer.is_active():
@@ -279,11 +295,17 @@ class WebServer(App):
                         if time.monotonic() >= request.deadline:
                             request.complete(self._timeout_result(request))
                         else:
+                            config = request.message.get_api_call().get('value', {})
+                            refresh_model = (api_call['status'] == 'success' and config.get('category') == 'OET'
+                                and config.get('config', {}).get('_type') in
+                                ('ObservationDelete', 'ObservationAbort', 'ObservationRestart'))
                             request.complete(ResponseEvent(
                                 api_call['status'], api_call['message'],
                                 payload=api_call.get('payload'), code=api_call.get('code')))
                         timer.cancel()
                     break
+        if refresh_model:
+            return self._model_cache().poll(self.tm_connected, self.request_timeout, force=True)
         return Action()
 
     def process_timer_event(self, event):

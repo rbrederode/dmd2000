@@ -27,6 +27,7 @@ from models.obs import ObsModel
 from util.convert import datetime_to_utc
 from ui.opt_pipeline import pipeline_snapshot, editable_pipeline, available_pipeline_steps
 from ui.pipeline_help import PIPELINE_OVERVIEW
+from ui.opt_targets import target_display_metadata
 
 SRC = Path(__file__).resolve().parents[1]
 FRONTEND = SRC / "ui/frontend_prototype"
@@ -45,14 +46,11 @@ def observation_summary(directory, obs_id):
     for group in model.target_scans:
         for scan in group.scans:
             target = model.get_target_by_index(scan.tgt_idx)
-            sky = getattr(target, "sky_coord", None)
-            galactic = sky.galactic if sky is not None else None
             rows.append({"id": scan.scan_id, "target_id": scan.tgt_idx, "freq_scan": scan.freq_scan,
                          "iteration": scan.scan_iter, "digitiser": scan.dig_id, "kind": scan.scan_type.name,
                          "status": scan.status.name, "duration_s": scan.duration,
                          "frequency_mhz": scan.center_freq / 1e6,
-                         "longitude": float(galactic.l.deg) if galactic is not None else None,
-                         "latitude": float(galactic.b.deg) if galactic is not None else None})
+                         **target_display_metadata(target)})
     from web.model_snapshot import redact_credentials
     return {"id": model.obs_id, "file_id": obs_id, "dish": model.dsh_id, "scans": rows,
             "metadata": redact_credentials(model.to_dict())}
@@ -295,6 +293,27 @@ def create_app(data_roots=None, cache_dir=None, web_url=None, web_token=None, pr
             return jsonify(status='error', code='outcome_unknown',
                 message='No valid command response was received. The outcome is unknown; check the application before retrying.'), 502
 
+    @app.post('/api/observation-control/<obs_id>')
+    def observation_control(obs_id):
+        data = request.get_json()
+        operations = {'delete': 'ObservationDelete', 'abort': 'ObservationAbort', 'restart': 'ObservationRestart'}
+        if (not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,255}', obs_id) or not isinstance(data, dict)
+                or set(data) != {'operation'} or not isinstance(data.get('operation'), str) or data['operation'] not in operations):
+            return jsonify(status='error', message='Supply delete, abort or restart for an observation ID'), 400
+        if not web_token:
+            return jsonify(status='error', message='WEB authentication is not configured'), 503
+        try:
+            upstream = requests.request('POST', web_url + '/webhook', headers={'X-Webhook-Token': web_token},
+                json={'event': 'alston-rt.ui.oet', 'message': {'_type': operations[data['operation']], 'obs_id': obs_id}},
+                timeout=(3, 30), allow_redirects=False)
+            body = upstream.json()
+            if not isinstance(body, dict) or body.get('status') not in ('success', 'error') or not isinstance(body.get('message'), str):
+                raise ValueError('Invalid observation control response')
+            return jsonify(body), upstream.status_code
+        except (requests.exceptions.RequestException, ValueError):
+            return jsonify(status='error', code='outcome_unknown',
+                message='No valid response received. The outcome is unknown; refresh the schedule before retrying.'), 502
+
     @app.post('/api/dish-control/<dish_id>')
     def dish_control(dish_id):
         """Live dish settings, distinct from file-backed configuration editing."""
@@ -422,11 +441,16 @@ def create_app(data_roots=None, cache_dir=None, web_url=None, web_token=None, pr
                 if set(request.args) - ({'folder', 'profile'} if spectrum else {'folder'}):
                     abort(400, 'Only relative observation folders are accepted')
                 query = {'params': {'folder': request.args['folder']}} if 'folder' in request.args else {}
+            elif resource == 'telescope/model':
+                if set(request.args) - {'refresh'} or request.args.get('refresh', '0') not in ('0', '1'):
+                    abort(400, 'Use refresh=1 to request a fresh snapshot')
+                query = {'params': {'refresh': request.args['refresh']}} if 'refresh' in request.args else {}
             else:
                 query = {}
             upstream = requests.request(request.method, web_url + '/api/' + resource,
                 headers=headers, json=request.get_json() if request.method not in ('GET', 'DELETE') else None,
-                timeout=(3, 10), allow_redirects=False, **({'stream': True} if spectrum else {}), **query)
+                timeout=(3, 30) if resource == 'telescope/model' and request.args.get('refresh') == '1' else (3, 10),
+                allow_redirects=False, **({'stream': True} if spectrum else {}), **query)
             if spectrum and upstream.status_code == 200:
                 content_type = 'image/png' if resource.endswith('/signal') else 'text/csv'
                 if upstream.headers.get('Content-Type', '').split(';')[0] != content_type:
@@ -593,6 +617,37 @@ def create_app(data_roots=None, cache_dir=None, web_url=None, web_token=None, pr
             return jsonify(error=str(exc)), 409
         return jsonify(payload), 202
 
+    @app.post("/api/opt/pointing")
+    def pointing_product():
+        data = request.get_json()
+        source = get_job(data.get("job"))
+        if jobs.status(source)["state"] != "ready":
+            raise ValueError("Wait for observation processing to complete")
+        from ui.opt_pointing import CACHE_FILES
+        source_path = source["folder"] / "out"
+        if not all((source_path / name).is_file() for name in CACHE_FILES):
+            raise ValueError("Reprocess this observation once to cache per-scan spectra and pointing references")
+        result = json.loads((source_path / "result.json").read_text())
+        aggregate_id = data.get("aggregate_id")
+        if not any(row["id"] == aggregate_id for row in result["aggregates"]):
+            raise ValueError("Choose a completed aggregate to view its pointings")
+        animation = data.get("animation", False)
+        if not isinstance(animation, bool):
+            raise ValueError("Animation must be true or false")
+        interval_ms = data.get("interval_ms", result.get("animation_default_interval_ms", 100))
+        if type(interval_ms) is not int or not 100 <= interval_ms <= 500:
+            raise ValueError("Frame interval must be a whole number between 100 and 500 ms")
+        configuration = json.loads((source["folder"] / "request.json").read_text())
+        configuration.pop("lab_comparison", None)
+        configuration.pop("terminal_velocity", None)
+        configuration.pop("aggregate_product", None)
+        configuration["source_results"] = str(source_path)
+        configuration["pointing_product"] = {"aggregate_id": aggregate_id, "animation": animation, "interval_ms": interval_ms}
+        try:
+            return jsonify(jobs.start(configuration)), 202
+        except RuntimeError as exc:
+            return jsonify(error=str(exc)), 409
+
     @app.post("/api/opt/reanalyse")
     def reanalyse():
         data = request.get_json()
@@ -600,7 +655,20 @@ def create_app(data_roots=None, cache_dir=None, web_url=None, web_token=None, pr
         if jobs.status(source)["state"] != "ready" or not (source["folder"] / "out/native-spectra.npz").exists():
             raise ValueError("Process the observation first to cache its spectra")
         configuration = json.loads((source["folder"] / "request.json").read_text())
+        configuration.pop("pointing_product", None)
+        configuration.pop("aggregate_product", None)
         configuration["settings"] = validate_settings(data.get("settings", {}))
+        configuration.pop("terminal_velocity", None)
+        terminal = data.get("terminal_velocity")
+        if terminal is not None:
+            from obs.terminal_velocity import TERMINAL_METHODS
+            if not isinstance(terminal, dict) or not isinstance(terminal.get("method"), str) or terminal["method"] not in TERMINAL_METHODS:
+                raise ValueError("Choose a supported terminal velocity method")
+            result = json.loads((source["folder"] / "out/result.json").read_text())
+            aggregate = next((row for row in result.get("aggregates", []) if row["id"] == terminal.get("aggregate_id")), None)
+            if aggregate is None or aggregate.get("kind") != "SKY" or not aggregate.get("views", {}).get("velocity"):
+                raise ValueError("Terminal velocity requires a SKY aggregate with a velocity spectrum")
+            configuration["terminal_velocity"] = {"aggregate_id": aggregate["id"], "method": terminal["method"]}
         configuration.pop("lab_comparison", None)
         lab = data.get("lab_comparison")
         if lab is not None:
@@ -618,6 +686,22 @@ def create_app(data_roots=None, cache_dir=None, web_url=None, web_token=None, pr
             sweep = validate_lab_sweep(lab.get("sweep"))
             if sweep is not None:
                 configuration["lab_comparison"]["sweep"] = sweep
+        selection_only = data.get("selection_only", False)
+        if not isinstance(selection_only, bool):
+            raise ValueError("Selection-only update must be true or false")
+        if selection_only:
+            selections = [configuration[field] for field in ('lab_comparison', 'terminal_velocity') if field in configuration]
+            if not selections or len({selection['aggregate_id'] for selection in selections}) != 1:
+                raise ValueError("Choose options for one aggregate")
+            result = json.loads((source["folder"] / "out/result.json").read_text())
+            previous = validate_settings(result.get('settings', {}))
+            row = next(row for row in result['aggregates'] if row['id'] == selections[0]['aggregate_id'])
+            if not row.get('views', {}).get('velocity'):
+                raise ValueError("Selected aggregate has no velocity spectrum")
+            if any(configuration['settings'][key] != previous[key] for key in previous if key != 'total_power_basis'):
+                raise ValueError("Update shared analysis settings before updating one aggregate")
+            configuration['settings'] = result.get('settings', previous)
+            configuration['aggregate_product'] = {'aggregate_id': selections[0]['aggregate_id']}
         configuration["source_results"] = str(source["folder"] / "out")
         try:
             return jsonify(jobs.start(configuration)), 202

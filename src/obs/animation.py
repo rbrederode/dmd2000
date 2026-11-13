@@ -49,6 +49,7 @@ class AnimationFrame:
     frequency_mhz: np.ndarray
     spectrum: np.ndarray
     channel_flags: np.ndarray | None = None
+    pointing_source: str = "target_midpoint"
 
 
 def earth_location_for_observation(obs_model) -> EarthLocation:
@@ -110,6 +111,28 @@ def target_icrs_at_time(target, observing_time: datetime, location: EarthLocatio
     )
 
 
+def scan_pointing_for_animation(obs_model, scan_model, location):
+    """Prefer the first measured reference and its recorded time for a frame."""
+    references = getattr(scan_model, "pointing_refs", None) or []
+    if references:
+        reference = references[0]
+        observed_at = reference.get("datetime")
+        coordinates = reference.get("pointing_altaz", {})
+        if not isinstance(observed_at, datetime) or coordinates.get("alt") is None or coordinates.get("az") is None:
+            raise ValueError(f"Scan {scan_model.scan_id} has an invalid first pointing reference")
+        with iers.conf.set_temp("auto_max_age", None):
+            direction = SkyCoord(alt=float(coordinates["alt"])*u.deg, az=float(coordinates["az"])*u.deg,
+                                 frame=AltAz(obstime=Time(observed_at), location=location)).icrs
+        return observed_at, direction, "first_pointing_reference"
+    target = target_for_scan(obs_model, scan_model)
+    if target.pointing in (PointingType.OFFSET_SCAN, PointingType.FIVE_POINT_SCAN):
+        raise ValueError(f"Scan {scan_model.scan_id} needs its first recorded pointing reference for {target.pointing.name}")
+    observed_at = scan_midpoint(scan_model)
+    with iers.conf.set_temp("auto_max_age", None):
+        direction = target_icrs_at_time(target, observed_at, location)
+    return observed_at, direction, "target_midpoint"
+
+
 def scan_frequency_axis_mhz(scan_model) -> np.ndarray:
     """Build the scan's FFT-shifted channel-centre frequency axis in MHz."""
     channels = int(scan_model.spectral_resolution)
@@ -127,7 +150,7 @@ def scan_frequency_axis_mhz(scan_model) -> np.ndarray:
     return (center_frequency + channel_offsets) / 1e6
 
 
-def generate_star_chart(dt, lon, lat, ra, dec, filename) -> np.ndarray:
+def generate_star_chart(dt, lon, lat, ra, dec, filename, *, pointings=None) -> np.ndarray:
     """Generate a zenith chart showing both the Sun and telescope pointing."""
     try:
         from starplot import ZenithPlot, Observer, _
@@ -153,20 +176,14 @@ def generate_star_chart(dt, lon, lat, ra, dec, filename) -> np.ndarray:
     )
 
     plot.sun(label="Sun", legend_label="Sun")
-    plot.marker(
-        ra=ra,
-        dec=dec,
-        style={
-            "marker": {
-                "size": 100,
-                "symbol": "circle_cross",
-                "fill": "none",
-                "color": "yellow",
-                "edge_width": 5,
-                "alpha": 1,
-            },
-        },
-    )
+    markers = pointings if pointings is not None else [(ra, dec, None)]
+    for marker_ra, marker_dec, label in markers:
+        plot.marker(
+            ra=marker_ra, dec=marker_dec, label=label,
+            style={"marker": {"size": 100, "symbol": "circle_cross", "fill": "none",
+                              "color": "cyan", "edge_color": "cyan", "edge_width": 5, "alpha": 1},
+                   "label": {"font_color": "cyan"}},
+        )
     plot.horizon()
     plot.constellations()
     plot.stars(where=[_.magnitude < 3], where_labels=[False])
@@ -197,9 +214,7 @@ def build_animation_frames(obs_model, scans, location: EarthLocation) -> list[An
                 f"metadata specifies {scan_model.spectral_resolution}"
             )
 
-        observing_time = scan_midpoint(scan_model)
-        target = target_for_scan(obs_model, scan_model)
-        target_icrs = target_icrs_at_time(target, observing_time, location)
+        observing_time, target_icrs, pointing_source = scan_pointing_for_animation(obs_model, scan_model, location)
         galactic = target_icrs.transform_to("galactic")
         frequency_mhz = scan_frequency_axis_mhz(scan_model)
         channel_flags = getattr(scan, "mpr_flags", None)
@@ -221,10 +236,11 @@ def build_animation_frames(obs_model, scans, location: EarthLocation) -> list[An
                 frequency_mhz=frequency_mhz,
                 spectrum=spectrum,
                 channel_flags=channel_flags.copy(),
+                pointing_source=pointing_source,
             )
         )
 
-    return frames
+    return sorted(frames, key=lambda frame: frame.time)
 
 
 def _frame_flags(frame: AnimationFrame) -> np.ndarray:
@@ -285,6 +301,7 @@ def create_animation(
     location: EarthLocation,
     output_path: str | Path,
     interval_ms: int = 100,
+    progress_callback=None,
 ) -> Path:
     """Render processed frames as a star-chart and spectrum GIF."""
     if not frames:
@@ -359,6 +376,7 @@ def create_animation(
 
             title_artist.set_text(
                 f"{frame.time:%Y-%m-%d %H:%M:%S} UTC\n"
+                f"{'Scan starting pointing' if frame.pointing_source == 'first_pointing_reference' else 'Target at scan midpoint'}\n"
                 f"(l, b) = ({frame.galactic_l_deg:.1f}°, {frame.galactic_b_deg:.1f}°)"
             )
             spectrum_axis.set_title(frame.scan_id)
@@ -383,6 +401,8 @@ def create_animation(
         animation.save(
             output_path,
             writer=mpl_animation.PillowWriter(fps=frames_per_second),
+            progress_callback=(lambda index, count: progress_callback(index + 1, count))
+            if progress_callback is not None else None,
         )
         plt.close(figure)
 

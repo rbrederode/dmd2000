@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Moved Schedule observation controls to the right of Created by Contact and styled them with the same magenta primary-button colour as New observation.
+
+- Schedule Refresh now requests and waits for a fresh TM snapshot rather than only rereading WEB’s cache. It updates the shared cache and displays a waiting state; failed refreshes retain the previous data as stale and report the error. Background polling continues to read the shared cache.
+
+- Added Schedule controls to delete unstarted observations, abort executing observations and restart aborted observations from the first scan before their scheduling block ends. Aborted observations remain in the live schedule until that deadline. Controls validate the live TM state, retain saved files on deletion and request an immediate shared TM snapshot to confirm changes.
+
+- Documented the DMD2000 release procedure, including changelog promotion, work-branch merges, validation on main and the final release commit, VERSION updates, retained per-version branches, annotated tags, GitHub publication and maintenance fixes merged back without downgrading main's release metadata.
+
+- Added a scan-completion progress bar beside the expanded Schedule observation's `Scans — x of y complete` heading. It counts completed physical scans and refreshes with the shared TM snapshot, including zero-progress and completed states.
+
+- Dish inspection now formats PEC altitude/azimuth RMS and altitude/azimuth velocities to three decimal places. Site latitude and longitude retain their existing precision.
+
+- LAB survey and terminal-velocity option changes now update only the selected aggregate when shared analysis settings are unchanged. Other aggregate and observation-wide plots are preserved; progress identifies the selected work instead of cycling through every spectrum. Results are cached per aggregate and settings, choices are restored when revisiting an aggregate, and cached variants switch without another server job. Shared baseline/range/contour updates retain the observation-wide path and invalidate the option caches. Both paths share the same baseline correction; navigation and overlay toggles do not apply pending shared analysis changes.
+
+- Added an opt-in Terminal velocity selector to individual SKY Velocity plots, hidden when All SKY aggregates is selected and initially set to No method. Threshold edge, Connected edge and Erfc wing fit reuse the LAB profiler's existing positive-LSRK-edge estimators, selected velocity limits, channel flags and pipeline QA noise policy. Individual plots show measurements or detection-limit/failure statuses, with JSON exports; LAB overlays reuse the observation measurement. No method restores the unannotated plot without another calculation.
+
+- Added a Pointing tab immediately before Details in the processed-observation workspace. The static sky chart appears on the left with configured target, target acquisition, scan-start and scan-end details on the right. Acquisition uses the first physical scan; boundaries use the first scan's first pointing reference and the last scan's last reference. Sidereal targets show both RA/Dec and Galactic coordinates; configured Alt/Az and offset/five-point parameters appear only when relevant. Missing recorded values remain unavailable rather than being presented as measured coordinates.
+
+- Pointing sky views and downloadable sky/MPR GIF animations use cached physical-scan metadata and pipeline-processed spectra without replaying scan processing. Markers prefer each scan's first recorded pointing and timestamp; labelled target-at-midpoint estimates remain available for older supported targets, while offset/five-point scans require recorded references. Static charts read metadata only. Animation generation prepares and caches all aggregate sky charts, uses one frame per included physical SKY scan, and reports frame progress beside its controls. Sky/animation views share a fitted, scrollable display; the Sky view button appears only once an animation exists.
+
+- Added an editable animation frame interval, with a 100 ms fallback and a suggested interval targeting a ten-second loop within 100–500 ms per frame. Existing GIF timing changes preserve frame pixels, palettes and compressed image data without rendering the sky or spectra again. The UI reports saved timing and detects ignored interval requests; workers reject missing timing from older web-server handlers with a restart message.
+
+- All SKY aggregates now defaults to enabled on Frequency, Velocity and Total Power; Total Power defaults to Per second. A Show mean checkbox between Resolution and All SKY aggregates controls the mean reference lines for both resolutions and individual/all-SKY views. Prepared image variants switch immediately, retain the same power readings and follow interactive plot updates.
+
+- Total Power plot updates now follow the active Frequency or Velocity baseline correction and selected range, refreshing both resolutions and their CSV exports. Cached reconstruction responses apply each aggregate's correction consistently to its physical-scan readings, preserving time variation without replaying scans, accumulating corrections or fitting a different baseline to every second.
+
+- OPT scan lists and plot headers now show the pointing mode and configured target coordinates or body ID. RA/Dec targets include Galactic coordinates; fixed Alt/Az targets show those coordinates instead, and offset/five-point targets identify the displayed position as the target centre.
+
+- Dish pointing offset and position angle accept unavailable values and are updated from measured Alt/Az on the regular current-pointing poll, using the shared target-centre calculation. The pointing log appends both values, and TM's first/last scan pointing references retain `pointing_offset` and `pointing_position_angle` alongside datetime and Alt/Az. Legacy records without the additional fields remain readable.
+
+- RTL and Airspy streaming drivers now timestamp sample blocks from measured producer read-start/end wall-clock intervals, preserving timing through ring-buffer splits, merges, drops and resets. Freshness measures how long buffered reads have waited since completion, so normal read overhead does not accumulate into false stale-sample aborts. Genuine stale buffers and reset failures still raise errors. Targeted DEBUG diagnostics report read duration, delivery rate, nominal timeline lag and ring occupancy; these host-read timestamps do not claim hardware acquisition timing.
+
+- Fixed repeated aborts after a configuration failure races with dish target acquisition. Cleanup always sends standby and target-clear commands despite stale TM state; standby READY polls cannot restart scanning/tracking, DM forwards the actual acquisition failure message, and inactive observations do not receive repeated abort transitions. Repeated OET abort events leave cleanup and the release timer unchanged.
+
+- Added Save Pipeline Configuration to persist OPT's edited pipeline atomically to the selected Config Profile. Expanded pipeline help explains SPR per-channel/per-second storage, CAL corrections, MPR reduction, step ordering and reprocessing. Pipeline/observation pane ordering, spacing and parameter-field alignment were improved. LAB sweep defaults are ±10 degrees in longitude and latitude with one-degree steps; RESYNC help now explicitly describes reloading the app's Config Profile from disk.
+
+- Added local and rotation solar-offset observation examples, including five- and ten-minute outbound/return passes, and refreshed commissioning load/rotation settings and local digitiser backend selection.
+
 - Fixed All SKY Frequency overlays retaining the earlier pipeline-only image after interactive baseline updates. Initial rendering and cached updates now build the overlay from the exact corrected individual spectra, preserving matching powers/ranges and channel annotations without adding SNR panels or median-baseline lines.
 
 - Fixed missing individual Frequency plots when an observation has no pointing metadata for LSRK conversion. Frequency rendering/caching and interactive updates now work independently of Velocity; unavailable Velocity/L–V views show the reason and older missing Frequency results request reprocessing.
@@ -169,7 +207,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Combined HI4PI single-position extraction and Galactic-coordinate sweep fitting in `util/hi4pi.py`. The utility can generate beam-convolved HI4PI velocity plots or compare observation CSV spectra against a swept grid of convolved HI4PI profiles, with local cube reuse, cached downloads, RMS/correlation scoring, and best-fit plots. Added user documentation in `docs/hi4pi.md`.
 
-- Streaming digitisers stop the hardware acquisition at phase boundaries, restart with a configurable settling discard, and isolate auto-gain measurements from recorded samples. Sample timestamps follow producer acquisition and sample indexes (including dropped-sample gaps), with host-estimated timing and sample-age metadata. Stale samples and failed live stream resets propagate hardware errors; phase changes invalidate reads before resetting and preserve the read's original scan metadata.
+- Streaming digitisers stop the hardware acquisition at phase boundaries, restart with a configurable settling discard, and isolate auto-gain measurements from recorded samples. Phase changes invalidate reads before resetting and preserve the read's original scan metadata. Genuine stale buffered samples and failed live stream resets propagate hardware errors; measured host-read timing and freshness handling are described above.
 
 - HI4PI spectrum extraction downloads CAR cubes from the projection subdirectory in the CDS archive, fixing HTTP 404 errors for selected tiles, and handles scalar NumPy pixel coordinates returned by Astropy WCS.
 

@@ -24,14 +24,25 @@ class TelescopeModelCache:
         self.received_at = None
         self.received_monotonic = None
         self.error = 'Waiting for the first telescope model snapshot'
+        self.waiters = []
 
-    def poll(self, connected, timeout):
+    def poll(self, connected, timeout, force=False, waiter=None):
         with self.lock:
+            self.waiters = [item for item in self.waiters if not item.done()]
+            if waiter is not None:
+                if not connected:
+                    waiter.set_result(ResponseEvent('error', 'TM is disconnected', code='not_connected'))
+                    return Action()
+                self.waiters.append(waiter)
+            action = Action()
+            if connected and force and self.pending is not None:
+                action.set_timer_action(Action.Timer(REQUEST_PREFIX + self.pending, Action.Timer.TIMER_STOP))
+                self.pending = None
             if not connected or self.pending is not None:
-                return Action()
+                return action
             self.pending = uuid4().hex
             self.deadline = time.monotonic() + timeout
-            return (Action().set_timer_action(Action.Timer(
+            return (action.set_timer_action(Action.Timer(
                 REQUEST_PREFIX + self.pending, max(1, int(timeout * 1000)), echo_data=self.pending))
                 .set_msg_to_remote(tm_web.model_request(self.pending)))
 
@@ -56,7 +67,15 @@ class TelescopeModelCache:
                     self.received_monotonic = time.monotonic()
                     self.error = None
             self.deadline = None
+            self._finish_waiters(self.response(True) if self.error is None else
+                ResponseEvent('error', self.error, code='snapshot_failed'))
             return Action().set_timer_action(Action.Timer(timer, Action.Timer.TIMER_STOP))
+
+    def _finish_waiters(self, result):
+        for waiter in self.waiters:
+            if not waiter.done():
+                waiter.set_result(result)
+        self.waiters.clear()
 
     def timeout(self, request_id):
         with self.lock:
@@ -64,6 +83,7 @@ class TelescopeModelCache:
                 self.pending = None
                 self.deadline = None
                 self.error = 'TM telescope model request timed out'
+                self._finish_waiters(ResponseEvent('error', self.error, code='timeout'))
 
     def disconnected(self):
         with self.lock:
@@ -72,6 +92,7 @@ class TelescopeModelCache:
                 action.set_timer_action(Action.Timer(REQUEST_PREFIX + self.pending, Action.Timer.TIMER_STOP))
             self.pending = self.deadline = None
             self.error = 'TM is disconnected'
+            self._finish_waiters(ResponseEvent('error', self.error, code='not_connected'))
             return action
 
     def reconnected(self):

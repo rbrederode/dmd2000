@@ -745,6 +745,7 @@ class DM(App):
                 # Pointing state would be SLEW if still slewing or TRACK if already tracking (if necessary).
                 if (
                     target is not None
+                    and dish_driver.dsh_model.mode == DishMode.OPERATE
                     and dish_driver.get_pointing_state() == PointingState.READY
                     and dish_driver.dsh_model.driver_type != DriverType.DRIFT
                     and (
@@ -763,8 +764,8 @@ class DM(App):
                             dish_driver.track()
                         except XBase as e:
                             status = dmd_protocol.STATUS_ERROR
-                            message = f"Dish Manager failed to track for Dish {dish_id} to target {target_id} in observation {target.obs_id}: {e}"
-                            logger.error(dish_driver.set_last_err(message))
+                            msg = f"Dish Manager failed to track for Dish {dish_id} to target {target_id} in observation {target.obs_id}: {e}"
+                            logger.error(dish_driver.set_last_err(msg))
 
                     # Else if we are doing an offset or five point scan, tell the driver to scan it
                     elif target.pointing in [PointingType.OFFSET_SCAN, PointingType.FIVE_POINT_SCAN]:
@@ -773,8 +774,8 @@ class DM(App):
                             dish_driver.scan()
                         except XBase as e:
                             status = dmd_protocol.STATUS_ERROR
-                            message = f"Dish Manager failed to scan for Dish {dish_id} for target {target_id} in observation {target.obs_id}: {e}"
-                            logger.error(dish_driver.set_last_err(message))
+                            msg = f"Dish Manager failed to scan for Dish {dish_id} for target {target_id} in observation {target.obs_id}: {e}"
+                            logger.error(dish_driver.set_last_err(msg))
                     self._send_status_adv_to_tm(action, target_id, target, status, msg, dish_id=dish_id)
 
                 elif target is not None and dish_driver.get_pointing_state() == PointingState.TRACK:                     
@@ -1004,12 +1005,12 @@ class DM(App):
         return pointing_logger
 
     def _log_pointing(self, dish_model) -> None:
-        """Write the latest state and Alt/Az snapshot for one dish."""
+        """Write state, Alt/Az and measured target offset/position angle (degrees)."""
         pointing_altaz = dish_model.pointing_altaz if isinstance(dish_model.pointing_altaz, dict) else {}
         desired_altaz = dish_model.desired_altaz if isinstance(dish_model.desired_altaz, dict) else {}
 
         self.pointing_logger.info(
-            "%s | %s | %s | %s | %s | %s | %s | %s | %s",
+            "%s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s",
             dish_model.dsh_id,
             dish_model.capability.name,
             dish_model.mode.name,
@@ -1019,6 +1020,8 @@ class DM(App):
             fmt_pointing_value(pointing_altaz.get("alt")),
             fmt_pointing_value(desired_altaz.get("az")),
             fmt_pointing_value(desired_altaz.get("alt")),
+            fmt_pointing_value(dish_model.pointing_offset),
+            fmt_pointing_value(dish_model.pointing_position_angle),
         )
 
     def _log_alarm_event(self, event_type: str, active: bool = None, reason: str = None):

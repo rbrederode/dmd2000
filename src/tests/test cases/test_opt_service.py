@@ -400,3 +400,78 @@ def test_save_pipeline_validates_and_persists_only_selected_profile(workspace, t
         assert client.post('/api/opt/pipeline', json=body).status_code == 400
         assert saved.read_bytes() == before
     assert not list(saved.parent.glob('.PipelineConfig-*.tmp'))
+
+
+@pytest.mark.parametrize("interval", [None, 300])
+def test_pointing_endpoint_starts_isolated_cache_job_and_reanalysis_clears_action(workspace, interval):
+    app,client,root,_=workspace
+    job_id=client.post('/api/opt/process',json=configuration(root)).json['id']
+    job=ready_job(app,job_id)
+    out=job['folder']/'out'
+    service.atomic_json(out/'result.json',dict(aggregates=[dict(id='sky',kind='SKY')],files=[],views={},pointing_cache=True))
+    assert client.post('/api/opt/pointing',json={'job':job_id,'aggregate_id':'sky'}).status_code==400
+    (out/'native-pointing.json').write_text('{}')
+    (out/'native-pointing.npz').write_bytes(b'cache')
+    for body in ({'aggregate_id':'missing'},{'aggregate_id':'sky','animation':'yes'},
+                 *({'aggregate_id':'sky','animation':True,'interval_ms':value} for value in (99,501,True,'200',100.5))):
+        assert client.post('/api/opt/pointing',json={'job':job_id,**body}).status_code==400
+    response=client.post('/api/opt/pointing',json={'job':job_id,'aggregate_id':'sky','animation':True,
+        **({'interval_ms':interval} if interval is not None else {})})
+    assert response.status_code==202
+    next_job=app.extensions['opt_jobs'].jobs[response.json['id']]
+    request=json.loads((next_job['folder']/'request.json').read_text())
+    assert request['source_results']==str(out)
+    assert request['pointing_product']=={'aggregate_id':'sky','animation':True,'interval_ms':interval or 100}
+    ready_job(app,response.json['id'])
+    updated=client.post('/api/opt/reanalyse',json={'job':response.json['id'],'settings':{'baseline':'none'}})
+    assert updated.status_code==202
+    update_job=app.extensions['opt_jobs'].jobs[updated.json['id']]
+    update_request=json.loads((update_job['folder']/'request.json').read_text())
+    assert 'pointing_product' not in update_request
+    update_job['process'].code=0
+
+
+@pytest.mark.parametrize('method',['threshold','connected','erfc'])
+def test_terminal_velocity_selection_is_validated_and_not_inherited(workspace,method):
+    app,client,root,_=workspace
+    job_id=client.post('/api/opt/process',json=configuration(root)).json['id']
+    job=ready_job(app,job_id)
+    service.atomic_json(job['folder']/'out/result.json',dict(aggregates=[
+        dict(id='sky',kind='SKY',views={'velocity':'sky.png'}),dict(id='load',kind='LOAD',views={}),
+        dict(id='no-velocity',kind='SKY',views={})],files=[]))
+    for selection in (False,{},dict(method=[]),dict(method='unknown',aggregate_id='sky'),
+                      dict(method=method,aggregate_id='load'),dict(method=method,aggregate_id='missing'),
+                      dict(method=method,aggregate_id='no-velocity')):
+        assert client.post('/api/opt/reanalyse',json={'job':job_id,'terminal_velocity':selection}).status_code == 400
+    selection=dict(method=method,aggregate_id='sky')
+    response=client.post('/api/opt/reanalyse',json={'job':job_id,'terminal_velocity':selection})
+    assert response.status_code == 202
+    followup=app.extensions['opt_jobs'].jobs[response.json['id']]
+    assert json.loads((followup['folder']/'request.json').read_text())['terminal_velocity'] == selection
+    ready_job(app,followup['id'])
+    response=client.post('/api/opt/reanalyse',json={'job':followup['id']})
+    assert response.status_code == 202
+    request=app.extensions['opt_jobs'].jobs[response.json['id']]['folder']/'request.json'
+    assert 'terminal_velocity' not in json.loads(request.read_text())
+
+
+def test_selection_only_update_routes_one_aggregate_and_rejects_shared_changes(workspace):
+    app,client,root,_=workspace
+    job_id=client.post('/api/opt/process',json=configuration(root)).json['id']
+    job=ready_job(app,job_id)
+    service.atomic_json(job['folder']/'out/result.json',dict(settings=service.validate_settings({}),aggregates=[
+        dict(id='sky',kind='SKY',views={'velocity':'sky.png'}),dict(id='other',kind='SKY',views={'velocity':'other.png'})],files=[]))
+    selection=dict(aggregate_id='sky',method='threshold')
+    for body in (dict(selection_only='yes'),dict(selection_only=True),
+                 dict(selection_only=True,terminal_velocity=selection,settings={'baseline':'linear'}),
+                 dict(selection_only=True,terminal_velocity=selection,lab_comparison={'aggregate_id':'other','beam':5})):
+        assert client.post('/api/opt/reanalyse',json={'job':job_id,**body}).status_code == 400
+    response=client.post('/api/opt/reanalyse',json={'job':job_id,'selection_only':True,'terminal_velocity':selection})
+    assert response.status_code == 202
+    next_job=app.extensions['opt_jobs'].jobs[response.json['id']]
+    request=json.loads((next_job['folder']/'request.json').read_text())
+    assert request['aggregate_product'] == {'aggregate_id':'sky'}
+    ready_job(app,next_job['id'])
+    response=client.post('/api/opt/reanalyse',json={'job':next_job['id']})
+    followup=app.extensions['opt_jobs'].jobs[response.json['id']]
+    assert 'aggregate_product' not in json.loads((followup['folder']/'request.json').read_text())

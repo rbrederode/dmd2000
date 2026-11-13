@@ -20,8 +20,12 @@ def make_record():
                 power=np.ma.masked_invalid(power), direction=SkyCoord(l=45*u.deg, b=0*u.deg, frame="galactic"))
 
 
-def test_lab_comparison_uses_cube_resolved_direction_and_exports_without_mutation(tmp_path, monkeypatch):
+@pytest.mark.parametrize('terminal', [False, True])
+def test_lab_comparison_uses_cube_resolved_direction_and_exports_without_mutation(tmp_path, monkeypatch, terminal):
     record = make_record()
+    if terminal:
+        from obs.terminal_velocity import measure_terminal_velocity
+        record['terminal_velocity'] = measure_terminal_velocity(record,'threshold',-100.,100.)
     velocity = record["velocity"]
     line = 50 * np.exp(-.5 * ((velocity - 10) / 12)**2)
     data = np.broadcast_to(line[:, None, None], (201, 5, 9)).copy()
@@ -47,6 +51,12 @@ def test_lab_comparison_uses_cube_resolved_direction_and_exports_without_mutatio
     assert metadata['observation_noise']['amplitude_unit'] == 'scaled plot units'
     assert metadata["correlation"] > .999
     assert metadata["pointing_sweep"] is False
+    if terminal:
+        assert metadata['observation_terminal_velocity'] == record['terminal_velocity']
+        assert result['aggregates'][0]['views']['lab_terminal'] == 'aggregate-0001-lab-terminal.png'
+        assert (tmp_path/'aggregate-0001-lab-terminal.png').read_bytes().startswith(b'\x89PNG')
+    else:
+        assert 'lab_terminal' not in result['aggregates'][0]['views']
     assert (tmp_path / "aggregate-0001-lab.csv").is_file()
     np.testing.assert_array_equal(record["power"], original)
 

@@ -41,7 +41,13 @@ test('dish table is alphabetical, has compact diagnostics and escaped engineerin
   assert.match(info(dish), /Height \[m\]<\/dt><dd>88/);
   assert.doesNotMatch(html, /<error>|<dish>/);
   assert.equal(degrees(0), '0.0000'); assert.equal(degrees(null), '—');
-  assert.match(info(dish), /PEC altitude RMS \[arcsec\]<\/dt><dd>0/);
+  dish.tgt_pec[0].alt_rms = 0.0419512835487255;
+  dish.tgt_pec[0].az_rms = 0.07450711831930694;
+  dish.velocity_altaz = {alt: 0.09999999999999432, az: 0.5};
+  assert.match(info(dish), /PEC altitude RMS \[arcsec\]<\/dt><dd>0\.042<\/dd>/);
+  assert.match(info(dish), /PEC azimuth RMS \[arcsec\]<\/dt><dd>0\.075<\/dd>/);
+  assert.match(info(dish), /Altitude velocity \[°\/s\]<\/dt><dd>0\.100<\/dd>/);
+  assert.match(info(dish), /Azimuth velocity \[°\/s\]<\/dt><dd>0\.500<\/dd>/);
 });
 test('model refresh updates actual pointing while preserving a desired selection', () => {
   const { control, data, dish, get } = fixture();

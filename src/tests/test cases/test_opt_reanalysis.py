@@ -29,6 +29,10 @@ def test_frequency_update_without_pointing_or_velocity_cache(tmp_path, method):
     atomic_json(source/'result.json', dict(observation='solar-observation', aggregates=[dict(id='solar', views={})],
                                          views={'frequency': 'frequency.png'}, warnings=[], files=[]))
     (source/'frequency.png').write_bytes(b'unchanged all-SKY Frequency')
+    (source/'native-pointing.json').write_text('{"version":1}')
+    (source/'native-pointing.npz').write_bytes(b'cached physical spectra')
+    (source/'solar-pointing.png').write_bytes(b'cached pointing chart')
+    (source/'pointing-animation.gif').write_bytes(b'GIF89a')
     original = (source/'native-spectra.npz').read_bytes()
     result = reanalyse(dict(source_results=str(source), settings=dict(baseline=method,
                        baseline_vmin=None, baseline_vmax=None, frequency_min_mhz=1412., frequency_max_mhz=1414.,
@@ -44,6 +48,8 @@ def test_frequency_update_without_pointing_or_velocity_cache(tmp_path, method):
     assert (out/'frequency.png').read_bytes().startswith(b'\x89PNG')
     assert result['views']['frequency'] == 'frequency.png'
     assert (source/'frequency.png').read_bytes() == b'unchanged all-SKY Frequency'
+    for name in ('native-pointing.json','native-pointing.npz','solar-pointing.png','pointing-animation.gif'):
+        assert (out/name).read_bytes() == (source/name).read_bytes()
 
 
 def test_reanalysis_preserves_native_powers_and_signal_products(tmp_path, monkeypatch):
@@ -75,6 +81,9 @@ def test_reanalysis_preserves_native_powers_and_signal_products(tmp_path, monkey
     snapshot = {"steps_map": {"default": [{"step": "BASELINE", "params": {"context": "cal", "method": "linear"}}]}}
     atomic_json(source / "pipeline-config.json", snapshot)
     aggregates[0]["pipeline_baseline_applied"] = True
+    aggregates[0]["velocity_products"] = {"old-settings": {"selection": {}, "views": {"lab": "cached-lab.png"}}}
+    aggregates[0]["lab_comparison"] = {"beam_fwhm_deg": 5}
+    (source/"cached-lab.png").write_bytes(b'old baseline comparison')
     atomic_json(source / "result.json", dict(observation="example", aggregates=aggregates,
                                             pipeline_config=snapshot, views={}, warnings=[], files=[]))
     messages = []
@@ -91,6 +100,9 @@ def test_reanalysis_preserves_native_powers_and_signal_products(tmp_path, monkey
     assert not (out / "total-power-scans.csv").exists()
     assert "Reprocess" in result["view_errors"]["timeline"]
     assert result["pipeline_config"] == snapshot
+    assert 'velocity_products' not in result['aggregates'][0]
+    assert 'lab_comparison' not in result['aggregates'][0]
+    assert not (out/'cached-lab.png').exists()
     assert result["aggregates"][0]["pipeline_baseline_applied"]
     assert (out / "pipeline-config.json").read_bytes() == (source / "pipeline-config.json").read_bytes()
     assert result["analysis_only"]
@@ -249,7 +261,7 @@ def test_reanalysis_refreshes_total_power_from_active_spectral_correction(tmp_pa
         assert float(next(csv.DictReader(stream))['total_power']) == pytest.approx(np.mean(expected))
     assert expected[1]-expected[0] == pytest.approx(100.)  # Temporal variation preserved.
     for owner in (result, result['aggregates'][0]):
-        for key in ('timeline', 'timeline_seconds'):
+        for key in ('timeline', 'timeline_seconds', 'timeline_no_mean', 'timeline_seconds_no_mean'):
             assert (out/owner['views'][key]).read_bytes().startswith(b'\x89PNG')
     np.testing.assert_array_equal(load_power_cache(out)[0]['power'], raw['power'])
     restored = tmp_path/'restored'; restored.mkdir()

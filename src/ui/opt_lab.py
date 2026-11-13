@@ -81,7 +81,9 @@ def render_lab_comparison(records, selection, settings, out, result, progress=No
         score = f"Offsets: Δl={dl:+.2f}°, Δb={db:+.2f}° | {score}"
         if boundary:
             score += "\nBest fit at search boundary; consider widening the sweep"
-            result.setdefault("warnings", []).append("LAB best fit is at the search boundary; consider widening the sweep")
+            warning = "LAB best fit is at the search boundary; consider widening the sweep"
+            if warning not in result.setdefault("warnings", []):
+                result["warnings"].append(warning)
     filename = record["id"] + "-lab.png"
     fig, axis = plt.subplots(figsize=(14, 6))
     try:
@@ -99,6 +101,10 @@ def render_lab_comparison(records, selection, settings, out, result, progress=No
                                                   flags=record.get("channel_flags"), amplitude_unit="scaled plot units",
                                                   qa_settings=record.get("qa_settings"))
         save_velocity_figure(fig, axis, out / filename)
+        if record.get("terminal_velocity"):
+            from obs.terminal_velocity import annotate_terminal_velocity
+            annotate_terminal_velocity(axis, record["terminal_velocity"], amplitude_scale=scale)
+            save_velocity_figure(fig, axis, out / (record["id"] + "-lab-terminal.png"))
     finally:
         plt.close(fig)
     metadata = dict(aggregate_id=record["id"], longitude=longitude, latitude=latitude, beam_fwhm_deg=beam,
@@ -111,6 +117,8 @@ def render_lab_comparison(records, selection, settings, out, result, progress=No
                     candidates_evaluated=total, boundary_solution=boundary,
                     ranking="minimum normalized shape RMS within selected velocity limits")
     metadata["observation_noise"] = noise_metrics
+    if record.get("terminal_velocity"):
+        metadata["observation_terminal_velocity"] = record["terminal_velocity"]
     (out / (record["id"] + "-lab.json")).write_text(json.dumps(metadata, indent=2, allow_nan=False) + "\n")
     with (out / (record["id"] + "-lab.csv")).open("w", newline="") as stream:
         writer = csv.writer(stream)
@@ -118,4 +126,7 @@ def render_lab_comparison(records, selection, settings, out, result, progress=No
         writer.writerows(zip(velocity, temperature))
     row = next(row for row in result["aggregates"] if row["id"] == record["id"])
     row["views"]["lab"] = filename
+    row["lab_comparison"] = metadata
+    if record.get("terminal_velocity"):
+        row["views"]["lab_terminal"] = record["id"] + "-lab-terminal.png"
     result["lab_comparison"] = metadata

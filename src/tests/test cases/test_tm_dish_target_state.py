@@ -316,3 +316,17 @@ def test_target_response_without_obs_data_wakes_configuring_observation():
     transitions = [item.get_transition() for item in action.obs_transitions]
     assert transitions == [ObsTransition.CONFIGURE_RESOURCES]
     assert dish.pointing_state == PointingState.UNKNOWN
+
+
+@pytest.mark.parametrize('state,aborts', [(ObsState.ABORTED,False),(ObsState.IDLE,False),
+    (ObsState.FAULT,False),(ObsState.EMPTY,False),(ObsState.CONFIGURING,True),
+    (ObsState.READY,True),(ObsState.SCANNING,True)])
+def test_dish_error_only_aborts_active_observation(state, aborts):
+    dish = DishModel(dsh_id='dish001')
+    observation = SimpleNamespace(obs_id='obs001',obs_state=state)
+    manager = make_telescope_manager(dish,observation)
+    for _ in range(3):
+        action = manager.process_dm_msg(None, {'entity':dish.dsh_id}, {
+            'msg_type':'adv','action_code':'set','property':'status','status':'error',
+            'message':'scan command rejected','obs_data':{'obs_id':observation.obs_id}}, bytearray())
+        assert len(action.obs_transitions) == int(aborts)

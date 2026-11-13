@@ -33,6 +33,8 @@ def test_pointing_logger_writes_expected_daily_rotating_row(tmp_path, monkeypatc
         health=HealthState.OK,
         pointing_altaz={"az": 182.5, "alt": 35.25},
         desired_altaz={"az": 183.0, "alt": 35.5},
+        pointing_offset=1.25,
+        pointing_position_angle=270.,
     )
 
     dish_manager._log_pointing(dish)
@@ -42,7 +44,7 @@ def test_pointing_logger_writes_expected_daily_rotating_row(tmp_path, monkeypatc
     line = (tmp_path / "pointing" / "dm.log").read_text().strip()
     fields = [field.strip() for field in line.split("|")]
 
-    assert len(fields) == 10
+    assert len(fields) == 12
     assert fields[0].endswith("UTC")
     assert fields[1:] == [
         "dish002",
@@ -54,6 +56,8 @@ def test_pointing_logger_writes_expected_daily_rotating_row(tmp_path, monkeypatc
         "35.250000",
         "183.000000",
         "35.500000",
+        "1.250000",
+        "270.000000",
     ]
     assert handler.when == "MIDNIGHT"
     assert handler.utc is True
@@ -98,7 +102,8 @@ def test_pointing_logger_serialises_concurrent_dish_rows(tmp_path, monkeypatch):
     lines = (tmp_path / "pointing" / "dm.log").read_text().splitlines()
 
     assert len(lines) == len(dishes)
-    assert all(len(line.split("|")) == 10 for line in lines)
+    assert all(len(line.split("|")) == 12 for line in lines)
+    assert all(line.endswith(" | None | None") for line in lines)
 
     dish_manager.pointing_logger.handlers.clear()
     handler.close()
@@ -127,7 +132,7 @@ def test_get_pointing_for_time_range_filters_dish_and_rotated_logs(tmp_path):
         encoding="utf-8",
     )
     (log_dir / "dm.log").write_text(
-        "2026-09-20 00:00:00,500 UTC | dish002 | OPERATE_FULL | OPERATE | SCAN | OK | 182.000000 | 37.000000 | None | None\n"
+        "2026-09-20 00:00:00,500 UTC | dish002 | OPERATE_FULL | OPERATE | SCAN | OK | 182.000000 | 37.000000 | None | None | 2.500000 | 315.000000\n"
         "incomplete row\n",
         encoding="utf-8",
     )
@@ -146,6 +151,10 @@ def test_get_pointing_for_time_range_filters_dish_and_rotated_logs(tmp_path):
     assert all(row["dsh_id"] == "dish002" for row in result)
     assert result[0]["pointing_altaz"] == {"az": 180.0, "alt": 35.0}
     assert result[1]["desired_altaz"] == {"az": None, "alt": None}
+    assert result[0]["pointing_offset"] is None
+    assert result[0]["pointing_position_angle"] is None
+    assert result[1]["pointing_offset"] == 2.5
+    assert result[1]["pointing_position_angle"] == 315.
 
 
 def test_get_pointing_for_datetime_list_returns_nearest_samples(tmp_path):

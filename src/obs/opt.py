@@ -923,6 +923,7 @@ def process_observation(
     progress_callback=None,
     pipeline_config=None,
     cache_power_moments=False,
+    processed_scan_callback=None,
 ):
     """Load and process an observation using the same pipeline as OPT.
 
@@ -965,6 +966,7 @@ def process_observation(
         dir=directory,
         sky_q=sky_queue,
         cal_q=calibration_queue,
+        **({"processed_scan_callback": processed_scan_callback} if processed_scan_callback is not None else {}),
     )
     observation.synthesise_integrated_scans(
         sky_q=sky_queue,
@@ -977,6 +979,7 @@ def process_observation(
         sky_q=sky_queue,
         cal_q=calibration_queue,
         processed_scans=retained_scans,
+        **({"processed_scan_callback": processed_scan_callback} if processed_scan_callback is not None else {}),
     )
     progress("Preparing completed SKY aggregates", .85)
     observation.synthesise_integrated_scans(

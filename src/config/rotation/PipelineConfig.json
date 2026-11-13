@@ -65,7 +65,7 @@
                 "params": {
                     "context": "cal",
                     "method": "flatten",
-                    "enabled": true,
+                    "enabled": false,
                     "ranges_pct": [
                         [0,10],
                         [90,100]

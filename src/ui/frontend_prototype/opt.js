@@ -3,7 +3,8 @@
   const $ = (id) => document.getElementById(id === "profile" ? "dish-profile" : `opt-${id}`);
   if (!$("observation-rows")) return;
   const state = { observation: null, excluded: new Set(), result: null, job: null,
-    completedJob: null, busy: false, starting: false, opening: false, connected: false, dirty: false,
+    completedJob: null, pointingRequest: null, pointingDisplay: "sky", busy: false, starting: false, opening: false, connected: false, dirty: false,
+    animationTimingObservation: null, animationIntervalEdited: false, terminalRequest: null, velocitySelections: new Map(),
     savingPipeline: false, configured: false, initialising: false, finding: false, listSequence: 0, observationEntries: [],
     expandedObservations: new Set(), observationDetails: new Map(), list: "inputs", selectedInput: null, selectedAggregate: null, view: "signal", log: "" };
   window.DmdOpt = {isBusy: () => state.busy || state.opening || state.initialising || state.savingPipeline};
@@ -195,11 +196,61 @@
       && !!selectedAggregate()?.views.velocity;
     const locked = state.busy || state.opening || state.initialising || !state.connected || !inputsMatchResults() || window.DmdSession?.can_edit === false;
     $("lab-controls").hidden = !eligible;
+    $("terminal-label").hidden = !eligible;
+    $("terminal").disabled = locked || !eligible;
     $("lab-sweep-controls").hidden = !eligible || !$("lab").checked;
     $("lab").disabled = $("lab-beam").disabled = locked;
     $("lab-sweep").disabled = locked || !eligible || !$("lab").checked;
     for (const id of sweepFields) $(id).disabled = locked || !eligible || !$("lab").checked || !$("lab-sweep").checked;
     $("lab-find").disabled = locked || !eligible || !$("lab").checked || !$("lab-sweep").checked;
+  }
+  function velocitySelection() {
+    return {lab_comparison: $("lab").checked ? labSelection() : null,
+      terminal_velocity: $("terminal").value !== "none" ? {aggregate_id: selectedAggregate()?.id, method: $("terminal").value} : null};
+  }
+  function velocitySelectionKey() {
+    return JSON.stringify([state.result?.directory, state.result?.observation, selectedAggregate()?.id]);
+  }
+  function restoreVelocitySelection() {
+    const selection = state.velocitySelections.get(velocitySelectionKey());
+    $("lab").checked = !!selection?.lab_comparison;
+    $("terminal").value = selection?.terminal_velocity?.method || "none";
+    const lab = selection?.lab_comparison;
+    if (lab) {
+      $("lab-beam").value = lab.beam;
+      $("lab-sweep").checked = !!lab.sweep;
+      if (lab.sweep) for (const [axis, field] of [["longitude", "lon"], ["latitude", "lat"]]) {
+        ["min", "max", "step"].forEach((key, index) => { $("lab-" + field + "-" + key).value = lab.sweep[axis][index]; });
+      }
+    }
+  }
+  function useCachedVelocitySelection() {
+    const row = selectedAggregate();
+    const selection = velocitySelection();
+    state.velocitySelections.set(velocitySelectionKey(), selection);
+    if (!selection.lab_comparison && !selection.terminal_velocity) return true;
+    if (state.dirty) return false;
+    const product = Object.values(row?.velocity_products || {}).find(item =>
+      (!selection.lab_comparison || JSON.stringify(item.selection.lab_comparison) === JSON.stringify(selection.lab_comparison))
+      && (!selection.terminal_velocity || JSON.stringify(item.selection.terminal_velocity) === JSON.stringify(selection.terminal_velocity)));
+    if (product) {
+      for (const key of ["lab", "lab_terminal", "velocity_terminal"]) delete row.views[key];
+      Object.assign(row.views, product.views);
+      for (const key of ["terminal_velocity", "lab_comparison"]) {
+        delete row[key]; if (product[key]) row[key] = product[key];
+      }
+      return true;
+    }
+    const lab = row?.lab_comparison || (state.result?.lab_comparison?.aggregate_id === row?.id ? state.result.lab_comparison : null);
+    const labCached = !selection.lab_comparison || (!!row?.views.lab && lab?.beam_fwhm_deg === selection.lab_comparison.beam
+      && JSON.stringify(lab.sweep_ranges || null) === JSON.stringify(selection.lab_comparison.sweep || null));
+    const terminalCached = !selection.terminal_velocity || (row?.terminal_velocity?.method === selection.terminal_velocity.method
+      && !!row?.views.velocity_terminal && (!selection.lab_comparison || !!row.views.lab_terminal));
+    return labCached && terminalCached;
+  }
+  async function updateVelocitySelection() {
+    if (useCachedVelocitySelection()) { renderView(); return; }
+    await processObservation(true, true);
   }
   function renderAnalysisControls() {
     const locked = state.busy || state.opening || state.initialising || !state.connected;
@@ -224,6 +275,79 @@
     $("replot").title = !(velocity || lv || frequency) ? "Select single-aggregate Frequency, Velocity or L–V to update analysis plots"
       : inputsMatchResults() ? "Update baseline and contour views from cached spectra" : "Process the current input selection first";
   }
+  function renderPointingControls() {
+    if (!state.result?.views.animation) state.pointingDisplay = "sky";
+    const aggregate = selectedAggregate();
+    const available = !!state.result?.pointing_cache && !!aggregate;
+    const locked = state.busy || state.opening || state.initialising || state.savingPipeline || !state.connected || window.DmdSession?.can_edit === false;
+    $("pointing-controls").hidden = state.view !== "pointing";
+    $("pointing-progress").hidden = !state.pointingRequest;
+    $("pointing-render").disabled = locked || !available || !inputsMatchResults();
+    $("pointing-render").hidden = !!aggregate?.views.pointing;
+    const animationReady = !!state.result?.views.animation;
+    const timingObservation = JSON.stringify([state.result?.directory, state.result?.observation]);
+    if (state.animationTimingObservation !== timingObservation) {
+      state.animationTimingObservation = timingObservation;
+      state.animationIntervalEdited = false;
+    }
+    if (!state.animationIntervalEdited) $("animation-interval").value = state.result?.animation_interval_ms ?? state.result?.animation_default_interval_ms ?? 100;
+    $("animation-interval").disabled = locked || !available;
+    const interval = Number($("animation-interval").value);
+    const timingChanged = animationReady && interval !== (state.result.animation_interval_ms ?? 100);
+    const validInterval = Number.isInteger(interval) && interval >= 100 && interval <= 500;
+    $("animation-generate").disabled = locked || !available || !inputsMatchResults() || !validInterval || (animationReady && !!state.result?.pointing_charts_complete && !timingChanged);
+    $("animation-generate").textContent = state.pointingRequest?.animation
+      ? "Generating Animation…"
+      : timingChanged ? "Regenerate Animation" : animationReady ? state.result.pointing_charts_complete ? "Animation ready" : "Prepare sky views" : "Generate Animation";
+    $("pointing-show-sky").setAttribute("aria-pressed", state.pointingDisplay === "sky");
+    $("pointing-show-animation").setAttribute("aria-pressed", state.pointingDisplay === "animation");
+    $("pointing-show-animation").hidden = !animationReady;
+    $("pointing-show-sky").hidden = !animationReady;
+    $("animation-timing").hidden = !animationReady;
+    if (animationReady) {
+      const actualInterval = state.result.animation_interval_ms ?? 100;
+      const frames = state.result.animation_frames;
+      $("animation-timing").textContent = `Saved animation: ${actualInterval} ms/frame${frames ? ` · ${frames} frames · ${(frames * actualInterval / 1000).toFixed(1)} s per loop` : ""}.`;
+    }
+    const summary = aggregate?.pointing_summary;
+    $("pointing-summary").textContent = summary
+      ? `${summary.scans} physical scans · ${summary.first_references} first pointing references · ${summary.target_midpoints} target-at-midpoint estimates · ${summary.omitted} omitted. Markers follow scan time.`
+      : available ? "Markers use each physical scan's first recorded pointing and timestamp. Older tracking/drift scans may use a labelled target-at-midpoint estimate."
+      : state.result ? "Reprocess this observation once to cache per-scan MPR spectra and pointing references."
+      : "Process the observation to enable sky pointings and animation.";
+    const name = state.result?.views.animation;
+    $("animation-download").hidden = !name;
+    if (name && state.completedJob) {
+      $("animation-download").href = artifact(name, true);
+      $("animation-download").download = name;
+    }
+  }
+  async function generatePointing(animation = false) {
+    const aggregate = selectedAggregate();
+    if (!aggregate || state.busy) return;
+    const interval_ms = Number($("animation-interval").value);
+    if (animation && (!Number.isInteger(interval_ms) || interval_ms < 100 || interval_ms > 500)) {
+      error("Frame interval must be a whole number between 100 and 500 ms."); return;
+    }
+    aggregate.view_errors && delete aggregate.view_errors.pointing;
+    state.pointingRequest = {aggregateId: aggregate.id, animation, interval_ms};
+    $("pointing-progress").querySelector("progress").value = 0;
+    $("pointing-progress").querySelector("span").textContent = animation ? "Preparing animation…" : "Preparing sky view…";
+    state.busy = true; state.starting = true;
+    error(); renderControls();
+    try {
+      const data = await api("pointing", {job: state.completedJob, aggregate_id: aggregate.id, animation,
+        ...(animation ? {interval_ms} : {})});
+      state.job = data.id;
+      $("progress").hidden = false;
+      poll(data.id);
+    } catch (failure) {
+      aggregate.view_errors ||= {};
+      aggregate.view_errors.pointing = failure.message;
+      state.busy = false; state.pointingRequest = null;
+      error(failure.message);
+    } finally { state.starting = false; renderControls(); if (!state.busy) renderView(); }
+  }
   function renderControls() {
     const locked = state.busy || state.opening || state.initialising || state.savingPipeline;
     for (const id of ["find", "directory", "observation", "include", "exclude", "baseline", "vmin", "vmax", "fmin", "fmax", "smoothing", "contours"]) $(id).disabled = locked || !state.connected;
@@ -240,6 +364,7 @@
     $("pipeline-summary").querySelectorAll("input, select, button").forEach(control => { if (control.dataset.pipelineHelpStep !== undefined || control.dataset.pipelineHelpOverview !== undefined) { control.disabled = false; return; } control.disabled = (control.dataset.pipelineEnabled === undefined && !!control.closest("[data-pipeline-inactive]")) || (control.dataset.pipelineRemoveRange !== undefined && control.parentElement?.parentElement?.querySelectorAll(".opt-pipeline-range").length < 2) || locked || !state.connected || window.DmdSession?.can_edit === false; });
     window.DmdAdmin?.update();
     renderAnalysisControls();
+    renderPointingControls();
     $("stale").hidden = !state.dirty;
     $("input-count").textContent = state.observation?.scans.length || 0;
     $("aggregate-count").textContent = state.result?.aggregates.length || 0;
@@ -254,13 +379,33 @@
     $("include").hidden = $("exclude").hidden = state.list !== "inputs";
     document.querySelector(".opt-list-actions .zk-muted").textContent = state.list === "inputs" ? "Checkboxes control processing." : "Select a completed aggregate to inspect.";
   }
+  function targetInfo(row) {
+    if (row?.pointing || row?.target_coordinates) return row;
+    return state.observation?.scans.find(input => input.target_id === row?.target_id
+      && (input.pointing || input.target_coordinates)) || row || {};
+  }
+  function pointingLabel(row) {
+    const mode = targetInfo(row).pointing;
+    return mode === "NON_SIDEREAL_TRACK" ? "NON-SIDEREAL TRACK" : mode?.replaceAll("_", " ") || "";
+  }
+  function targetDescription(row, decimals = 3) {
+    const info = targetInfo(row), coordinates = info.target_coordinates;
+    let description = "";
+    if (coordinates?.kind === "body") description = `Body: ${coordinates.id}`;
+    else if (coordinates?.kind === "altaz") description = `Alt=${number(coordinates.alt_deg, decimals)}°, Az=${number(coordinates.az_deg, decimals)}°`;
+    else if (coordinates?.kind === "equatorial") description = `RA=${number(coordinates.ra_deg, decimals)}°, Dec=${number(coordinates.dec_deg, decimals)}° · Galactic l=${number(coordinates.longitude, decimals)}°, b=${number(coordinates.latitude, decimals)}°`;
+    else if (coordinates?.kind === "galactic") description = `Galactic l=${number(coordinates.longitude, decimals)}°, b=${number(coordinates.latitude, decimals)}°`;
+    else if (info.longitude != null && info.latitude != null) description = `Galactic l=${number(info.longitude, decimals)}°, b=${number(info.latitude, decimals)}°`;
+    if (!description) return "";
+    return ["OFFSET_SCAN", "FIVE_POINT_SCAN"].includes(info.pointing) ? `Target centre · ${description}` : description;
+  }
   function rows() {
     const query = $("search").value.toLowerCase().trim();
     const kind = $("kind").value;
     return (state.list === "inputs" ? state.observation?.scans || [] : state.result?.aggregates || []).filter((row) => {
       if (kind === "SKY" && row.kind !== "SKY") return false;
       if (kind === "calibration" && row.kind === "SKY") return false;
-      return !query || `${row.id} target ${row.target_id} frequency ${row.freq_scan} ${row.kind} ${row.digitiser}`.toLowerCase().includes(query);
+      return !query || `${row.id} target ${row.target_id} frequency ${row.freq_scan} ${row.kind} ${row.digitiser} ${pointingLabel(row)} ${targetDescription(row)}`.toLowerCase().includes(query);
     });
   }
   function renderList() {
@@ -278,12 +423,13 @@
       const selected = row.id === (input ? state.selectedInput : state.selectedAggregate);
       const excluded = input && state.excluded.has(row.id);
       const detail = input ? `Iteration ${row.iteration} · ${number(row.duration_s, 0)} s · ${row.status}` : `${row.iterations} iterations · ${number(row.integration_s, 0)} s · ${row.usable_channels}/${row.channels} channels`;
-      return `${header}<div class="opt-scan-row ${selected ? "is-selected" : ""} ${excluded ? "is-excluded" : ""}">${input ? `<input type="checkbox" data-opt-include="${esc(row.id)}" aria-label="Include scan ${esc(row.id)}" ${excluded ? "" : "checked"} ${state.busy || row.status !== "COMPLETE" ? "disabled" : ""} />` : ""}<button type="button" class="opt-row-button" data-opt-row="${esc(row.id)}" aria-pressed="${selected}"><strong>Frequency ${row.freq_scan} <span class="opt-row-kind">${esc(row.kind)}</span></strong><small>${esc(detail)}</small><small>${number(row.frequency_mhz, 3)} MHz · l=${number(row.longitude, 2)}°</small></button></div>`;
+      return `${header}<div class="opt-scan-row ${selected ? "is-selected" : ""} ${excluded ? "is-excluded" : ""}">${input ? `<input type="checkbox" data-opt-include="${esc(row.id)}" aria-label="Include scan ${esc(row.id)}" ${excluded ? "" : "checked"} ${state.busy || row.status !== "COMPLETE" ? "disabled" : ""} />` : ""}<button type="button" class="opt-row-button" data-opt-row="${esc(row.id)}" aria-pressed="${selected}"><strong>Frequency ${row.freq_scan} <span class="opt-row-kind">${esc(row.kind)}</span>${pointingLabel(row) ? ` <span class="opt-row-pointing">${esc(pointingLabel(row))}</span>` : ""}</strong><small>${esc(detail)}</small><small>${number(row.frequency_mhz, 3)} MHz</small>${targetDescription(row) ? `<small class="opt-row-target">${esc(targetDescription(row))}</small>` : ""}</button></div>`;
     }).join("");
   }
   function selectedAggregate() { return state.result?.aggregates.find((row) => row.id === state.selectedAggregate); }
   function selectedInput() { return state.observation?.scans.find((row) => row.id === state.selectedInput); }
   function selectRow(id) {
+    state.pointingDisplay = "sky";
     if (state.list === "aggregates") state.selectedAggregate = id;
     else {
       if (!state.result) state.view = "details";
@@ -292,40 +438,65 @@
       const aggregate = state.result?.aggregates.find((row) => row.target_id === input.target_id && row.freq_scan === input.freq_scan && row.digitiser === input.digitiser && row.kind === input.kind);
       state.selectedAggregate = aggregate?.id || null;
     }
-    $("lab").checked = false;
+    restoreVelocitySelection();
+    if (!$("overlay").checked && selectedAggregate()?.kind === "SKY") useCachedVelocitySelection();
     renderList(); renderView();
+    if (state.view === "velocity" && !$("overlay").checked && !state.busy && !state.dirty && inputsMatchResults() && !useCachedVelocitySelection()) {
+      updateVelocitySelection().catch(failure => error(failure.message));
+    }
   }
   function artifact(name, download = false) { return `/api/opt/jobs/${state.completedJob}/files/${encodeURIComponent(name)}${download ? "?download=1" : ""}`; }
   function renderView() {
+    $("viewer").classList.toggle("is-pointing", state.view === "pointing");
+    $("placeholder").querySelector(".opt-empty-steps").hidden = state.view === "pointing" && !!state.result?.pointing_cache;
     renderAnalysisControls();
+    renderPointingControls();
     const aggregate = selectedAggregate();
     const source = state.list === "inputs" ? selectedInput() : aggregate;
-    $("selected-title").textContent = source ? `Target ${source.target_id} · frequency ${source.freq_scan} · ${source.kind}` : state.result ? "Observation-wide analysis" : "Select a scan";
-    $("selected-detail").textContent = source ? `${source.digitiser} · ${number(source.frequency_mhz, 3)} MHz · Galactic l=${number(source.longitude, 3)}°, b=${number(source.latitude, 3)}°` : "Completed aggregates are available after processing.";
+    const showPointingDetails = state.view === "pointing" && state.pointingDisplay === "sky" && !!aggregate?.views.pointing;
+    $("viewer").classList.toggle("has-pointing-details", showPointingDetails);
+    $("pointing-details").hidden = !showPointingDetails;
+    if (showPointingDetails) {
+      $("pointing-details").innerHTML = aggregate.pointing_details
+        ? aggregate.pointing_details.map(section => `<section><h3>${esc(section.title)}</h3><dl>${section.rows.map(row => `<div><dt>${esc(row.label)}</dt><dd>${esc(row.value)}</dd></div>`).join("")}</dl></section>`).join("")
+        : '<p class="zk-muted">Loading recorded position details…</p>';
+      if (!aggregate.pointing_details && state.result?.pointing_cache && !aggregate.view_errors?.pointing
+          && !state.busy && inputsMatchResults() && window.DmdSession?.can_edit !== false) generatePointing(false);
+    }
+    $("selected-title").textContent = source ? `Target ${source.target_id} · Frequency ${source.freq_scan} · ${source.kind}${pointingLabel(source) ? ` · ${pointingLabel(source)}` : ""}` : state.result ? "Observation-wide analysis" : "Select a scan";
+    $("selected-detail").textContent = source ? `${source.digitiser} · ${number(source.frequency_mhz, 3)} MHz${targetDescription(source) ? ` · ${targetDescription(source)}` : ""}` : "Completed aggregates are available after processing.";
     if (source?.pipeline_baseline_applied) $("selected-detail").textContent += " · Pipeline baseline subtraction applied";
     document.querySelectorAll("[data-opt-view]").forEach((button) => { const active = button.dataset.optView === state.view; button.classList.toggle("is-active", active); button.setAttribute("aria-selected", active); });
     $("overlay-label").hidden = state.view !== "velocity";
     $("frequency-overlay-label").hidden = state.view !== "frequency";
     $("timeline-overlay-label").hidden = state.view !== "timeline";
     $("timeline-resolution-label").hidden = state.view !== "timeline";
+    $("timeline-mean-label").hidden = state.view !== "timeline";
     renderLabControls();
 
     $("details").hidden = state.view !== "details" || !source;
     $("plot").hidden = true; $("image-link").hidden = true;
     if (state.view === "details" && source) {
       $("placeholder").hidden = true;
-      const labels = { id: "Identifier", scan_id: "Scan ID", target_id: "Target", freq_scan: "Frequency scan", digitiser: "Digitiser", kind: "Type", status: "Status", longitude: "Galactic longitude [deg]", latitude: "Galactic latitude [deg]", frequency_mhz: "Frequency [MHz]", duration_s: "Duration [s]", iterations: "Integrated iterations", input_scans: "Input scan records", integration_s: "Integration [s]", usable_channels: "Usable channels", channels: "Total channels" };
+      const labels = { id: "Identifier", scan_id: "Scan ID", target_id: "Target", freq_scan: "Frequency scan", digitiser: "Digitiser", kind: "Type", pointing: "Pointing mode", status: "Status", longitude: "Galactic longitude [deg]", latitude: "Galactic latitude [deg]", frequency_mhz: "Frequency [MHz]", duration_s: "Duration [s]", iterations: "Integrated iterations", input_scans: "Input scan records", integration_s: "Integration [s]", usable_channels: "Usable channels", channels: "Total channels" };
       $("details").innerHTML = `<table>${Object.entries(labels).filter(([key]) => source[key] !== undefined).map(([key, label]) => `<tr><th>${label}</th><td>${esc(source[key] ?? "Unavailable")}</td></tr>`).join("")}</table>`;
       return;
     }
     let name;
     if (state.view === "signal") name = aggregate?.views.signal;
+    else if (state.view === "pointing") name = state.pointingDisplay === "animation" ? state.result?.views.animation : aggregate?.views.pointing;
     else if (state.view === "timeline") {
-      const key = $("timeline-resolution").value === "seconds" ? "timeline_seconds" : "timeline";
+      let key = $("timeline-resolution").value === "seconds" ? "timeline_seconds" : "timeline";
+      if (!$("timeline-mean").checked) key += "_no_mean";
       name = $("timeline-overlay").checked ? state.result?.views[key] : aggregate?.views[key];
     }
     else if (state.view === "frequency") name = $("frequency-overlay").checked ? state.result?.views.frequency : aggregate?.views.frequency;
-    else if (state.view === "velocity" && !$("overlay").checked) name = $("lab").checked && aggregate?.views.lab ? aggregate.views.lab : aggregate?.views.velocity;
+    else if (state.view === "velocity" && !$("overlay").checked) {
+      const measured = $("terminal").value !== "none" && aggregate?.terminal_velocity?.method === $("terminal").value;
+      name = $("lab").checked && aggregate?.views.lab
+        ? measured && aggregate.views.lab_terminal ? aggregate.views.lab_terminal : aggregate.views.lab
+        : measured && aggregate?.views.velocity_terminal ? aggregate.views.velocity_terminal : aggregate?.views.velocity;
+    }
     else name = state.result?.views[state.view];
     if (name && state.completedJob) {
       const url = artifact(name);
@@ -335,18 +506,25 @@
       $("image-link").href = url; $("image-link").hidden = false;
     } else {
       $("placeholder").hidden = false;
-      const title = state.result ? "This view is not available" : "From recorded scans to a clearer view";
+      let title = state.result ? "This view is not available" : "From recorded scans to a clearer view";
       const globalView = state.view === "lv" || (state.view === "velocity" && $("overlay").checked)
         || (state.view === "frequency" && $("frequency-overlay").checked)
         || (state.view === "timeline" && $("timeline-overlay").checked);
       const viewError = (globalView ? state.result?.view_errors : aggregate?.view_errors)?.[state.view];
-      const description = viewError || (state.view === "frequency" && aggregate?.kind === "SKY" && !$("frequency-overlay").checked
+      if (state.view === "pointing" && state.result?.pointing_cache && !viewError) title = "Generating sky view…";
+      const description = viewError || (state.view === "pointing"
+        ? state.result?.pointing_cache ? "Generating the selected aggregate's sky view from cached scan references…" : state.result ? "Reprocess this observation once to enable the Pointing view and animation cache." : "Process the observation to enable sky pointings and animation."
+        : state.view === "frequency" && aggregate?.kind === "SKY" && !$("frequency-overlay").checked
         ? "This result has no individual Frequency image. Reprocess the observation to generate it. The all-SKY Frequency image is a separate plot."
+        : state.view === "timeline" && state.result && !$("timeline-mean").checked
+        ? "Update the Frequency or Velocity plots, or reprocess this observation, to generate Total Power views without the mean line."
         : state.view === "timeline" && state.result && $("timeline-resolution").value === "seconds"
         ? "Select an aggregate or reprocess this observation to generate per-second Total Power plots."
         : state.view === "timeline" && state.result && !$("timeline-overlay").checked
         ? "Select an aggregate. Reprocess older observations to generate individual Total Power plots."
         : state.result ? (["velocity", "frequency"].includes(state.view) && aggregate?.kind !== "SKY" ? "Frequency and velocity spectra apply to SKY aggregates. Select a SKY row or show all SKY aggregates." : "Select an aggregate, or inspect the processing log for missing data or pointing information.") : "Choose an observation, review the included scans, then process the complete batch. Select any aggregate to inspect its signal.");
+      if (state.view === "pointing" && state.result?.pointing_cache && aggregate && !viewError
+          && !state.busy && inputsMatchResults() && window.DmdSession?.can_edit !== false) generatePointing(false);
       $("placeholder").querySelector("h2").textContent = title;
       $("placeholder").querySelector("p").textContent = description;
     }
@@ -477,6 +655,10 @@
       if (jobId !== state.job) return;
       $("progress").querySelector("progress").value = data.progress || 0;
       $("progress").querySelector("span").textContent = data.message;
+      if (state.pointingRequest) {
+        $("pointing-progress").querySelector("progress").value = data.progress || 0;
+        $("pointing-progress").querySelector("span").textContent = data.message;
+      }
       $("log-status").textContent = data.state;
       state.log = data.log || "";
       $("log-output").textContent = state.log || "Starting the processing worker…";
@@ -485,24 +667,57 @@
       if (data.state === "ready") {
         const previousScan = selectedAggregate()?.scan_id;
         if (!state.result) state.view = "signal";
-        state.result = data.result; state.completedJob = jobId; state.dirty = false;
+        state.result = data.result; state.completedJob = jobId;
+        if (state.terminalRequest && data.result.aggregates.find(row => row.id === state.terminalRequest.aggregate_id)?.terminal_velocity?.method !== state.terminalRequest.method) {
+          error("The server did not return the requested terminal-velocity measurement. Check the processing log; if the server was running before this update, restart it and refresh the browser.");
+        }
+        if (state.pointingRequest?.animation && data.result.views.animation
+            && (data.result.animation_interval_ms ?? 100) !== state.pointingRequest.interval_ms) {
+          error(`The server returned an animation at ${data.result.animation_interval_ms ?? 100} ms/frame instead of ${state.pointingRequest.interval_ms} ms/frame. Restart the web server and refresh the browser, then regenerate the animation.`);
+        }
+        if (state.pointingRequest?.animation && data.result.views.animation) state.pointingDisplay = "animation";
+        if (!state.pointingRequest) state.dirty = false;
         state.list = "aggregates";
         state.selectedAggregate = state.result.aggregates.find((row) => row.scan_id === previousScan)?.id || state.result.aggregates.find((row) => row.kind === "SKY")?.id || state.result.aggregates[0]?.id;
         if ($("lab").checked && !selectedAggregate()?.views.lab) $("lab").checked = false;
+        if (!selectedAggregate()?.terminal_velocity) $("terminal").value = "none";
         const warnings = state.result.warnings || [];
         $("warnings").textContent = warnings.join(" "); $("warnings").hidden = !warnings.length;
-      } else if (data.state === "failed") error(data.message);
+      } else if (data.state === "failed") {
+        error(data.message);
+        if (state.pointingRequest) {
+          const row = state.result?.aggregates.find(item => item.id === state.pointingRequest.aggregateId);
+          if (row) { row.view_errors ||= {}; row.view_errors.pointing = data.message; }
+        }
+      }
       else $("progress").querySelector("span").textContent = "Processing cancelled. Previous completed results are retained.";
+      if (data.state === "cancelled" && state.pointingRequest) {
+        const row = state.result?.aggregates.find(item => item.id === state.pointingRequest.aggregateId);
+        if (row) { row.view_errors ||= {}; row.view_errors.pointing = "Pointing generation cancelled. Use Generate sky view to retry."; }
+      }
+      state.pointingRequest = null;
+      state.terminalRequest = null;
       renderControls(); renderList(); renderView();
     } catch (failure) {
       if (jobId !== state.job) return;
       if (!state.connected) {
         $("progress").querySelector("span").textContent = "OPT Disconnected — waiting to reconnect…";
+        if (state.pointingRequest) $("pointing-progress").querySelector("span").textContent = "Disconnected — waiting to reconnect…";
         window.setTimeout(() => poll(jobId), 3000);
-      } else { state.busy = false; renderControls(); error(failure.message); }
+      } else {
+        state.busy = false;
+        state.terminalRequest = null;
+        if (state.pointingRequest) {
+          const row = state.result?.aggregates.find(item => item.id === state.pointingRequest.aggregateId);
+          if (row) { row.view_errors ||= {}; row.view_errors.pointing = failure.message; }
+          state.pointingRequest = null;
+          renderView();
+        }
+        renderControls(); error(failure.message);
+      }
     }
   }
-  async function processObservation(analysisOnly = false) {
+  async function processObservation(analysisOnly = false, selectedOnly = false) {
     const analysis = settings();
     analysis.total_power_basis = ["velocity", "lv"].includes(state.view) ? "velocity"
       : state.view === "frequency" ? "frequency" : state.result?.settings?.total_power_basis || "frequency";
@@ -516,23 +731,34 @@
     if (analysis.contours && analysis.contours.some((level, i, list) => !Number.isFinite(level) || level <= 0 || (i && level <= list[i - 1]))) throw new Error("Enter positive, increasing contour levels separated by commas.");
     if (analysisOnly && $("lab").checked && (!Number.isFinite(Number($("lab-beam").value)) || Number($("lab-beam").value) <= 0 || Number($("lab-beam").value) > 60)) throw new Error("LAB beam FWHM must be greater than 0 and at most 60 degrees.");
     if (analysisOnly && $("lab").checked) labSelection();
+    if (analysisOnly && state.view === "velocity" && !$("overlay").checked) state.velocitySelections.set(velocitySelectionKey(), velocitySelection());
+    state.terminalRequest = analysisOnly && state.view === "velocity" && !$("overlay").checked
+      && $("terminal").value !== "none" && selectedAggregate()?.kind === "SKY"
+      ? {aggregate_id: selectedAggregate().id, method: $("terminal").value} : null;
     error();
     state.busy = true; state.starting = true; renderControls(); renderList();
     let data;
     try {
       data = analysisOnly
         ? await api("reanalyse", { job: state.completedJob, settings: analysis,
+            ...(selectedOnly && !state.dirty ? {selection_only: true} : {}),
             ...($("lab").checked && !$("overlay").checked && selectedAggregate()?.kind === "SKY"
-              ? { lab_comparison: labSelection() } : {}) })
+              ? { lab_comparison: labSelection() } : {}),
+            ...(state.terminalRequest ? { terminal_velocity: state.terminalRequest } : {}) })
         : await api("process", { directory: state.observation.directory, observation: state.observation.file_id || state.observation.id,
             profile: $("profile").value, excluded: [...state.excluded], settings: analysis,
             ...(pipelineValue() ? {pipeline: pipelineValue()} : {}) });
-    } catch (failure) { state.busy = false; renderList(); throw failure; }
+    } catch (failure) { state.busy = false; state.terminalRequest = null; renderList(); throw failure; }
     finally { state.starting = false; renderControls(); }
     state.job = data.id; $("progress").hidden = false;
     remember(); renderControls(); renderList(); poll(data.id);
   }
   const action = (handler) => async (event) => { try { await handler(event); } catch (failure) { error(failure.message); } };
+  $("pointing-show-sky").addEventListener("click", () => { state.pointingDisplay = "sky"; renderView(); });
+  $("pointing-show-animation").addEventListener("click", () => { state.pointingDisplay = "animation"; renderView(); });
+  $("pointing-render").addEventListener("click", () => generatePointing(false));
+  $("animation-generate").addEventListener("click", () => generatePointing(true));
+  $("animation-interval").addEventListener("input", () => { state.animationIntervalEdited = true; renderPointingControls(); });
   $("find").addEventListener("click", action(() => findObservations(preferences.observation)));
   $("observation-search").addEventListener("input", renderObservations);
   $("observation-rows").addEventListener("click", async (event) => {
@@ -680,21 +906,25 @@
   document.querySelectorAll("[data-opt-view]").forEach((button) => button.addEventListener("click", () => { state.view = button.dataset.optView; renderView(); }));
   $("timeline-overlay").addEventListener("change", renderView);
   $("timeline-resolution").addEventListener("change", renderView);
+  $("timeline-mean").addEventListener("change", renderView);
   $("frequency-overlay").addEventListener("change", renderView);
-  $("overlay").addEventListener("change", () => { $("lab").checked = false; renderView(); });
-  $("lab").addEventListener("change", action(async () => {
-    if (!$("lab").checked) { renderView(); return; }
-    const previous = state.result?.lab_comparison;
-    if (!state.dirty && selectedAggregate()?.views.lab && previous?.beam_fwhm_deg === Number($("lab-beam").value) && JSON.stringify(previous?.sweep_ranges || null) === JSON.stringify(labSelection().sweep || null)) { renderView(); return; }
-    await processObservation(true);
+  $("overlay").addEventListener("change", action(async () => {
+    if ($("overlay").checked) { $("lab").checked = false; $("terminal").value = "none"; renderView(); }
+    else {
+      restoreVelocitySelection();
+      if (!state.dirty && inputsMatchResults()) await updateVelocitySelection();
+      else renderView();
+    }
   }));
+  $("terminal").addEventListener("change", action(updateVelocitySelection));
+  $("lab").addEventListener("change", action(updateVelocitySelection));
   $("lab-sweep").addEventListener("change", action(async () => {
     renderLabControls();
-    if (!$("lab-sweep").checked && $("lab").checked) await processObservation(true);
+    if (!$("lab-sweep").checked && $("lab").checked) await updateVelocitySelection();
   }));
-  $("lab-find").addEventListener("click", action(() => processObservation(true)));
+  $("lab-find").addEventListener("click", action(updateVelocitySelection));
   $("lab-beam").addEventListener("change", action(async () => {
-    if ($("lab").checked) await processObservation(true);
+    if ($("lab").checked) await updateVelocitySelection();
   }));
   $("search").addEventListener("input", renderList); $("kind").addEventListener("change", renderList);
   $("scan-list").addEventListener("click", (event) => { const button = event.target.closest("[data-opt-row]"); if (button) selectRow(button.dataset.optRow); });

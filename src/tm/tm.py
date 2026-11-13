@@ -321,7 +321,7 @@ class TelescopeManager(App):
             if config.get('_type') != 'ObsList' or not isinstance(config.get('obs_list'), list):
                 raise ValueError('ODT configuration requires an ObsList with an obs_list array')
         elif event.category == 'OET':
-            if config.get('_type') != 'ObservationReset':
+            if config.get('_type') not in ('ObservationReset', 'ObservationDelete', 'ObservationAbort', 'ObservationRestart'):
                 raise ValueError('Unsupported OET operation')
             if not config.get('obs_id') or self.telmodel.oda.obs_store.get_obs_by_id(config['obs_id']) is None:
                 raise ValueError('A known obs_id is required')
@@ -437,7 +437,10 @@ class TelescopeManager(App):
         elif event.category.upper() == "OET": # Observation Execution Tool Event
             _type = event.new_config.get("_type", None) if event.new_config is not None else None
 
-            if _type == "ObservationReset":
+            operations = {'ObservationDelete': 'delete', 'ObservationAbort': 'abort', 'ObservationRestart': 'restart'}
+            if _type in operations:
+                action = self.oet.control_observation(event.new_config.get('obs_id'), operations[_type], action)
+            elif _type == "ObservationReset":
                 obs_id = event.new_config.get("obs_id", None) if event.new_config is not None else None
                 obs = self.telmodel.oda.obs_store.get_obs_by_id(obs_id) if obs_id is not None else None
                 logger.info(f"Reset observation requested for observation ID: {obs_id}\n{event.new_config}")
@@ -569,8 +572,11 @@ class TelescopeManager(App):
                 dsh_model.last_err_dt = datetime.fromisoformat(dt) if dt is not None else datetime.now(timezone.utc)
                 
             # If the related observation was identified, trigger the workflow to move to ABORT
-            if obs is not None:
+            if obs is not None and obs.obs_state in ACTIVE_OBSERVATION_STATES:
                 action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
+            elif obs is not None:
+                logger.debug("Ignoring Dish Manager error for inactive observation %s (state %s).",
+                             obs.obs_id, obs.obs_state.name)
 
         # If the api call does not indicate that an error occured
         elif api_call.get('status','') == dmd_protocol.STATUS_SUCCESS:
@@ -1722,6 +1728,14 @@ class TelescopeManager(App):
         if not isinstance(alt, (int, float)) or not isinstance(az, (int, float)):
             return None
 
+        offsets = {}
+        for name, low, high in (("pointing_offset", -180.0, 180.0),
+                                ("pointing_position_angle", 0.0, 360.0)):
+            value = point.get(name)
+            if value is not None and (not isinstance(value, (int, float)) or not low <= value <= high):
+                return None
+            offsets[name] = float(value) if value is not None else None
+
         def parse_datetime(value) -> datetime | None:
             if isinstance(value, dict) and value.get("_type") == "datetime":
                 value = value.get("value")
@@ -1745,6 +1759,7 @@ class TelescopeManager(App):
         return {
             "datetime": recorded_datetime,
             "pointing_altaz": {"alt": float(alt), "az": float(az)},
+            **offsets,
         }
 
     def _save_scan_metadata(self, scan: ScanModel) -> None:

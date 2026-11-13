@@ -790,3 +790,35 @@ clarifies that saved SPR input does not replay spr-only steps. The question
 mark beside **Pipeline Steps** restores this overview after viewing an
 individual step. The guide is supplied as `pipeline_overview` in OPT's config
 response and does not modify processing settings.
+
+Results input/aggregate scan lists and all tab headers display the pointing mode
+(SIDEREAL TRACK, NON-SIDEREAL TRACK, DRIFT SCAN, OFFSET SCAN or FIVE POINT SCAN).
+Target definitions show RA/Dec in degrees with Galactic l/b, native Galactic l/b,
+Alt/Az, or a named body such as Sun. Offset and five-point definitions are labelled
+Target centre. Missing coordinates do not produce empty Galactic labels. Older
+aggregate results use the current input summary's target definition when available.
+
+
+The processed observation's **Pointing** tab renders a server-generated sky chart
+on demand for the selected aggregate. Each contributing physical scan uses its
+first recorded pointing reference and that reference's UTC timestamp. Cyan crosses
+mark the pointings; up to 40 markers are numbered chronologically. The sky
+background uses the first frame's time. Older sidereal, body-tracking and fixed
+Alt/Az targets without references can use a labelled target-at-midpoint estimate;
+offset/five-point scans require a recorded reference. Missing scans are reported.
+
+**Generate Animation** below the chart creates the observation-wide included SKY
+scan animation: one frame per physical scan, sky pointing beside its pipeline MPR,
+at 100 ms per frame. The GIF plays in the same bounded plot area as the chart;
+Sky view / Play animation switches between them, and the GIF can be downloaded.
+The viewer can scroll on smaller screens. Animation generation also prepares all
+aggregate sky charts, so later scan selection displays cached images immediately.
+Existing GIFs can use Prepare sky views to fill missing charts without rebuilding
+the animation. First-time static rendering uses pointing metadata only, without
+loading MPR spectra. Interactive
+Frequency/Velocity baseline adjustments are not applied to these physical-scan
+MPRs. Both products run in an isolated worker with progress/cancellation and use
+`native-pointing.json`/`.npz`, cached during Process observation. Existing results
+need one processing run to create this cache. Plot updates preserve the cache and
+rendered pointing products; generation does not reread raw/SPR scan files or rerun
+the calibration pipeline. A missing starplot installation is reported by the job.

@@ -26,20 +26,36 @@ Optional settings belong in the digitiser's `sdr_config`:
 `settle_seconds` defaults to 0.1 seconds and accepts zero to disable settling.
 The correct relay/RF settling interval should be checked on the hardware.
 `max_sample_age_sec` must be positive; its default is the greater of two seconds
-or twice the duration of a consumer sample block. Age measures how far delivery
-lags the estimated acquisition end of that block, using a monotonic clock.
+or twice the duration of a consumer sample block. Age measures how long the oldest contributing producer read has waited
+since completion, using a monotonic clock. Normal read duration and accumulated
+differences between nominal sample time and elapsed wall time do not count as
+buffer age.
 Exceeding this limit raises a hardware error and sends no samples from that read.
 A live stream reset failure also propagates an error. The existing digitiser
 error response/advice allows TM to abort the associated observation.
 
-Timestamps are anchored to completion of the first producer read, minus its
-sample duration. Later timestamps follow sample indexes, including gaps caused
-by overwritten samples. Every restarted phase obtains a new anchor, so an idle
-pause does not appear as uninterrupted acquisition. These are **host estimates**:
-they cannot independently detect stale data inside a device or provide precise
-hardware timing. FIFO restart establishes freshness at that layer.
+Each producer read records wall-clock start/end times around the low-level read,
+as the non-streaming drivers do. The ring retains these intervals alongside the
+corresponding absolute sample ranges. A normal one-second producer/consumer
+block therefore carries its actual measured read interval to SDP, rather than
+an interval extrapolated from a phase anchor and sample count. Sixty nominal
+seconds of samples can legitimately span more than sixty wall-clock seconds.
+SDP's existing scan `read_start`, `read_end`, and per-block `sample_times`/`gap`
+fields preserve these measured times without a scan-model change.
 
-Sample advice includes `timestamp_source: "host_estimated"`, `stream_phase`,
+When a producer chunk is split, its measured interval is divided proportionally
+by sample count; individual sample acquisition times are not known. When chunks
+are combined, the result spans the first contributing start through the last
+end, including any internal gaps. Buffered chunks retain their own timestamps
+even when newer reads arrive. Overwritten/consumed IQ removes the matching timing
+records, and a phase reset clears both. Freshness uses the oldest contributing
+producer read's completion so a new tail cannot hide an old buffered prefix.
+
+These are **host read intervals**, not hardware acquisition timestamps: neither
+streaming nor non-streaming host read timing can independently detect buffering
+inside a device. FIFO restart continues to establish freshness at that layer.
+
+Sample advice includes `timestamp_source: "host_read"`, `stream_phase`,
 `sample_age_sec`, `sample_index_start`, `sample_index_end`, `dropped_samples` and
 `stream_backend`. Logs report hardware restart, settling discard, ring discard,
 first-sample timing and freshness failures. The phase number is local to the
@@ -53,8 +69,15 @@ sample advice from the captured configuration. A read completing during a
 transition cannot be relabelled as the next target.
 
 Fake-backend tests cover FIFO restart, settling, auto-gain isolation, pauses,
-dropped-sample timing, stale delivery, failed resets and phase-transition reads.
+dropped-sample timing, stale buffered delivery, slow reads without false age
+failures, split/merged chunks, metadata persistence, failed resets and
+phase-transition reads.
 For hardware validation, compare LOAD/SKY transition times with first-sample
 timestamps and the power timeline, then repeat multiple integrations of one
 target to confirm continuity. Restart both DIG and SDP with the updated API
 metadata definitions before this check.
+
+With DEBUG enabled, `Stream SDR timing` records report measured block intervals,
+buffer age, producer read timing, effective delivery rate, and ring occupancy.
+`producer_timeline_lag_sec` remains a diagnostic comparison against nominal sample
+time; it does not trigger the stale-sample guard.

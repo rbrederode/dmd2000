@@ -18,7 +18,7 @@ from ui.opt_pipeline import qa_metric_settings
 from obs.total_power import load_power_cache, render_power_products, mark_power_unavailable
 
 
-def save_velocity(records, path, observation, baseline, vmin, vmax, *, show_metrics=True):
+def save_velocity(records, path, observation, baseline, vmin, vmax, *, show_metrics=True, terminal=None):
     fig, axis = plt.subplots(figsize=(14, 6))
     for index, record in enumerate(records):
         axis.plot(record["velocity"], record["power"], color=SCAN_COLOURS[index % len(SCAN_COLOURS)],
@@ -34,8 +34,36 @@ def save_velocity(records, path, observation, baseline, vmin, vmax, *, show_metr
              xlabel="LSRK velocity [km/s]", ylabel="Calibrated power [a.u.]" if baseline == "none" else "Baseline-subtracted calibrated power [a.u.]")
     axis.set_xlim(*velocity_limits(np.concatenate([record["velocity"] for record in records]), vmin, vmax))
     axis.grid(alpha=.25)
+    if terminal is not None:
+        from obs.terminal_velocity import annotate_terminal_velocity
+        annotate_terminal_velocity(axis, terminal)
     save_velocity_figure(fig, axis, path)
     plt.close(fig)
+
+
+def velocity_record(arrays, index, label, row, settings, result):
+    """Build one corrected record using the same fit for global and selected updates."""
+    velocity = arrays[f"{index}_velocity"]
+    original = arrays[f"{index}_power"]
+    flags_key, frequency_key = f"{index}_channel_flags", f"{index}_frequency_mhz"
+    flags = arrays[flags_key] if flags_key in arrays else None
+    low, high = velocity_limits(velocity, settings["baseline_vmin"], settings["baseline_vmax"])
+    mask = np.isfinite(original) & (velocity >= low) & (velocity <= high)
+    windows = None
+    if settings["baseline"] != "none":
+        windows = select_baseline_windows(velocity, original, low, high)
+        mask = np.zeros(len(velocity), dtype=bool)
+        for left, right in windows:
+            mask |= (velocity >= left) & (velocity <= right)
+    corrected, baseline = subtract_spectrum_baseline(velocity, original, settings["baseline"], mask,
+                                                     fit_line_free=bool(windows))
+    return dict(target_id=label["target_id"], freq_scan=label["freq_scan"],
+                direction=SkyCoord(l=label["longitude"]*u.deg, b=label["latitude"]*u.deg, frame="galactic"),
+                center_freq=label["center_freq"], velocity=velocity, raw_power=np.ma.masked_invalid(original),
+                power=np.ma.masked_invalid(corrected), channel_flags=flags,
+                qa_settings=label.get("qa_settings") or qa_metric_settings(result.get("pipeline_config"), row.get("digitiser", "default")),
+                baseline=baseline, baseline_windows=windows, id=label["id"], digitiser=row.get("digitiser"),
+                frequency_correction=baseline, frequency_mhz=arrays[frequency_key] if frequency_key in arrays else None)
 
 
 def reanalyse(request, out, progress):
@@ -46,8 +74,8 @@ def reanalyse(request, out, progress):
     keep_legacy_power = not has_power_cache and settings["baseline"] == "none" and result.get("settings", {}).get("baseline", "none") == "none"
     # Keep invariant observation products; Frequency images are regenerated below.
     for path in source.iterdir():
-        power_product = path.name in ("timeline.png", "timeline-seconds.png", "total-power-seconds.csv", "total-power-scans.csv") or path.name.endswith(("-timeline.png", "-timeline-seconds.png"))
-        invariant = path.name in ("native-spectra.npz", "native-spectra.json", "native-total-power.npz", "native-total-power.json", "pipeline-config.json", "overview.png") or path.name.endswith(("-signal.png", "-frequency.png", "-sky-apr.csv"))
+        power_product = path.name in ("timeline.png", "timeline-seconds.png", "timeline-no-mean.png", "timeline-seconds-no-mean.png", "total-power-seconds.csv", "total-power-scans.csv") or path.name.endswith(("-timeline.png", "-timeline-seconds.png", "-timeline-no-mean.png", "-timeline-seconds-no-mean.png"))
+        invariant = path.name in ("native-spectra.npz", "native-spectra.json", "native-total-power.npz", "native-total-power.json", "pipeline-config.json", "overview.png", "native-pointing.json", "native-pointing.npz", "pointing-animation.gif") or path.name.endswith(("-signal.png", "-frequency.png", "-sky-apr.csv", "-pointing.png"))
         if invariant or (power_product and keep_legacy_power):
             shutil.copy2(path, out / path.name)
     result["settings"] = settings
@@ -57,6 +85,11 @@ def reanalyse(request, out, progress):
     result.pop("lab_comparison", None)
     for row in result["aggregates"]:
         row["views"].pop("lab", None)
+        row["views"].pop("lab_terminal", None)
+        row["views"].pop("velocity_terminal", None)
+        row.pop("terminal_velocity", None)
+        row.pop("lab_comparison", None)
+        row.pop("velocity_products", None)
     labels = json.loads((source / "native-spectra.json").read_text())
     targets = {}
     records = []
@@ -103,34 +136,29 @@ def reanalyse(request, out, progress):
                 continue
             velocity_available = True
             try:
-                low, high = velocity_limits(velocity, settings["baseline_vmin"], settings["baseline_vmax"])
-                mask = np.isfinite(original) & (velocity >= low) & (velocity <= high)
-                windows = None
-                if settings["baseline"] != "none":
-                    windows = select_baseline_windows(velocity, original, low, high)
-                    mask = np.zeros(len(velocity), dtype=bool)
-                    for low, high in windows:
-                        mask |= (velocity >= low) & (velocity <= high)
-                corrected, baseline = subtract_spectrum_baseline(velocity, original, settings["baseline"], mask,
-                                                                 fit_line_free=bool(windows))
+                record = velocity_record(arrays, index, label, row, settings, result)
             except ValueError as exc:
                 result["warnings"].append(f"Target {label['target_id']}, frequency {label['freq_scan']}: {exc}")
                 continue
-            direction = SkyCoord(l=label["longitude"] * u.deg, b=label["latitude"] * u.deg, frame="galactic")
+            direction = record["direction"]
             targets[label["target_id"]] = SimpleNamespace(sky_coord=direction)
-            record = {"target_id": label["target_id"], "freq_scan": label["freq_scan"], "direction": direction,
-                      "center_freq": label["center_freq"], "velocity": velocity, "raw_power": np.ma.masked_invalid(original),
-                      "power": np.ma.masked_invalid(corrected), "channel_flags": channel_flags,
-                      "qa_settings": policy,
-                      "baseline": baseline, "baseline_windows": windows, "id": label["id"],
-                      "digitiser": row.get("digitiser"), "frequency_correction": baseline,
-                      "frequency_mhz": arrays[frequency_key] if frequency_key in arrays else None}
             records.append(record)
             filename = f"{label['id']}-velocity.png"
             save_velocity([record], out / filename, result["observation"], settings["baseline"],
                           settings["baseline_vmin"], settings["baseline_vmax"])
             row["views"]["velocity"] = filename
             row.get("view_errors", {}).pop("velocity", None)
+            selection = request.get("terminal_velocity")
+            if selection and selection["aggregate_id"] == row["id"]:
+                from obs.terminal_velocity import measure_terminal_velocity
+                measurement = measure_terminal_velocity(record, selection["method"],
+                    settings["baseline_vmin"], settings["baseline_vmax"])
+                record["terminal_velocity"] = row["terminal_velocity"] = measurement
+                filename = f"{label['id']}-velocity-terminal.png"
+                save_velocity([record], out / filename, result["observation"], settings["baseline"],
+                              settings["baseline_vmin"], settings["baseline_vmax"], terminal=measurement)
+                row["views"]["velocity_terminal"] = filename
+                (out / f"{label['id']}-terminal-velocity.json").write_text(json.dumps(measurement, indent=2, allow_nan=False)+'\n')
     if has_power_cache:
         power_basis = settings.get("total_power_basis", "frequency")
         render_power_products(load_power_cache(source), records if power_basis == "velocity" else frequency_records,

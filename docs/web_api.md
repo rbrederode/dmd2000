@@ -897,9 +897,14 @@ CRUD operations. Weather and pipeline frontend editors remain to be connected.
 `GET /api/telescope/model` returns WEB's most recent telescope-model snapshot.
 WEB polls TM immediately on a connection/reconnection and every 30 seconds using
 `tm_web` GET requests with property `telescope_model`. Each query has a unique
-correlation ID and timeout timer; only one is outstanding at a time. No WEB
-worker waits for the response. HTTP reads share the cache and never trigger a
-new TM query. Status advice and configuration requests retain their existing flow.
+correlation ID and timeout timer; only one is outstanding at a time. Normal HTTP reads share the cache without waiting for or initiating a new TM
+query. An explicit `GET /api/telescope/model?refresh=1` queues a fresh TM query
+and waits for its response within the configured request timeout. It updates
+the same shared cache; an older in-flight query is superseded. Disconnects,
+failed replies and timeouts return an error rather than a successful response
+containing old data. The private UI bridge forwards this as
+`GET /api/web/telescope/model?refresh=1`. The Schedule Refresh button uses this
+path, displays a waiting label and shows the returned snapshot. Status advice and configuration requests retain their existing flow.
 
 ```bash
 curl -H "X-Webhook-Token: $WEBHOOK_SECRET" http://localhost:8000/api/telescope/model
@@ -1102,3 +1107,85 @@ to validate and atomically save the edited pipeline to that existing profile's
 `PipelineConfig.json`. The response supplies `profile`, normalized editable
 `pipeline`, and a success `message`. Numeric range pairs remain on one line.
 This write uses the private UI's operator/admin and CSRF requirements.
+
+OPT input scan rows and processed aggregate rows expose `pointing` (the
+`PointingType` name) and `target_coordinates` describing the configured target
+centre. Its `kind` is `equatorial` (native RA/Dec degrees plus Galactic l/b),
+`galactic` (l/b), `altaz` (altitude/azimuth degrees), or `body` (target ID).
+Missing definitions are null. These are target definitions, not measured dish
+positions; offset/five-point scan labels explicitly say Target centre.
+
+The individual Velocity view offers an optional terminal-velocity method, initially
+`No method`, hidden for all-SKY overlays. `POST /api/opt/reanalyse` accepts
+`terminal_velocity: {"aggregate_id": "<sky-aggregate>", "method": "threshold"}`;
+methods are `threshold`, `connected`, and `erfc`, using the existing LAB-profiler
+estimators on the observation's corrected, flag-masked spectrum within the
+selected velocity limits. These estimators search the positive LSRK edge.
+Threshold and connected methods use the aggregate's pipeline QA noise policy
+(default Median/MAD), 3-sigma threshold and three-channel support; connected
+requires a 3 km/s sustained return. Erfc uses its existing automatic falling-wing
+selection. Results include the aggregate's `terminal_velocity` metadata,
+`views.velocity_terminal`, and a `*-terminal-velocity.json` export. LAB comparisons
+also provide `views.lab_terminal` using the same observation measurement. Base
+images remain available for `No method`; omitting the request field performs no
+terminal measurement. No raw scans are reprocessed.
+
+LAB and terminal option changes send `selection_only: true` with the existing
+`lab_comparison` and/or `terminal_velocity` selection to `/api/opt/reanalyse`.
+Both selections must refer to the same aggregate, and shared analysis settings
+must match the completed result. The worker loads and corrects only that cached
+spectrum; Frequency, Total Power, all-SKY and other aggregate plots are preserved.
+Per-aggregate `velocity_products` retain settings-keyed image variants and
+measurement metadata. The browser remembers each aggregate's choices while
+browsing and restores cached variants without a server request. Shared baseline,
+range or contour updates use the observation-wide route and invalidate these
+option caches. The scientific baseline correction is shared by both routes.
+
+`POST /api/opt/pointing` accepts `{ "job": "<completed-job>",
+"aggregate_id": "<aggregate-id>", "animation": false }` and starts a background
+job rendering a sky chart from that aggregate's cached physical-scan references.
+With `animation: true`, it prepares all aggregate sky charts and generates an
+observation-wide included-SKY GIF showing pointing and pipeline MPR. Existing
+chart/GIF files are reused; `pointing_charts_complete` records completion of chart
+preparation. Static sky-chart rendering reads only cached metadata, not MPR arrays. Existing job polling/cancellation and artifact
+routes serve progress, PNG and GIF products. The result includes `pointing_cache`,
+per-aggregate `views.pointing`/`pointing_summary`, and, after generation,
+`views.animation`/`animation_frames`. An optional `interval_ms` sets the animation frame interval (integer 100–500 ms); changing it updates the existing GIF playback timing without rendering its sky charts or spectra again. Results expose `animation_interval_ms` after generation and `animation_default_interval_ms`, which aims for a ten-second loop bounded to 100–500 ms per frame (100 ms if the count is unknown). Operator/admin and CSRF protections apply.
+The cache is created by normal observation processing; legacy results return an
+explicit reprocessing message. Original processing products remain available.
+
+
+## Schedule observation controls
+
+The private UI provides `POST /api/observation-control/<obs_id>` with a JSON
+body containing exactly one operation, for example `{"operation":"abort"}`.
+It requires the usual operator/admin session and CSRF token. The bridge forwards
+an authenticated OET webhook to TM; the webhook secret remains on the server.
+
+| Operation | OET message type | Availability |
+| --- | --- | --- |
+| `delete` | `ObservationDelete` | EMPTY or IDLE observation with no execution history |
+| `abort` | `ObservationAbort` | CONFIGURING, READY or SCANNING observation |
+| `restart` | `ObservationRestart` | ABORTED observation whose scheduling block has not ended |
+
+TM validates the current observation under its execution lock. Deletion removes
+only the schedule entry, releases allocations and retains saved files. Queued
+execution events cannot revive the deleted entry. Abort uses the existing stop
+workflow. Aborted observations remain in the live Schedule until their block end,
+including when another observation takes their released resources.
+
+Restart uses the existing reset workflow: scan cursors, scan models, AUTO gain
+cache and offset-scan timing are reset, then resource assignment is attempted.
+It starts from the first scan rather than resuming; it does not extend the block
+or guarantee immediate resource availability. Existing scan filenames can be
+reused by the restarted run.
+
+TM applies the local Abort/Restart transition before acknowledging the command;
+hardware actions and resource assignment then follow their existing workflows.
+After a successful Schedule command, WEB immediately requests a fresh shared TM
+snapshot, superseding any older in-flight snapshot request. The UI checks for
+confirmation every second while the command is pending. The buttons display
+`Awaiting TM…` until that snapshot confirms the change. Normal background
+snapshots remain on the 30-second interval. Invalid state/deadline requests are
+rejected; commands are never automatically retried, including when the response
+is lost and the outcome is unknown. Historical catalogue rows have no controls.

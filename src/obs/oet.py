@@ -4,13 +4,14 @@ from datetime import datetime, timezone, timedelta
 import json
 import logging
 import threading
+import weakref
 
 from env.events import ObsEvent
 from ipc.action import Action
 from models.comms import CommunicationStatus
 from models.dsh import DishManagerModel, DriverType, Feed, Capability, DishMode, PointingState
 from models.health import HealthState
-from models.obs import ObsModel, ObsTransition, ObsState
+from models.obs import ObsModel, ObsTransition, ObsState, validate_observation_control
 from models.oda import ODAModel, ObsList, ScanStore
 from models.scan import ScanModel, ScanState
 from models.target import TargetModel, TargetConfig, PointingType
@@ -33,6 +34,7 @@ class ObservationExecutionTool:
         # Lock for thread-safe allocation of shared resources
         self._rlock = threading.RLock()
         self._obs_locks = {}  # Dictionary of locks for individual observations, keyed by obs_id
+        self._deleted_observations = weakref.WeakValueDictionary()
 
         self.telmodel = telmodel        # Telescope Model
         self.tm = tm                    # Telescope Manager  
@@ -109,6 +111,9 @@ class ObservationExecutionTool:
         # Get the threading lock specific to this observation
         obs_lock = self._get_obs_lock(event.obs.obs_id)
         with obs_lock:
+            if self._deleted_observations.get(id(event.obs)) is event.obs:
+                logger.debug('Ignoring queued transition for deleted observation %s', event.obs.obs_id)
+                return action
 
             # Handle observation event transitions
             if event.transition == ObsTransition.START:
@@ -301,6 +306,10 @@ class ObservationExecutionTool:
 
             elif event.transition == ObsTransition.ABORT:
 
+                if event.obs.obs_state == ObsState.ABORTED:
+                    logger.debug("Ignoring repeated abort for observation %s.", event.obs.obs_id)
+                    return action
+
                 action.set_timer_action(Action.Timer(
                     name=f"obs_configuring_timer:{event.obs.obs_id}",
                     timer_action=Action.Timer.TIMER_STOP))
@@ -330,12 +339,20 @@ class ObservationExecutionTool:
 
                 # Can only reset observations in ABORTED, FAULT or IDLE states
                 if event.obs.obs_state in [ObsState.ABORTED, ObsState.FAULT, ObsState.IDLE]:
+                    now = datetime.now(timezone.utc)
+                    if event.obs.scheduling_block_end is None or event.obs.scheduling_block_end <= now:
+                        logger.warning('Cannot reset observation %s after its scheduling block has ended', event.obs.obs_id)
+                        return action
                     # Stop abort timer if active
                     timer_name = f"obs_abort_timer:{event.obs.obs_id}"
                     action.set_timer_action(Action.Timer(name=timer_name, timer_action=Action.Timer.TIMER_STOP))
 
                     event.obs.tgt_idx = 0
                     event.obs.tgt_scan = 0
+                    event.obs.auto_gain_cache = {}
+                    for target in event.obs.targets:
+                        if target.pointing == PointingType.OFFSET_SCAN and target.scan is not None:
+                            target.scan.start = None
                     event.obs.determine_scans()
                     self.reset_sdp_scan(obs=event.obs, action=action)
 
@@ -360,6 +377,33 @@ class ObservationExecutionTool:
                 message = f"Observation Execution Tool received unknown observation event transition: {event.transition}"
                 logger.warning(self.tm.set_last_err(message))
         
+        return action
+
+    def control_observation(self, obs_id, operation, action):
+        """Apply a schedule command under the same lock as execution transitions."""
+        with self._get_obs_lock(obs_id):
+            store = self.telmodel.oda.obs_store
+            obs = store.get_obs_by_id(obs_id)
+            if obs is None:
+                raise ValueError('Observation is no longer in the schedule')
+            validate_observation_control(obs, operation)
+            if operation == 'delete':
+                released = self.release_resources(obs, action)
+                self._deleted_observations[id(obs)] = obs
+                store.obs_list[:] = [item for item in store.obs_list if item is not obs]
+                if released:
+                    now = datetime.now(timezone.utc)
+                    for waiting in store.obs_list:
+                        if (waiting.obs_state == ObsState.IDLE and waiting.dsh_id == obs.dsh_id
+                                and waiting.scheduling_block_start <= now < waiting.scheduling_block_end):
+                            action.set_obs_transition(obs=waiting, transition=ObsTransition.ASSIGN_RESOURCES)
+                action.set_timer_action(Action.Timer(name='obs_start_timer', timer_action=Action.Timer.TIMER_STOP))
+                self.start_next_obs_timer(action)
+            else:
+                # Apply the local transition before acknowledging the command, so
+                # an immediate model request sees the resulting execution state.
+                return self.process_obs_event(ObsEvent(obs=obs,
+                    transition=ObsTransition.ABORT if operation == 'abort' else ObsTransition.RESET))
         return action
 
     def start_next_obs_timer(self, action) -> bool:
@@ -953,11 +997,11 @@ class ObservationExecutionTool:
             old_dsh_config = {}
             new_dsh_config = {}
 
-            old_dsh_config['mode'] = dsh_model.mode
+            # Always send both cleanup commands. Cached mode/target values can
+            # lag a configuration request that is still executing in DM.
             new_dsh_config['mode'] = DishMode.STANDBY_FP
 
             # Clearing a target can be done in any dish mode
-            old_dsh_config['target'] = dsh_model.target
             new_dsh_config['target'] = None
 
             old_dsh_config['dsh_id'] = dsh_model.dsh_id

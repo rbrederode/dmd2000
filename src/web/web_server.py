@@ -468,7 +468,7 @@ def pipeline(name=None, index=None):
 @app.get('/api/telescope/model')
 @limiter.limit('120 per minute', override_defaults=True)
 def telescope_model():
-    """Read WEB's periodically refreshed cache without initiating a TM query."""
+    """Read the shared cache, or explicitly request and await a fresh TM snapshot."""
     try:
         validate_request()
     except HTTPException as error:
@@ -476,7 +476,9 @@ def telescope_model():
     runtime = app.extensions.get('web_application')
     if runtime is None or not hasattr(runtime, 'telescope_model_response'):
         return jsonify(ResponseEvent('error', 'Telescope model cache is unavailable', code='model_unavailable').to_dict()), 503
-    result = runtime.telescope_model_response()
+    if set(request.args) - {'refresh'} or request.args.get('refresh', '0') not in ('0', '1'):
+        return jsonify(ResponseEvent('error', 'Use refresh=1 to request a fresh snapshot', code='invalid_request').to_dict()), 400
+    result = runtime.telescope_model_response(refresh=True) if request.args.get('refresh') == '1' else runtime.telescope_model_response()
     response = jsonify(result.to_dict())
     response.status_code = 200 if result.status == 'success' else 503
     response.headers['Cache-Control'] = 'no-store'

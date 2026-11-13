@@ -536,6 +536,38 @@
       "spectral_resolution": 4096,
       "tgt_idx": 31,
       "obs_id": "ODT-{{NOW}}-dish003-Rotation"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": 45,
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 6000000,
+      "integration_time": 240,
+      "spectral_resolution": 4096,
+      "tgt_idx": 32,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
+    },
+    {
+      "_type": "TargetConfig",
+      "feed_type": {
+        "_type": "enum.IntEnum",
+        "instance": "Feed",
+        "value": "H3T_1420"
+      },
+      "gain": 45,
+      "center_freq": 1420000000,
+      "bandwidth": 1000000,
+      "sample_rate": 6000000,
+      "integration_time": 240,
+      "spectral_resolution": 4096,
+      "tgt_idx": 33,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation"
     }
   ],
   "targets": [
@@ -1073,6 +1105,40 @@
         "_type": "SkyCoord",
         "frame": "galactic",
         "l": 170.0,
+        "b": 0.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "SIDEREAL_TRACK"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 32,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
+      "id": "Galactic longitude 175.0, latitude 0.0",
+      "sky_coord": {
+        "_type": "SkyCoord",
+        "frame": "galactic",
+        "l": 175.0,
+        "b": 0.0
+      },
+      "pointing": {
+        "_type": "enum.IntEnum",
+        "instance": "PointingType",
+        "value": "SIDEREAL_TRACK"
+      }
+    },
+    {
+      "_type": "TargetModel",
+      "tgt_idx": 33,
+      "obs_id": "ODT-{{NOW}}-dish003-Rotation",
+      "id": "Galactic longitude 180.0, latitude 0.0",
+      "sky_coord": {
+        "_type": "SkyCoord",
+        "frame": "galactic",
+        "l": 180.0,
         "b": 0.0
       },
       "pointing": {

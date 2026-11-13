@@ -231,3 +231,53 @@ def test_start_timer_queues_each_due_observation_once_and_schedules_the_next():
     ]
     assert len(action.timer_actions) == 1
     assert action.timer_actions[0].get_echo_data() is future_observation
+
+
+def test_abort_cleanup_sends_standby_and_clear_despite_stale_cached_state():
+    from unittest.mock import Mock
+    from models.dsh import DishModel
+
+    observation = SimpleNamespace(obs_id='obs-abort-race',dsh_id='dish001')
+    # The target command is still in flight: TM has not seen its response.
+    dish = DishModel(dsh_id='dish001',dig_id='dig001',mode=DishMode.STANDBY_FP,target=None)
+    manager = TelescopeManager.__new__(TelescopeManager)
+    manager.stop = lambda: None
+    manager.telmodel = SimpleNamespace(
+        tel_mgr=SimpleNamespace(dm_connected=CommunicationStatus.ESTABLISHED,
+                                app=SimpleNamespace(msg_timeout_ms=1000)),
+        dsh_mgr=SimpleNamespace(dish_store=SimpleNamespace(dish_list=[dish])),
+        dig_store=SimpleNamespace(dig_list=[SimpleNamespace(dig_id='dig001',scanning=False)]),
+        sdp=SimpleNamespace(sdp_id='sdp001'))
+    def request(**kwargs):
+        call = dict(kwargs)
+        return SimpleNamespace(get_api_call=lambda: call, get_timestamp=lambda: str(len(call)))
+    manager._construct_req_to_dm = Mock(side_effect=request)
+    manager.update_dig_configuration = lambda old,new,action: action
+    manager.update_sdp_configuration = lambda old,new,action: action
+    oet = ObservationExecutionTool(manager.telmodel,manager)
+    action = Action()
+    assert oet.stop_obs_scanning(observation,action)
+    calls = [message.get_api_call() for message in action.msgs_to_remote]
+    assert [(call['property'],call['value']) for call in calls] == [('mode',DishMode.STANDBY_FP.value),('target',None)]
+    assert all(call['entity'] == 'dish001' for call in calls)
+    assert all(call['obs_data']['obs_id'] == observation.obs_id for call in calls)
+
+
+def test_repeated_abort_does_not_repeat_cleanup_or_restart_release_timer():
+    from unittest.mock import Mock
+
+    observation = SimpleNamespace(obs_id='obs-abort-once',obs_state=ObsState.CONFIGURING,
+        scheduling_block_end=datetime.now(timezone.utc)+timedelta(minutes=5))
+    oet = ObservationExecutionTool(SimpleNamespace(),SimpleNamespace())
+    oet.stop_obs_scanning = Mock()
+    event = ObsEvent(obs=observation,transition=ObsTransition.ABORT)
+    first = oet.process_obs_event(event)
+    assert observation.obs_state == ObsState.ABORTED
+    assert {timer.get_name() for timer in first.timer_actions} == {
+        f'obs_configuring_timer:{observation.obs_id}',f'obs_abort_timer:{observation.obs_id}'}
+    for _ in range(3):
+        repeated = oet.process_obs_event(event)
+        assert repeated.timer_actions == []
+        assert repeated.msgs_to_remote == []
+        assert repeated.obs_transitions == []
+    oet.stop_obs_scanning.assert_called_once()

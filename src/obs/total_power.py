@@ -74,7 +74,7 @@ def power_series(records, *, origin=None):
         yield key, segments
 
 
-def save_total_power(records, path, observation, *, resolution="scans", origin=None, baseline="none", basis="frequency"):
+def save_total_power(records, path, observation, *, resolution="scans", origin=None, baseline="none", basis="frequency", show_mean=True):
     """Plot each recorded second or its physical scan's mean, without resampling."""
     if resolution not in ("seconds", "scans"):
         raise ValueError("Total Power resolution must be seconds or scans")
@@ -97,7 +97,7 @@ def save_total_power(records, path, observation, *, resolution="scans", origin=N
                           color=colour, linestyle=style, marker=".", label=label, linewidth=1.5)
             plotted = np.concatenate([segment["power"] for segment in segments]) if resolution == "seconds" else np.array([segment["mean"] for segment in segments])
             finite = plotted[np.isfinite(plotted)]
-            if len(finite):
+            if show_mean and len(finite):
                 axis.axhline(float(np.mean(finite)), color=colour, linestyle="--", linewidth=1, alpha=.45)
         xlabel = "Scan number" if resolution == "scans" else (
             "Elapsed observation time [s]" if origin is not None else "Recorded time [s] (gaps excluded)")
@@ -199,7 +199,7 @@ def render_power_products(records, spectra, result, folder, baseline, *, basis="
     """Refresh both resolutions, individual/all-SKY views and matching CSVs."""
     owners = [result, *result["aggregates"]]
     for owner in owners:
-        for key in ("timeline", "timeline_seconds"):
+        for key in ("timeline", "timeline_seconds", "timeline_no_mean", "timeline_seconds_no_mean"):
             owner["views"].pop(key, None)
             owner.get("view_errors", {}).pop(key, None)
     try:
@@ -216,15 +216,18 @@ def render_power_products(records, spectra, result, folder, baseline, *, basis="
                 r for r in records if all(r.get(k) == owner.get(k) for k in ("target_id", "freq_scan", "digitiser", "kind"))]
             if not batch:
                 continue
-            filename = f"{owner['id']}-{suffix}.png" if owner is not result else f"{suffix}.png"
-            save_total_power(batch, folder / filename, result["observation"], resolution=resolution,
-                             origin=origin, baseline=baseline if any(r["kind"] == "SKY" for r in batch) else "none", basis=basis)
-            owner["views"][key] = filename
+            for show_mean in (True, False):
+                variant = suffix if show_mean else f"{suffix}-no-mean"
+                filename = f"{owner['id']}-{variant}.png" if owner is not result else f"{variant}.png"
+                save_total_power(batch, folder / filename, result["observation"], resolution=resolution,
+                                 origin=origin, baseline=baseline if any(r["kind"] == "SKY" for r in batch) else "none",
+                                 basis=basis, show_mean=show_mean)
+                owner["views"][key if show_mean else f"{key}_no_mean"] = filename
 
 
 def mark_power_unavailable(result, reason):
     for owner in [result, *result["aggregates"]]:
-        for key in ("timeline", "timeline_seconds"):
+        for key in ("timeline", "timeline_seconds", "timeline_no_mean", "timeline_seconds_no_mean"):
             owner["views"].pop(key, None)
             owner.setdefault("view_errors", {})[key] = reason
     result.setdefault("warnings", []).append(reason)

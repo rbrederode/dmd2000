@@ -14,6 +14,8 @@ pip install -r src/requirements.txt
 
 ## Documentation
 
+- [Making releases: versions, changelog, testing, release branches and maintenance patches](docs/releasing.md)
+
 - [Observation Processing Tool (OPT): usage, baseline subtraction, and longitude–velocity plots](docs/opt.md)
 
 - [Authenticated local console and OPT workspace served by WEB](src/ui/frontend_prototype/README.md)

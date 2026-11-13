@@ -116,8 +116,10 @@ class DishModel(BaseModel):
         "mode": And(DishMode, lambda v: isinstance(v, DishMode)),
         "pointing_state": And(PointingState, lambda v: isinstance(v, PointingState)),
         "desired_altaz": Or(None, dict, lambda v: v is None or isinstance(v, (dict, SkyCoord))),  # Desired alt-az position of dish
+        "pointing_offset": Or(None, And(Or(int, float), lambda v: -180.0 <= v <= 180.0)),         # Current pointing offset (degrees), or None when unavailable
+        "pointing_position_angle": Or(None, And(Or(int, float), lambda v: 0.0 <= v <= 360.0)),    # Current pointing position angle (degrees), or None when unavailable
         "pointing_altaz": Or(None, dict, lambda v: v is None or isinstance(v, (dict, SkyCoord))), # Current alt-az pointing direction of dish
-        "pointing_altaz_dt": Or(None, And(datetime, lambda v: isinstance(v, datetime))),          # Datetime corresponding to the current pointing_altaz measurement
+        "pointing_altaz_dt": Or(None, And(datetime, lambda v: isinstance(v, datetime))),          # Datetime corresponding to the current pointing_altaz and pointing offset measurements
         "velocity_altaz": Or(None, dict, lambda v: v is None or isinstance(v, dict)),             # Current velocity of dish in Altitude and Azimuth (degrees per second)
         "target": Or(None, lambda v: v is None or isinstance(v, BaseModel)),                      # Current target model assigned to the dish
         "tgt_id": Or(None, And(str, lambda v: isinstance(v, str))),                               # Current target id assigned to the dish in the form {obs_id}_{obs.tgt_idx}
@@ -188,6 +190,8 @@ class DishModel(BaseModel):
             "mode": DishMode.UNKNOWN,
             "pointing_state": PointingState.UNKNOWN,
             "desired_altaz": None,
+            "pointing_offset": None,
+            "pointing_position_angle": None,
             "pointing_altaz": None,
             "pointing_altaz_dt": None,
             "velocity_altaz": None,

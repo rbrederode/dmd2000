@@ -137,6 +137,12 @@ def test_web_model_cache_http_auth_and_repeated_reads_do_not_query_tm(monkeypatc
     assert web.queue.empty()
     web.tm_endpoint.connected = False
     assert client.get('/api/telescope/model', headers=headers).json['payload']['stale'] is True
+    web.telescope_model_response = Mock(return_value=ResponseEvent('success', 'Fresh snapshot', payload={'telescope_model': {'fresh': True}}))
+    fresh = client.get('/api/telescope/model?refresh=1', headers=headers)
+    assert fresh.status_code == 200 and fresh.json['payload']['telescope_model']['fresh']
+    web.telescope_model_response.assert_called_once_with(refresh=True)
+    assert client.get('/api/telescope/model?refresh=invalid', headers=headers).status_code == 400
+    assert web.telescope_model_response.call_count == 1
 
 
 def test_model_response_survives_large_wire_round_trip_and_reconnect():
@@ -160,3 +166,74 @@ def test_model_response_survives_large_wire_round_trip_and_reconnect():
     fresh = reply(new)
     web.process_tm_msg(None, fresh.get_json_api_header(), fresh.get_api_call(), None)
     assert web.telescope_model_response().payload['stale'] is False
+
+
+def test_control_refresh_supersedes_older_snapshot_in_flight():
+    cache = TelescopeModelCache()
+    old_request = cache.poll(True, 10).msgs_to_remote[0]
+    old_id = cache.pending
+    fresh = cache.poll(True, 10, force=True)
+    assert fresh.timer_actions[0].name == REQUEST_PREFIX + old_id
+    assert fresh.timer_actions[0].timer_action == -1
+    assert cache.pending != old_id
+    old_response = reply(old_request)
+    assert cache.complete(old_response.get_json_api_header(), old_response.get_api_call()).is_empty()
+    assert cache.snapshot is None
+    fresh_response = reply(fresh.msgs_to_remote[0])
+    cache.complete(fresh_response.get_json_api_header(), fresh_response.get_api_call())
+    assert cache.response(True).payload['stale'] is False
+
+
+@pytest.mark.parametrize('failure', ['timeout', 'disconnect', 'error'])
+def test_fresh_snapshot_waiter_reports_failure_instead_of_returning_old_data(failure):
+    from concurrent.futures import Future
+    cache = TelescopeModelCache()
+    complete(cache)
+    waiter = Future()
+    action = cache.poll(True, 10, force=True, waiter=waiter)
+    assert not waiter.done()
+    if failure == 'timeout':
+        cache.timeout(cache.pending)
+    elif failure == 'disconnect':
+        cache.disconnected()
+    else:
+        response = reply(action.msgs_to_remote[0], status='error')
+        cache.complete(response.get_json_api_header(), response.get_api_call())
+    assert waiter.result(timeout=1).status == 'error'
+    assert cache.snapshot is not None
+    assert cache.waiters == []
+
+
+def test_manual_refresh_waits_for_new_tm_reply_and_updates_shared_cache():
+    from concurrent.futures import ThreadPoolExecutor
+    web = web_stub()
+    complete(web._model_cache())
+    with ThreadPoolExecutor(max_workers=1) as worker:
+        waiting = worker.submit(web.telescope_model_response, refresh=True)
+        callback = web.queue.get(timeout=1)
+        action = callback.callback()
+        assert not waiting.done()
+        request = action.msgs_to_remote[0]
+        response = reply(request, {'telescope_model': {'new_snapshot': True}})
+        web.process_tm_msg(None, response.get_json_api_header(), response.get_api_call(), None)
+        result = waiting.result(timeout=1)
+    assert result.status == 'success'
+    assert result.payload['telescope_model'] == {'new_snapshot': True}
+    assert web.telescope_model_response().payload['telescope_model'] == {'new_snapshot': True}
+
+
+def test_ui_bridge_forwards_explicit_refresh_parameter(tmp_path, monkeypatch):
+    from ui import opt_service
+    request = Mock(return_value=SimpleNamespace(status_code=200, headers={}, json=lambda: {'status':'success', 'message':'Fresh snapshot', 'payload':{}}))
+    monkeypatch.setattr(opt_service.requests, 'request', request)
+    app = opt_service.create_app([tmp_path], tmp_path/'cache', web_token='test')
+    try:
+        client = app.test_client()
+        assert client.get('/api/web/telescope/model?refresh=1').status_code == 200
+        assert request.call_args.kwargs['params'] == {'refresh':'1'}
+        assert request.call_args.kwargs['timeout'] == (3, 30)
+        request.reset_mock()
+        assert client.get('/api/web/telescope/model?refresh=wrong').status_code == 400
+        request.assert_not_called()
+    finally:
+        app.extensions['opt_jobs'].close()

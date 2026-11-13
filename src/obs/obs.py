@@ -185,7 +185,7 @@ class Observation:
         self.int_data_arrays[(tgt_idx, freq_scan, scan_iter)]["secs"] += loaded_seconds
         self.int_data_arrays[(tgt_idx, freq_scan, scan_iter)]["scans"] += 1
 
-    def integrate_cal_scans(self, dir: str, sky_q: "Queue" = None, cal_q: "Queue" = None):
+    def integrate_cal_scans(self, dir: str, sky_q: "Queue" = None, cal_q: "Queue" = None, processed_scan_callback=None):
         """ Iterate over calibration scan iterations for each target and aggregate their summed power spectra into integrated data arrays.
 
             Parameters:
@@ -224,6 +224,8 @@ class Observation:
                     continue
 
                 self._update_integrated_data_arrays(scan=scan)
+                if processed_scan_callback is not None:
+                    processed_scan_callback(scan)
                 scan.__del__()  # Explicitly release memory as quickly as possible 
 
     def integrate_sky_scans(
@@ -232,6 +234,7 @@ class Observation:
         sky_q: "Queue" = None,
         cal_q: "Queue" = None,
         processed_scans: list["Scan"] | None = None,
+        processed_scan_callback=None,
     ):
         """ Iterate over sky scan iterations for each target and aggregate their summed power spectra into integrated data arrays.
 
@@ -276,6 +279,8 @@ class Observation:
                     continue
 
                 self._update_integrated_data_arrays(scan=scan)
+                if processed_scan_callback is not None:
+                    processed_scan_callback(scan)
                 if processed_scans is not None:
                     processed_scans.append(scan)
                 else:

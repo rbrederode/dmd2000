@@ -34,10 +34,12 @@
     const list = model?.oda?.obs_store?.obs_list;
     if (!Array.isArray(list)) return null;
     return list.filter(obs => {
-      if (!obs?.obs_id || completed(obs)) return false;
+      if (!obs?.obs_id) return false;
       const status = obsState(obs.obs_state);
-      if (active.has(status)) return true;
       const end = dateValue(obs.scheduling_block_end);
+      if (status === 'ABORTED') return Number.isFinite(end) && end > now;
+      if (completed(obs)) return false;
+      if (active.has(status)) return true;
       return ['EMPTY', 'IDLE'].includes(status) && (!Number.isFinite(end) || end > now);
     }).sort((a, b) => {
       const running = Number(active.has(obsState(b.obs_state))) - Number(active.has(obsState(a.obs_state)));
@@ -50,6 +52,23 @@
     const style = ['SCANNING', 'WIP'].includes(value) ? 'is-live' : value === 'ABORTED' || value === 'FAULT' ? 'is-bad'
       : ['CONFIGURING', 'READY'].includes(value) ? 'is-warn' : value === 'COMPLETE' ? 'is-live' : 'is-empty';
     return `<span class="zk-chip ${style}">${escape(show(value))}</span>`;
+  }
+  function controlOperation(obs, now = Date.now()) {
+    const status = obsState(obs.obs_state);
+    if (active.has(status)) return 'abort';
+    if (status === 'ABORTED' && dateValue(obs.scheduling_block_end) > now) return 'restart';
+    const started = (obs.tgt_idx > 0 || obs.tgt_scan > 0 || scansFor(obs).some(({scan}) =>
+      scanState(scan.status) !== 'EMPTY' || scan.read_start != null || scan.read_end != null || scan.tgt_acq_dt != null));
+    return ['EMPTY', 'IDLE'].includes(status) && !started ? 'delete' : null;
+  }
+  function controlButton(obs, controls) {
+    const operation = controlOperation(obs);
+    if (!operation || !controls || obs._history) return '';
+    const pending = controls.pending?.has(obs.obs_id);
+    const label = {delete:'Delete',abort:'Abort',restart:'Restart'}[operation];
+    const title = operation === 'restart' ? 'Restart this observation from the first scan' : operation === 'delete'
+      ? 'Remove this unstarted observation from the schedule; saved files are retained' : 'Abort this executing observation';
+    return `<div class="schedule-controls"><button type="button" class="zk-btn is-primary is-sm" data-schedule-control="${operation}" data-observation-id="${escape(obs.obs_id)}" title="${title}"${controls.disabled || pending ? ' disabled' : ''}>${pending ? 'Awaiting TM…' : label}</button></div>`;
   }
   function historyObservations(entries, model, now = Date.now()) {
     const live = new Set((observations(model, now) || []).map(obs => obs.obs_id));
@@ -77,7 +96,7 @@
     const scans = scansFor(obs);
     if (!scans.length) return '<p class="zk-muted schedule-no-scans">' + (obs._history ? 'The saved observation contains no scan records.' : 'TM has not prepared the scan list for this observation yet.') + '</p>';
     const finished = scans.filter(({ scan }) => scanState(scan.status) === 'COMPLETE').length;
-    return `<div class="schedule-scan-heading"><strong>Scans</strong><span class="zk-muted">${finished} of ${scans.length} complete</span></div>`
+    return `<div class="schedule-scan-heading"><strong>Scans</strong><span class="zk-muted">${finished} of ${scans.length} complete</span><progress class="schedule-scan-progress" value="${finished}" max="${scans.length}" aria-label="Scan completion" aria-valuetext="${finished} of ${scans.length} scans complete"></progress></div>`
       + `<div class="schedule-scan-scroll" tabindex="0" role="region" aria-label="Scans for ${escape(obs.obs_id)}" data-schedule-scan-scroll="${escape(obs.obs_id)}">`
       + '<table class="zk-tbl schedule-scans"><thead><tr><th>Scan<br><small>Target / frequency / iteration</small></th><th>Target</th><th>Type</th><th>Status</th><th>Digitiser</th><th>Frequency [MHz]</th><th>Gain [dB]</th><th>Duration [s]</th><th>First sample (UTC)</th><th>Last sample (UTC)</th><th title="View final-sample signal display">Signal</th><th title="Download completed scan spectrum">SPR</th></tr></thead><tbody>'
       + scans.map(({ scan, targetIndex, current }) => {
@@ -118,7 +137,7 @@
         + `<td><button type="button" class="schedule-toggle" data-schedule-toggle="${escape(key)}" aria-expanded="${open}"${open ? ` aria-controls="${id}"` : ''} title="${escape(obs.obs_id)}"><span aria-hidden="true">${open ? '▾' : '▸'}</span><span>${escape(obs.obs_id)}</span></button></td>`
         + `<td class="schedule-title" title="${escape(obs.title || '')}">${escape(show(obs.title))}</td><td>${escape(show(obs.dsh_id))}</td><td${obs._history ? ` title="Saved execution state: ${escape(show(obs.obs_state))}"` : ''}>${chip(obs._history ? historyStatus(obs) : obsState(obs.obs_state))}</td>`
         + `<td class="schedule-date">${timestamp(obs.scheduling_block_start)}</td><td class="schedule-date">${timestamp(obs.scheduling_block_end)}</td>`
-        + `<td class="zk-mono">${escape(observingDuration)}</td><td class="schedule-date">${timestamp(obs.created)}</td><td class="schedule-contact" title="${escape(obs.user_email || '')}">${escape(show(obs.user_email))}</td></tr>`
+        + `<td class="zk-mono">${escape(observingDuration)}</td><td class="schedule-date">${timestamp(obs.created)}</td><td class="schedule-contact" title="${escape(obs.user_email || '')}"><div class="schedule-contact-content"><span class="schedule-contact-text">${escape(show(obs.user_email))}</span>${controlButton(obs, source.controls)}</div></td></tr>`
         + (open ? `<tr class="schedule-expanded" id="${id}"><td colspan="9">${contents}</td></tr>` : '');
     }).join('');
   }
@@ -126,8 +145,9 @@
     const $ = id => doc.getElementById('schedule-' + id);
     if (!$('observations')) return;
     const state = { data: null, expanded: new Set(), loading: false, stopped: false,
-      downloads: new Set(),
+      downloads: new Set(), pendingControls: new Map(),
       history: { entries: null, expanded: new Set(), details: new Map(), loading: false, profile: null, generation: 0, checkedAt: 0 } };
+    const refreshMarkup = $('refresh').innerHTML;
     function paint(body, region, html) {
       const scroll = region.scrollTop, horizontal = region.scrollLeft;
       const nested = new Map(Array.from(body.querySelectorAll('[data-schedule-scan-scroll]'))
@@ -166,7 +186,9 @@
         for (const id of state.expanded) if (!ids.has(id)) state.expanded.delete(id);
       }
       const html = list == null ? '<tr><td colspan="9" class="zk-muted">Waiting for the observation queue from TM.</td></tr>'
-        : list.length ? rows(list, state.expanded, 'live', new Map(), state.data?.profile) : '<tr><td colspan="9" class="zk-muted">No observations are queued or running.</td></tr>';
+        : list.length ? rows(list, state.expanded, 'live', new Map(), state.data?.profile, {controls:{
+            disabled:state.data?.stale || state.data?.tm_connected === false || win.DmdSession?.can_edit === false,
+            pending:state.pendingControls}}) : '<tr><td colspan="9" class="zk-muted">No observations are queued or running.</td></tr>';
       paint($('observations'), $('scroll'), html);
       renderHistory();
     }
@@ -229,16 +251,30 @@
         history.checkedAt = Date.now(); history.loading = false; $('history-refresh').disabled = false;
       }
     }
-    async function refresh() {
+    async function refresh(fresh = false) {
       if (state.loading || state.stopped) return;
       state.loading = true; $('refresh').disabled = true;
-      const controller = new AbortController(), timeout = win.setTimeout(() => controller.abort(), 5000);
+      if (fresh) $('refresh').textContent = 'Requesting TM snapshot…';
+      const controller = new AbortController(), timeout = win.setTimeout(() => controller.abort(), fresh ? 35000 : 5000);
       try {
-        const response = await fetcher('/api/web/telescope/model', { cache: 'no-store', credentials: 'same-origin', signal: controller.signal });
+        const response = await fetcher('/api/web/telescope/model' + (fresh ? '?refresh=1' : ''), { cache: 'no-store', credentials: 'same-origin', signal: controller.signal });
         const body = await response.json();
         if (!response.ok || body.status !== 'success' || !body.payload?.telescope_model) throw new Error(body.message || 'Telescope model unavailable');
         if (state.stopped) return;
         state.data = body.payload;
+        for (const [id, pending] of state.pendingControls) {
+          const item = state.data.telescope_model?.oda?.obs_store?.obs_list?.find(obs => obs.obs_id === id);
+          const status = obsState(item?.obs_state);
+          const applied = pending.operation === 'delete' ? !item : pending.operation === 'abort'
+            ? status === 'ABORTED' : item && status !== 'ABORTED';
+          if (pending.accepted && (applied || Date.now() > pending.deadline)) {
+            state.pendingControls.delete(id);
+            const result = $('action-result');
+            result.className = 'schedule-download-result' + (applied ? '' : ' is-error');
+            result.textContent = applied ? `${id}: ${pending.operation} confirmed by TM.`
+              : `${id}: TM has not confirmed the change. Refresh the schedule before retrying.`;
+          }
+        }
         $('connection').textContent = state.data.stale ? 'TM snapshot stale' : 'TM snapshot available';
         $('connection').className = 'zk-chip ' + (state.data.stale ? 'is-warn' : 'is-live');
         $('freshness').textContent = (state.data.stale ? 'Showing a stale snapshot. ' : '') + 'TM Config Profile: ' + show(state.data.profile)
@@ -252,9 +288,35 @@
         render();
       } finally {
         win.clearTimeout(timeout); state.loading = false; $('refresh').disabled = false;
+        $('refresh').innerHTML = refreshMarkup;
       }
     }
     let signalGeneration = 0, signalObjectUrl = null, signalController = null;
+    async function controlObservation(id, operation) {
+      if (state.pendingControls.has(id)) return;
+      const result = $('action-result');
+      const item = state.data?.telescope_model?.oda?.obs_store?.obs_list?.find(obs => obs.obs_id === id);
+      if (state.data?.stale || state.data?.tm_connected === false || win.DmdSession?.can_edit === false || !item || controlOperation(item) !== operation) return;
+      const pending = {operation,accepted:false,deadline:Date.now()+60000};
+      state.pendingControls.set(id,pending); render();
+      result.hidden = false; result.className='schedule-download-result'; result.textContent='Sending '+operation+' request…';
+      const controller=new AbortController(), timeout=win.setTimeout(()=>controller.abort(),35000);
+      try {
+        const response=await fetcher('/api/observation-control/'+encodeURIComponent(id),{
+          method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({operation}),signal:controller.signal});
+        const body=await response.json();
+        if (!response.ok || body.status !== 'success') throw new Error(body.message || 'Observation control request failed');
+        pending.accepted=true;
+        result.textContent=body.message+' Requesting a fresh TM snapshot…';
+        await refresh();
+      } catch (error) {
+        state.pendingControls.delete(id);
+        result.className='schedule-download-result is-error';
+        result.textContent=error.name==='AbortError' || error instanceof TypeError || error instanceof SyntaxError
+          ? 'No valid response received. The outcome is unknown; refresh the schedule before retrying.' : error.message;
+      } finally {win.clearTimeout(timeout);render();}
+    }
     function clearSignal() {
       signalGeneration++;
       signalController?.abort(); signalController = null;
@@ -333,6 +395,8 @@
       } finally { state.downloads.delete(url); button.disabled = false; }
     }
     $('observations').addEventListener('click', event => {
+      const control=event.target.closest('[data-schedule-control]');
+      if (control) { controlObservation(control.dataset.observationId,control.dataset.scheduleControl); return; }
       const signal = event.target.closest('[data-scan-signal]');
       if (signal) { previewSignal(signal); return; }
       const download = event.target.closest('[data-scan-download]');
@@ -357,15 +421,21 @@
       else { history.expanded.add(key); loadScans(key); }
       renderHistory();
     });
-    $('refresh').addEventListener('click', () => { refresh(); refreshHistory(true); });
+    $('refresh').addEventListener('click', () => { refresh(true); refreshHistory(true); });
     $('history-refresh')?.addEventListener('click', () => refreshHistory(true));
     win.addEventListener('dmd:view', event => { if (event.detail === 'schedule') { refresh(); refreshHistory(true); } });
     refresh(); refreshHistory(true);
-    const timer = win.setInterval(() => { refresh(); refreshHistory(); }, 5000);
+    let pollTick = 0;
+    const timer = win.setInterval(() => {
+      pollTick++;
+      if (state.pendingControls.size || pollTick % 5 === 0) refresh();
+      if (pollTick % 5 === 0) refreshHistory();
+    }, 1000);
     win.addEventListener('pagehide', () => { state.stopped = true; clearSignal(); win.clearInterval(timer); });
-    return { state, refresh, refreshHistory, loadScans, downloadScan, previewSignal };
+    win.addEventListener('dmd:session',render);
+    return { state, refresh, refreshHistory, loadScans, downloadScan, previewSignal, controlObservation };
   }
-  if (typeof module !== 'undefined' && module.exports) module.exports = { init, observations, scansFor, completed, historyObservations, historyStatus, rows, scanDetails, timestamp, duration };
+  if (typeof module !== 'undefined' && module.exports) module.exports = { init, observations, scansFor, completed, historyObservations, historyStatus, rows, scanDetails, timestamp, duration, controlOperation };
   if (typeof document !== 'undefined') {
     window.DmdSchedule = { rows, historyObservations, historyStatus, scanDetails };
     window.DmdScheduleController = init(document, window);
