@@ -189,6 +189,7 @@
     const $ = (id) => doc.getElementById('status-' + id);
     if (!$('workspace')) return;
     const state = { data: null, apps: [], selected: null, loading: false, commandBusy: null };
+    const refreshMarkup = $('refresh').innerHTML;
     const confirmedFlags = new Map();
     const expandedProcessors = new Set();
     const appCommands = new Map();
@@ -292,6 +293,7 @@
       if (selected) {
         $('detail-title').textContent = selected.label + ' — ' + selected.id;
         $('detail-subtitle').textContent = state.data?.stale ? 'Stale snapshot' : '';
+        $('detail-subtitle').className = state.data?.stale ? 'zk-chip is-warn snapshot-warning' : '';
         $('detail-subtitle').hidden = !state.data?.stale;
         const panel = commandPanel(selected);
         const content = detail(selected, expandedProcessors.has(selected.key), panel,
@@ -347,29 +349,35 @@
     }
     function badge(text, style) {
       $('connection').textContent = text;
+      $('connection').hidden = style === 'is-live';
       ['is-live', 'is-warn', 'is-bad', 'is-empty'].forEach((key) => $('connection').classList.toggle(key, key === style));
     }
-    async function refresh() {
+    async function refresh(fresh = false) {
       if (state.loading) return;
       state.loading = true; $('refresh').disabled = true;
-      const controller = new AbortController(); const timeout = win.setTimeout(() => controller.abort(), 5000);
+      if (fresh) $('refresh').textContent = 'Requesting TM snapshot…';
+      const controller = new AbortController(); const timeout = win.setTimeout(() => controller.abort(), fresh ? 35000 : 5000);
       try {
-        const response = await fetcher('/api/web/telescope/model', { cache: 'no-store', signal: controller.signal });
+        const response = await fetcher('/api/web/telescope/model' + (fresh ? '?refresh=1' : ''), { cache: 'no-store', signal: controller.signal });
         const envelope = await response.json();
         if (!response.ok || envelope.status !== 'success' || !envelope.payload?.telescope_model) throw new Error(envelope.message || 'Telescope model unavailable');
         state.data = envelope.payload; state.apps = applications(state.data.telescope_model);
-        const stale = state.data.stale;
-        badge(stale ? 'TM snapshot stale' : 'TM snapshot available', stale ? 'is-warn' : 'is-live');
+        const stale = state.data.stale || state.data.tm_connected === false;
+        state.data.stale = stale;
+        $('freshness').className = stale ? 'zk-chip is-warn snapshot-warning' : 'zk-muted';
+        badge(state.data.tm_connected === false ? 'TM disconnected' : stale ? 'TM snapshot stale' : 'TM snapshot available', stale ? 'is-warn' : 'is-live');
         $('freshness').textContent = (stale ? 'Stale snapshot. ' : '') + 'TM Config Profile: ' + display(state.data.profile)
           + ' · Snapshot: ' + timestamp(state.data.snapshot_at) + ' · Received ' + Math.round(state.data.age_seconds || 0)
           + ' seconds ago. WEB polls TM every 30 seconds.' + (state.data.last_error ? ' ' + state.data.last_error : '');
         overview(); render();
       } catch (error) {
         badge('Live status unavailable', 'is-bad');
+        $('freshness').className = 'zk-chip is-warn snapshot-warning';
         $('freshness').textContent = error.message + (state.data ? ' Showing the last snapshot as stale.' : ' Waiting for a TM snapshot.');
         if (state.data) { state.data.stale = true; render(); }
       } finally {
         win.clearTimeout(timeout); state.loading = false; $('refresh').disabled = false;
+        $('refresh').innerHTML = refreshMarkup;
       }
     }
     function select(event) {
@@ -490,7 +498,7 @@
       }
     });
     $('detail-close').addEventListener('click', () => { state.selected = null; render(); });
-    $('refresh').addEventListener('click', refresh);
+    $('refresh').addEventListener('click', () => refresh(true));
     refresh();
     const timer = win.setInterval(refresh, 5000);
     win.addEventListener('pagehide', () => win.clearInterval(timer));

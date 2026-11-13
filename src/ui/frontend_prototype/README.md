@@ -351,7 +351,7 @@ recorded scan durations, including SKY and calibration types. Planned observatio
 totals and incomplete scans are not included. An unreadable metadata file appears
 as an unavailable row and does not prevent other observations being listed.
 
-The badge displays **Local OPT connected** while the backend responds. A
+The badge displays **OPT connected** while the backend responds. A
 lightweight health check runs every five seconds (with a four-second timeout).
 On a failed connection, it turns red and reads **OPT Disconnected**. It returns
 to connected automatically when the service responds again. A temporary outage

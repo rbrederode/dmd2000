@@ -168,14 +168,20 @@ test('expansion survives polling and scroll position is retained as scan status 
 
 test('outages label retained rows as stale and finished rows disappear on the next snapshot', async () => {
   const h = harness(); await new Promise(setImmediate);
+  assert.equal(h.get('connection').hidden, true);
+  assert.equal(h.get('freshness').className, 'zk-muted');
   h.toggle('obs001'); h.error = 'TM disconnected';
   await h.controller.refresh();
   assert.match(h.get('freshness').textContent, /Showing the last snapshot as stale/);
+  assert.equal(h.get('connection').hidden, false);
+  assert.match(h.get('freshness').className, /zk-chip is-warn/);
   assert.match(h.get('observations').innerHTML, /obs001/);
   h.error = null; h.data.stale = false;
   h.data.telescope_model.oda.obs_store.obs_list[0].tgt_idx = 1;
   await h.controller.refresh();
   assert.equal(h.get('count').textContent, '0');
+  assert.equal(h.get('connection').hidden, true);
+  assert.equal(h.get('freshness').className, 'zk-muted');
   assert.match(h.get('observations').innerHTML, /No observations are queued or running/);
   assert.equal(h.controller.state.expanded.size, 0);
   h.events.pagehide(); const count = h.calls.length; await h.controller.refresh();

@@ -211,7 +211,7 @@ test('catalogue expands saved scans before selection and needs no Open observati
 test('connection badge turns red when offline and recovers on heartbeat', async () => {
   const app = await workspace();
   const badge = app.element('connection');
-  assert.equal(badge.textContent, 'Local OPT connected');
+  assert.equal(badge.textContent, 'OPT connected');
   assert.ok(badge.classes.has('is-live'));
   app.setOnline(false);
   await app.heartbeat();
@@ -221,7 +221,7 @@ test('connection badge turns red when offline and recovers on heartbeat', async 
   assert.equal(app.element('find').disabled, true);
   app.setOnline(true);
   await app.heartbeat();
-  assert.equal(badge.textContent, 'Local OPT connected');
+  assert.equal(badge.textContent, 'OPT connected');
   assert.ok(!badge.classes.has('is-disconnected'));
   assert.equal(app.element('find').disabled, false);
 });

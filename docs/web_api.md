@@ -903,8 +903,8 @@ and waits for its response within the configured request timeout. It updates
 the same shared cache; an older in-flight query is superseded. Disconnects,
 failed replies and timeouts return an error rather than a successful response
 containing old data. The private UI bridge forwards this as
-`GET /api/web/telescope/model?refresh=1`. The Schedule Refresh button uses this
-path, displays a waiting label and shows the returned snapshot. Status advice and configuration requests retain their existing flow.
+`GET /api/web/telescope/model?refresh=1`. The Schedule and Engineering Status Refresh buttons use this
+path, display a waiting label and show the returned snapshot and its received age. Engineering Status uses the refreshed model across all of its application panes. Configuration Refresh reloads profile files from disk; Refresh log and Refresh trace reload their files. These file views do not use TM snapshots. Status advice and configuration requests retain their existing flow.
 
 ```bash
 curl -H "X-Webhook-Token: $WEBHOOK_SECRET" http://localhost:8000/api/telescope/model

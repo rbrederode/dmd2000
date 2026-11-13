@@ -36,7 +36,7 @@
   function setConnected(connected) {
     const changed = state.connected !== connected;
     state.connected = connected;
-    $("connection").textContent = connected ? "Local OPT connected" : "OPT Disconnected";
+    $("connection").textContent = connected ? "OPT connected" : "OPT Disconnected";
     $("connection").classList.toggle("is-live", connected);
     $("connection").classList.toggle("is-disconnected", !connected);
     if (changed) renderControls();
@@ -50,7 +50,7 @@
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: controller.signal });
     } catch (_) {
       setConnected(false);
-      throw new Error("OPT Disconnected. Check that the local OPT service is running.");
+      throw new Error("OPT Disconnected. Check that the OPT service is running.");
     } finally { window.clearTimeout(timer); }
     let data;
     try { data = await response.json(); } catch (_) {

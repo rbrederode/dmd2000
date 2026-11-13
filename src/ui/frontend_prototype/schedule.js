@@ -275,14 +275,20 @@
               : `${id}: TM has not confirmed the change. Refresh the schedule before retrying.`;
           }
         }
-        $('connection').textContent = state.data.stale ? 'TM snapshot stale' : 'TM snapshot available';
+        state.data.stale = state.data.stale || state.data.tm_connected === false;
+        $('freshness').className = state.data.stale ? 'zk-chip is-warn snapshot-warning' : 'zk-muted';
+        $('connection').hidden = !state.data.stale;
+        $('connection').textContent = state.data.tm_connected === false ? 'TM disconnected' : state.data.stale ? 'TM snapshot stale' : 'TM snapshot available';
         $('connection').className = 'zk-chip ' + (state.data.stale ? 'is-warn' : 'is-live');
-        $('freshness').textContent = (state.data.stale ? 'Showing a stale snapshot. ' : '') + 'TM Config Profile: ' + show(state.data.profile)
-          + ' · Snapshot: ' + timestamp(state.data.snapshot_at) + ' UTC. WEB updates from TM every 30 seconds.';
+        $('freshness').textContent = (state.data.stale ? 'Stale snapshot. ' : '') + 'TM Config Profile: ' + show(state.data.profile)
+          + ' · Snapshot: ' + timestamp(state.data.snapshot_at) + ' UTC · Received ' + Math.round(state.data.age_seconds || 0)
+          + ' seconds ago. WEB polls TM every 30 seconds.' + (state.data.last_error ? ' ' + state.data.last_error : '');
         render();
       } catch (error) {
         if (state.stopped) return;
         if (state.data) state.data.stale = true;
+        $('freshness').className = 'zk-chip is-warn snapshot-warning';
+        $('connection').hidden = false;
         $('connection').textContent = 'Schedule unavailable'; $('connection').className = 'zk-chip is-bad';
         $('freshness').textContent = error.message + (state.data ? ' Showing the last snapshot as stale.' : ' Waiting for a TM snapshot.');
         render();

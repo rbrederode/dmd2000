@@ -51,7 +51,7 @@
       + (trail.length > 1 ? `<span class="dish-polar-note">Slew trail · previous ${trail.length - 1} position${trail.length === 2 ? '' : 's'}</span>` : '')
       + (!actual ? '<span class="dish-polar-note">' + missing('Actual', dish.pointing_altaz) + '</span>' : '')
       + (!desired ? '<span class="dish-polar-note">' + missing('Desired', dish.desired_altaz) + '</span>' : '')
-      + (stale ? '<span class="dish-polar-note">Stale snapshot</span>' : '') + '</figcaption></figure>';
+      + (stale ? '<span class="dish-polar-note zk-chip is-warn snapshot-warning">Stale snapshot</span>' : '') + '</figcaption></figure>';
   }
   function info(dish) {
     const pec = dish.tgt_id ? (dish.tgt_pec || []).find(item => item.tgt_id === dish.tgt_id) : null;
@@ -111,6 +111,7 @@
       if (!current) { controls(); return; }
       $('title').textContent = 'Dish — ' + current.dsh_id + (current.short_desc ? ' · ' + current.short_desc : '');
       $('freshness').textContent = (data.stale ? 'Stale snapshot · ' : '') + 'TM Config Profile: ' + show(data.profile) + ' · Dish updated ' + time(current.last_update);
+      $('freshness').className = data.stale ? 'zk-chip is-warn snapshot-warning' : 'zk-muted';
       $('error').textContent = current.last_err_msg || 'No error reported';
       $('error-time').textContent = current.last_err_msg ? time(current.last_err_dt) : '';
       for (const axis of ['alt', 'az']) {

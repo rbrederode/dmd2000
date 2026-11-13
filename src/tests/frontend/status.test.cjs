@@ -73,6 +73,8 @@ test('selectable application pane refreshes in place and marks retained data sta
   });
   await new Promise(setImmediate);
   assert.equal(intervals[0].ms, 5000);
+  assert.equal(get('status-connection').hidden, true);
+  assert.equal(get('status-freshness').className, 'zk-muted');
   assert.equal(get('status-detail').hidden, true);
   assert.match(get('status-apps').innerHTML, /<td>Telescope Manager<\/td><td>tm001<\/td>/);
   assert.match(get('status-apps').innerHTML, /<td>Science Data Processor<\/td><td>sdp001<\/td>/);
@@ -94,8 +96,13 @@ test('selectable application pane refreshes in place and marks retained data sta
   assert.equal(controller.state.data.stale, true);
   assert.match(get('status-detail-subtitle').textContent, /Stale/);
   assert.match(get('status-connection').textContent, /unavailable/);
+  assert.equal(get('status-connection').hidden, false);
+  assert.match(get('status-freshness').className, /zk-chip is-warn/);
+  assert.match(get('status-detail-subtitle').className, /zk-chip is-warn/);
   online = true; payload = snapshot(); await controller.refresh();
   assert.equal(controller.state.data.stale, false);
+  assert.equal(get('status-connection').hidden, true);
+  assert.equal(get('status-freshness').className, 'zk-muted');
   await get('status-apps').emit('keydown', { ...selected, key: 'Enter' });
   await get('status-detail-close').emit('click');
   assert.equal(get('status-detail').hidden, true);
@@ -661,4 +668,43 @@ test('unset application timestamps do not fall back to component creation time',
   delete model.dsh_mgr.app.last_update;
   assert.deepEqual(applications(model).find(item => item.type === 'dm').updated,
                    model.dsh_mgr.last_update);
+});
+
+
+test('Engineering Refresh waits for a fresh TM snapshot and resets the displayed age', async () => {
+  const elements = new Map(), calls = [];
+  const get = id => { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); };
+  const doc = {getElementById:get, querySelector:get};
+  let resolveFresh, fail = false;
+  const win = {setTimeout, clearTimeout, setInterval() {}, clearInterval() {}, addEventListener() {}};
+  const previous = snapshot(); previous.age_seconds = 26;
+  const controller = init(doc, win, async url => {
+    calls.push(url);
+    if (url.endsWith('?refresh=1')) {
+      if (fail) throw new Error('Fresh TM snapshot request timed out');
+      return new Promise(resolve => { resolveFresh = resolve; });
+    }
+    return {ok:true, json:async()=>({status:'success', payload:previous})};
+  });
+  await new Promise(setImmediate);
+  assert.match(get('status-freshness').textContent, /Received 26 seconds ago/);
+  const clicked = get('status-refresh').emit('click');
+  assert.equal(calls.at(-1), '/api/web/telescope/model?refresh=1');
+  assert.equal(get('status-refresh').disabled, true);
+  assert.match(get('status-refresh').textContent, /Requesting TM snapshot/);
+  assert.equal(controller.state.data, previous);
+  await get('status-refresh').emit('click');
+  assert.equal(calls.filter(url => url.endsWith('?refresh=1')).length, 1);
+  const fresh = {...snapshot(), snapshot_at:'2026-11-06T08:25:00Z', age_seconds:0};
+  resolveFresh({ok:true, json:async()=>({status:'success',payload:fresh})});
+  await clicked;
+  assert.equal(get('status-refresh').disabled, false);
+  assert.match(get('status-freshness').textContent, /Snapshot: 2026-11-06 08:25:00 UTC · Received 0 seconds ago/);
+  await controller.refresh();
+  assert.equal(calls.at(-1), '/api/web/telescope/model');
+  fail = true;
+  await get('status-refresh').emit('click');
+  assert.match(get('status-freshness').textContent, /timed out.*last snapshot as stale/);
+  assert.equal(controller.state.data.stale, true);
+  assert.equal(get('status-refresh').disabled, false);
 });

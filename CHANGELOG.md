@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Column headings remain visible while scrolling Engineering Status, dish inspection, Configuration, Schedule and Results catalogue tables, including the corner heading for tables with a frozen first column.
+
+- Stale snapshot and refresh-failure messages use the amber warning badge styling consistently in Engineering Status, Schedule and dish inspection, including when TM remains connected without providing updates. Healthy snapshot messages return to their normal muted appearance.
+
+- Engineering Status and Schedule hide the TM snapshot badge during normal operation; it remains visible for stale snapshots, disconnections and refresh failures.
+
+- Schedule and Engineering Status now use the same snapshot information message, including received age in seconds, polling interval and stale/error details.
+
+- Fixed Engineering Status Refresh to request and await a fresh TM snapshot, matching Schedule Refresh. The snapshot timestamp and received age now reflect the new response; the button shows a waiting state and failed requests mark retained data stale.
+
 - Moved Schedule observation controls to the right of Created by Contact and styled them with the same magenta primary-button colour as New observation.
 
 - Schedule Refresh now requests and waits for a fresh TM snapshot rather than only rereading WEB’s cache. It updates the shared cache and displays a waiting state; failed refreshes retain the previous data as stale and report the error. Background polling continues to read the shared cache.
