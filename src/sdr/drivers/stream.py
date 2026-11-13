@@ -541,9 +541,10 @@ class SDR:
                 read_start, read_end, dropped, metrics,
             )
         if sample_age > max_age:
-            raise XHardwareFailure(
-                f"Stream SDR stale samples: age {sample_age:.3f} s exceeds {max_age:.3f} s "
-                f"(phase={self.stream_phase}, sample_index={sample_index_start}, dropped={dropped}).")
+            logger.warning(
+                "Stream SDR stale samples: age %.3f s exceeds %.3f s "
+                "(phase=%d, sample_index=%d, dropped=%d); continuing with recorded read timestamps.",
+                sample_age, max_age, self.stream_phase, sample_index_start, dropped)
         if self._last_metadata_end is None:
             logger.info("Stream SDR first samples phase=%d start=%.6f age=%.3f s (host estimated).",
                         self.stream_phase, read_start, sample_age)

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Downgraded rtlstream/airstream sample-age threshold exceedances from hardware errors to warnings. Reads continue with their original timestamps, sample age and dropped-sample metadata, avoiding observation aborts caused solely by buffered age. Actual read, producer and reset failures remain errors.
+
 - Column headings remain visible while scrolling Engineering Status, dish inspection, Configuration, Schedule and Results catalogue tables, including the corner heading for tables with a frozen first column.
 
 - Stale snapshot and refresh-failure messages use the amber warning badge styling consistently in Engineering Status, Schedule and dish inspection, including when TM remains connected without providing updates. Healthy snapshot messages return to their normal muted appearance.

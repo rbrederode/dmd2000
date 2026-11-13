@@ -30,9 +30,12 @@ or twice the duration of a consumer sample block. Age measures how long the olde
 since completion, using a monotonic clock. Normal read duration and accumulated
 differences between nominal sample time and elapsed wall time do not count as
 buffer age.
-Exceeding this limit raises a hardware error and sends no samples from that read.
-A live stream reset failure also propagates an error. The existing digitiser
-error response/advice allows TM to abort the associated observation.
+Exceeding this limit logs a WARNING and still returns the samples with their
+original host read timestamps and `sample_age_sec`. Age alone does not disconnect
+the SDR, reset the stream, discard the block or abort the observation. This is a
+warning threshold rather than the ring capacity. Actual producer/read failures,
+timeouts, missing timing records and live stream reset failures still propagate
+hardware errors through the existing digitiser error response/advice to TM.
 
 Each producer read records wall-clock start/end times around the low-level read,
 as the non-streaming drivers do. The ring retains these intervals alongside the
@@ -58,7 +61,7 @@ inside a device. FIFO restart continues to establish freshness at that layer.
 Sample advice includes `timestamp_source: "host_read"`, `stream_phase`,
 `sample_age_sec`, `sample_index_start`, `sample_index_end`, `dropped_samples` and
 `stream_backend`. Logs report hardware restart, settling discard, ring discard,
-first-sample timing and freshness failures. The phase number is local to the
+first-sample timing and sample-age warnings. The phase number is local to the
 SDR instance; dropped-sample totals include unread samples discarded on reset.
 Diagnostic fields travel in sample advice and traces; they are not added to the
 saved scan-model schema.
@@ -80,4 +83,4 @@ metadata definitions before this check.
 With DEBUG enabled, `Stream SDR timing` records report measured block intervals,
 buffer age, producer read timing, effective delivery rate, and ring occupancy.
 `producer_timeline_lag_sec` remains a diagnostic comparison against nominal sample
-time; it does not trigger the stale-sample guard.
+time; it does not trigger the sample-age warning.

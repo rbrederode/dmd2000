@@ -116,12 +116,31 @@ def test_overflow_advances_sample_indexes_and_timestamps(receiver, monkeypatch):
     assert len(receiver._read_intervals) == 1
 
 
-def test_stale_samples_fail_instead_of_getting_current_timestamp(receiver, monkeypatch):
+@pytest.mark.parametrize("backend", ["rtl", "airspy"])
+def test_stale_samples_warn_and_retain_recorded_timing(receiver, monkeypatch, caplog, backend):
     prepare_ring(receiver, monkeypatch)
-    receiver._acquisition_monotonic = time.monotonic() - 10
-    receiver._write_ring(np.zeros(10, dtype=np.complex64), read_start=1., read_end=2., completed_monotonic=time.monotonic()-10)
-    with pytest.raises(XHardwareFailure, match="stale samples"):
-        receiver.read_samples()
+    receiver.stream_backend = backend
+    monkeypatch.setattr(stream.time, "monotonic", lambda: 100.)
+    receiver._write_ring(np.arange(10, dtype=np.complex64), read_start=1., read_end=2., completed_monotonic=90.)
+    with caplog.at_level(logging.WARNING, logger="sdr.drivers.stream"):
+        metadata, samples = receiver.read_samples()
+    np.testing.assert_array_equal(samples, np.arange(10, dtype=np.complex64))
+    assert metadata["read_start"] == 1. and metadata["read_end"] == 2.
+    assert metadata["sample_age_sec"] == 10.
+    assert metadata["timestamp_source"] == "host_read"
+    assert metadata["read_counter"] == 1
+    assert metadata["sample_index_start"] == 0
+    assert metadata["dropped_samples"] == 0
+    assert receiver.get_comms_status() == CommunicationStatus.ESTABLISHED
+    assert "continuing with recorded read timestamps" in caplog.text
+    assert any(record.levelno == logging.WARNING and "stale samples" in record.getMessage() for record in caplog.records)
+    caplog.clear()
+    receiver._write_ring(np.ones(10, dtype=np.complex64), read_start=3., read_end=4., completed_monotonic=99.9)
+    fresh, _ = receiver.read_samples()
+    assert fresh["read_counter"] == 2
+    assert fresh["sample_index_start"] == 10
+    assert fresh["sample_age_sec"] == pytest.approx(.1)
+    assert "stale samples" not in caplog.text
 
 
 def test_backend_stop_failure_is_a_hardware_error(receiver, monkeypatch):
@@ -242,7 +261,7 @@ def test_sample_advice_keeps_original_context_and_freshness_metadata():
 
 @pytest.mark.parametrize("level", [logging.DEBUG, logging.INFO])
 @pytest.mark.parametrize("stale", [False, True])
-def test_sample_timing_diagnostic_is_debug_only_and_precedes_stale_error(receiver, monkeypatch, caplog, level, stale):
+def test_sample_timing_diagnostic_is_debug_only_with_stale_warning(receiver, monkeypatch, caplog, level, stale):
     prepare_ring(receiver, monkeypatch)
     monkeypatch.setattr(stream.time, "monotonic", lambda: 100.)
     receiver._acquisition_monotonic = 90. if stale else 99.
@@ -252,15 +271,12 @@ def test_sample_timing_diagnostic_is_debug_only_and_precedes_stale_error(receive
     receiver.producer_last_inter_read_gap = 0.0002
     receiver._write_ring(np.arange(30, dtype=np.complex64), read_start=10., read_end=10.03, completed_monotonic=97. if stale else 99.5)
     caplog.set_level(level, logger="sdr.drivers.stream")
-    if stale:
-        with pytest.raises(XHardwareFailure, match="stale samples"):
-            receiver.read_samples()
-    else:
-        metadata, samples = receiver.read_samples()
-        assert samples.size == 10
-        assert metadata["num_samples"] == 10
-        # Diagnostic counters do not change the normal sample metadata contract.
-        assert "phase_effective_sample_rate" not in metadata
+    metadata, samples = receiver.read_samples()
+    assert samples.size == 10
+    assert metadata["num_samples"] == 10
+    assert "phase_effective_sample_rate" not in metadata
+    warnings = [record for record in caplog.records if record.levelno == logging.WARNING and "stale samples" in record.getMessage()]
+    assert len(warnings) == int(stale)
     diagnostics = [record for record in caplog.records if record.msg.startswith("Stream SDR timing")]
     if level != logging.DEBUG:
         assert diagnostics == []
@@ -342,13 +358,16 @@ def test_buffered_times_survive_later_reads_and_split_or_merged_chunks(receiver,
     assert not receiver._read_intervals
 
 
-def test_fresh_tail_cannot_hide_stale_buffered_prefix(receiver, monkeypatch):
+def test_fresh_tail_cannot_hide_stale_buffered_prefix(receiver, monkeypatch, caplog):
     prepare_ring(receiver, monkeypatch)
     monkeypatch.setattr(stream.time, 'monotonic', lambda: 100.)
     receiver._write_ring(np.ones(5,dtype=np.complex64), read_start=10.,read_end=10.01,completed_monotonic=90.)
     receiver._write_ring(np.ones(5,dtype=np.complex64), read_start=20.,read_end=20.01,completed_monotonic=99.9)
-    with pytest.raises(XHardwareFailure, match='stale samples'):
-        receiver.read_samples()
+    metadata, samples = receiver.read_samples()
+    assert metadata['sample_age_sec'] == 10.
+    assert metadata['read_start'] == 10. and metadata['read_end'] == 20.01
+    assert samples.size == 10
+    assert 'stale samples' in caplog.text
 
 
 def test_reset_discards_read_intervals_with_samples(receiver, monkeypatch):
