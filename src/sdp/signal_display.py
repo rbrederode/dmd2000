@@ -234,7 +234,7 @@ class SignalDisplay:
         self.mean_tpwr_line.set_ydata([np.nan, np.nan])
         self.sig[4].legend(loc="lower right", fontsize=OVERLAY_FONT_SIZE)
 
-    def set_scan(self, scan: Scan, load: Scan | None):
+    def set_scan(self, scan: Scan, load: Scan | None, *, iq_available: bool = True):
         """Bind a scan and optional matching load scan to this display and initialise all plot artists.
 
         Parameters:
@@ -260,6 +260,7 @@ class SignalDisplay:
 
         self.scan = scan
         self.load = load
+        self.iq_available = iq_available
         self.sec = None
 
         # Update the figure for the new scan, creating it if it doesn't exist or clearing axes if it does, and reset all artist references
@@ -564,6 +565,12 @@ class SignalDisplay:
 
     def _update_saturation_axis(self):
         """Update the SDR saturation bars and legend text for the latest I/Q values."""
+        if not getattr(self, "iq_available", True):
+            self.sig[3].clear()
+            self.sig[3].set_axis_off()
+            self.sig[3].text(.5, .5, "IQ saturation unavailable\n(saved spectra only)",
+                             ha="center", va="center", transform=self.sig[3].transAxes)
+            return
         self.i_bar.set_height(self.scan.mean_real)
         self.q_bar.set_height(self.scan.mean_imag)
         self.i_bar.set_label(f"I {self.scan.mean_real:.2e}")

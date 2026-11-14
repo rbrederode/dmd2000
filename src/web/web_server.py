@@ -488,7 +488,8 @@ def telescope_model():
 @app.get('/api/observations')
 @app.get('/api/observations/<observation_id>')
 @app.get('/api/observations/<observation_id>/scans/<int:target>/<int:frequency>/<int:iteration>/spr', defaults={'product': 'spr'})
-@app.get('/api/observations/<observation_id>/scans/<int:target>/<int:frequency>/<int:iteration>/signal', defaults={'product': 'signal'})
+@app.route('/api/observations/<observation_id>/scans/<int:target>/<int:frequency>/<int:iteration>/signal', methods=['GET', 'POST'], defaults={'product': 'signal'})
+@limiter.limit('120 per minute', override_defaults=True)
 def observations(observation_id=None, target=None, frequency=None, iteration=None, product='spr'):
     """Search local/shared storage without requiring a TM or SDP connection."""
     try:
@@ -515,7 +516,20 @@ def observations(observation_id=None, target=None, frequency=None, iteration=Non
             result = ResponseEvent('error', 'Observation search directory is not configured', code='store_not_known')
             return jsonify(result.to_dict()), 503
         if target is not None:
-            result = scan_spectrum_file(store, observation_id, target, frequency, iteration, request.args.get('folder'), product=product)
+            if product == 'signal':
+                from obs.scan_signal import signal_product, sdp_settings_from_snapshot
+                def sdp_settings():
+                    runtime = app.extensions.get('web_application')
+                    if runtime is None or not hasattr(runtime, 'telescope_model_response'):
+                        return {}
+                    snapshot = runtime.telescope_model_response()
+                    return sdp_settings_from_snapshot(snapshot.payload) if snapshot.status == 'success' else {}
+                result = signal_product(store, observation_id, target, frequency, iteration, request.args.get('folder'),
+                                        sdp_settings, generate=request.method == 'POST')
+                if result.code == 'generating':
+                    return jsonify(result.to_dict()), 202
+            else:
+                result = scan_spectrum_file(store, observation_id, target, frequency, iteration, request.args.get('folder'), product=product)
             if result.status == 'success':
                 response = send_file(result.payload['path'], mimetype='text/csv' if product == 'spr' else 'image/png', as_attachment=True,
                                      download_name=result.payload['filename'], conditional=False)
@@ -530,7 +544,7 @@ def observations(observation_id=None, target=None, frequency=None, iteration=Non
         response = jsonify(result.to_dict())
         response.headers['Cache-Control'] = 'no-store'
         response.status_code = 200 if result.status == 'success' else {
-            'invalid_request': 400, 'not_found': 404, 'scan_incomplete': 409}.get(result.code, 503)
+            'invalid_request': 400, 'not_found': 404, 'generation_available': 404, 'generation_failed': 500, 'scan_incomplete': 409}.get(result.code, 503)
         return response
     except Exception:
         logger.exception('Error listing observations')

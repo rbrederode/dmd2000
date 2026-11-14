@@ -417,7 +417,7 @@ def create_app(data_roots=None, cache_dir=None, web_url=None, web_token=None, pr
     def web_api(resource):
         spectrum = bool(re.fullmatch(r'observations/[A-Za-z0-9][A-Za-z0-9_.:+-]{0,254}/scans/\d+/\d+/\d+/(?:spr|signal)', resource))
         allowed = ((resource == 'profiles' and request.method == 'GET')
-                   or (spectrum and request.method == 'GET')
+                   or (spectrum and (request.method == 'GET' or (resource.endswith('/signal') and request.method == 'POST')))
                    or (resource == 'observations' and request.method == 'GET')
                    or (re.fullmatch(r'observations/[A-Za-z0-9][A-Za-z0-9_.:+-]{0,254}', resource) and request.method == 'GET')
                    or (resource == 'telescope/model' and request.method == 'GET')
@@ -577,14 +577,33 @@ def create_app(data_roots=None, cache_dir=None, web_url=None, web_token=None, pr
         entries.sort(key=lambda item: (not bool(item.get("error")), item.get("started_at", ""), item["id"]), reverse=True)
         return jsonify(directory=str(folder), observations=ids, entries=entries)
 
-    @app.get("/api/opt/observations/<observation_id>/scans/<int:target>/<int:frequency>/<int:iteration>/<product>")
+    @app.route("/api/opt/observations/<observation_id>/scans/<int:target>/<int:frequency>/<int:iteration>/<product>", methods=["GET", "POST"])
     def saved_scan_file(observation_id, target, frequency, iteration, product):
         from obs.catalogue import scan_spectrum_file
         folder = directory(request.args.get("directory"))
-        result = scan_spectrum_file(str(folder), observation_id, target, frequency, iteration, ".", product=product)
+        if request.method == "POST" and product != "signal":
+            abort(405)
+        if product == "signal":
+            from obs.scan_signal import signal_product, sdp_settings_from_snapshot
+            def sdp_settings():
+                if not web_token:
+                    return {}
+                try:
+                    upstream = requests.request('GET', web_url + '/api/telescope/model',
+                        headers={'X-Webhook-Token': web_token}, timeout=(3, 10), allow_redirects=False)
+                    body = upstream.json()
+                    return sdp_settings_from_snapshot(body.get('payload')) if upstream.status_code == 200 else {}
+                except (requests.exceptions.RequestException, ValueError):
+                    return {}
+            result = signal_product(str(folder), observation_id, target, frequency, iteration, ".",
+                                    sdp_settings, generate=request.method == "POST")
+            if result.code == "generating":
+                return jsonify(result.to_dict()), 202
+        else:
+            result = scan_spectrum_file(str(folder), observation_id, target, frequency, iteration, ".", product=product)
         if result.status != "success":
-            return jsonify(error=result.message, message=result.message), {
-                "invalid_request": 400, "not_found": 404, "scan_incomplete": 409}.get(result.code, 503)
+            return jsonify(error=result.message, message=result.message, code=result.code), {
+                "invalid_request": 400, "not_found": 404, "generation_available": 404, "generation_failed": 500, "scan_incomplete": 409}.get(result.code, 503)
         response = send_file(result.payload["path"], mimetype="image/png" if product == "signal" else "text/csv",
                              as_attachment=True, download_name=result.payload["filename"], conditional=False)
         response.headers["Cache-Control"] = "no-store"

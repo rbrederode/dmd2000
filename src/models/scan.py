@@ -64,6 +64,7 @@ class ScanModel(BaseModel):
         "gain": And(Or(int, float), lambda v: 0 <= v <= 100.0),                     # Gain setting for the scan (0 to 100, where 100 is maximum gain)   
         "load": And(bool, lambda v: isinstance(v, bool)),                           # Flag indicating whether this scan is a load scan (True) or a sky scan (False)
         "load_scan_id": Or(None, And(str, lambda v: isinstance(v, str))),           # Scan id of load scan if this is a sky scan (in the form <obs_id>-<target_index>-<freq_scan>-<scan_iter>)
+        "sdp_config_profile": Or(None, str),                                        # SDP configuration profile at scan creation time (e.g. "default", "highres", "lowres", etc.)
         "status": And(ScanState, lambda v: isinstance(v, ScanState)),               # Status of the scan (EMPTY, WIP, ABORTED, COMPLETE)
         "load_failures": And(int, lambda v: v >= 0),                                # Number of times loading this scan has failed (used for retry logic)
         "filter_bank": Or(None, And(FilterBank, lambda v: isinstance(v, FilterBank))), # Filterbank parameters for this scan (optional, can be used to specify filterbank creation parameters on a per-scan basis)
@@ -123,6 +124,7 @@ class ScanModel(BaseModel):
         "gain": 0.0,
         "load": False,
         "load_scan_id": None,
+        "sdp_config_profile": None,
         "status": ScanState.EMPTY,
         "load_failures": 0,
         "filter_bank": None,
@@ -147,6 +149,8 @@ class ScanModel(BaseModel):
     }
 
     def __init__(self, **kwargs):
+        # Ignore snapshots written briefly before metadata was simplified.
+        kwargs.pop("sdp_pipeline_config", None)
         # Backward compatibility for older persisted scan metadata and callers.
         if "spectral_resolution" not in kwargs and "channels" in kwargs:
             kwargs["spectral_resolution"] = kwargs["channels"]

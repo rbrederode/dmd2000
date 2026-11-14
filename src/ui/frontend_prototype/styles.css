@@ -1079,10 +1079,13 @@ button:disabled { cursor:not-allowed; opacity:.45; }
 /* Completed scan signal preview. */
 .schedule-scans th:nth-last-child(-n+2) { width:56px; }
 .schedule-scan-signal { width:28px; height:28px; padding:0; }
-.schedule-signal-dialog { width:min(1400px, 94vw); max-width:94vw; max-height:92vh; box-sizing:border-box; padding:18px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--fg-1); overflow:auto; }
+.schedule-signal-dialog { width:min(760px, 94vw); max-width:94vw; max-height:92vh; box-sizing:border-box; padding:18px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--fg-1); overflow:auto; }
+.schedule-signal-dialog:has(img:not([hidden])) { width:min(1400px, 94vw); }
 .schedule-signal-dialog::backdrop { background:rgb(0 0 0 / 55%); }
 .schedule-signal-toolbar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
 .schedule-signal-toolbar h2 { flex:1; margin:0; font-size:var(--section-heading-size); overflow-wrap:anywhere; }
+#schedule-signal-message { margin:8px 0 0; }
+#schedule-signal-generate { margin-top:16px; }
 .schedule-signal-dialog img { width:100%; height:auto; display:block; margin-top:12px; }
 .schedule-signal-dialog [hidden] { display:none; }
 
@@ -1228,3 +1231,5 @@ button:disabled { cursor:not-allowed; opacity:.45; }
   .opt-pointing-details { height:auto; overflow-y:visible; }
 }
 .opt-pointing-controls button[aria-pressed="true"] { background: var(--magenta-50); border-color: var(--magenta); }
+
+.schedule-scan-signal:disabled { opacity: .35; cursor: default; }

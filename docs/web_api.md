@@ -818,9 +818,31 @@ scans return 409; missing scans/files return 404. No processing is performed.
 `GET /api/observations/<observation-id>/scans/<target>/<frequency>/<iteration>/signal`
 returns the saved final-sample `files_prefix` + `-sigfig.png` as `image/png`,
 with its original attachment filename. It applies the same completion, archive,
-authentication and profile checks as SPR. Missing PNGs return 404. No image is
-regenerated. The private `/api/web/…/signal` bridge streams the PNG for the
-Schedule preview and download controls.
+authentication and archive-profile checks as SPR. Missing PNGs with usable saved
+spectra return 404 with `generation_available`, naming the SDP config profile.
+An authenticated `POST` to the same `/signal` URL (JSON `{}`) explicitly requests
+background generation and returns 202 (`generating`). Poll GET until it returns
+the PNG; a failed worker returns `generation_failed` and permits an explicit retry.
+Only one signal worker runs at a time per serving process. Observation-product
+requests allow 120 requests/minute to accommodate polling.
+
+Rendering runs in an isolated Agg/OPT worker on the serving host, using the
+physical scan's saved SPR, recorded LOAD reference, and SDP config profile.
+Scan metadata stores only `sdp_config_profile`, without embedding the pipeline configuration.
+Rendering reads that profile's current `PipelineConfig.json` on the serving host,
+and the generation prompt names the config profile. Changes to that file can change
+a regenerated image; Git history can be used to restore a previous configuration.
+For older scans without a recorded profile, WEB obtains SDP's config profile from
+`AppModel.arguments.profile` in a fresh TM snapshot and labels this fallback in
+the prompt. It never substitutes the UI-selected profile. Previously written
+`sdp_pipeline_config` fields are ignored when loading and omitted when saving.
+Missing SDP settings return `sdp_profile_unavailable`. The PNG is published
+atomically beside the SPR as `files_prefix` + `-sigfig.png` and reused thereafter.
+Raw-IQ saturation is labelled unavailable because SPR cannot reconstruct it.
+
+The private `/api/web/…/signal` bridge forwards generation to WEB's host and streams
+saved PNGs. Schedule and Results share the preview, generation and download controls;
+non-completed scans retain grey disabled Signal icons.
 
 The private `/api/web/…/spr` bridge streams the CSV without exposing WEB's token.
 For browser download links, its optional `profile` query parameter is forwarded
@@ -1056,7 +1078,10 @@ where product is `signal` (saved final-sample PNG) or `spr` (spectrum CSV).
 It resolves against the chosen Results directory within configured data roots,
 independently of WEB's active profile. It uses the same completion and safe file
 lookup as WEB scan downloads: 409 for incomplete scans, 404 for missing/unsafe
-files, and 400 for invalid product/directory input. No processing is launched.
+files, and 400 for invalid product/directory input. Signal additionally supports
+POST generation and GET status as described above; it renders on the host running
+this service and saves the PNG into the selected Results archive. For legacy scan
+profiles it obtains SDP's config profile through WEB's TM snapshot.
 
 
 OPT configuration responses include `pipelines`, a profile-to-digitiser-map of

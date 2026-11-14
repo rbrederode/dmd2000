@@ -167,3 +167,19 @@ def test_scan_configuration_and_sample_loading_share_digitiser_lock(setup_sdp):
         assert not finished.wait(.05)
     thread.join(timeout=3)
     assert finished.is_set() and not errors
+
+
+def test_new_scan_records_only_sdp_launch_profile(setup_sdp, monkeypatch, tmp_path):
+    from models.pipeline import PipelineConfig
+    from sdp.pipeline.pipeline_factory import ProcessingPipelineFactory
+    sdp, dig = setup_sdp
+    config = PipelineConfig(steps_map={'default': []})
+    monkeypatch.setattr(SDP, 'pipeline_factory', ProcessingPipelineFactory(config))
+    sdp.get_args = lambda: SimpleNamespace(scan_store_dir=str(tmp_path), headless=True, profile='rotation')
+    samples(sdp, dig)
+    scan = next(iter(sdp.sky_q.queue))
+    assert scan.scan_model.sdp_config_profile == 'rotation'
+    assert 'sdp_pipeline_config' not in scan.scan_model.to_dict()
+    restored = ScanModel.from_dict(scan.scan_model.to_dict())
+    assert restored.sdp_config_profile == 'rotation'
+    assert 'sdp_pipeline_config' not in restored.to_dict()

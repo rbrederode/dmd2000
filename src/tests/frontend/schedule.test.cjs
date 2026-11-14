@@ -382,3 +382,40 @@ test('Refresh button explicitly requests a new TM snapshot; automatic refresh re
   await h.controller.refresh();
   assert.equal(h.calls.at(-1).url, '/api/web/telescope/model');
 });
+
+test('unfinished and aborted scans retain disabled grey Signal icons', () => {
+  const item = obs('obs001');
+  item.target_scans[0].scans.push({ ...item.target_scans[0].scans[1], scan_iter: 2, status: en('ABORTED') });
+  const html = scanDetails(item, { profile: 'local' });
+  assert.equal((html.match(/schedule-scan-signal" disabled/g) || []).length, 3);
+  assert.doesNotMatch(html, /data-scan-signal=/);
+});
+
+test('missing completed PNG offers explicit generation and polls until the saved PNG is ready', async () => {
+  const h = harness(); await new Promise(setImmediate);
+  const button = { dataset: { scanSignal: '/api/web/observations/obs001/scans/0/0/0/signal?profile=local' } };
+  h.signal = { ok: false, status: 404, headers: new Headers(),
+    json: async () => ({ code: 'generation_available', message: 'Generate from saved spectra?' }) };
+  await h.controller.previewSignal(button);
+  assert.equal(h.get('signal-generate').hidden, false);
+  assert.equal(h.calls.filter(call => call.options?.method === 'POST').length, 0);
+  let responses = 0;
+  Object.defineProperty(h, 'signal', { get() {
+    if (responses++ === 0) return { ok: true, status: 202 };
+    return { ok: true, status: 200, headers: new Headers({ 'Content-Type': 'image/png' }), blob: async () => new Blob(['png']) };
+  } });
+  await h.get('signal-generate').listeners.click();
+  // Click handler launches the shared preview asynchronously.
+  await new Promise(resolve => setTimeout(resolve, 20));
+  const requests = h.calls.filter(call => call.url.includes('/signal?'));
+  assert.equal(requests[1].options.method, 'POST');
+  assert.equal(requests[2].options.method, undefined);
+  assert.equal(h.get('signal-image').hidden, false);
+  assert.equal(h.get('signal-download').hidden, false);
+});
+
+test('Results scan Signal URL retains the chosen processing profile', () => {
+  const item = obs('obs001'); item.target_scans[0].scans[0].status = en('COMPLETE');
+  const html = scanDetails(item, { directory: '/samples/local', profile: 'rotation' });
+  assert.match(html, /\/api\/opt\/observations\/obs001\/scans\/0\/0\/0\/signal\?profile=rotation&amp;directory=%2Fsamples%2Flocal/);
+});

@@ -369,3 +369,19 @@ def test_completed_scan_signal_proxy_streams_png(console, monkeypatch):
     assert response.data == b'\x89PNG\r\n'
     assert 'scan-sigfig.png' in response.headers['Content-Disposition']
     response.close(); assert upstream.close.called
+
+
+def test_signal_generation_post_proxies_to_web_host(console, monkeypatch):
+    from unittest.mock import Mock
+    sent = []
+    def forward(method, url, **kwargs):
+        sent.append((method, url, kwargs))
+        return SimpleNamespace(status_code=202, headers={}, close=Mock(),
+                               json=lambda: {'status': 'success', 'code': 'generating', 'message': 'Generating', 'payload': {}})
+    monkeypatch.setattr(opt_service.requests, 'request', forward)
+    result = console[1].post('/api/web/observations/obs001/scans/0/0/0/signal?profile=rotation', json={})
+    assert result.status_code == 202 and result.json['code'] == 'generating'
+    assert sent[0][0] == 'POST'
+    assert sent[0][1] == 'http://127.0.0.1:8000/api/observations/obs001/scans/0/0/0/signal'
+    assert sent[0][2]['headers']['X-Config-Profile'] == 'rotation'
+    assert console[1].post('/api/web/observations/obs001/scans/0/0/0/spr', json={}).status_code == 404

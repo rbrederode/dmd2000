@@ -495,3 +495,27 @@ def test_completed_scan_signal_png_download_and_archive_guards(server, tmp_path)
     outside = tmp_path.parent / (tmp_path.name + '-outside.png'); outside.write_bytes(png)
     image.symlink_to(outside)
     assert client.get(path, headers=headers).status_code == 404
+
+
+def test_signal_generation_requires_auth_and_dispatches_on_web_host(server, tmp_path, monkeypatch):
+    from obs import scan_signal
+    from env.events import ResponseEvent
+    module, client, _ = server
+    profile = SimpleNamespace(directory=Path(__file__).resolve().parents[2] / 'config/local', scan_store_dir=str(tmp_path))
+    module.app.extensions['web_application'] = SimpleNamespace(scan_store_dir=str(tmp_path),
+        profile_manager=SimpleNamespace(current=profile))
+    calls = []
+    def generate(*args, **kwargs):
+        calls.append((args, kwargs))
+        return ResponseEvent('success', 'Generating', code='generating')
+    monkeypatch.setattr(scan_signal, 'signal_product', generate)
+    path = '/api/observations/test-obs/scans/1/0/0/signal'
+    assert client.post(path, json={}).status_code == 401
+    headers = {'X-Webhook-Token': module.WEBHOOK_SECRET, 'X-Config-Profile': 'local'}
+    response = client.post(path, json={}, headers=headers)
+    assert response.status_code == 202 and response.json['code'] == 'generating'
+    assert callable(calls[0][0][-1])
+    assert calls[0][1] == {'generate': True}
+    headers['X-Config-Profile'] = 'rotation'
+    assert client.post(path, json={}, headers=headers).status_code == 409
+    assert len(calls) == 1

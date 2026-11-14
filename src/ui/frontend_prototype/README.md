@@ -95,6 +95,13 @@ Do not run it on the combined UI's port at the same time.
    start/end, observing duration, creation UTC and creator contact. Filter by name,
    ID, dish or scan type. Expand a row to load its saved scans, including type,
    status, digitiser, tuning, sample times, Signal preview and SPR download.
+   Completed scans open their saved Signal PNG; if missing, **Generate signal
+   display** offers background rendering and saves the PNG beside the scan for
+   reuse. The prompt identifies SDP's config profile; generation uses its current
+   pipeline settings on the serving host. Only the profile name is stored
+   with the scan; older scans use an explicitly labelled SDP/TM snapshot fallback.
+   Other scan states have grey disabled Signal icons. Schedule
+   uses the same controls. Shared storage must be writable by the rendering host.
    Reviewing a row does not select it for processing. Select its radio button to
    prepare **Input scans**, then use **Process observation**. There is no separate
    Open observation button. The catalogue stays expanded for further review.

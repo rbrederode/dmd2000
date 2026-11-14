@@ -357,6 +357,8 @@ class SDP(App):
 
                     scan = Scan(scan_model=scan_model)
 
+                    scan_model.sdp_config_profile = getattr(self.get_args(), "profile", None)
+
                     # Create a signal processing pipeline using the pipeline factory and associate it with the scan
                     pipeline = SDP.pipeline_factory.create_pipeline(scan, self.sky_q, self.cal_q) if SDP.pipeline_factory else None
                     scan.set_pipeline(pipeline)

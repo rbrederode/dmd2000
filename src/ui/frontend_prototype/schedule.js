@@ -103,14 +103,14 @@
         const target = obs.targets?.find(item => item?.tgt_idx === targetIndex);
         const type = ({ 0: 'UNKNOWN', 1: 'SKY', 2: 'LOAD', 3: 'TSYS', 4: 'GAIN' }[unwrap(scan.scan_type)] || unwrap(scan.scan_type));
         const frequency = typeof scan.center_freq === 'number' && Number.isFinite(scan.center_freq) ? (scan.center_freq / 1e6).toFixed(3) : '—';
-        let download = '', signal = '';
+        let download = '', signal = '<button type="button" class="zk-icon-btn schedule-scan-signal" disabled aria-label="Signal available after scan completes" title="Signal available after scan completes"><svg class="ico" aria-hidden="true" viewBox="0 0 24 24"><path d="M3 3v18h18M5 15h3l3-9 4 12 3-5h3" fill="none" stroke="currentColor" stroke-width="1.7" /></svg></button>';
         const indices = [targetIndex, scan.freq_scan, scan.scan_iter];
         if (scanState(scan.status) === 'COMPLETE' && obs.obs_id && indices.every(value => Number.isInteger(value) && value >= 0)) {
           const fileId = source.filename ? source.filename.replace(/-obs\.json$/, '') : obs.obs_id;
           const query = new URLSearchParams();
           if (source.folder != null) query.set('folder', source.folder);
           if (source.profile) query.set('profile', source.profile);
-          if (source.directory != null) { query.delete('folder'); query.delete('profile'); query.set('directory', source.directory); }
+          if (source.directory != null) { query.delete('folder'); query.set('directory', source.directory); }
           const url = (source.directory != null ? '/api/opt/observations/' : '/api/web/observations/') + encodeURIComponent(fileId) + '/scans/' + indices.join('/') + '/spr'
             + (query.size ? '?' + query.toString() : '');
           const signalUrl = url.replace(/\/spr(?=\?|$)/, '/signal');
@@ -323,7 +323,9 @@
           ? 'No valid response received. The outcome is unknown; refresh the schedule before retrying.' : error.message;
       } finally {win.clearTimeout(timeout);render();}
     }
+    let signalButton = null;
     function clearSignal() {
+      $('signal-generate').hidden = true;
       signalGeneration++;
       signalController?.abort(); signalController = null;
       $('signal-image').hidden = true; $('signal-image').removeAttribute('src');
@@ -331,20 +333,47 @@
       if (signalObjectUrl) win.URL.revokeObjectURL(signalObjectUrl);
       signalObjectUrl = null;
     }
-    async function previewSignal(button) {
+    async function previewSignal(button, generate = false) {
+      if (button.disabled) return;
       clearSignal();
+      signalButton = button;
       const generation = signalGeneration, dialog = $('signal-dialog');
       $('signal-title').textContent = 'Signal: ' + (button.dataset.scanLabel || 'Completed scan');
       $('signal-message').textContent = 'Loading final-sample signal display…';
       if (!dialog.open) dialog.showModal();
       signalController = new AbortController();
       const controller = signalController;
-      const timeout = win.setTimeout(() => controller.abort(), 15000);
+      let timeout = win.setTimeout(() => controller.abort(), 15000);
       try {
-        const response = await fetcher(button.dataset.scanSignal, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal });
+        let response;
+        let start = generate;
+        const deadline = Date.now() + 240000;
+        do {
+          response = await fetcher(button.dataset.scanSignal, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
+            ...(start ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' } : {}) });
+          start = false;
+          if (generation !== signalGeneration) return;
+          if (response.status !== 202) break;
+          win.clearTimeout(timeout);
+          timeout = win.setTimeout(() => controller.abort(), Math.max(1, deadline - Date.now()));
+          $('signal-message').textContent = 'Generating signal display from saved spectra…';
+          if (Date.now() > deadline) throw new Error('Still generating. Close and reopen Signal to check again.');
+          await new Promise(resolve => win.setTimeout(resolve, 1000));
+        } while (!controller.signal.aborted);
+        if (controller.signal.aborted || generation !== signalGeneration) return;
         if (!response.ok || response.headers.get('Content-Type')?.split(';')[0] !== 'image/png') {
           let message = 'The server did not return a PNG image.';
-          try { message = (await response.json()).message || message; } catch (_) { /* Non-JSON failure. */ }
+          try {
+            const body = await response.json();
+            message = body.message || body.error || message;
+            if (body.code === 'generation_available' || body.code === 'generation_failed') {
+              $('signal-generate').hidden = false;
+            }
+            if (body.code === 'generation_available') {
+              $('signal-message').textContent = message;
+              return;
+            }
+          } catch (_) { /* Non-JSON failure. */ }
           throw new Error(message);
         }
         const disposition = response.headers.get('Content-Disposition') || '';
@@ -369,6 +398,7 @@
         if (generation === signalGeneration) $('signal-message').textContent = 'Signal preview failed: ' + error.message;
       } finally { win.clearTimeout(timeout); }
     }
+    $('signal-generate').addEventListener('click', () => { if (signalButton) previewSignal(signalButton, true); });
     $('signal-close').addEventListener('click', () => $('signal-dialog').close());
     $('signal-dialog').addEventListener('close', clearSignal);
     async function downloadScan(button, historic, resultElement = null) {

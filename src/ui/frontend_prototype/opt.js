@@ -561,7 +561,7 @@
         _history: true, file_key: item.id, filename: item.id + "-obs.json", folder: "." };
       const radio = `<input type="radio" name="opt-observation-selection" data-opt-select="${esc(item.id)}" aria-label="Select observation ${esc(item.id)}" ${item.error ? "disabled" : ""} />`;
       return window.DmdSchedule.rows([obs], state.expandedObservations, 'results-' + index,
-        state.observationDetails, null, { directory: $("directory").value })
+        state.observationDetails, null, { directory: $("directory").value, profile: $("profile").value })
         .replace('data-schedule-observation=', `data-opt-observation="${esc(item.id)}" data-unavailable="${!!item.error}" data-schedule-observation=`)
         .replace('<td><button type="button" class="schedule-toggle"', `<td class="opt-results-id">${radio}<button type="button" class="schedule-toggle"`);
     }).join("") : `<tr><td colspan="9" class="opt-empty-small">${state.finding ? "Reading observation metadata…" : query ? "No observations match this filter." : "No observation metadata found in this directory."}</td></tr>`;
