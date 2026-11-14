@@ -220,7 +220,7 @@ def run(folder):
             plt.close(fig)
             fig = display.display_lv(obs.obs_model, str(out / "lv.png"), contour_levels=settings["contours"],
                                      contour_smoothing=settings["contour_smoothing"],
-                                     vmin=settings["baseline_vmin"], vmax=settings["baseline_vmax"])
+                                     fixed_velocity_range=(-150., 150.))
             if fig is not None:
                 result["views"]["lv"] = "lv.png"
                 plt.close(fig)

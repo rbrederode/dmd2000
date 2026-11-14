@@ -213,7 +213,7 @@ def test_reanalysis_matches_initial_velocity_csv_and_controls(tmp_path, monkeypa
         actual = list(csv.DictReader(stream))
     assert actual == expected
     assert limits == [bounds, bounds]
-    assert lv_calls == [([.1, .2], 0, dict(vmin=bounds[0], vmax=bounds[1]))]
+    assert lv_calls == [([.1, .2], 0, dict(fixed_velocity_range=(-150., 150.)))]
     assert lab_calls == [("aggregate", 5)]
     assert (out / 'native-spectra.npz').read_bytes() == (source / 'native-spectra.npz').read_bytes()
 

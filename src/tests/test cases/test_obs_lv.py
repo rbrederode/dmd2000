@@ -277,3 +277,27 @@ def test_lv_limits_are_clamped_to_coverage_and_empty_range_is_reported(tmp_path,
     assert display.display_lv(observation({1: 30}), str(path), vmin=100, vmax=200) is None
     assert not path.exists()
     assert "selected limits" in caplog.text
+
+
+def test_fixed_lv_display_range_keeps_exact_axis_and_native_spectra(tmp_path):
+    display = ObsDisplay('fixed-range')
+    display.lsr_baseline_method = 'none'
+    spectrum = prepared_spectrum(1, 30, velocity=np.arange(-250., 251., 10.))
+    spectrum['power'] = np.ma.array(np.full(len(spectrum['velocity']), 4.), mask=False)
+    spectrum['power'][-1] = 10000
+    original = spectrum['power'].copy()
+    display.lsr_spectra = [spectrum]
+    fig = display.display_lv(observation({1: 30}), str(tmp_path / 'fixed.png'), fixed_velocity_range=(-150., 150.))
+    try:
+        np.testing.assert_allclose(fig.axes[0].get_ylim(), [-150, 150])
+        mesh = next(item for item in fig.axes[0].collections if isinstance(item, QuadMesh))
+        assert mesh.norm.vmax == 4
+        np.testing.assert_array_equal(spectrum['power'], original)
+    finally:
+        plt.close(fig)
+    display.lsr_spectra = [prepared_spectrum(1, 30)]
+    fig = display.display_lv(observation({1: 30}), str(tmp_path / 'narrow.png'), fixed_velocity_range=(-150., 150.))
+    try:
+        np.testing.assert_allclose(fig.axes[0].get_ylim(), [-150, 150])
+    finally:
+        plt.close(fig)

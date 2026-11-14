@@ -63,7 +63,7 @@
       "_type": "TargetModel",
       "tgt_idx": 0,
       "obs_id": "ODT-{{NOW}}-dish003-Rotation",
-      "id": "Galactic longitude 50.0, latitude 0.0",
+      "id": "Galactic longitude 85.0, latitude 0.0",
       "sky_coord": {
         "_type": "SkyCoord",
         "frame": "galactic",
@@ -80,7 +80,7 @@
       "_type": "TargetModel",
       "tgt_idx": 1,
       "obs_id": "ODT-{{NOW}}-dish003-Rotation",
-      "id": "Galactic longitude 50.0, latitude 0.0",
+      "id": "Galactic longitude 90.0, latitude 0.0",
       "sky_coord": {
         "_type": "SkyCoord",
         "frame": "galactic",

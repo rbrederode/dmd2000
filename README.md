@@ -14,6 +14,8 @@ pip install -r src/requirements.txt
 
 ## Documentation
 
+- [Offline observation editor: copy, move and delete archived SKY scans](docs/observation_editor.md)
+
 - [Moonhut network: static Mac/Pi/MD01 addresses and iPhone internet sharing](src/config/rotation/scripts/observation_network.md)
 
 - [Making releases: versions, changelog, testing, release branches and maintenance patches](docs/releasing.md)

@@ -560,7 +560,7 @@ class ObsDisplay:
         plt.show(block=False)
         return figure
 
-    def display_lv(self, obs, output_path: str, contour_levels=None, contour_smoothing=2., *, vmin=None, vmax=None):
+    def display_lv(self, obs, output_path: str, contour_levels=None, contour_smoothing=2., *, vmin=None, vmax=None, fixed_velocity_range=None):
         """Show/save longitude–LSRK velocity columns from the last LSRK plot.
 
         Reuse its exact baseline-subtracted, unscaled powers and channel masks.
@@ -573,12 +573,16 @@ class ObsDisplay:
         white/blue asinh colour mapping preserves amplitude comparisons throughout.
         Optional vmin/vmax further crop the shared coverage and determine the
         visible colour scale, without changing native spectra or exports.
+        fixed_velocity_range overrides those bounds and retains the exact axis
+        range even when the recorded coverage is narrower (used by the frontend).
         Magenta contours interpolate between sampled longitudes for display only;
         their labels remain in calibrated power units. Pass [] to disable them.
         """
         from matplotlib.colors import AsinhNorm
         from matplotlib.ticker import FuncFormatter
 
+        if fixed_velocity_range is not None:
+            vmin, vmax = fixed_velocity_range
         if any(value is not None and not np.isfinite(value) for value in (vmin, vmax)):
             raise ValueError("L–V velocity limits must be finite")
         if vmin is not None and vmax is not None and vmin >= vmax:
@@ -689,7 +693,7 @@ class ObsDisplay:
             axis.set_facecolor("white")
             axis.axhline(0, color="grey", linestyle=":", linewidth=.6, alpha=.6)
         # Clip the view at the shared cell edges without shifting or regridding.
-        axes[0, 0].set_ylim(lower, upper)
+        axes[0, 0].set_ylim(*(fixed_velocity_range if fixed_velocity_range is not None else (lower, upper)))
         for axis, (key, index, batch) in zip(axes[:, 0], groups):
             # Do not span a known missing longitude in this frequency panel.
             columns = [np.searchsorted(centres, item["x"]) for item in batch]

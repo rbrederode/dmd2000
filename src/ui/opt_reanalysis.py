@@ -190,7 +190,7 @@ def reanalyse(request, out, progress):
         display.lsr_baseline_method = settings["baseline"]
         obs = SimpleNamespace(get_target_by_index=lambda index: targets.get(index))
         fig = display.display_lv(obs, str(out / "lv.png"), settings["contours"], settings["contour_smoothing"],
-                                 vmin=settings["baseline_vmin"], vmax=settings["baseline_vmax"])
+                                 fixed_velocity_range=(-150., 150.))
         if fig is not None:
             result["views"]["lv"] = "lv.png"
             result.get("view_errors", {}).pop("lv", None)
