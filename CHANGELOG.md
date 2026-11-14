@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Added repeatable Mac/Pi observation-network setup scripts and a Moonhut troubleshooting guide. The Mac restores both Ethernet subnets and shares its detected iPhone uplink using a dedicated Pi-only NAT rule; the Pi preserves its existing static IP while saving gateway and DNS together through NetworkManager. Scripts check prerequisites and connectivity without replacing the Mac's root firewall rules or changing telescope profiles.
+
 - SDP now matches pending scans by observation, target and frequency-scan identity as well as radio settings and read-counter range. Target/configuration changes retire unfinished scans from the previous identity without completion advice; late ODT packets cannot modify the current target. Configuration and sample handling share the per-digitiser lock, while completed scans, LOAD calibration data and other digitisers are preserved. Pending-scan counts account for retired scans across digitisers, and manual scans retain their existing metadata compatibility. This fixes cross-target sample assignment; overload handling and retry limits are unchanged.
 
 - Downgraded rtlstream/airstream sample-age threshold exceedances from hardware errors to warnings. Reads continue with their original timestamps, sample age and dropped-sample metadata, avoiding observation aborts caused solely by buffered age. Actual read, producer and reset failures remain errors.

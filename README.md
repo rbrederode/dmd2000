@@ -14,6 +14,8 @@ pip install -r src/requirements.txt
 
 ## Documentation
 
+- [Moonhut network: static Mac/Pi/MD01 addresses and iPhone internet sharing](src/config/rotation/scripts/observation_network.md)
+
 - [Making releases: versions, changelog, testing, release branches and maintenance patches](docs/releasing.md)
 
 - [Observation Processing Tool (OPT): usage, baseline subtraction, and longitude–velocity plots](docs/opt.md)
