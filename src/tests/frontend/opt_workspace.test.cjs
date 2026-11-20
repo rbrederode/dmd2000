@@ -7,7 +7,7 @@ const vm = require('node:vm');
 const schedule = require('../../ui/frontend_prototype/schedule.js');
 const source = fs.readFileSync(path.join(__dirname, '../../ui/frontend_prototype/opt.js'), 'utf8');
 
-async function workspace({ sharedProfile = null, scanStoreDir = null, overviewAvailable = true, savedPreferences = {}, perSecondAvailable = true, individualFrequencyAvailable = true, velocityAvailable = true, targetDisplay = null, legacyTargetDisplay = false, pointingAvailable = false, pointingFailure = false, pointingPending = false, animationDefault = 100, ignoredAnimationInterval = false, ignoredTerminalMethod = false } = {}) {
+async function workspace({ distributionAvailable = false, sharedProfile = null, scanStoreDir = null, overviewAvailable = true, savedPreferences = {}, perSecondAvailable = true, individualFrequencyAvailable = true, velocityAvailable = true, targetDisplay = null, legacyTargetDisplay = false, pointingAvailable = false, pointingFailure = false, pointingPending = false, animationDefault = 100, ignoredAnimationInterval = false, ignoredTerminalMethod = false } = {}) {
   const elements = new Map();
   const timers = new Map();
   let nextTimer = 0;
@@ -28,6 +28,8 @@ async function workspace({ sharedProfile = null, scanStoreDir = null, overviewAv
     querySelector(selector) { if (!this.children.has(selector)) this.children.set(selector, new Element()); return this.children.get(selector); }
     replaceChildren(...children) { this.nodes = children; }
     setAttribute(name, value) { this[name] = value; }
+    showModal() { this.open = true; }
+    close() { this.open = false; }
     click() {}
     focus() {}
     scrollIntoView() {}
@@ -45,7 +47,7 @@ async function workspace({ sharedProfile = null, scanStoreDir = null, overviewAv
     { id: 'obs-new', name: 'Galactic plane', dish: 'dish003', completed_scans: 3, total_scans: 4, completed_types: { SKY: 2, LOAD: 1 }, completed_integration_s: 135 },
     { id: 'obs-old', name: 'Earlier observation', dish: 'dish002', completed_scans: 1, total_scans: 2, completed_types: { SKY: 1 }, completed_integration_s: 60 },
   ];
-  const tabs = Object.fromEntries(['signal', 'frequency', 'velocity', 'timeline', 'lv', 'pointing', 'details'].map(view => { const tab = new Element(); tab.dataset = { optView: view }; return [view, tab]; }));
+  const tabs = Object.fromEntries(['signal', 'frequency', 'velocity', 'timeline', 'lv', 'distribution', 'pointing', 'details'].map(view => { const tab = view === 'distribution' ? get('opt-distribution-tab') : new Element(); tab.dataset = { optView: view }; return [view, tab]; }));
   for (const axis of ['lon', 'lat']) {
     get('opt-lab-' + axis + '-min').value = '-10';
     get('opt-lab-' + axis + '-max').value = '10';
@@ -92,6 +94,13 @@ async function workspace({ sharedProfile = null, scanStoreDir = null, overviewAv
           target_scans: [{tgt_idx: 1, scans: [{tgt_idx: 1, freq_scan: 0, scan_iter: 0,
             scan_type: {value: 'SKY'}, status: {value: 'COMPLETE'}, dig_id: 'dig003', center_freq: 1420e6, duration: 60}]}] } };
       }
+      else if (url.endsWith('/distribution')) data = {id: 'distribution-job'};
+      else if (url.endsWith('/jobs/distribution-job')) {
+        const request = [...calls].reverse().find(call => call.url.endsWith('/distribution')).body;
+        const result = JSON.parse(JSON.stringify(completedResult));
+        Object.assign(result.distribution, request.options);
+        data = {state: 'ready', result};
+      }
       else if (url.endsWith('/pointing')) data = {id:'pointing-job'};
       else if (url.endsWith('/jobs/pointing-job')) {
         const specification = [...calls].reverse().find(call => call.url.endsWith('/pointing')).body;
@@ -118,6 +127,10 @@ async function workspace({ sharedProfile = null, scanStoreDir = null, overviewAv
             { id: 'sky2', scan_id: 'sky2-scan', kind: 'SKY', target_id: 2, freq_scan: 0, views: { velocity: 'sky2-velocity.png', frequency: 'sky2-frequency.png', timeline: 'sky2-timeline.png', timeline_seconds: 'sky2-timeline-seconds.png' } },
             { id: 'load', scan_id: 'load-scan', kind: 'LOAD', views: {timeline: 'load-timeline.png', timeline_seconds: 'load-timeline-seconds.png'} }], views: {frequency: 'frequency.png', timeline: 'timeline.png', timeline_seconds: 'timeline-seconds.png'}, warnings: [] } };
         data.result.animation_default_interval_ms = animationDefault;
+        if (distributionAvailable) {
+          data.result.distribution = {csv:'distribution.csv', snr_column:'velocity_snr',l_step:15,b_step:15,cell_shape:'diamond',stretch:'log',aggregates:2, points:[{aggregate_id:'sky', scan_id:'sky-scan', longitude:30, latitude:0, x:.4, y:.45}, {aggregate_id:'sky2', scan_id:'sky2-scan', longitude:30, latitude:0, x:.4, y:.45}]};
+          data.result.views.distribution = 'distribution.png';
+        }
         for (const owner of [data.result, ...data.result.aggregates]) {
           for (const key of ['timeline', 'timeline_seconds']) {
             if (owner.views[key]) owner.views[`${key}_no_mean`] = owner.views[key].replace('.png', '-no-mean.png');
@@ -1172,4 +1185,114 @@ test('navigation and overlay toggles do not apply pending shared analysis settin
   await new Promise(setImmediate);
   assert.equal(app.calls.filter(call=>call.url.endsWith('/reanalyse')).length,count);
   assert.equal(app.element('replot').disabled,false);
+});
+
+
+test('SNR Distribution stays visible and redraws cached measurements with separate map settings', async () => {
+  const absent = await workspace();
+  await absent.select(); await absent.element('process').listeners.click[0](); await new Promise(setImmediate);
+  assert.equal(absent.element('distribution-tab').hidden, false);
+  absent.tabs.distribution.listeners.click[0]();
+  assert.match(absent.element('placeholder').querySelector('p').textContent, /supported when sidereal-track SKY targets/);
+  assert.equal(absent.element('distribution-controls').hidden, true);
+  const app = await workspace({distributionAvailable:true});
+  await app.select(); await app.element('process').listeners.click[0](); await new Promise(setImmediate);
+  assert.equal(app.element('distribution-tab').hidden, false);
+  app.tabs.distribution.listeners.click[0]();
+  assert.equal(app.element('distribution-controls').hidden, false);
+  assert.equal(app.element('distribution-snr').value, 'velocity_snr');
+  assert.equal(Number(app.element('distribution-height').value), 15);
+  assert.equal(Number(app.element('distribution-width').value), 15);
+  assert.equal(app.element('distribution-shape').value, 'diamond');
+  assert.equal(app.element('distribution-stretch').value, 'log');
+  assert.equal(app.element('distribution-max').value, '');
+  assert.match(app.element('plot').src, /distribution\.png/);
+  assert.equal(app.element('image-link').hidden, false);
+  assert.match(app.element('image-link').href, /distribution\.png/);
+  assert.match(app.element('distribution-csv').href, /distribution\.csv\?download=1/);
+  app.element('distribution-snr').value = 'frequency_snr';
+  app.element('distribution-height').value = 10;
+  app.element('distribution-shape').value = 'diamond';
+  app.element('distribution-stretch').value = 'asinh';
+  app.element('distribution-max').value = '25';
+  await app.element('distribution-update').listeners.click[0](); await new Promise(setImmediate);
+  const request = app.calls.find(call => call.url.endsWith('/distribution')).body;
+  assert.deepEqual(JSON.parse(JSON.stringify(request.options)), {snr_column:'frequency_snr', l_step:15, b_step:10, cell_shape:'diamond', stretch:'asinh', snr_max:25});
+  assert.equal(app.calls.filter(call => call.url.endsWith('/process')).length, 1);
+  assert.equal(app.calls.filter(call => call.url.endsWith('/reanalyse')).length, 0);
+});
+
+
+test('distribution dots cycle overlapping measurements and show existing individual spectra without jobs', async () => {
+  const app = await workspace({distributionAvailable:true});
+  await app.select(); await app.element('process').listeners.click[0](); await new Promise(setImmediate);
+  app.tabs.distribution.listeners.click[0]();
+  assert.equal(app.element('distribution-explorer').hidden, false);
+  assert.equal(app.element('plot').hidden, true);
+  assert.match(app.element('distribution-spectrum').src, /sky-velocity\.png/);
+  assert.match(app.element('distribution-dots').innerHTML, /click to cycle measurements/);
+  const requests = app.calls.length;
+  app.element('distribution-dots').listeners.click[0]({target:{closest:() => ({dataset:{distributionIds:'["sky","sky2"]'}})}});
+  assert.match(app.element('distribution-spectrum').src, /sky2-velocity\.png/);
+  assert.equal(app.element('distribution-scan').value, 'sky2');
+  app.element('distribution-dots').listeners.click[0]({target:{closest:() => ({dataset:{distributionIds:'["sky","sky2"]'}})}});
+  assert.match(app.element('distribution-spectrum').src, /sky-velocity\.png/);
+  app.element('distribution-scan').value = 'sky2';
+  app.element('distribution-scan').listeners.change[0]();
+  assert.match(app.element('distribution-spectrum').src, /sky2-velocity\.png/);
+  // Pending map settings must not change the meaning of the displayed map/preview.
+  app.element('distribution-snr').value = 'frequency_snr';
+  app.element('distribution-scan').value = 'sky';
+  app.element('distribution-scan').listeners.change[0]();
+  assert.match(app.element('distribution-spectrum').src, /sky-velocity\.png/);
+  assert.equal(app.calls.length, requests);
+});
+
+
+test('distribution Frequency preview reuses the saved individual image and explains missing images', async () => {
+  for (const available of [true, false]) {
+    const app = await workspace({distributionAvailable:true, individualFrequencyAvailable:available});
+    await app.select(); await app.element('process').listeners.click[0](); await new Promise(setImmediate);
+    app.tabs.distribution.listeners.click[0]();
+    app.element('distribution-snr').value = 'frequency_snr';
+    await app.element('distribution-update').listeners.click[0](); await new Promise(setImmediate);
+    const count = app.calls.length;
+    app.element('distribution-scan').value = 'sky2';
+    app.element('distribution-scan').listeners.change[0]();
+    if (available) {
+      assert.match(app.element('distribution-spectrum').src, /sky2-frequency\.png/);
+      assert.equal(app.element('distribution-spectrum').hidden, false);
+    } else {
+      assert.equal(app.element('distribution-spectrum').hidden, true);
+      assert.match(app.element('distribution-unavailable').textContent, /saved individual spectrum is unavailable/);
+    }
+    assert.equal(app.calls.length, count);
+    assert.equal(app.calls.filter(call => call.url.endsWith('/reanalyse')).length, 0);
+  }
+});
+
+
+test('plot help explains the settings for every tab without requesting processing', async () => {
+  const app = await workspace({distributionAvailable:true});
+  await app.select(); await app.element('process').listeners.click[0](); await new Promise(setImmediate);
+  const count = app.calls.length;
+  for (const [view, title, content] of [
+    ['distribution', 'SNR Distribution', ['Cell width', 'Cell shape', 'Upper SNR', 'Download CSV', 'Preview']],
+    ['frequency', 'Frequency', ['All SKY aggregates', 'Baseline', 'maximum']],
+    ['velocity', 'Velocity', ['LAB survey', 'Sweep LAB', 'Terminal velocity']],
+    ['timeline', 'Total Power', ['Resolution', 'Show mean']],
+    ['lv', 'L–V Diagram', ['Contour smoothing', 'Contour levels']],
+    ['pointing', 'Pointing', ['Frame interval', 'Generate Animation']],
+    ['details', 'Details', ['Aggregate or input scan']],
+    ['signal', 'Signal', ['Signal display']]
+  ]) {
+    app.tabs[view].listeners.click[0]();
+    app.element('view-help').listeners.click[0]();
+    assert.equal(app.element('view-help-dialog').open, true);
+    assert.equal(app.element('view-help-title').textContent, `${title} settings`);
+    for (const text of content) assert.ok(app.element('view-help-content').innerHTML.includes(text), `${view}: ${text}`);
+    app.element('view-help-close').listeners.click[0]();
+    assert.equal(app.element('view-help-dialog').open, false);
+  }
+  assert.equal(app.calls.length, count);
 });

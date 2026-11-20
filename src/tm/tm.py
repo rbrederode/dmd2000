@@ -39,9 +39,9 @@ from models.health import HealthState
 from models.scan import ScanModel, ScanState
 from models.sdp import ScienceDataProcessorModel
 from models.target import TargetModel, TargetConfig
-from models.telescope import TelescopeModel
+from models.telescope import TelescopeModel, TelescopeConfig
 from models.tm import ResourceType, AllocationState, ResourceAllocations, Allocation
-from models.ui import UIDriver, UIDriverType
+from models.ui import UIDriver, UIDriverType, UIDriverList
 from models.ws import WeatherStationModel, WeatherSummary
 from models.web import WebServerModel
 from obs.oet import ObservationExecutionTool
@@ -69,7 +69,8 @@ class TelescopeManager(App):
         super().__init__(app_name=app_name, app_model=self.telmodel.tel_mgr.app)
 
         # Lock for thread-safe allocation of shared resources
-        self._rlock = threading.RLock()  
+        self._rlock = threading.RLock()
+        self._get_ui_driver_lock()
         # Keep the last reported hardware gain while a new measurement is pending.
         # Response timestamps identify which calibration request may resolve it.
         self._pending_auto_gain_requests = {}
@@ -181,21 +182,25 @@ class TelescopeManager(App):
 
         action = Action()
 
+        # Shared observatory attributes are outside the profile directories.
+        # Load completely before publishing; invalid edits retain the prior config.
+        try:
+            self.telmodel.config = TelescopeConfig.load_from_disk(
+                input_dir=Path(__file__).resolve().parents[1] / 'config', filename='telescope.json')
+            logger.info("Telescope Manager loaded observatory configuration from config/telescope.json")
+        except (FileNotFoundError, ValueError, XAPIValidationFailed) as error:
+            logger.warning("Could not load config/telescope.json; retaining previous observatory configuration: %s", error)
+
         # Config files located in ./config/<profile>/<model>.json
         input_dir = f"./config/{self.get_args().profile}"
-        filename = "TelescopeManagerModel.json"
-
+        filename = "UIDriverList.json"
         try:
-            tm = self.telmodel.tel_mgr.load_from_disk(input_dir=input_dir, filename=filename)
-        except FileNotFoundError:
-            tm = None
-
-        if tm is not None:
-            self.telmodel.tel_mgr.ui_drivers = tm.ui_drivers if tm.ui_drivers is not None else []
-            logger.info(f"Telescope Manager loaded TM configuration from directory {input_dir} file {filename}")
+            definitions = UIDriverList.load_from_disk(input_dir=input_dir, filename=filename)
+        except (FileNotFoundError, ValueError, XAPIValidationFailed) as error:
+            logger.warning("Could not load %s/%s; retaining current UI drivers: %s", input_dir, filename, error)
         else:
-            message = f"Telescope Manager could not load TM configuration from directory {input_dir} file {filename}"
-            logger.warning(self.set_last_err(message))
+            self._replace_ui_drivers(definitions)
+            logger.info("Loaded %s UI driver definitions from %s/%s", len(definitions.ui_drivers), input_dir, filename)
 
         # Load Digitiser configuration from disk
         # Config file defines initial list of digitisers to be processed by the TM
@@ -214,6 +219,81 @@ class TelescopeManager(App):
             logger.warning(self.set_last_err(message))
 
         return action
+
+    def _get_ui_driver_lock(self):
+        if not hasattr(self, '_ui_driver_lock'):
+            self._ui_driver_lock = threading.RLock()
+            self._disabled_ui_drivers = set()
+            self._last_odt_config_snapshot = None
+        return self._ui_driver_lock
+
+    def _retire_ui_driver(self, driver):
+        instance = driver.instance
+        driver.instance = None
+        if instance is not None:
+            close = getattr(instance, 'close', None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    logger.exception('Could not close retired UI driver %s', driver.short_desc or driver.type.name)
+
+    def _replace_ui_drivers(self, definitions):
+        # Publishing and replacement share a lock so no retired instance is used.
+        with self._get_ui_driver_lock():
+            for driver in self.telmodel.tel_mgr.ui_drivers or []:
+                self._retire_ui_driver(driver)
+            for driver in definitions.ui_drivers:
+                driver.instance = None
+                driver.last_update = datetime.now(timezone.utc)
+            self.telmodel.tel_mgr.ui_drivers = definitions.ui_drivers
+            self._disabled_ui_drivers.clear()
+
+    def close_ui_drivers(self):
+        self._replace_ui_drivers(UIDriverList())
+
+    def _create_ui_driver(self, driver):
+        if driver.type == UIDriverType.GSHEETS:
+            from ui.drivers.gsheets.gsheets_driver import GoogleSheetsDriver
+            from ui.drivers.gsheets.gsheets_model import GSheetConfig
+            return GoogleSheetsDriver(GSheetConfig(**(driver.config or {})))
+        if driver.type == UIDriverType.CUSTOM_UI:
+            from ui.drivers.web.web_driver import WebUIDriver
+            return WebUIDriver(driver.config)
+        raise XSoftwareFailure(f'UI driver {driver.type.name} is not supported')
+
+    def _poll_ui_drivers(self, now=None):
+        now = datetime.now(timezone.utc) if now is None else now
+        with self._get_ui_driver_lock():
+            for driver in self.telmodel.tel_mgr.ui_drivers or []:
+                key = id(driver)
+                if key in self._disabled_ui_drivers:
+                    continue
+                if driver.instance is None:
+                    try:
+                        driver.instance = self._create_ui_driver(driver)
+                        # Publish on the next loop pass rather than waiting a full period.
+                        driver.last_update = datetime.min.replace(tzinfo=timezone.utc)
+                        logger.info('Initialised UI driver %s %s', driver.type.name, driver.short_desc or '')
+                    except Exception as error:
+                        self._disabled_ui_drivers.add(key)
+                        logger.error('Disabled UI driver %s %s after initialisation failed: %s', driver.type.name, driver.short_desc or '', error)
+                    continue
+                if (now - driver.last_update).total_seconds() < driver.poll_period:
+                    continue
+                driver.last_update = now
+                try:
+                    for model in (self.telmodel.dig_store, self.telmodel.dsh_mgr, self.telmodel.sdp,
+                                  self.telmodel.oda, self.telmodel.wtr_stn, self.telmodel.tel_mgr,
+                                  self.telmodel.web_svr):
+                        driver.instance.publish(model.to_dict())
+                    odt = driver.instance.read_config('ObsList') if hasattr(driver.instance, 'read_config') else None
+                    if odt and odt != self._last_odt_config_snapshot:
+                        self.get_queue().put(ConfigEvent(category='ODT', old_config=self._last_odt_config_snapshot,
+                            new_config=odt, timestamp=now))
+                        self._last_odt_config_snapshot = odt
+                except Exception:
+                    logger.exception('Error publishing to UI driver %s', driver.type.name)
 
     def process_web_connected(self, event) -> Action:
         """ Processes Web Server connected events. """
@@ -1615,17 +1695,6 @@ class TelescopeManager(App):
             self.set_last_err(message)
             return HealthState.DEGRADED
 
-        elif any(dig.tm_connected != CommunicationStatus.ESTABLISHED for dig in self.telmodel.dig_store.dig_list):
-
-            disconnected_dig_ids = [
-                dig.dig_id
-                for dig in self.telmodel.dig_store.dig_list
-                if dig.tm_connected != CommunicationStatus.ESTABLISHED
-            ]
-
-            message = f"Telescope Manager health status set to DEGRADED: One or more Digitisers not connected: {', '.join(disconnected_dig_ids)}"
-            self.set_last_err(message)
-            return HealthState.DEGRADED
         else:
             return HealthState.OK
 
@@ -2010,6 +2079,7 @@ def main():
             telmodel=tm.telmodel,
         )
         cleanup.callback(web_api.stop)
+        cleanup.callback(tm.close_ui_drivers)
         web_api.start()
         logger.info("Web API handler initialized and running on port 5001")
 
@@ -2018,105 +2088,8 @@ def main():
             tm.wait_for_stop()
             return
 
-        last_odt_config_snapshot = None
-        disabled_ui_drivers = set()
-
-        # Iterate through all UI drivers every second (while True) 
-        # Instantiate uninitialised UI drivers based on type and config
-        # Push Telescope Model updates to initialized UI drivers based on their defined poll period
-        # Pull configuration updates from UI drivers and trigger corresponding configuration update events in the Telescope Model
-
         while not tm.stop_requested:
-            now = datetime.now(timezone.utc)
-
-            for driver in tm.telmodel.tel_mgr.ui_drivers:
-                driver_key = driver.short_desc or str(driver.type)
-                if driver_key in disabled_ui_drivers:
-                    continue
-
-                # If the driver instance is not yet initialized, initialize it based on its type and config
-                if driver.instance is None:
-
-                    if driver.type == UIDriverType.GSHEETS:
-                        from ui.drivers.gsheets.gsheets_driver import GoogleSheetsDriver
-                        from ui.drivers.gsheets.gsheets_model import GSheetConfig
-                        config = GSheetConfig(**driver.config) if isinstance(driver.config, dict) else driver.config
-                        try:
-                            driver.instance = GoogleSheetsDriver(config)
-                            logger.info(f"Telescope Manager initialised Google Sheets driver for UI integration with config:\n" + \
-                                f"{json.dumps(driver.config, indent=2)}")
-                        except XSoftwareFailure as e:
-                            disabled_ui_drivers.add(driver_key)
-                            logger.error(
-                                f"Telescope Manager disabled UI driver {driver.type.name} {driver.short_desc} "
-                                f"after initialization failed: {e}"
-                            )
-                    elif driver.type == UIDriverType.CUSTOM_UI:
-                        from ui.drivers.web.web_driver import WebUIDriver
-                        try:
-                            driver.instance = WebUIDriver(driver.config)
-                            logger.info(
-                                "Telescope Manager initialised Web UI driver "
-                                f"with config:\n{json.dumps(driver.config, indent=2)}"
-                            )
-                        except XSoftwareFailure as e:
-                            disabled_ui_drivers.add(driver_key)
-                            logger.error(
-                                f"Telescope Manager disabled UI driver {driver.type.name} {driver.short_desc} "
-                                f"after initialization failed: {e}"
-                            )
-                    else:
-                        logger.warning(f"Telescope Manager UI driver {driver.type} not supported, skipping UI integration for this driver")
-
-                # Else check if a model push is due based on the poll period defined for the driver
-                else:
-                    # Check if the driver's poll period is due
-                    if (now - driver.last_update).total_seconds() >= driver.poll_period:
-
-                        logger.info(f"Telescope Manager pushing Telescope Model update to UI driver {driver.type.name} {driver.short_desc}")
-
-                        try:
-                            driver.last_update = now
-
-                            dig_dict = tm.telmodel.dig_store.to_dict()
-                            driver.instance.publish(dig_dict)
-                        
-                            dm_dict = tm.telmodel.dsh_mgr.to_dict() 
-                            driver.instance.publish(dm_dict)
-
-                            sdp_dict = tm.telmodel.sdp.to_dict()
-                            driver.instance.publish(sdp_dict)
-
-                            oda_dict = tm.telmodel.oda.to_dict()
-                            driver.instance.publish(oda_dict)
-
-                            ws_dict = tm.telmodel.wtr_stn.to_dict()
-                            driver.instance.publish(ws_dict)
-
-                            tm_dict = tm.telmodel.tel_mgr.to_dict()
-                            driver.instance.publish(tm_dict)
-
-                            web_dict = tm.telmodel.web_svr.to_dict()
-                            driver.instance.publish(web_dict)
-
-                            odt = driver.instance.read_config("ObsList") if hasattr(driver.instance, "read_config") else None
-                            if odt:
-                                logger.debug(f"Telescope Manager read ODT configuration from UI driver {driver.type.name}:\n{json.dumps(odt, indent=2)}")
-                                if odt != last_odt_config_snapshot:
-                                    config = ConfigEvent(
-                                        category="ODT",
-                                        old_config=last_odt_config_snapshot,
-                                        new_config=odt,
-                                        timestamp=now
-                                    )
-                                    tm.get_queue().put(config)
-
-                                    last_odt_config_snapshot = odt
- 
-                        except Exception as e:
-                            logger.error(f"Error publishing to UI driver {driver.type.name}: {e}")
-         
-            # Sleep before checking whether drivers are due for an update
+            tm._poll_ui_drivers()
             tm.wait_for_stop(1)
 
 

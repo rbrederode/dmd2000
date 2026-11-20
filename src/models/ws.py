@@ -9,7 +9,7 @@ from models.app import AppModel
 from models.base import BaseModel
 from models.comms import CommunicationStatus
 from models.health import HealthState
-from util.xbase import XSoftwareFailure
+from util.xbase import XSoftwareFailure, XAPIValidationFailed
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +20,52 @@ class WeatherStationDriverType(enum.IntEnum):
 
 # Backwards-compatible alias for callers that import DriverType from models.ws.
 DriverType = WeatherStationDriverType
+
+
+class WeatherDriverConfig(BaseModel):
+    """Common polling configuration, including stations running in simulation."""
+    schema = Schema({
+        '_type': And(str, lambda value: value == 'WeatherDriverConfig'),
+        'driver_poll_period': And(lambda value: type(value) is int, lambda value: value > 0),
+    })
+
+    def __init__(self, **kwargs):
+        super().__init__(**({'_type': 'WeatherDriverConfig', 'driver_poll_period': 1000} | kwargs))
+
+
+def get_weather_driver_config(driver_type, config=None):
+    """Validate the driver-specific config without opening hardware."""
+    if not isinstance(driver_type, WeatherStationDriverType):
+        raise XAPIValidationFailed('Weather driver_type must be a WeatherStationDriverType')
+    if driver_type == WeatherStationDriverType.MODBUS:
+        from ws.drivers.modbus import ModbusConfig
+        config_type = ModbusConfig
+    elif driver_type == WeatherStationDriverType.ADS1115:
+        from ws.drivers.ads1115 import ADS1115Config
+        config_type = ADS1115Config
+    else:
+        config_type = WeatherDriverConfig
+    data = config.to_dict() if isinstance(config, BaseModel) else config
+    if data is None:
+        return config_type()
+    if not isinstance(data, dict) or set(data) - set(config_type.schema.schema):
+        raise XAPIValidationFailed(f'Invalid fields for {config_type.__name__}')
+    if data.get('_type', config_type.__name__) != config_type.__name__:
+        raise XAPIValidationFailed(f'{driver_type.name} requires {config_type.__name__}')
+    for key, value in data.items():
+        if isinstance(value, (int, float)) and (type(value) is bool or not math.isfinite(value)):
+            if type(value) is bool and key in ('signed', 'clear_buffers_before_each_transaction', 'debug'):
+                continue
+            raise XAPIValidationFailed(f'{key} requires a finite number (not boolean)')
+    validated = config_type(**{key: BaseModel._deserialise(value) for key, value in data.items()})
+    if driver_type == WeatherStationDriverType.MODBUS and not validated.port.strip():
+        raise XAPIValidationFailed('Modbus port must not be empty')
+    if driver_type == WeatherStationDriverType.ADS1115:
+        if validated.voltage_max <= validated.voltage_min:
+            raise XAPIValidationFailed('ADC voltage maximum must exceed the minimum')
+        if validated.precipitation_channel is not None and validated.precipitation_voltage_max <= validated.precipitation_voltage_min:
+            raise XAPIValidationFailed('Precipitation voltage maximum must exceed the minimum')
+    return validated
 
 class WeatherData(BaseModel):
     """A class representing weather data at a specific weather station (and location) and time."""
@@ -132,6 +178,9 @@ class WeatherStation(BaseModel):
         "latitude": Or(None, And(float, lambda v: -90 <= v <= 90)),              # Latitude in degrees
         "longitude": Or(None, And(float, lambda v: -180 <= v <= 180)),           # Longitude in degrees
         "elevation": Or(None, And(float, lambda v: v >= 0)),                     # Elevation in meters
+        "driver_type": WeatherStationDriverType,
+        "driver_config": BaseModel,
+        "sim_mode": And(str, lambda value: value in ('off', 'calm', 'windy', 'stormy')),
         "last_update": Or(None, And(datetime, lambda v: isinstance(v, datetime))),  # Timestamp when the weather station data was last updated
     })
 
@@ -147,6 +196,9 @@ class WeatherStation(BaseModel):
             "latitude": None,
             "longitude": None,
             "elevation": None,
+            "driver_type": WeatherStationDriverType.UNKNOWN,
+            "driver_config": None,
+            "sim_mode": "off",
             "last_update": datetime.now(timezone.utc),
         }
 
@@ -155,6 +207,7 @@ class WeatherStation(BaseModel):
             if key not in kwargs:
                 kwargs.setdefault(key, value)
 
+        kwargs['driver_config'] = get_weather_driver_config(kwargs['driver_type'], kwargs['driver_config'])
         super().__init__(**kwargs)
 
 class WeatherStationList(BaseModel):
@@ -536,7 +589,6 @@ class WeatherStationModel(BaseModel):
         "sim_mode": And(str, lambda v: v in ["off", "calm", "windy", "stormy"]),
         "driver_type": And(WeatherStationDriverType, lambda v: isinstance(v, WeatherStationDriverType)),  # Weather station driver implementation
         "driver_config": Or(None, lambda v: v is None or isinstance(v, BaseModel)),
-        "driver_poll_period": Or(None, And(int, lambda v: v > 0)),                  # Driver poll period in milliseconds
         "driver_failures": And(int, lambda v: v >= 0),                              # Count of consecutive driver read failures
         "last_err_msg": Or(None, And(str, lambda v: isinstance(v, str))),           # Last weather station error message
         "last_err_dt": Or(None, And(datetime, lambda v: isinstance(v, datetime))),  # Last weather station error datetime
@@ -567,7 +619,6 @@ class WeatherStationModel(BaseModel):
             "sim_mode": "off",
             "driver_type": WeatherStationDriverType.UNKNOWN,
             "driver_config": None,
-            "driver_poll_period": 1000,
             "driver_failures": 0,
             "last_err_msg": None,
             "last_err_dt": None,
@@ -579,6 +630,7 @@ class WeatherStationModel(BaseModel):
             if key not in kwargs:
                 kwargs.setdefault(key, value)
 
+        kwargs['driver_config'] = get_weather_driver_config(kwargs['driver_type'], kwargs['driver_config'])
         super().__init__(**kwargs)
 
     def increment_failures(self):

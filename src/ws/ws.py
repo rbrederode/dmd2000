@@ -12,7 +12,8 @@ from pathlib import Path
 from api import protocol as dmd_protocol
 from api import ws_dm, tm_ws
 from models.comms import CommunicationStatus, InterfaceType
-from models.ws import WeatherData, WeatherStationModel
+from models.ws import WeatherData, WeatherStationModel, WeatherStationList
+from util.xbase import XAPIValidationFailed
 from env.app import App
 from env.events import ConnectEvent, DisconnectEvent, DataEvent, ConfigEvent, ObsEvent
 from ipc.message import AppMessage, APIMessage
@@ -67,6 +68,7 @@ class WeatherStation(App):
         # Set initial Telescope Manager connection status
         self.ws_model.tm_connected = CommunicationStatus.NOT_ESTABLISHED
 
+        self._weather_config_lock = threading.RLock()
         self.weather_driver = None
         self._weather_available = None  # Unknown until the first poll completes.
         self._poll_deadline = None
@@ -98,19 +100,22 @@ class WeatherStation(App):
 
         return action
 
+    def _get_weather_config_lock(self):
+        if not hasattr(self, '_weather_config_lock'):
+            self._weather_config_lock = threading.RLock()
+        return self._weather_config_lock
+
     def process_resync(self) -> Action:
-        """Reload configuration and replace the physical weather driver."""
+        with self._get_weather_config_lock():
+            return self._process_resync_locked()
+
+    def _process_resync_locked(self) -> Action:
+        """Reload validated station configuration and replace its physical driver."""
         logger.debug(f"WeatherStation resync configuration")
 
         action = Action()
 
-        self._load_model_from_profile()
-
-        if self.get_args().entity_id != "<undefined>":
-            self.ws_model.id = self.get_args().entity_id
-
-        if self.get_args().sim is not None:
-            self.ws_model.sim_mode = self.get_args().sim
+        self._load_station_from_profile()
 
         logging.info("WeatherStation resync processed for id=%s sim_mode=%s driver_type=%s",
                      self.ws_model.id,
@@ -197,6 +202,10 @@ class WeatherStation(App):
         return action
 
     def process_timer_event(self, event) -> Action:
+        with self._get_weather_config_lock():
+            return self._process_weather_timer_event(event)
+
+    def _process_weather_timer_event(self, event) -> Action:
         """Read weather only for the polling timer, preserving its cadence."""
         logger.debug(f"WeatherStation timer event: {event}")
 
@@ -230,7 +239,7 @@ class WeatherStation(App):
     def _next_poll_timer(self, reset: bool = False) -> Action.Timer:
         """Wait only until the next deadline; skip slots elapsed during a read."""
         interval_ms = (self.weather_driver.get_poll_interval_ms()
-                       if self.weather_driver is not None else self.ws_model.driver_poll_period) or 1000
+                       if self.weather_driver is not None else self.ws_model.driver_config.driver_poll_period)
         period = interval_ms / 1000.0
         now = time.monotonic()
         deadline = now + period if reset or self._poll_deadline is None else self._poll_deadline + period
@@ -364,27 +373,27 @@ class WeatherStation(App):
         })
         return dm_adv
 
-    def _load_model_from_profile(self):
+    def _load_station_from_profile(self):
         input_dir = self._get_profile_config_dir()
-        filename = "WeatherStationModel.json"
-
-        try:
-            ws_model = WeatherStationModel.load_from_disk(input_dir=input_dir, filename=filename)
-        except FileNotFoundError:
-            message = f"WeatherStation could not load configuration from directory {input_dir} file {filename}. File not found. Using defaults."
-            logger.warning(self.set_last_err(message))
-            return
-
-        runtime_app = self.ws_model.app
-        runtime_tm_connected = self.ws_model.tm_connected
-        runtime_dm_connected = self.ws_model.dm_connected
-
-        ws_model.app = runtime_app
-        ws_model.tm_connected = runtime_tm_connected
-        ws_model.dm_connected = runtime_dm_connected
-        self.ws_model = ws_model
-
-        logger.info("WeatherStation loaded configuration from directory %s file %s", input_dir, filename)
+        identifier = self.get_args().entity_id
+        if not identifier or identifier == '<undefined>':
+            raise XAPIValidationFailed('Specify --entity_id matching a ws_id in WeatherStationList.json')
+        stations = WeatherStationList.load_from_disk(input_dir=input_dir, filename='WeatherStationList.json')
+        matches = [station for station in stations.weather_stations if station.ws_id == identifier]
+        if len(matches) != 1:
+            raise XAPIValidationFailed(f'Expected exactly one weather station {identifier!r} in {input_dir}/WeatherStationList.json; found {len(matches)}')
+        station = matches[0]
+        mode = self.get_args().sim if self.get_args().sim is not None else station.sim_mode
+        # Validate everything before mutating the live model or closing its driver.
+        candidate = WeatherStationModel(id=identifier, driver_type=station.driver_type,
+                                        driver_config=station.driver_config, sim_mode=mode)
+        if mode == 'off' and candidate.driver_type == WeatherStationDriverType.UNKNOWN:
+            raise XAPIValidationFailed(f'Weather station {identifier} needs a physical driver when simulation is off')
+        self.ws_model.id = identifier
+        self.ws_model.driver_type = candidate.driver_type
+        self.ws_model.driver_config = candidate.driver_config
+        self.ws_model.sim_mode = candidate.sim_mode
+        logger.info('WeatherStation loaded %s from %s/WeatherStationList.json', identifier, input_dir)
 
     def _get_profile_config_dir(self) -> str:
         profile = self.get_args().profile

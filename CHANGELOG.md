@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Dish capability changes now persist atomically to the active profile's `DishList.json` before hardware calls, preserving other configuration edits and surviving DM restart/RESYNC. Maintenance saves `STANDBY` before stowing, blocking ordinary movement until capability is explicitly restored. Emergency STOP retains the saved inhibition even if the controller call fails; repeated STOP commands still reach the controller. Persistence failures report an error while still attempting to stop movement, and prevent enabling operational capability.
+
+- TM application health no longer becomes DEGRADED solely because a digitiser is disconnected; digitiser status and observation availability checks remain independent.
+
+- Replaced saved TelescopeManagerModel configuration files across all profiles with configuration-only `UIDriverList.json` files. TM startup/RESYNC loads UI driver definitions while preserving runtime state; reload closes old integrations and retries previously failed initialisations. UI driver settings remain file-managed. `UIDriverList` and `TelescopeConfig` reuse BaseModel deserialisation and disk loading; shared telescope configuration retains the standard model type marker.
+
+- Added browser-local and UTC clocks alongside LST, centred between the main navigation and Config Profile controls; all update locally every second.
+
+- Removed the unconnected Defaults and Limits prototype tabs and panels from Configuration.
+
+- Moved weather driver configuration and simulation mode to individual `WeatherStationList.json` entries, selected by the WS launch `--entity_id`. Polling period is nested in typed driver config and also controls simulation. WS validates before replacing drivers, serializes RESYNC with polling, preserves live app/connections and runtime-only failure counts, and retains `--sim` overrides. Added typed Modbus/ADS1115 driver fields to the Weather editor. Migrated legacy settings to matching station IDs, added explicit WS launch identities and removed obsolete WeatherStationModel config files; WS command routing uses its default endpoint or explicit WEB override. TM retains its single active WS connection.
+
+- Connected the Configuration Weather tab to profile-backed station CRUD and shared monitoring settings in `WeatherStationList.json`: monitoring enabled, timeout/alarm window, retention, summary window, wind-average/gust/count and precipitation thresholds. Versioned atomic saves preserve other configuration and runtime data, with shared file revisions, profile/access checks and independent drafts for station/policy edits. The editor explains units and existing gust-count semantics; DM RESYNC applies saved changes.
+
+- Added Telescope as the first Configuration tab for viewing/editing the shared observatory name, latitude, longitude and height. The editor states that settings apply across all Config Profiles, uses validated atomic saves with revision checks and existing access controls, and participates in unsaved-change/RESYNC guards. Saved changes apply after TM RESYNC; dish and per-profile files remain independent.
+
+- Added validated observatory-level `TelescopeConfig` in `TelescopeModel.config`, loaded from profile-independent `config/telescope.json` on TM initialisation/RESYNC and included in WEB snapshots. The initial reference uses rotation dish003's location. Added a browser-side header LST clock using the reference longitude and browser UTC time, with one-second updates, site/approximation tooltip and an unavailable state until longitude is known; no extra clock polling or changes to dish pointing calculations.
+
+- Distribution maps now default to Velocity SNR, 15° × 15° Diamond cells, Log (zero-safe) colours and an automatic upper SNR limit.
+
+- Enlarged the Distribution map relative to its spectrum Preview, kept Open image beside Download CSV in the header and increased plot-title spacing. Added settings-help popups across processed-observation tabs. SNR Distribution remains visible for all observations and explains the sidereal-target requirement when unsupported.
+
+- SNR Distribution maps now show original measurement dots with selectable saved Frequency/Velocity spectra, a measurement list and highlighting. Coincident points cycle through aggregates; selecting a spectrum never reprocesses scans or recalculates SNR. Rectangle/Diamond cell controls average within the selected shape, with seam/pole clipping; CSV measurements stay unchanged. Map and preview stack on narrower screens.
+
+- SNR Distribution colour scales now start at zero, with an adjustable upper limit and Linear/Asinh/zero-safe Log stretches. Automatic limits use the maximum for fewer than 30 populated cells and P99 otherwise, after averaging repeated hits. Empty sky is excluded; clipped values are marked on the colour bar. UI and standalone CSV rendering share this display-only policy without changing exported SNRs.
+
+- Added conditional SNR Distribution views and CSV/PNG exports for sidereal-track SKY aggregates. Exports retain acquisition details plus both Frequency and Velocity peak SNRs directly from plot metrics. Map controls default to Velocity SNR and 5° cells; repeated cell hits are averaged. Map-only updates reuse the export without scan replay or SNR recalculation. Simplified `obs.dist_map` to generic longitude/latitude/SNR CSV input, removing scan/QA JSON loading and separating UI SNR selection from rendering.
+
 - Frontend L–V diagrams use a fixed vertical LSRK velocity range of −150 to +150 km/s on initial processing and plot updates, independently of the Velocity plot limits.
 
 - Added standalone `obs.editor` for offline copy/move/delete of SKY scans within one `--scan_store_dir`. It supports scan/frequency/target insertion, inclusive `--src_scan_range START END` deletion with selection fixed before renumbering, read-only dry-run reports, staged writes and recovery manifests. Original timestamps, calibration references and PNG/data bytes are retained. Read-only copy sources may have any observation state; every modified observation (copy destination, both sides of a move, or delete source) must be ABORTED. Recorded non-SKY edits, incompatible insertions and filename collisions are blocked. Unrecorded EMPTY/UNKNOWN plan entries can be renumbered alongside their target.

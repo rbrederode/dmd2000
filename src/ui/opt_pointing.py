@@ -193,7 +193,7 @@ def pointing_details(target, scans):
     return sections
 
 
-def save_pointing_chart(frames, location, path):
+def save_pointing_chart(frames, location, path, observation_id):
     from obs.animation import generate_star_chart
     from matplotlib import pyplot as plt
     first = frames[0]
@@ -207,8 +207,7 @@ def save_pointing_chart(frames, location, path):
     try:
         axis.imshow(chart)
         axis.axis('off')
-        measured = sum(frame.pointing_source == 'first_pointing_reference' for frame in frames)
-        axis.set_title(f"{len(frames)} physical scans · {measured} first pointing references\n"
+        axis.set_title(f"{observation_id}\n"
                        f"Cyan crosses: scan pointings · Sky background: {first.time:%Y-%m-%d %H:%M:%S} UTC")
         figure.savefig(path, bbox_inches='tight', dpi=140)
     finally:
@@ -254,7 +253,7 @@ def render_pointing_product(request, out, progress):
         progress(f"Preparing sky view {index+1}/{len(charts)}", .1+.25*index/len(charts))
         try:
             frames, location, chart_errors = load_frames(source, chart_row, include_spectra=False)
-            save_pointing_chart(frames, location, out / chart_name)
+            save_pointing_chart(frames, location, out / chart_name, result['observation'])
         except ValueError as exc:
             chart_row.setdefault('view_errors', {})['pointing'] = str(exc)
             errors.append(str(exc))

@@ -190,3 +190,90 @@ def test_delete_failure_preserves_original_file(api, monkeypatch):
     monkeypatch.setattr(module.os, 'replace', fail)
     assert api.client.delete(api.url + '/' + api.identifier, headers=api.headers).status_code == 503
     assert api.path.read_bytes() == before
+
+
+@pytest.mark.parametrize('api', ['weather-stations'], indirect=True)
+def test_weather_shared_policy_and_station_edits_share_one_revision_without_losing_data(api):
+    raw = json.loads(api.path.read_text())
+    raw['weather_metrics'] = {'ws001': {'sample_count':7}}
+    raw['last_mth_alarm_count'] = 2
+    api.path.write_text(json.dumps(raw))
+    result = api.client.get(api.url, headers=api.headers)
+    assert result.json['payload']['settings']['retention_period'] == 300
+    assert result.json['payload']['settings']['threshold_wind_count'] == 3
+    revision = result.headers['ETag']
+    settings = dict(weather_enabled=False, threshold_timeout=45, retention_period=900, summary_window=120,
+                    threshold_wind_avg=15, threshold_wind_gust=20, threshold_wind_count=4, threshold_precipitation=7)
+    response = api.client.patch('/api/weather-settings', json=settings, headers={**api.headers, 'If-Match':revision})
+    assert response.status_code == 200
+    assert response.json['payload']['profile'] == 'first'
+    after = json.loads(api.path.read_text())
+    assert after['weather_stations'] == raw['weather_stations']
+    assert after['weather_metrics'] == raw['weather_metrics']
+    assert after['custom_metadata'] == raw['custom_metadata']
+    assert after['last_mth_alarm_count'] == 2
+    assert type(after['threshold_wind_avg']) is float
+    assert type(after['threshold_wind_count']) is int
+    assert api.client.patch(api.url+'/ws001', json={'location':'Stale'}, headers={**api.headers, 'If-Match':revision}).status_code == 412
+    updated = api.client.patch(api.url+'/ws001', json={'location':'New location'}, headers={**api.headers, 'If-Match':response.headers['ETag']})
+    assert updated.status_code == 200
+    assert api.client.patch('/api/weather-settings', json={'retention_period':600}, headers={**api.headers, 'If-Match':response.headers['ETag']}).status_code == 412
+    assert api.client.get('/api/weather-settings', headers=api.headers).json['payload']['settings'] == settings
+    model = WeatherStationList.load_from_disk(input_dir=api.path.parent, filename=api.path.name)
+    assert model.retention_period == 900 and model.weather_stations[0].location == 'New location'
+
+
+@pytest.mark.parametrize('api', ['weather-stations'], indirect=True)
+@pytest.mark.parametrize('patch', [{'weather_enabled':1}, {'threshold_wind_avg':True}, {'threshold_timeout':1.5},
+    {'retention_period':-1}, {'summary_window':float('nan')}, {'threshold_wind_gust':float('inf')},
+    {'threshold_wind_count':True}, {'threshold_precipitation':-1}, {'weather_data':[]}, {}])
+def test_invalid_weather_policy_never_changes_file(api, patch):
+    revision = api.client.get(api.url, headers=api.headers).headers['ETag']
+    before = api.path.read_bytes()
+    response = api.client.patch('/api/weather-settings', json=patch, headers={**api.headers, 'If-Match':revision})
+    assert response.status_code == 400
+    assert api.path.read_bytes() == before
+
+
+@pytest.mark.parametrize('api', ['weather-stations'], indirect=True)
+def test_weather_policy_auth_profile_guard_revision_and_atomic_failure(api, monkeypatch):
+    before = api.path.read_bytes()
+    assert api.client.get('/api/weather-settings').status_code == 401
+    assert api.client.patch('/api/weather-settings', json={'weather_enabled':False}).status_code == 401
+    assert api.client.patch('/api/weather-settings', json={'weather_enabled':False}, headers=api.headers).status_code == 428
+    assert api.client.get('/api/weather-settings', headers={**api.headers, 'X-Config-Profile':'other'}).status_code == 409
+    revision = api.client.get('/api/weather-settings', headers=api.headers).headers['ETag']
+    def fail(*args):
+        raise OSError('test replace failure')
+    monkeypatch.setattr('web.profile_store.os.replace', fail)
+    assert api.client.patch('/api/weather-settings', json={'weather_enabled':False}, headers={**api.headers, 'If-Match':revision}).status_code == 503
+    assert api.path.read_bytes() == before
+
+
+@pytest.mark.parametrize('api', ['weather-stations'], indirect=True)
+def test_weather_driver_fields_and_simulation_persist_and_roundtrip(api):
+    result = api.client.get(api.url, headers=api.headers)
+    assert {'UNKNOWN','MODBUS','ADS1115'} == set(result.json['payload']['driver_types'])
+    assert result.json['payload']['driver_types']['MODBUS']['driver_poll_period'] == 1000
+    changes = {'driver_type':'MODBUS','driver_config':{'port':'/dev/sensor-test','driver_poll_period':250,'slave_address':3},'sim_mode':'windy'}
+    result = api.client.patch(api.url+'/ws001', json=changes, headers={**api.headers,'If-Match':result.headers['ETag']})
+    assert result.status_code == 200
+    config = result.json['payload']['weather_station']
+    assert config['driver_config']['port'] == '/dev/sensor-test'
+    assert config['driver_config']['driver_poll_period'] == 250
+    assert config['sim_mode'] == 'windy'
+    model = WeatherStationList.load_from_disk(input_dir=api.path.parent, filename=api.path.name)
+    assert model.weather_stations[0].driver_type.name == 'MODBUS'
+    assert model.weather_stations[0].driver_config.driver_poll_period == 250
+    assert 'driver_poll_period' not in model.weather_stations[0].to_dict()
+    for patch in [{'driver_config':{'driver_poll_period':0}}, {'driver_config':{'unknown':1}},
+                  {'driver_config':{'driver_poll_period':True}}, {'sim_mode':'bad'},
+                  {'driver_type':'INVALID'}, {'driver_failures':2}]:
+        before=api.path.read_bytes()
+        response=api.client.patch(api.url+'/ws001', json=patch, headers={**api.headers,'If-Match':result.headers['ETag']})
+        assert response.status_code == 400
+        assert api.path.read_bytes() == before
+    response=api.client.patch(api.url+'/ws001',json={'driver_type':'ADS1115','driver_config':{'adc_backend':'mock','adc_channel':1}},headers={**api.headers,'If-Match':result.headers['ETag']})
+    assert response.status_code == 200
+    config=response.json['payload']['weather_station']['driver_config']
+    assert config['adc_channel']==1 and 'port' not in config

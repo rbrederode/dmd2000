@@ -45,7 +45,11 @@
           <button type="button" data-tab="access"><svg class="ico"><use href="#i-shield" /></svg>Access</button>
         </nav>
 
-        <div class="zk-grow"></div>
+        <div class="zk-header-times" aria-label="Local, UTC and observatory sidereal time">
+          <span id="browser-local-time" role="timer" aria-live="off">Local —</span>
+          <span id="browser-utc-time" role="timer" aria-live="off">UTC —</span>
+          <span id="observatory-lst" role="timer" aria-live="off">LST —</span>
+        </div>
         <label class="zk-global-profile" title="Working Config Profile for configuration and observation processing. Running applications keep their launch Config Profiles; RESYNC reloads those Config Profiles.">Config Profile
           <select class="zk-select" id="dish-profile" data-global-profile aria-label="Config Profile" disabled><option value="">Connect to WEB</option></select>
         </label>
@@ -92,24 +96,37 @@
 
           <div class="metric-grid">
             <article class="zk-card metric-card">
-              <span class="zk-eyebrow">Telescope manager</span>
+              <span class="zk-eyebrow">Applications</span>
               <strong data-status-value="tm.state">—</strong>
-              <span class="zk-muted" data-status-value="tm.detail">—</span>
+              <div class="status-app-connections-summary">
+                <div><button type="button" class="status-connections-link zk-muted" id="status-connections-open" aria-expanded="false" aria-controls="status-connections-pane">App Connections</button><span class="zk-muted" data-status-value="tm.detail" hidden></span></div>
+                <div class="zk-muted status-summary-divider" data-status-value="tm.connections">—</div>
+              </div>
             </article>
             <article class="zk-card metric-card">
-              <span class="zk-eyebrow">Dish manager</span>
+              <span class="zk-eyebrow" data-status-value="dish.heading">Dishes</span>
               <strong data-status-value="dish.state">—</strong>
               <span class="zk-muted" data-status-value="dish.detail">—</span>
+              <div class="status-dish-operational" data-status-value="dish.operational" hidden>
+                <div><button type="button" class="status-connections-link zk-muted" id="status-dishes-open" aria-expanded="false" aria-controls="status-dishes-pane">Operational Capability</button></div>
+                <div class="zk-muted" data-status-value="dish.modes"></div>
+              </div>
             </article>
             <article class="zk-card metric-card">
-              <span class="zk-eyebrow">Digitiser</span>
+              <span class="zk-eyebrow">Digitisers</span>
               <strong data-status-value="digitiser.state">—</strong>
-              <span class="zk-muted" data-status-value="digitiser.detail">—</span>
+              <div class="status-sdr-readings">
+                <div data-status-value="digitiser.label"><button type="button" class="status-connections-link zk-muted" id="status-digitisers-open" aria-expanded="false" aria-controls="status-digitisers-pane">Software Defined Radios</button></div>
+                <div class="zk-muted" data-status-value="digitiser.detail">—</div>
+              </div>
             </article>
             <article class="zk-card metric-card">
               <span class="zk-eyebrow">Weather</span>
               <strong data-status-value="weather.state">—</strong>
-              <span class="zk-muted" data-status-value="weather.detail">—</span>
+              <div class="status-weather-readings">
+                <div class="zk-muted" data-status-value="weather.detail">Wind</div>
+                <div class="zk-muted" data-status-value="weather.wind">—</div>
+              </div>
             </article>
             <article class="zk-card metric-card status-executions" aria-label="Observation Executions">
               <span class="zk-eyebrow">Observation Executions</span>
@@ -123,16 +140,28 @@
             <section class="zk-card panel status-overview">
               <div class="panel-head"><div><h2>Applications</h2><p>Choose an application to inspect its latest reported state.</p></div></div>
               <div class="status-table-scroll"><table class="zk-tbl status-app-table">
-                <thead><tr><th>App</th><th>App ID</th><th title="Profile reported in the application’s launch arguments. Restart the application to change it; RESYNC reloads this Config Profile.">Config Profile</th><th>Health</th><th>State</th><th>Last update UTC</th><th>Availability</th><th>Reliability</th><th>Tracing</th><th>Debug</th></tr></thead>
-                <tbody id="status-apps"><tr><td colspan="10" class="zk-muted">No telescope model received.</td></tr></tbody>
+                <thead><tr><th>App</th><th>App ID</th><th title="Profile reported in the application’s launch arguments. Restart the application to change it; RESYNC reloads this Config Profile.">Config Profile</th><th>Health</th><th>Last update UTC</th><th>Queue Size</th><th title="Mean processing time of processors currently handling an event">Processing time</th><th>Availability</th><th>Reliability</th><th>Tracing</th><th>Debug</th></tr></thead>
+                <tbody id="status-apps"><tr><td colspan="11" class="zk-muted">No telescope model received.</td></tr></tbody>
               </table></div>
               <section id="status-command-response" class="status-command-response" aria-label="Command response" role="status" aria-live="polite" hidden>
                 <h3>Command response</h3><dl class="status-command-result"><div><dt>App</dt><dd id="status-command-app"></dd></div><div><dt>Response time UTC</dt><dd id="status-command-time"></dd></div><div><dt>Status</dt><dd id="status-command-status"></dd></div><div><dt>Message</dt><dd id="status-command-message"></dd></div></dl>
               </section>
             </section>
+            <section class="zk-card panel" id="status-connections-pane" aria-label="App Connections" hidden>
+              <div class="panel-head"><div><h2>App Connections</h2><p>Persistent application connection status is shown in the below table. These connections are expected to be established between applications at all times. On-demand entity connections are not shown here</p></div><button class="zk-icon-btn" id="status-connections-close" type="button" aria-label="Close app connections"><svg class="ico"><use href="#i-x" /></svg></button></div>
+              <div class="status-table-scroll"><table class="zk-tbl"><thead><tr><th>Application</th><th>Peer</th><th>Local Role</th><th>Connection</th><th title="Configured host:port; servers show their configured listening address">EndPoint</th></tr></thead><tbody id="status-connections-rows"></tbody></table></div>
+            </section>
+            <section class="zk-card panel status-detail" id="status-digitisers-pane" aria-label="Digitisers" hidden>
+              <div class="panel-head"><h2>Digitisers</h2><button class="zk-icon-btn" id="status-digitisers-close" type="button" aria-label="Close digitisers"><svg class="ico"><use href="#i-x" /></svg></button></div>
+              <div id="status-digitisers-content"></div>
+            </section>
             <section class="zk-card panel status-detail" id="status-detail" aria-label="Selected application details" hidden>
               <div class="panel-head"><div><h2 id="status-detail-title">Application details</h2><p id="status-detail-subtitle"></p></div><button class="zk-icon-btn" id="status-detail-close" type="button" aria-label="Close application details"><svg class="ico"><use href="#i-x" /></svg></button></div>
               <div id="status-detail-content"></div>
+            </section>
+            <section class="zk-card panel status-detail" id="status-dishes-pane" aria-label="Dishes" hidden>
+              <div class="panel-head"><div><h2>Dishes</h2><p id="status-dishes-freshness" class="zk-muted"></p></div><button class="zk-icon-btn" id="status-dishes-close" type="button" aria-label="Close dishes"><svg class="ico"><use href="#i-x" /></svg></button></div>
+              <div id="status-dishes-content"></div>
             </section>
             <section class="zk-card panel status-detail" id="dish-status-pane" aria-label="Selected dish details" hidden>
               <div class="panel-head"><div><h2 id="dish-status-title">Dish details</h2><p id="dish-status-freshness" class="zk-muted"></p></div><button class="zk-icon-btn" id="dish-status-close" type="button" aria-label="Close dish details"><svg class="ico"><use href="#i-x" /></svg></button></div>
@@ -338,9 +367,9 @@
             </aside>
             <section class="zk-card opt-viewer" id="opt-viewer" aria-label="Analysis views">
               <div class="opt-view-tabs" role="tablist" aria-label="Analysis view">
-                <button class="is-active" data-opt-view="signal" type="button" role="tab" aria-selected="true">Signal</button><button data-opt-view="frequency" type="button" role="tab" aria-selected="false">Frequency</button><button data-opt-view="velocity" type="button" role="tab" aria-selected="false">Velocity</button><button data-opt-view="timeline" type="button" role="tab" aria-selected="false">Total Power</button><button data-opt-view="lv" type="button" role="tab" aria-selected="false">L-V Diagram</button><button data-opt-view="pointing" type="button" role="tab" aria-selected="false">Pointing</button><button data-opt-view="details" type="button" role="tab" aria-selected="false">Details</button>
+                <button class="is-active" data-opt-view="signal" type="button" role="tab" aria-selected="true">Signal</button><button data-opt-view="frequency" type="button" role="tab" aria-selected="false">Frequency</button><button data-opt-view="velocity" type="button" role="tab" aria-selected="false">Velocity</button><button data-opt-view="timeline" type="button" role="tab" aria-selected="false">Total Power</button><button data-opt-view="lv" type="button" role="tab" aria-selected="false">L-V Diagram</button><button id="opt-distribution-tab" data-opt-view="distribution" type="button" role="tab" aria-selected="false">SNR Distribution</button><button data-opt-view="pointing" type="button" role="tab" aria-selected="false">Pointing</button><button data-opt-view="details" type="button" role="tab" aria-selected="false">Details</button>
               </div>
-              <div class="opt-plot-head"><div><strong id="opt-selected-title">Select a scan</strong><span class="zk-muted" id="opt-selected-detail">Completed aggregates are available after processing.</span></div><div class="zk-actions"><span id="opt-lab-controls" hidden><label><input id="opt-lab" type="checkbox" /> LAB survey</label> <label>Beam FWHM [°] <input id="opt-lab-beam" class="zk-input opt-lab-beam" type="number" value="5" min="0.1" max="60" step="0.5" /></label></span><label id="opt-terminal-label" hidden>Terminal velocity <select id="opt-terminal" class="zk-select" title="Measure the positive LSRK edge of the observation within the selected velocity limits. Threshold and Connected use the pipeline QA noise policy; Erfc fits an automatically selected falling wing."><option value="none" selected>No method</option><option value="threshold">Threshold edge</option><option value="connected">Connected edge</option><option value="erfc">Erfc wing fit</option></select></label><label id="opt-timeline-resolution-label" hidden>Resolution <select id="opt-timeline-resolution" class="zk-select"><option value="seconds" selected>Per second</option><option value="scans">Per scan</option></select></label><label id="opt-timeline-mean-label" hidden><input id="opt-timeline-mean" type="checkbox" checked /> Show mean</label><label id="opt-timeline-overlay-label" hidden><input id="opt-timeline-overlay" type="checkbox" checked /> All SKY aggregates</label><label id="opt-frequency-overlay-label" hidden><input id="opt-frequency-overlay" type="checkbox" checked /> All SKY aggregates</label><label id="opt-overlay-label" hidden><input id="opt-overlay" type="checkbox" checked /> All SKY aggregates</label><a class="zk-btn is-sm" id="opt-image-link" target="_blank" rel="noopener" hidden>Open image ↗</a></div>
+              <div class="opt-plot-head"><button id="opt-view-help" type="button" class="opt-pipeline-help-button opt-view-help" aria-label="Help for plot settings" aria-haspopup="dialog" aria-controls="opt-view-help-dialog">?</button><div><strong id="opt-selected-title">Select a scan</strong><span class="zk-muted" id="opt-selected-detail">Completed aggregates are available after processing.</span></div><div class="zk-actions"><span id="opt-lab-controls" hidden><label><input id="opt-lab" type="checkbox" /> LAB survey</label> <label>Beam FWHM [°] <input id="opt-lab-beam" class="zk-input opt-lab-beam" type="number" value="5" min="0.1" max="60" step="0.5" /></label></span><label id="opt-terminal-label" hidden>Terminal velocity <select id="opt-terminal" class="zk-select" title="Measure the positive LSRK edge of the observation within the selected velocity limits. Threshold and Connected use the pipeline QA noise policy; Erfc fits an automatically selected falling wing."><option value="none" selected>No method</option><option value="threshold">Threshold edge</option><option value="connected">Connected edge</option><option value="erfc">Erfc wing fit</option></select></label><label id="opt-timeline-resolution-label" hidden>Resolution <select id="opt-timeline-resolution" class="zk-select"><option value="seconds" selected>Per second</option><option value="scans">Per scan</option></select></label><label id="opt-timeline-mean-label" hidden><input id="opt-timeline-mean" type="checkbox" checked /> Show mean</label><label id="opt-timeline-overlay-label" hidden><input id="opt-timeline-overlay" type="checkbox" checked /> All SKY aggregates</label><label id="opt-frequency-overlay-label" hidden><input id="opt-frequency-overlay" type="checkbox" checked /> All SKY aggregates</label><label id="opt-overlay-label" hidden><input id="opt-overlay" type="checkbox" checked /> All SKY aggregates</label><span id="opt-distribution-controls" class="zk-actions" hidden><label>SNR <select id="opt-distribution-snr" class="zk-select"><option value="velocity_snr">Velocity</option><option value="frequency_snr">Frequency</option></select></label><label>Cell width [°] <input id="opt-distribution-width" class="zk-input opt-lab-beam" type="number" min="0.1" max="360" step="1" value="15" /></label><label>Cell height [°] <input id="opt-distribution-height" class="zk-input opt-lab-beam" type="number" min="0.1" max="180" step="1" value="15" /></label><label>Cell shape <select id="opt-distribution-shape" class="zk-select"><option value="rectangle">Rectangle</option><option value="diamond" selected>Diamond</option></select></label><label>Colours <select id="opt-distribution-stretch" class="zk-select"><option value="linear">Linear</option><option value="asinh">Asinh</option><option value="log" selected>Log (zero-safe)</option></select></label><label>Upper SNR <input id="opt-distribution-max" class="zk-input" type="number" min="0.001" step="any" placeholder="Automatic" title="Blank: maximum for fewer than 30 populated cells; 99th percentile otherwise. Lower limit is always zero." /></label><button id="opt-distribution-update" type="button" class="zk-btn is-sm">Update map</button><a id="opt-distribution-csv" class="zk-btn is-sm">Download CSV</a></span><a class="zk-btn is-sm" id="opt-image-link" target="_blank" rel="noopener" hidden>Open image ↗</a></div>
                 <div id="opt-lab-sweep-controls" class="opt-lab-sweep-controls" hidden>
                   <label><input id="opt-lab-sweep" type="checkbox" checked /> Sweep LAB coordinates</label>
                   <label>Δl min [°] <input class="zk-input" id="opt-lab-lon-min" type="number" value="-10" min="-180" max="180" /></label>
@@ -352,7 +381,7 @@
                   <button id="opt-lab-find" class="zk-btn is-sm" type="button">Find best fit</button>
                 </div>
               </div>
-              <div class="opt-canvas" id="opt-canvas"><div id="opt-placeholder" class="opt-empty"><span class="opt-empty-icon">⌁</span><h2>From recorded scans to a clearer view</h2><p>Choose an observation, review the included scans, then process the complete batch. Select any aggregate to inspect its signal.</p><div class="opt-empty-steps"><span>1 · Review inputs</span><span>2 · Process once</span><span>3 · Explore results</span></div></div><img id="opt-plot" alt="Selected observation analysis plot" hidden /><aside id="opt-pointing-details" class="opt-pointing-details" aria-label="Target and scan position details" hidden></aside><div id="opt-details" hidden></div></div>
+              <div class="opt-canvas" id="opt-canvas"><div id="opt-placeholder" class="opt-empty"><span class="opt-empty-icon">⌁</span><h2>From recorded scans to a clearer view</h2><p>Choose an observation, review the included scans, then process the complete batch. Select any aggregate to inspect its signal.</p><div class="opt-empty-steps"><span>1 · Review inputs</span><span>2 · Process once</span><span>3 · Explore results</span></div></div><section id="opt-distribution-explorer" hidden aria-label="SNR distribution and selected spectrum"><div class="opt-distribution-map-panel"><div class="opt-distribution-map"><img id="opt-distribution-image" alt="SNR distribution; select a measurement dot to inspect its spectrum" /><div id="opt-distribution-dots"></div></div></div><aside class="opt-distribution-preview"><label for="opt-distribution-scan">Preview</label><select id="opt-distribution-scan" class="zk-select" aria-label="Select spectrum preview"></select><p id="opt-distribution-preview-label" class="zk-muted"></p><img id="opt-distribution-spectrum" alt="Selected aggregate spectrum" hidden /><p id="opt-distribution-unavailable" class="zk-muted" hidden></p><a id="opt-distribution-spectrum-link" class="zk-btn is-sm" target="_blank" rel="noopener" hidden>Open spectrum ↗</a></aside></section><img id="opt-plot" alt="Selected observation analysis plot" hidden /><aside id="opt-pointing-details" class="opt-pointing-details" aria-label="Target and scan position details" hidden></aside><div id="opt-details" hidden></div></div>
               <div id="opt-pointing-controls" class="opt-pointing-controls" hidden>
                 <p id="opt-pointing-summary" class="zk-muted">Markers use each physical scan's first recorded pointing and timestamp.</p>
                 <div class="zk-actions">
@@ -384,21 +413,20 @@
           <div class="zk-page-head">
             <div class="zk-title">
               <h1>Configuration</h1>
-              <span class="zk-subtitle">Static telescope artefacts, defaults, limits, and integration settings.</span>
+              <span class="zk-subtitle">Telescope, dish, digitiser and weather configuration.</span>
             </div>
             <div class="zk-actions admin-profile">
-              <button class="zk-btn" type="button" id="dish-refresh" title="Reload the selected Config Profile from disk">Refresh</button>
+              <button class="zk-btn" type="button" id="dish-refresh" title="Reload configuration from disk">Refresh</button>
               <span class="zk-chip is-empty" id="dish-connection">WEB not connected</span>
             </div>
           </div>
           <p id="dish-message" class="dish-message" role="status" aria-live="polite">Open Config to load configuration from WEB.</p>
           <div class="config-tabs-row">
             <div class="zk-subtabs" data-admin-tabs>
-              <button class="is-active" type="button" data-admin-tab="dishes">Dishes</button>
+              <button class="is-active" type="button" data-admin-tab="telescope">Telescope</button>
+              <button type="button" data-admin-tab="dishes">Dishes</button>
               <button type="button" data-admin-tab="digitisers">Digitisers</button>
               <button type="button" data-admin-tab="weather">Weather</button>
-              <button type="button" data-admin-tab="defaults">Defaults</button>
-              <button type="button" data-admin-tab="limits">Limits</button>
             </div>
             <div class="config-resync" aria-label="Resynchronise application configuration">
               <label class="zk-field">App<select class="zk-select" id="config-resync-app" aria-label="Application to resynchronise"><option value="">Select app…</option></select></label>
@@ -406,7 +434,24 @@
               <span id="config-resync-result" class="zk-muted" role="status" aria-live="polite">Reloads the app's Config Profile from disk. Restart the app to use a different Config Profile.</span>
             </div>
           </div>
-          <section class="admin-panel is-active" data-admin-panel="dishes" id="dish-workspace">
+          <section class="zk-card panel admin-panel is-active telescope-config-panel" data-admin-panel="telescope" id="telescope-workspace">
+            <h2>Telescope</h2>
+            <p class="zk-muted">This configuration applies across <strong>all Config Profiles</strong> and is stored in <code>config/telescope.json</code>. It is independent of the Config Profile selected above.</p>
+            <p class="zk-muted">The reference location determines the header LST. Each dish retains its own location for pointing calculations.</p>
+            <form id="telescope-form" hidden>
+              <fieldset id="telescope-fields" disabled>
+                <div class="form-grid">
+                  <label class="zk-field">Name<input class="zk-input" name="name" required maxlength="200" /></label>
+                  <label class="zk-field">Latitude [deg]<input class="zk-input" name="latitude" type="number" min="-90" max="90" step="any" placeholder="Not configured" /></label>
+                  <label class="zk-field">Longitude [deg, east positive]<input class="zk-input" name="longitude" type="number" min="-180" max="180" step="any" placeholder="Not configured" /></label>
+                  <label class="zk-field">Height [m]<input class="zk-input" name="height" type="number" step="any" placeholder="Not configured" /></label>
+                </div>
+              </fieldset>
+              <p class="zk-muted">After saving, select TM above and click RESYNC to apply the changes. The LST clock updates when the new TM snapshot arrives.</p>
+              <div class="zk-actions"><span id="telescope-dirty" class="zk-muted" hidden>Unsaved changes</span><button id="telescope-cancel" class="zk-btn" type="button" disabled>Cancel</button><button id="telescope-save" class="zk-btn is-primary" type="submit" disabled>Save Telescope configuration</button></div>
+            </form>
+          </section>
+          <section class="admin-panel" data-admin-panel="dishes" id="dish-workspace">
             <div class="dish-layout">
               <section class="zk-card panel dish-catalogue" aria-label="Configured dishes">
                 <div class="panel-head"><div><h2>Dishes <span id="dish-count" class="zk-muted"></span></h2><p id="dish-list-profile">No Config Profile loaded</p></div><button class="zk-btn is-primary" type="button" id="dish-new" disabled><svg class="ico"><use href="#i-plus" /></svg>New dish</button></div>
@@ -480,14 +525,47 @@
               </section>
             </div>
           </section>
-          <section class="zk-card panel admin-panel" data-admin-panel="weather">
-            <div class="form-grid"><label class="zk-field">Station ID<input class="zk-input" value="ws001" /></label><label class="zk-field">Location<input class="zk-input" value="Jodrell Bank Observatory" /></label><label class="zk-field">Wind max threshold<input class="zk-input" value="8.0" /></label><label class="zk-field">Sample count minimum<input class="zk-input" value="10" /></label></div>
-          </section>
-          <section class="zk-card panel admin-panel" data-admin-panel="defaults">
-            <div class="form-grid"><label class="zk-field">Default feed<select class="zk-select"><option>H3T_1420</option></select></label><label class="zk-field">Default gain<select class="zk-select"><option>Auto</option></select></label><label class="zk-field">Default spectral resolution<input class="zk-input" value="2048" /></label><label class="zk-field">Default scan duration<input class="zk-input" value="60" /></label></div>
-          </section>
-          <section class="zk-card panel admin-panel" data-admin-panel="limits">
-            <div class="form-grid"><label class="zk-field">Minimum altitude<input class="zk-input" value="30" /></label><label class="zk-field">Maximum observation duration<input class="zk-input" value="02:00:00" /></label><label class="zk-field">Queue horizon days<input class="zk-input" value="14" /></label><label class="zk-field">Student approval required<select class="zk-select"><option>Yes</option><option>No</option></select></label></div>
+          <section class="admin-panel" data-admin-panel="weather" id="weather-config-workspace">
+            <p id="weather-config-profile" class="zk-muted">Weather configuration for the selected Config Profile.</p>
+            <p class="zk-muted">Station definitions and shared monitoring settings are saved in WeatherStationList.json. After saving, select DM and click RESYNC to apply the shared settings and station definitions. Select WS and RESYNC to apply the active station’s driver or simulation changes. Station IDs must match incoming weather readings. Associate a dish with a station using its Weather station ID in Dishes.</p>
+            <div class="dish-layout">
+              <div class="weather-config-sidebar">
+                <section class="zk-card panel">
+                  <div class="panel-head"><h2>Weather stations <span id="weather-config-count" class="zk-muted"></span></h2><button id="weather-config-new" class="zk-btn is-primary" type="button" disabled>+ New station</button></div>
+                  <label class="zk-field">Filter stations<input id="weather-config-filter" class="zk-input" type="search" placeholder="Station ID or location" /></label>
+                  <div class="dish-table-scroll"><table class="zk-tbl"><thead><tr><th>Station ID</th><th>Location</th></tr></thead><tbody id="weather-config-rows"></tbody></table></div>
+                </section>
+                <section class="zk-card panel dish-editor weather-config-settings">
+                  <h2>Shared monitoring settings</h2>
+                  <p class="zk-muted">These settings apply to all weather stations in this Config Profile. Station readings and alarm history are not edited here.</p>
+                  <form id="weather-config-settings-form" hidden><fieldset id="weather-config-settings-fields" disabled>
+                    <label class="zk-field weather-config-enabled"><span><input name="weather_enabled" type="checkbox" /> Weather monitoring enabled</span></label>
+                    <div class="form-grid"><label class="zk-field">Alarm window / data timeout [s]<input class="zk-input" name="threshold_timeout" type="number" min="0" step="1" required /></label>
+                    <label class="zk-field">Retention period [s]<input class="zk-input" name="retention_period" type="number" min="0" step="1" required /></label>
+                    <label class="zk-field">Summary window [s]<input class="zk-input" name="summary_window" type="number" min="0" step="1" required /></label>
+                    <label class="zk-field">Average wind threshold [m/s]<input class="zk-input" name="threshold_wind_avg" type="number" min="0" step="any" required /></label>
+                    <label class="zk-field">Gust speed threshold [m/s]<input class="zk-input" name="threshold_wind_gust" type="number" min="0" step="any" required /></label>
+                    <label class="zk-field">Gust count threshold [samples]<input class="zk-input" name="threshold_wind_count" type="number" min="0" step="1" required /></label>
+                    <label class="zk-field">Precipitation threshold [mm]<input class="zk-input" name="threshold_precipitation" type="number" min="0" step="any" required /></label></div>
+                  </fieldset>
+                  <p class="zk-muted">The alarm window also determines when missing data triggers an alarm. A gust is a sample above the gust-speed threshold; a gust-count alarm occurs when the count exceeds the configured count threshold within that window. Average-wind and average-precipitation alarms also use that window. Retention controls how long readings remain available; the summary window controls rolling summaries.</p>
+                  <div class="dish-form-actions"><span id="weather-config-settings-dirty" class="zk-muted" hidden>Unsaved monitoring changes</span><button id="weather-config-settings-cancel" class="zk-btn" type="button">Cancel</button><button id="weather-config-settings-save" class="zk-btn is-primary" type="submit" disabled>Save monitoring settings</button></div></form>
+                </section>
+              </div>
+              <section class="zk-card panel dish-editor">
+                <h2 id="weather-config-station-title">Choose a weather station</h2>
+                <form id="weather-config-station-form" hidden><fieldset id="weather-config-station-fields" disabled><div class="form-grid">
+                  <label class="zk-field">Station ID<input class="zk-input" name="ws_id" required pattern="[A-Za-z0-9][A-Za-z0-9_-]{0,127}" maxlength="128" /></label>
+                  <label class="zk-field">Location<input class="zk-input" name="location" required /></label>
+                  <label class="zk-field">Latitude [deg]<input class="zk-input" name="latitude" type="number" min="-90" max="90" step="any" placeholder="Optional" /></label>
+                  <label class="zk-field">Longitude [deg, east positive]<input class="zk-input" name="longitude" type="number" min="-180" max="180" step="any" placeholder="Optional" /></label>
+                  <label class="zk-field">Elevation [m]<input class="zk-input" name="elevation" type="number" min="0" step="any" placeholder="Optional" /></label>
+                  <label class="zk-field">Driver<select class="zk-select" name="driver_type"><option value="UNKNOWN">Not configured</option><option value="MODBUS">Modbus RTU</option><option value="ADS1115">ADS1115 ADC</option></select></label>
+                  <label class="zk-field">Simulation<select class="zk-select" name="sim_mode"><option value="off">Off — physical driver</option><option value="calm">Calm</option><option value="windy">Windy</option><option value="stormy">Stormy</option></select></label>
+                  <label class="zk-field">Polling period [ms]<input class="zk-input" name="driver_poll_period" type="number" min="1" step="1" required /></label>
+                </div><details class="dish-driver" open><summary>Driver settings</summary><p class="zk-muted">Simulation does not open the physical device. A launch --sim option overrides the saved simulation mode. Polling period is stored with the driver configuration.</p><div id="weather-config-driver-fields" class="form-grid"></div></details></fieldset><div class="dish-form-actions"><button id="weather-config-delete" class="zk-btn dish-delete" type="button" disabled>Delete station</button><span id="weather-config-station-dirty" class="zk-muted" hidden>Unsaved station changes</span><button id="weather-config-station-cancel" class="zk-btn" type="button">Cancel</button><button id="weather-config-station-save" class="zk-btn is-primary" type="submit" disabled>Save station</button></div></form>
+              </section>
+            </div>
           </section>
         </section>
 
@@ -530,6 +608,10 @@
       <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" /></symbol>
       <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></symbol>
     </svg>
+    <dialog id="opt-view-help-dialog" class="opt-view-help-dialog" aria-labelledby="opt-view-help-title">
+      <div class="opt-view-help-toolbar"><h2 id="opt-view-help-title">Plot settings</h2><button id="opt-view-help-close" class="zk-btn is-sm" type="button">Close</button></div>
+      <div id="opt-view-help-content"></div>
+    </dialog>
     <dialog id="schedule-signal-dialog" class="schedule-signal-dialog" aria-labelledby="schedule-signal-title">
       <div class="schedule-signal-toolbar">
         <h2 id="schedule-signal-title">Scan signal</h2>
@@ -546,10 +628,13 @@
     <script src="dish_status.js"></script>
     <script src="weather_status.js"></script>
     <script src="digitiser_status.js"></script>
+    <script src="sidereal.js"></script>
     <script src="status.js"></script>
     <script src="schedule.js"></script>
     <script src="dishes.js"></script>
     <script src="opt.js"></script>
+    <script src="telescope.js"></script>
+    <script src="weather_config.js"></script>
     <script src="digitisers.js"></script>
     <script src="config_commands.js"></script>
     <script src="accounts.js"></script>

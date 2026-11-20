@@ -27,7 +27,7 @@ function fixture() {
 test('desired/actual tuning keeps drafts during refresh and uses reported scan settings from SDP', async () => {
   const h = fixture();
   assert.match(h.html, /Property configuration/);
-  assert.match(h.html, /Driver and status/);
+  assert.doesNotMatch(h.html, /Driver and status|digitiser-live-info/);
   assert.match(h.html, /<td>2048<\/td>/);
   h.input('gain', '22'); h.input('center_freq', '1.42E+09');
   h.item.model.gain = 18; h.refresh();

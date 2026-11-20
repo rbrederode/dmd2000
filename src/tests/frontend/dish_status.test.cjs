@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { init, info, degrees } = require('../../ui/frontend_prototype/dish_status.js');
-const { applications, detail } = require('../../ui/frontend_prototype/status.js');
+const { applications, detail, dishesTable } = require('../../ui/frontend_prototype/status.js');
 class Element {
   constructor() { this.value = ''; this.listeners = {}; this.classList = { toggle() {} }; }
   addEventListener(name, fn) { this.listeners[name] = fn; }
@@ -22,9 +22,13 @@ test('dish table is alphabetical, has compact diagnostics and escaped engineerin
   Object.assign(dish, { latitude: 53.187052, longitude: -2.256079, height: 88,
     diameter: 0.7, fd_ratio: 0.37, feed_type: { value: 'H3T_1420' }, dig_id: 'dig001', driver_type: { value: 'MD01' }, driver_failures: 370 });
   data.telescope_model.dsh_mgr.dish_store.dish_list.push({ ...dish, dsh_id: 'dish001' });
-  const html = detail(applications(data.telescope_model)[0]);
+  const html = dishesTable(data.telescope_model.dsh_mgr);
+  const manager = detail(applications(data.telescope_model)[0]);
+  assert.match(manager, /status-diagnostics-grid/);
+  assert.match(manager, /Weather monitoring/);
+  assert.doesNotMatch(manager, /status-dish-table/);
   assert.ok(html.indexOf('data-status-dish="dish001"') < html.indexOf('data-status-dish="dish002"'));
-  for (const value of ['status-diagnostics-grid', 'Capability', 'Weather', '2026-11-06 12:00:00 UTC', '&lt;error&gt;']) assert.ok(html.includes(value));
+  for (const value of ['Capability', '2026-11-06 12:00:00 UTC', '&lt;error&gt;']) assert.ok(html.includes(value));
   assert.doesNotMatch(html, /<th>(Diameter \[m\]|F\/D|Digitiser)<\/th>/);
   assert.match(html, /<th>Dish \/ Description<\/th><th>Feed<\/th><th>Driver type<\/th><th>Mode<\/th>/);
   assert.match(html, /<td>H3T_1420<\/td><td>MD01<\/td>/);
@@ -55,7 +59,7 @@ test('model refresh updates actual pointing while preserving a desired selection
   dish.mode = { value: 'STOW' }; dish.pointing_altaz.alt = 88;
   control.update(data);
   assert.equal(get('mode').value, 'MAINTENANCE');
-  const overview = detail(applications(data.telescope_model)[0]);
+  const overview = dishesTable(data.telescope_model.dsh_mgr);
   assert.match(overview, /<th>Pointing<\/th><th>Actual AltAz<\/th>/);
   assert.match(overview, /<td>STOW<\/td>/);
   assert.match(overview, /<td>88.0°, 1.3°<\/td>/);
@@ -63,7 +67,7 @@ test('model refresh updates actual pointing while preserving a desired selection
   assert.equal(get('error-time').textContent, '2026-11-06 12:00:00 UTC');
 });
 
-test('shared weather is displayed above the table and preserves any reported alarm', () => {
+test('shared weather remains in the manager pane and preserves any reported alarm', () => {
   const { data, dish } = fixture();
   const manager = data.telescope_model.dsh_mgr;
   manager.weather_store = { weather_enabled: true };

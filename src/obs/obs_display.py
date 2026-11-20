@@ -10,7 +10,7 @@ from matplotlib.ticker import AutoMinorLocator, MaxNLocator
 from obs.lsr import HI_REST_FREQUENCY
 from util.convert import select_baseline_windows
 from sdp.spectral_baseline import subtract_baseline as subtract_spectrum_baseline
-from obs.spectral_annotations import annotate_spectral_metrics, place_spectral_metrics
+from obs.spectral_annotations import annotate_spectral_metrics, place_spectral_metrics, measure_spectral_metrics
 from util.lv_plot import reference_lv_colormap, interpolate_lv_contour_column
 from sdp.channel_mask import (
     ChannelFlag,
@@ -136,6 +136,14 @@ def save_frequency_record(record, output_path, observation, baseline, *, fmin=No
             fit_mask |= (frequency - midpoint >= left) & (frequency - midpoint <= right)
     power, correction = subtract_spectrum_baseline(frequency, raw, baseline, fit_mask,
                                           fit_line_free=baseline != "none")
+    metrics = measure_spectral_metrics(frequency, power, low, high, unit="MHz",
+                                      flags=record.get("channel_flags"), velocity=record.get("velocity"),
+                                      qa_settings=record.get("qa_settings"))
+    prepared = {**record, "raw_power": raw, "power": power, "frequency_mhz": frequency,
+                "frequency_limits": (low, high), "frequency_correction": correction,
+                "spectral_metrics": metrics}
+    if output_path is None:
+        return prepared
     order = np.argsort(frequency)
     figure, axes = plt.subplots(figsize=(14, 6))
     try:
@@ -151,12 +159,11 @@ def save_frequency_record(record, output_path, observation, baseline, *, fmin=No
         annotate_spectral_metrics(axes, frequency, power, low, high,
                                   label=f"Tgt {record['target_id']}, Freq {record['freq_scan']}", unit="MHz",
                                   flags=record.get("channel_flags"), velocity=record.get("velocity"),
-                                  qa_settings=record.get("qa_settings"))
+                                  qa_settings=record.get("qa_settings"), metrics=metrics)
         save_velocity_figure(figure, axes, output_path)
     finally:
         plt.close(figure)
-    return {**record, "raw_power": raw, "power": power, "frequency_mhz": frequency,
-            "frequency_limits": (low, high), "frequency_correction": correction}
+    return prepared
 
 
 def save_frequency_overlay(records, output_path, observation, baseline):
@@ -518,12 +525,13 @@ class ObsDisplay:
                 label=f"Tgt {model.tgt_idx}, Freq {model.freq_scan}",
             )
             plot_channel_flags(axes, sorted_velocity, corrected_power, flags[order])
+            metrics = None
             if show_metrics:
-                annotate_spectral_metrics(axes, sorted_velocity, corrected_power, low, high,
+                metrics = annotate_spectral_metrics(axes, sorted_velocity, corrected_power, low, high,
                                           label=f"Tgt {model.tgt_idx}, Freq {model.freq_scan}", flags=flags[order],
                                           qa_settings=metric_settings)
             self.lsr_spectra.append({
-                "target_id": model.tgt_idx, "freq_scan": model.freq_scan,
+                "target_id": model.tgt_idx, "freq_scan": model.freq_scan, "spectral_metrics": metrics,
                 "center_freq": model.center_freq, "direction": direction,
                 "velocity": sorted_velocity.copy(), "power": corrected_power.copy(),
                 "raw_power": sorted_power.copy(),

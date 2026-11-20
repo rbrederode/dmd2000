@@ -301,9 +301,10 @@ class BaseModel:
         from models.target import TargetModel, PointingType, OffsetScan, FivePointScan, TargetConfig, TargetScanSet
         from models.temp import TempReading
         from models.tm import TelescopeManagerModel, ResourceAllocations, Allocation, AllocationState
-        from models.ui import UIDriverType, UIDriver
-        from models.ws import WeatherData, WeatherStation, WeatherSummary, WeatherStationList, WeatherStationModel, WeatherStationDriverType
+        from models.ui import UIDriverType, UIDriver, UIDriverList
+        from models.ws import WeatherData, WeatherStation, WeatherSummary, WeatherStationList, WeatherStationModel, WeatherStationDriverType, WeatherDriverConfig
         from models.web import WebServerModel
+        from models.telescope import TelescopeConfig
         
         if isinstance(v, np.integer):
             return int(v)
@@ -316,6 +317,14 @@ class BaseModel:
 
             model_type = v["_type"]
 
+            if model_type == "UIDriverList":
+                return UIDriverList(**{key: BaseModel._deserialise(value)
+                                       for key, value in v.items() if key != '_type'})
+            if model_type == "WeatherDriverConfig":
+                return WeatherDriverConfig(**v)
+            if model_type == "TelescopeConfig":
+                return TelescopeConfig(**{key: BaseModel._deserialise(value)
+                                          for key, value in v.items() if key != '_type'})
             if model_type == "WebServerModel":
                 return WebServerModel(**{key: BaseModel._deserialise(value)
                                          for key, value in v.items() if key != '_type'})

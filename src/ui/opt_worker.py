@@ -53,6 +53,11 @@ def run(folder):
     def progress(message, fraction):
         atomic_json(folder / "progress.json", {"message": message, "progress": fraction})
 
+    if request.get("distribution_product"):
+        from ui.opt_distribution import render_distribution_product
+        result = render_distribution_product(request, out, progress)
+        finish(request, out, result, progress)
+        return
     if request.get("pointing_product"):
         from ui.opt_pointing import render_pointing_product
         result = render_pointing_product(request, out, progress)
@@ -111,6 +116,7 @@ def run(folder):
                "id": identifier, "scan_id": model.scan_id, "target_id": model.tgt_idx,
                "freq_scan": model.freq_scan, "digitiser": model.dig_id, "kind": model.scan_type.name,
                "status": model.status.name, "frequency_mhz": model.center_freq / 1e6,
+               "gain_db": float(model.gain), "centre_freq_hz": float(model.center_freq), "sample_rate_hz": float(model.sample_rate),
                "iterations": int(scan.get_loaded_seconds()), "input_scans": len(contributing),
                "integration_s": float(sum(entry.get("secs", 0) for key, entry in obs.int_data_arrays.items()
                                     if key[0] == model.tgt_idx and key[1] == model.freq_scan)),
@@ -156,6 +162,7 @@ def run(folder):
                 if fig is not None:
                     row["views"]["velocity"] = filename
                     native = selected.lsr_spectra[0]
+                    row["velocity_metrics"] = native.get("spectral_metrics")
                     # LSRK order is the reverse of native increasing frequency.
                     frequency = np.sort(frequency)[::-1]
                     galactic = native["direction"].galactic
@@ -193,6 +200,7 @@ def run(folder):
                                       obs.obs_model.obs_id, settings["baseline"],
                                       fmin=settings.get("frequency_min_mhz"), fmax=settings.get("frequency_max_mhz"))
                 row["views"]["frequency"] = frequency_filename
+                row["frequency_metrics"] = corrected_frequency["spectral_metrics"]
                 frequency_records.append(corrected_frequency)
             except ValueError as exc:
                 row.setdefault("view_errors", {})["frequency"] = str(exc)
@@ -235,6 +243,8 @@ def run(folder):
         plt.close("all")
     if not any(row["views"].get("signal") for row in result["aggregates"]):
         raise ValueError("Signal displays could not be rendered. Inspect the processing log.")
+    from ui.opt_distribution import export_distribution
+    export_distribution(result, out)
     np.savez_compressed(out / "native-spectra.npz", **native_arrays)
     atomic_json(out / "native-spectra.json", native_labels)
     result["pointing_cache"] = pointing_cache.save(out, obs.obs_model)

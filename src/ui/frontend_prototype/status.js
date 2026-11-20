@@ -29,6 +29,12 @@
   const healthClass = (value) => ({ OK: 'is-live', DEGRADED: 'is-warn', FAILED: 'is-bad' }[unwrap(value)] || 'is-empty');
   const chip = (value) => `<span class="zk-chip ${healthClass(value)}">${escape(display(value))}</span>`;
   const endpoint = (host, port) => host && port ? host + ':' + port : '—';
+  function tmDisconnected(telescope, type, model) {
+    if (type === 'tm') return false;
+    const connection = type === 'dig' ? model?.tm_connected
+      : telescope.tel_mgr?.[type + '_connected'] ?? model?.tm_connected;
+    return unwrap(connection) === 'NOT_ESTABLISHED';
+  }
   function activeExecutions(model) {
     const observations = model.oda?.obs_store?.obs_list;
     if (!Array.isArray(observations)) return null;
@@ -65,9 +71,18 @@
       return [...(item.dish_store?.dish_list || [])].sort((a, b) => String(a.dsh_id).localeCompare(String(b.dsh_id)))
         .map(dish => {
           const config = dish.driver_config || {}, driver = unwrap(dish.driver_type), motion = driver === 'MOTION';
+          const network = ['MD01', 'MOTION'].includes(driver);
+          const lastSuccess = unwrap(dish.last_comms_success_dt);
+          const hasSuccess = typeof lastSuccess === 'string' && Number.isFinite(Date.parse(lastSuccess));
+          // These drivers open sockets on demand. Report whether controller
+          // communication succeeds, rather than whether a socket stays open.
+          const state = !network || oldUpdate(dish.last_update) ? 'UNKNOWN'
+            : dish.driver_failures > 0 ? 'NOT_ESTABLISHED'
+              : hasSuccess && dish.driver_failures === 0 ? 'ESTABLISHED'
+                : Object.hasOwn(dish, 'last_comms_success_dt') && !lastSuccess ? 'NOT_ESTABLISHED' : 'UNKNOWN';
           return { peer: dish.dsh_id, host: (motion ? config.imu_host : config.host) || null,
             port: (motion ? config.imu_port : config.port) ?? null, lastSuccess: dish.last_comms_success_dt ?? null,
-            notApplicable: driver === 'DRIFT', role: ['MD01', 'MOTION'].includes(driver) ? 'Client - On demand' : 'Unknown' };
+            state, notApplicable: driver === 'DRIFT', role: network ? 'Client - On demand' : 'Unknown' };
         });
     }
     if (type === 'tm' || type === 'sdp') {
@@ -94,6 +109,58 @@
     if (role === 'SERVER') return 'Server';
     // SDR drivers are hardware/file interfaces rather than registered TCP endpoints.
     return peer.toLowerCase() === 'sdr' && !role ? '—' : 'Unknown';
+  }
+  function consolidatedConnections(model, stale = false) {
+    const apps = applications(model);
+    const byId = new Map(apps.map(item => [item.id.toLowerCase(), item]));
+    const byType = new Map(apps.filter(item => item.type !== 'dig').map(item => [item.type, item]));
+    const pairs = new Map();
+    for (const item of apps) {
+      const args = item.app.arguments || {};
+      const unavailable = stale || oldUpdate(item.updated) || tmDisconnected(model, item.type, item.model);
+      const links = connections(item).map(link => ({ ...link, role: localRole(item, link.peer) }));
+      for (const link of item.entityLinks) {
+        const peerType = ['tm', 'sdp'].includes(item.type) ? 'dig' : link.peer;
+        const role = link.role || localRole(item, peerType);
+        links.push({ ...link, role, endpoint: link.notApplicable ? 'Not Applicable'
+          : role === 'Server' ? endpoint(args[peerType.toLowerCase() + '_host'], args[peerType.toLowerCase() + '_port'])
+            : endpoint(link.host, link.port) });
+      }
+      for (const link of links) {
+        const peer = byId.get(link.peer.toLowerCase()) || byType.get(link.peer.toLowerCase());
+        // Unresolved hardware peers belong to their reporting app, so two SDRs
+        // or controllers cannot collapse merely because their labels match.
+        const key = peer ? JSON.stringify([item.key, peer.key].sort())
+          : JSON.stringify([item.key, 'entity:' + link.peer]);
+        const row = { application: item.id, ...link, peer: peer?.id || link.peer,
+          state: link.notApplicable ? 'Not Applicable' : unavailable ? 'UNKNOWN' : link.state || 'UNKNOWN' };
+        const previous = pairs.get(key);
+        if (!previous) { pairs.set(key, row); continue; }
+        // Prefer the client's view for a stable direction and destination address.
+        const quality = value => (value.role.startsWith('Client') ? 4 : value.role === 'Server' ? 2 : 0)
+          + (value.endpoint !== '—' ? 1 : 0);
+        const preferred = quality(row) > quality(previous) ? row : previous;
+        const states = [previous.state, row.state];
+        const state = states.includes('NOT_ESTABLISHED') ? 'NOT_ESTABLISHED'
+          : states.includes('ESTABLISHED') ? 'ESTABLISHED' : 'UNKNOWN';
+        pairs.set(key, { ...preferred, state,
+          endpoint: preferred.endpoint === '—' ? (preferred === row ? previous.endpoint : row.endpoint) : preferred.endpoint });
+      }
+    }
+    return [...pairs.values()];
+  }
+  function persistentAppConnections(model, stale = false) {
+    const appIds = new Set(applications(model).map(item => item.id.toLowerCase()));
+    const appTypes = new Set(['tm', 'dm', 'sdp', 'ws', 'web']);
+    return consolidatedConnections(model, stale).filter(link =>
+      link.role !== 'Client - On demand' && !link.notApplicable
+      && (appIds.has(link.peer.toLowerCase()) || appTypes.has(link.peer.toLowerCase())));
+  }
+  function consolidatedConnectionTable(model, stale) {
+    const rows = persistentAppConnections(model, stale);
+    return rows.map(link => `<tr><td>${escape(link.application)}</td><td>${escape(link.peer)}</td><td>${escape(link.role)}</td>`
+      + `<td><span class="zk-chip ${link.state === 'ESTABLISHED' ? 'is-live' : link.state === 'NOT_ESTABLISHED' ? 'is-warn' : 'is-empty'}">${escape(link.state)}</span></td>`
+      + `<td>${escape(link.endpoint)}</td></tr>`).join('') || '<tr><td colspan="5">No persistent application connections reported</td></tr>';
   }
   function entityTable(item, entities) {
     if (item.type === 'dm') {
@@ -129,7 +196,7 @@
       ['Scan store', args.scan_store_dir],
     ]);
     if (item.type === 'ws') return kv([
-      ['Driver', model.driver_type], ['Polling period [ms]', model.driver_poll_period],
+      ['Driver', model.driver_type], ['Polling period [ms]', model.driver_config?.driver_poll_period],
       ['Driver failures', model.driver_failures], ['Simulation mode', model.sim_mode],
     ]);
     if (item.type === 'web') return kv([
@@ -137,23 +204,60 @@
       ['TM endpoint', endpoint(args.tm_host, args.tm_port)], ['Config Profile', args.profile],
     ]);
     const dishes = [...(model.dish_store?.dish_list || [])].sort((a, b) => String(a.dsh_id).localeCompare(String(b.dsh_id)));
-    const degrees = value => typeof value === 'number' && Number.isFinite(value) ? value.toFixed(1) + '°' : '—';
-    const columns = [['Feed', 'feed_type'], ['Driver type', 'driver_type'], ['Mode', 'mode'], ['Pointing', 'pointing_state'],
-      ['Actual AltAz', dish => [degrees(dish.pointing_altaz?.alt), degrees(dish.pointing_altaz?.az)].join(', ')],
-      ['Capability', 'capability'], ['Driver Failures', 'driver_failures']];
     const monitoring = unwrap(model.weather_store?.weather_enabled);
     const alarms = dishes.map(dish => unwrap(dish.weather_alarm));
     const weather = alarms.some(alarm => alarm === true) ? ['ALARM', 'is-bad']
       : monitoring === false ? ['Not monitored', 'is-empty']
       : alarms.length && alarms.every(alarm => alarm === false) ? ['Clear', 'is-live'] : ['—', 'is-empty'];
-    return `<dl class="status-kv status-weather-summary"><div><dt>Weather monitoring</dt><dd>${escape(display(monitoring))}</dd></div><div><dt>Weather</dt><dd><span class="zk-chip ${weather[1]}">${weather[0]}</span></dd></div></dl>`
-      + '<p class="zk-muted">Select a dish to inspect its pointing and control Mode, Capability or STOP.</p>'
+    return `<dl class="status-kv status-weather-summary"><div><dt>Weather monitoring</dt><dd>${escape(display(monitoring))}</dd></div><div><dt>Weather</dt><dd><span class="zk-chip ${weather[1]}">${weather[0]}</span></dd></div></dl>`;
+  }
+  function dishesTable(model) {
+    const dishes = [...(model?.dish_store?.dish_list || [])].sort((a, b) => String(a.dsh_id).localeCompare(String(b.dsh_id)));
+    const degrees = value => typeof value === 'number' && Number.isFinite(value) ? value.toFixed(1) + '°' : '—';
+    const columns = [['Feed', 'feed_type'], ['Driver type', 'driver_type'], ['Mode', 'mode'], ['Pointing', 'pointing_state'],
+      ['Actual AltAz', dish => [degrees(dish.pointing_altaz?.alt), degrees(dish.pointing_altaz?.az)].join(', ')],
+      ['Capability', 'capability'], ['Driver Failures', 'driver_failures']];
+    return '<p class="zk-muted status-dishes-help">Select a dish to inspect its pointing and control Mode, Capability or STOP.</p>'
       + '<div class="status-table-scroll"><table class="zk-tbl status-dish-table"><thead><tr><th>Dish / Description</th>'
       + columns.map(([title]) => `<th>${title}</th>`).join('') + '<th>Health</th><th>Last error UTC / Message</th></tr></thead><tbody>'
       + dishes.map(dish => `<tr data-status-dish="${escape(dish.dsh_id)}" tabindex="0" aria-label="Inspect dish ${escape(dish.dsh_id)}"><td><strong>${escape(dish.dsh_id)}</strong><br><span class="zk-muted">${escape(dish.short_desc || '')}</span></td>`
         + columns.map(([, field]) => `<td>${escape(typeof field === 'function' ? field(dish) : display(dish[field]))}</td>`).join('')
         + `<td>${chip(dish.health)}</td><td class="status-dish-error">${dish.last_err_msg ? escape(timestamp(dish.last_err_dt)) + '<br>' + escape(dish.last_err_msg) : '—'}</td></tr>`).join('')
       + (dishes.length ? '' : `<tr><td colspan="${columns.length + 3}">No dishes reported</td></tr>`) + '</tbody></table></div>';
+  }
+
+  function digitisersTable(model, stale = false) {
+    const columns = ['ID', 'SDR Type', 'Gain', 'Centre frequency', 'Sample rate',
+      'Bandwidth', 'Scanning', 'Temp Reading', 'Max Temp',
+      'SDR EEPROM', 'Health', 'Last error UTC / Message'];
+    const items = applications(model).filter(item => item.type === 'dig');
+    const numeric = (value, unit) => typeof value === 'number' && Number.isFinite(value) ? String(value) + (unit ? ' ' + unit : '') : '—';
+    const megahertz = value => typeof value === 'number' && Number.isFinite(value) ? numeric(value / 1000000, 'MHz') : '—';
+    return '<p class="zk-muted status-dishes-help">Select a digitiser to inspect its settings and controls.</p>'
+      + '<div class="status-table-scroll"><table class="zk-tbl status-digitiser-table"><thead><tr>'
+      + columns.map(label => {
+        const split = label.indexOf(' ');
+        return `<th aria-label="${escape(label)}">${split < 0 ? escape(label)
+          : escape(label.slice(0, split)) + '<br>' + escape(label.slice(split + 1))}</th>`;
+      }).join('') + '</tr></thead><tbody>'
+      + items.map(item => {
+        const dig = item.model;
+        const unavailable = stale || oldUpdate(item.updated) || tmDisconnected(model, 'dig', dig);
+        const load = unwrap(dig.load_active);
+        const scanning = dig.scanning == null ? '—' : !digitiserView.scanning(dig.scanning) ? 'OFF'
+          : load === true ? 'LOAD' : load === false ? 'SKY' : '—';
+        const values = [display(dig.sdr_type), numeric(dig.gain, 'dB'), megahertz(dig.center_freq), megahertz(dig.sample_rate),
+          megahertz(dig.bandwidth), scanning,
+          numeric(dig.temp_reading?.temperature, '°C')];
+        const error = dig.app?.last_err_msg || dig.last_err_msg;
+        const errorTime = dig.app?.last_err_msg ? dig.app.last_err_dt : dig.last_err_dt;
+        return `<tr data-status-digitiser="${escape(item.key)}" tabindex="0" aria-label="Inspect ${escape(item.id)}"><td><strong>${escape(item.id)}</strong></td>`
+          + values.map(value => `<td>${unavailable ? '<span class="zk-chip status-unknown">UNKNOWN</span>' : escape(value)}</td>`).join('')
+          + `<td>${escape(numeric(dig.temp_max, '°C'))}</td><td class="status-digitiser-eeprom">${escape(display(dig.sdr_eeprom && Object.keys(dig.sdr_eeprom).length ? dig.sdr_eeprom : null))}</td>`
+          + `<td>${unavailable || item.health === 'UNKNOWN' ? '<span class="zk-chip status-unknown">UNKNOWN</span>' : chip(item.health)}</td>`
+          + `<td class="status-dish-error">${error ? escape(timestamp(errorTime)) + '<br>' + escape(error) : '—'}</td></tr>`;
+      }).join('') + (items.length ? '' : `<tr><td colspan="${columns.length}">No digitisers reported</td></tr>`)
+      + '</tbody></table></div>';
   }
 
   function detail(item, processorsOpen = false, commandPanel = '', digitiserPanel = null) {
@@ -188,11 +292,64 @@
   function init(doc, win, fetcher = fetch) {
     const $ = (id) => doc.getElementById('status-' + id);
     if (!$('workspace')) return;
-    const state = { data: null, apps: [], selected: null, loading: false, commandBusy: null };
+    const state = { data: null, apps: [], selected: null, loading: false, commandBusy: null, connectionsOpen: false, dishesOpen: false, digitisersOpen: false };
     const refreshMarkup = $('refresh').innerHTML;
     const confirmedFlags = new Map();
     const expandedProcessors = new Set();
     const appCommands = new Map();
+    const percentageTrends = new Map();
+    let trendStorageKey = null;
+    const percentageValues = item => ({
+      availability: item.app.availability,
+      reliability: item.app.reliability?.reliability ?? item.app.reliability?.reliability_availability,
+    });
+    function updatePercentageTrends() {
+      const storageKey = 'dmd-percentage-trends:' + (state.data.profile || 'default');
+      if (trendStorageKey !== storageKey) {
+        percentageTrends.clear(); trendStorageKey = storageKey;
+        try {
+          const saved = JSON.parse(win.localStorage?.getItem(storageKey) || '[]');
+          if (Array.isArray(saved)) for (const entry of saved) {
+            if (!Array.isArray(entry)) continue;
+            const [key, value] = entry;
+            if (typeof key === 'string' && Number.isFinite(value?.value)
+                && [null, 'up', 'down', 'unchanged'].includes(value.direction)) percentageTrends.set(key, value);
+          }
+        } catch (_) { /* Trends still work when browser storage is unavailable. */ }
+      }
+      const present = new Set();
+      for (const item of state.apps) {
+        const unavailable = state.data.stale || oldUpdate(item.updated)
+          || tmDisconnected(state.data.telescope_model, item.type, item.model);
+        for (const [metric, value] of Object.entries(percentageValues(item))) {
+          const key = item.key + ':' + metric;
+          present.add(key);
+          if (unavailable) continue; // Hide stale values without forgetting their last trend.
+          if (typeof value !== 'number' || !Number.isFinite(value)) {
+            percentageTrends.delete(key);
+            continue;
+          }
+          const previous = percentageTrends.get(key), report = unwrap(item.updated);
+          // Polling the same retained report must preserve its trend.
+          if (previous && previous.report === report && previous.value === value) continue;
+          // Equal reports keep the direction of the last actual change.
+          const direction = previous ? (value > previous.value ? 'up' : value < previous.value ? 'down'
+            : previous.direction || 'unchanged') : null;
+          percentageTrends.set(key, { value, report, direction });
+        }
+      }
+      for (const key of percentageTrends.keys()) if (!present.has(key)) percentageTrends.delete(key);
+      try { win.localStorage?.setItem(trendStorageKey, JSON.stringify([...percentageTrends])); }
+      catch (_) { /* Browser storage may be unavailable. */ }
+    }
+    function percentageCell(item, metric, unavailable) {
+      if (unavailable) return '<td><span class="zk-chip status-unknown">UNKNOWN</span></td>';
+      const value = percentageValues(item)[metric];
+      const formatted = percent(value);
+      const direction = formatted === '—' ? null : percentageTrends.get(item.key + ':' + metric)?.direction;
+      const arrow = direction ? `<span class="status-percentage-trend is-${direction}" role="img" aria-label="${direction === 'unchanged' ? 'Unchanged' : 'Trending ' + direction}" title="${direction === 'unchanged' ? 'Unchanged' : 'Trending ' + direction}">${{ up: '↑', down: '↓', unchanged: '↔' }[direction]}</span>` : '';
+      return `<td>${formatted}${arrow}</td>`;
+    }
     function commandState(item) {
       if (!appCommands.has(item.key)) appCommands.set(item.key, { options: [], selected: '', value: '', loading: false, loaded: false, error: '', result: null });
       return appCommands.get(item.key);
@@ -255,27 +412,169 @@
     }
     function overview() {
       const model = state.data.telescope_model;
-      const tm = model.tel_mgr?.app || {}, dish = model.dsh_mgr?.dish_store?.dish_list?.[0] || {};
-      const dig = model.dig_store?.dig_list?.[0] || {};
+      const summaryKeys = ['tm.state', 'dish.state', 'digitiser.state', 'weather.state', 'executions.count'];
+      for (const key of summaryKeys) {
+        doc.querySelector('[data-status-value="' + key + '"]')?.classList.toggle('status-summary-unavailable', false);
+      }
+      const dishes = model.dsh_mgr?.dish_store?.dish_list || [];
+      const dish = dishes[0] || {};
+      const dishCounts = Object.fromEntries(['OK', 'DEGRADED', 'FAILED'].map(health =>
+        [health, dishes.filter(item => unwrap(item.health) === health).length]));
+      const dishHealth = dishCounts.FAILED ? 'FAILED' : dishCounts.DEGRADED ? 'DEGRADED' : 'OK';
+      const dm = model.dsh_mgr?.app || {};
+      const dmAged = oldUpdate(dm.last_update);
+      const dmUnknown = dmAged || tmDisconnected(model, 'dm', model.dsh_mgr);
+      const dmUnavailable = dmUnknown || unwrap(dm.health) === 'FAILED';
+      const dmContactMessage = dmAged
+        ? 'No contact for ' + Math.floor((Date.now() - new Date(unwrap(dm.last_update)).getTime()) / 60000) + ' minutes'
+        : 'DM not connected';
+      const digitisers = model.dig_store?.dig_list || [];
+      const digitiserHealth = item => {
+        if (tmDisconnected(model, 'dig', item) || oldUpdate(item.app?.last_update)) return 'UNKNOWN';
+        const health = unwrap(item.app?.health);
+        if (health === 'FAILED') return 'FAILED';
+        if (item.app?.app_running !== true || !['OK', 'DEGRADED'].includes(health)) return 'UNKNOWN';
+        return health;
+      };
+      const digitiserCounts = { FAILED: 0, UNKNOWN: 0, DEGRADED: 0, OK: 0 };
+      for (const item of digitisers) digitiserCounts[digitiserHealth(item)]++;
+      const digitiserHealthState = Object.keys(digitiserCounts).find(health => digitiserCounts[health] > 0);
       const weather = model.dsh_mgr?.weather_store?.weather_summaries?.[0] || {};
-      setText('tm.state', unwrap(tm.health)); setText('tm.detail', 'Queue ' + display(tm.queue_size));
-      setText('dish.state', unwrap(dish.pointing_state) || unwrap(dish.mode)); setText('dish.detail', dish.dsh_id);
-      setText('digitiser.state', state.apps.find((app) => app.type === 'dig')?.state); setText('digitiser.detail', dig.dig_id);
-      setText('weather.state', dish.dsh_id ? (dish.weather_alarm ? 'ALARM' : 'SAFE') : null);
-      setText('weather.detail', weather.ws_id ? 'Wind avg ' + display(weather.wind_avg) + ' m/s' : null);
+      const appCounts = { FAILED: 0, UNKNOWN: 0, DEGRADED: 0, OK: 0 };
+      for (const item of state.apps) {
+        const health = oldUpdate(item.updated) || tmDisconnected(model, item.type, item.model) ? 'UNKNOWN' : item.health;
+        appCounts[Object.hasOwn(appCounts, health) ? health : 'UNKNOWN']++;
+      }
+      const appHealth = Object.keys(appCounts).find(health => appCounts[health] > 0);
+      setText('tm.state', appHealth ? appCounts[appHealth] + ' ' + appHealth : null);
+      const appState = doc.querySelector('[data-status-value="tm.state"]');
+      appState?.classList.toggle('status-summary-failed', ['FAILED', 'UNKNOWN'].includes(appHealth));
+      appState?.classList.toggle('status-summary-warning', appHealth === 'DEGRADED');
+      appState?.classList.toggle('status-summary-ok', appHealth === 'OK');
+      const reportedLinks = persistentAppConnections(model, state.data.stale);
+      const established = reportedLinks.filter(link => link.state === 'ESTABLISHED').length;
+      const notEstablished = reportedLinks.filter(link => link.state === 'NOT_ESTABLISHED').length;
+      setText('tm.detail', 'App Connections');
+      const connectionsButton = $('connections-open');
+      if (connectionsButton) connectionsButton.hidden = state.data.tm_connected === false || !!state.data.stale;
+      const appDetail = doc.querySelector('[data-status-value="tm.detail"]');
+      if (appDetail) appDetail.hidden = true;
+      setText('tm.connections', 'Established ' + established + ' · Not Established ' + notEstablished);
+      const appConnections = doc.querySelector('[data-status-value="tm.connections"]');
+      if (appConnections) appConnections.hidden = false;
+      setText('dish.heading', dmUnavailable ? 'Dish Manager' : 'Dishes');
+      setText('dish.state', dmUnavailable ? (dmUnknown ? 'UNKNOWN' : 'FAILED')
+        : dishes.length ? dishCounts[dishHealth] + ' ' + dishHealth : null);
+      setText('dish.detail', '');
+      const dishState = doc.querySelector('[data-status-value="dish.state"]');
+      const dishDetail = doc.querySelector('[data-status-value="dish.detail"]');
+      if (dishState) dishState.hidden = false;
+      if (dishDetail) dishDetail.hidden = true;
+      const operationalModes = dishes.filter(item => ['OPERATE_FULL', 'OPERATE_DEGRADED'].includes(unwrap(item.capability)))
+        .map(item => unwrap(item.mode));
+      setText('dish.modes', 'Standby ' + operationalModes.filter(mode => ['STANDBY_LP', 'STANDBY_FP'].includes(mode)).length
+        + ' · Stow ' + operationalModes.filter(mode => mode === 'STOW').length
+        + ' · Operate ' + operationalModes.filter(mode => mode === 'OPERATE').length);
+      const dishModes = doc.querySelector('[data-status-value="dish.modes"]');
+      if (dmUnknown) setText('dish.modes', dmContactMessage);
+      if (dishModes) dishModes.hidden = !dmUnknown && (dmUnavailable || !dishes.length);
+      const dishOperational = doc.querySelector('[data-status-value="dish.operational"]');
+      if (dishOperational) dishOperational.hidden = !dmUnknown && (dmUnavailable || !dishes.length);
+      dishState?.classList.toggle('status-summary-warning', !dmUnavailable && dishes.length > 0 && dishHealth === 'DEGRADED');
+      dishState?.classList.toggle('status-summary-failed', dmUnavailable || (dishes.length > 0 && dishHealth === 'FAILED'));
+      dishState?.classList.toggle('status-summary-ok', !dmUnavailable && dishes.length > 0 && dishHealth === 'OK');
+      dishState?.classList.toggle('status-manager-unavailable', dmUnavailable);
+      setText('digitiser.state', digitiserHealthState ? digitiserCounts[digitiserHealthState] + ' ' + digitiserHealthState : null);
+      const scanning = digitisers.filter(item => digitiserHealth(item) !== 'UNKNOWN' && item.scanning).length;
+      const connectedSdrs = digitisers.filter(item => digitiserHealth(item) !== 'UNKNOWN'
+        && unwrap(item.sdr_connected) === 'ESTABLISHED').length;
+      setText('digitiser.detail', 'Connected ' + connectedSdrs + ' · Scanning ' + scanning);
+      const digitiserLabel = doc.querySelector('[data-status-value="digitiser.label"]');
+      if (digitiserLabel) digitiserLabel.hidden = false;
+      const digitiserDetail = doc.querySelector('[data-status-value="digitiser.detail"]');
+      digitiserDetail?.classList.toggle('status-summary-divider', true);
+      const digitiserState = doc.querySelector('[data-status-value="digitiser.state"]');
+      digitiserState?.classList.toggle('status-summary-warning', digitiserHealthState === 'DEGRADED');
+      digitiserState?.classList.toggle('status-summary-failed', ['FAILED', 'UNKNOWN'].includes(digitiserHealthState));
+      digitiserState?.classList.toggle('status-summary-ok', digitiserHealthState === 'OK');
+      const weatherStore = model.dsh_mgr?.weather_store || {};
+      const metrics = weatherStore.weather_metrics?.[weather.ws_id];
+      const station = model.wtr_stn;
+      const weatherUnknown = !station || station.app?.app_running !== true
+        || oldUpdate(station.app?.last_update) || tmDisconnected(model, 'ws', station)
+        || unwrap(station.dm_connected) === 'NOT_ESTABLISHED'
+        || unwrap(model.dsh_mgr?.ws_connected) === 'NOT_ESTABLISHED';
+      const weatherAlarm = unwrap(weatherStore.weather_enabled) !== false
+        && (typeof metrics?.alarm_triggered === 'boolean' ? metrics.alarm_triggered
+          : (model.dsh_mgr?.dish_store?.dish_list || []).some(item => unwrap(item.weather_alarm) === true));
+      setText('weather.state', weatherUnknown ? 'UNKNOWN' : weatherAlarm ? 'ALARM' : 'SAFE');
+      const weatherState = doc.querySelector('[data-status-value="weather.state"]');
+      weatherState?.classList.toggle('status-summary-failed', weatherUnknown);
+      weatherState?.classList.toggle('weather-alarm-active', !weatherUnknown && weatherAlarm);
+      weatherState?.classList.toggle('status-summary-ok', !weatherUnknown && !weatherAlarm);
+      const windValue = value => typeof value === 'number' && Number.isFinite(value) ? value.toFixed(2) : '—';
+      setText('weather.detail', 'Wind');
+      setText('weather.wind', 'Avg ' + windValue(metrics?.avg_wind) + ' m/s · Gust '
+        + windValue(metrics?.max_wind) + ' m/s');
+      const weatherWind = doc.querySelector('[data-status-value="weather.wind"]');
+      if (weatherWind) weatherWind.hidden = false;
       const executions = activeExecutions(model);
       setText('executions.count', executions === null ? null : executions.length + ' in progress');
-      $('executions').innerHTML = executions === null ? '<li class="zk-muted">Execution information unavailable.</li>'
-        : executions.length ? executions.map((obs) => `<li><span class="status-execution-id">${escape(display(obs.obs_id))}</span><span class="zk-muted">${escape(display(obs.dsh_id))} · ${escape(display(obs.obs_state))}</span></li>`).join('')
-          : '<li class="zk-muted">No observations in progress.</li>';
+      const sdpUnknown = !model.sdp || model.sdp.app?.app_running === false
+        || tmDisconnected(model, 'sdp', model.sdp) || oldUpdate(model.sdp?.app?.last_update);
+      const scanCount = key => !sdpUnknown && Number.isInteger(model.sdp?.[key]) && model.sdp[key] >= 0 ? model.sdp[key] : 'UNKNOWN';
+      $('executions').innerHTML = '<li class="zk-muted">Scans</li><li class="zk-muted">'
+        + (sdpUnknown ? 'SDP not connected.' : 'WIP ' + scanCount('scans_wip')
+          + ' · Aborted ' + scanCount('scans_aborted') + ' · Completed ' + scanCount('scans_completed')) + '</li>';
+      if (state.data.tm_connected === false || state.data.stale) {
+        if (appConnections) appConnections.hidden = true;
+        if (dishModes) dishModes.hidden = true;
+        if (dishOperational) dishOperational.hidden = true;
+        if (weatherWind) weatherWind.hidden = true;
+        const received = new Date(unwrap(state.data.received_at || state.data.snapshot_at)).getTime();
+        const seconds = Math.max(state.data.age_seconds || 0, Number.isFinite(received) ? (Date.now() - received) / 1000 : 0);
+        const message = seconds > 120 ? 'No contact for ' + Math.floor(seconds / 60) + ' minutes' : 'Lost contact with TM';
+        setText('dish.heading', 'Dish Manager');
+        for (const key of summaryKeys) {
+          setText(key, 'UNKNOWN');
+          const node = doc.querySelector('[data-status-value="' + key + '"]');
+          node?.classList.toggle('status-summary-unavailable', true);
+          if (node) node.hidden = false;
+        }
+        for (const key of ['tm.detail', 'dish.detail', 'digitiser.detail', 'weather.detail']) {
+          setText(key, message);
+          const node = doc.querySelector('[data-status-value="' + key + '"]');
+          if (node) node.hidden = false;
+        }
+        digitiserDetail?.classList.toggle('status-summary-divider', false);
+        if (digitiserLabel) digitiserLabel.hidden = true;
+        $('executions').innerHTML = '<li class="zk-muted">' + escape(message) + '</li>';
+      }
     }
     function render() {
+      if (state.data) overview();
+      const connectionsPane = $('connections-pane');
+      if (connectionsPane) connectionsPane.hidden = !state.connectionsOpen;
+      $('connections-open')?.setAttribute?.('aria-expanded', String(state.connectionsOpen));
+      if (state.connectionsOpen && state.data) {
+        const html = consolidatedConnectionTable(state.data.telescope_model, state.data.stale);
+        if ($('connections-rows').innerHTML !== html) $('connections-rows').innerHTML = html;
+      }
       const now = Date.now();
       const focused = doc.activeElement?.closest?.('[data-app-key]')?.dataset.appKey;
       const focusedFile = doc.activeElement?.dataset?.statusFile;
       const focusedToggle = doc.activeElement?.dataset?.statusToggle;
-      const rows = state.apps.map((item) => `<tr data-app-key="${escape(item.key)}" tabindex="0" aria-label="Inspect ${escape(item.id)}" aria-selected="${item.key === state.selected}" class="${item.key === state.selected ? 'is-selected' : ''}"><td>${escape(item.label)}</td><td>${escape(item.id)}</td><td>${escape(display(item.profile))}</td><td>${chip(item.health)}</td><td>${escape(item.state)}</td><td>${lastUpdate(item.updated, now)}</td><td>${percent(item.app.availability)}</td><td>${percent(item.app.reliability?.reliability ?? item.app.reliability?.reliability_availability)}</td><td>${flagControl(item, 'trace')}</td><td>${flagControl(item, 'debug')}</td></tr>`).join('')
-        || '<tr><td colspan="10">No applications reported</td></tr>';
+      const rows = state.apps.map(item => {
+        const stale = oldUpdate(item.updated, now) || tmDisconnected(state.data.telescope_model, item.type, item.model);
+        const active = (item.app.processors || []).filter(processor => processor.current_event
+          && typeof processor.processing_time_ms === 'number' && Number.isFinite(processor.processing_time_ms)
+          && processor.processing_time_ms >= 0);
+        const processing = active.length
+          ? (active.reduce((total, processor) => total + processor.processing_time_ms, 0) / active.length).toFixed(2) + ' ms' : '—';
+        const unknown = '<span class="zk-chip status-unknown">UNKNOWN</span>';
+        const cell = value => `<td>${value === 'UNKNOWN' ? unknown : escape(value)}</td>`;
+        return `<tr data-app-key="${escape(item.key)}" tabindex="0" aria-label="Inspect ${escape(item.id)}" aria-selected="${item.key === state.selected}" class="${item.key === state.selected ? 'is-selected' : ''}"><td>${escape(item.label)}</td><td>${escape(item.id)}</td><td>${escape(display(item.profile))}</td><td>${stale || item.health === 'UNKNOWN' ? unknown : chip(item.health)}</td><td>${lastUpdate(item.updated, now)}</td>${cell(stale ? 'UNKNOWN' : display(item.app.queue_size))}${cell(stale ? 'UNKNOWN' : processing)}${percentageCell(item, 'availability', stale || state.data.stale)}${percentageCell(item, 'reliability', stale || state.data.stale)}<td>${flagControl(item, 'trace')}</td><td>${flagControl(item, 'debug')}</td></tr>`;
+      }).join('') || '<tr><td colspan="11">No applications reported</td></tr>';
       if (renderedRows !== rows) {
         $('apps').innerHTML = rows;
         renderedRows = rows;
@@ -287,7 +586,22 @@
       const selected = state.apps.find((item) => item.key === state.selected);
       if (selected?.type !== 'dig') digitiserControls.clearSelection();
       if (!selected) state.selected = null;
-      dishPane?.update(selected?.type === 'dm' ? state.data : null);
+      if ($('dishes-pane')) $('dishes-pane').hidden = !state.dishesOpen;
+      $('dishes-open')?.setAttribute?.('aria-expanded', String(state.dishesOpen));
+      if (state.dishesOpen && state.data) {
+        const content = dishesTable(state.data.telescope_model.dsh_mgr);
+        if ($('dishes-content').innerHTML !== content) $('dishes-content').innerHTML = content;
+        $('dishes-freshness').textContent = state.data.stale
+          || tmDisconnected(state.data.telescope_model, 'dm', state.data.telescope_model.dsh_mgr)
+          || oldUpdate(state.data.telescope_model.dsh_mgr?.app?.last_update) ? 'Stale Dish Manager data' : '';
+      }
+      dishPane?.update(state.dishesOpen ? state.data : null);
+      if ($('digitisers-pane')) $('digitisers-pane').hidden = !state.digitisersOpen;
+      $('digitisers-open')?.setAttribute?.('aria-expanded', String(state.digitisersOpen));
+      if (state.digitisersOpen && state.data) {
+        const content = digitisersTable(state.data.telescope_model, state.data.stale);
+        if ($('digitisers-content').innerHTML !== content) $('digitisers-content').innerHTML = content;
+      }
       $('detail').hidden = !selected;
       $('workspace').classList.toggle('has-selection', !!selected);
       if (selected) {
@@ -362,14 +676,16 @@
         const envelope = await response.json();
         if (!response.ok || envelope.status !== 'success' || !envelope.payload?.telescope_model) throw new Error(envelope.message || 'Telescope model unavailable');
         state.data = envelope.payload; state.apps = applications(state.data.telescope_model);
+        win.DmdSiderealClock?.setConfig(state.data.telescope_model.config);
         const stale = state.data.stale || state.data.tm_connected === false;
         state.data.stale = stale;
+        updatePercentageTrends();
         $('freshness').className = stale ? 'zk-chip is-warn snapshot-warning' : 'zk-muted';
         badge(state.data.tm_connected === false ? 'TM disconnected' : stale ? 'TM snapshot stale' : 'TM snapshot available', stale ? 'is-warn' : 'is-live');
         $('freshness').textContent = (stale ? 'Stale snapshot. ' : '') + 'TM Config Profile: ' + display(state.data.profile)
           + ' · Snapshot: ' + timestamp(state.data.snapshot_at) + ' · Received ' + Math.round(state.data.age_seconds || 0)
           + ' seconds ago. WEB polls TM every 30 seconds.' + (state.data.last_error ? ' ' + state.data.last_error : '');
-        overview(); render();
+        render();
       } catch (error) {
         badge('Live status unavailable', 'is-bad');
         $('freshness').className = 'zk-chip is-warn snapshot-warning';
@@ -395,7 +711,9 @@
         return;
       }
       files?.closeAll();
-      state.selected = row.dataset.appKey; render();
+      state.selected = row.dataset.appKey;
+      state.dishesOpen = state.apps.find(app => app.key === state.selected)?.type === 'dm';
+      render();
       const item = state.apps.find(app => app.key === state.selected);
       if (item && !commandState(item).loaded) loadCommands(item);
       $('detail').scrollIntoView?.({ block: 'start', behavior: 'smooth' });
@@ -460,6 +778,46 @@
       } finally { win.clearTimeout(timer); state.commandBusy = null; render(); }
     }
     win.addEventListener('dmd:session', render);
+    $('digitisers-open')?.addEventListener('click', () => {
+      files?.closeAll(); state.selected = null; state.dishesOpen = false; state.digitisersOpen = true;
+      render(); $('digitisers-pane')?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+    });
+    $('digitisers-close')?.addEventListener('click', () => { state.digitisersOpen = false; render(); });
+    const selectDigitiser = event => {
+      const row = event.target.closest('[data-status-digitiser]');
+      if (!row) return;
+      const item = state.apps.find(app => app.key === row.dataset.statusDigitiser);
+      if (!item) return;
+      state.selected = item.key; render();
+      if (!commandState(item).loaded) loadCommands(item);
+      $('detail').scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+    };
+    $('digitisers-content')?.addEventListener('click', selectDigitiser);
+    $('digitisers-content')?.addEventListener('keydown', event => {
+      if (['Enter', ' '].includes(event.key) && !event.repeat) { event.preventDefault(); selectDigitiser(event); }
+    });
+    $('dishes-open')?.addEventListener('click', () => {
+      files?.closeAll(); state.selected = null; state.dishesOpen = true;
+      render(); $('dishes-pane')?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+    });
+    $('dishes-close')?.addEventListener('click', () => { state.dishesOpen = false; render(); });
+    const selectDish = event => {
+      const row = event.target.closest('[data-status-dish]');
+      if (row) dishPane?.open(row.dataset.statusDish, state.data);
+    };
+    $('dishes-content')?.addEventListener('click', selectDish);
+    $('dishes-content')?.addEventListener('keydown', event => {
+      if (['Enter', ' '].includes(event.key) && !event.repeat) { event.preventDefault(); selectDish(event); }
+    });
+    $('connections-open')?.addEventListener('click', () => {
+      if (!state.data || state.data.stale || state.data.tm_connected === false) return;
+      state.connectionsOpen = !state.connectionsOpen;
+      render();
+      if (state.connectionsOpen) $('connections-pane')?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+    });
+    $('connections-close')?.addEventListener('click', () => {
+      state.connectionsOpen = false; render(); $('connections-open')?.focus?.({ preventScroll: true });
+    });
     $('apps').addEventListener('click', select);
     $('apps').addEventListener('keydown', (event) => {
       if (event.target.closest('[data-status-toggle]')?.dataset.statusToggle) return;
@@ -504,6 +862,6 @@
     win.addEventListener('pagehide', () => win.clearInterval(timer));
     return { refresh, state };
   }
-  if (typeof module !== 'undefined' && module.exports) module.exports = { init, applications, detail, connections, display, timestamp, lastUpdate, percent };
+  if (typeof module !== 'undefined' && module.exports) module.exports = { init, applications, detail, dishesTable, digitisersTable, connections, consolidatedConnections, persistentAppConnections, display, timestamp, lastUpdate, percent };
   if (typeof document !== 'undefined') init(document, window);
 })();

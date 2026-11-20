@@ -584,7 +584,9 @@ restart; adding a definition does not launch a digitiser process.
 ### Weather stations
 
 Station definitions are read from `WeatherStationList.json`. Editable fields are
-`ws_id` (creation only), `location`, `latitude`, `longitude` and `elevation`.
+`ws_id` (creation only), `location`, `latitude`, `longitude`, `elevation`,
+`driver_type`, `driver_config` and `sim_mode`. Driver names are `UNKNOWN`, `MODBUS`
+and `ADS1115`; simulation is `off`, `calm`, `windy` or `stormy`.
 Creation requires a unique `ws_id` and non-empty `location`. Coordinates and
 elevation may be null; otherwise they use the existing model's valid ranges.
 Other stations, weather readings, summaries and list-level alarm thresholds are
@@ -606,10 +608,80 @@ curl -X PATCH -H "X-Webhook-Token: $WEBHOOK_SECRET" -H 'Content-Type: applicatio
   http://localhost:8000/api/weather-stations/ws003
 ```
 
-The weather application driver settings remain in the separate
-`WeatherStationModel.json`; these station collection endpoints do not edit that
-file or its hardware driver. TM and Dish Manager load the station list during
-startup or their normal RESYNC flow. New definitions do not launch weather
+The Configuration → Weather editor exposes station CRUD plus the shared policy.
+`GET /api/weather-stations` includes `payload.settings` alongside the station
+list, taken from the same file revision. This avoids a mismatch between station
+and policy versions. Settings apply to **all stations in the selected Config
+Profile**, rather than all Config Profiles as Telescope attributes do.
+
+`GET /api/weather-settings` returns `payload.settings` and `payload.profile` with
+an ETag. `PATCH /api/weather-settings` accepts a non-empty subset of:
+
+| Field | Meaning / units |
+| --- | --- |
+| `weather_enabled` | Boolean monitoring/alarm enable flag |
+| `threshold_timeout` | Alarm comparison window and missing-data timeout, seconds |
+| `retention_period` | Retained local reading history, seconds |
+| `summary_window` | Rolling summary window, seconds |
+| `threshold_wind_avg` | Average wind-speed alarm threshold, m/s |
+| `threshold_wind_gust` | Speed above which a sample counts as a gust, m/s |
+| `threshold_wind_count` | Gust-count alarm threshold, sample count |
+| `threshold_precipitation` | Average precipitation alarm threshold, mm |
+
+Times/counts are non-negative integers; thresholds are finite non-negative
+numbers; booleans are not accepted as numeric values. The existing alarm policy
+is unchanged: counts and average thresholds must be **exceeded**, so a count
+threshold of 3 alarms on the fourth gust sample in the alarm window. The gust
+speed threshold alone identifies gusts; the gust-count criterion triggers the
+alarm. Missing data also triggers the existing timeout alarm after the grace
+period. The UI explains these semantics.
+
+Settings saves require `If-Match` (428 if absent, 412 if stale), and the same
+`X-Config-Profile` guard as station writes. The policy and stations share a single
+ETag: either change invalidates an older draft from another session. Atomic saves
+preserve other stations, readings, summaries, alarm metrics, timestamps and
+custom fields except the list's updated `last_update`. Runtime fields cannot be
+edited through this endpoint. The frontend forwards both settings methods via
+`/api/web/weather-settings` and station CRUD via `/api/web/weather-stations`.
+Operator/admin and CSRF checks apply to writes. Each UI form preserves drafts
+in the other form, with the current shared file revision used for subsequent
+saves. Refresh/profile changes check all unsaved configuration edits; Cancel
+can discard one form's edits. Save does not alter running DM state: select DM
+and RESYNC under its existing safe-state rules to apply the shared policy. Use WS
+RESYNC for the active station’s driver and simulation settings.
+
+Station driver settings now live only in `WeatherStationList.json`; the old
+`WeatherStationModel.json` configuration files have been removed. The existing
+single-WS command target uses `127.0.0.1:60005`, or an explicit
+`WEB_COMMAND_ENDPOINTS.ws` override. Changing sensor settings does not change that
+application command endpoint.
+
+`driver_config.driver_poll_period` is a positive integer in milliseconds (default
+1000), including simulation without a physical driver. Modbus configs also expose
+serial port/address/framing, transaction settings, sensor registers and scaling;
+ADS1115 configs expose ADC backend/channel/address and calibration ranges, plus
+optional precipitation input. `GET /api/weather-stations` includes `driver_types`
+with validated default field values to build the driver's typed UI fields, without
+opening hardware. Editable configs omit `_type`/`last_update`; persisted configs
+carry their normal model tags. Driver changes reset incompatible parameters to
+the selected type's defaults. Numeric values must be finite and poll intervals
+positive integers; invalid or mismatched configs are rejected.
+
+Each WS application must launch with `--entity_id <ws_id>` and selects exactly
+one matching station from its launch profile. Missing/duplicate identities or
+invalid configuration fail explicitly, before touching the active driver.
+`--sim` overrides that station's saved mode. Physical drivers are not opened in
+simulation. RESYNC validates the candidate, retains the runtime app/connection
+state and failure counter, closes the previous driver and creates the replacement
+when needed, then resets polling cadence. Polling and RESYNC are serialized.
+`driver_failures` is runtime-only, starting at zero on process initialisation.
+
+Dish Manager loads definitions and shared policy on DM RESYNC; WS RESYNC loads
+the active station's driver/simulation configuration. TM still has one WS
+connection; this change does not add multiple active WS connections. Migrated
+LaunchConfig WS entries now include explicit entity IDs. Legacy driver settings
+were transferred to the matching station ID; other definitions remain unconfigured
+until assigned a driver or used with simulation. New definitions do not launch weather
 applications or alter running weather-monitoring configuration automatically.
 
 ## Profile pipeline steps
@@ -911,7 +983,7 @@ applications load the changed configuration through their existing startup or
 RESYNC behaviour. The frontend dish editor asks for confirmation before deletion.
 The console bridge forwards dish DELETE calls with the same server-side token and
 cross-origin protections as other editor writes. The frontend Digitisers editor also uses the restricted console bridge for
-CRUD operations. Weather and pipeline frontend editors remain to be connected.
+CRUD operations. The Weather editor also uses this bridge for station CRUD and shared monitoring settings; the Telescope editor edits the profile-independent observatory attributes.
 
 
 ## Cached live telescope model
@@ -939,6 +1011,59 @@ existing `TelescopeModel.to_dict()` structure. Credential-labelled fields are
 redacted at TM before transmission; application model timestamps are retained.
 The snapshot is assembled from TM's latest known state, not an atomic fresh
 measurement of every application.
+
+The Telescope Model also contains `config`, a `TelescopeConfig` with observatory
+`name`, `latitude`, `longitude` and `height`. TM loads these attributes from
+`src/config/telescope.json` on initialisation and RESYNC, independently of its
+Config Profile. This file contains the standard `_type: "TelescopeConfig"`
+marker and observatory attributes, not the live
+subsystem models. Latitude/longitude are decimal degrees (longitude east
+positive), height is metres; unknown coordinates may be null. Invalid or missing
+files are logged and leave the previous valid configuration intact; before any
+valid load the location is unconfigured. Dish locations are unchanged.
+
+The first Configuration tab, **Telescope**, views and edits this shared file.
+Its message explicitly states that these attributes apply across **all Config
+Profiles**. `GET /api/telescope/config` returns `payload.config` with the four
+attributes, `scope: "observatory"`, `file: "config/telescope.json"`, and an ETag.
+`PUT /api/telescope/config` accepts exactly `name`, `latitude`, `longitude` and
+`height`; it requires `If-Match` from the read response (428 if absent, 412 if
+changed). Writes validate `TelescopeConfig`, use a file lock and atomic replace,
+and persist the four attributes plus the standard model type marker. No subsystem state or profile file is
+written. The authenticated frontend bridge exposes these as
+`GET/PUT /api/web/telescope/config`, retaining the ETag. Viewers can read;
+operator/admin access and CSRF are required to save. Saving does not mutate the
+live TM model or LST: select TM and RESYNC to load the file, then the new snapshot
+updates the browser clock. Refresh reloads the editor from disk; Cancel discards
+its draft. Unsaved Telescope edits participate in the shared profile/editor
+navigation and RESYNC guards.
+
+TM loads UI integration definitions from each profile's `UIDriverList.json`,
+instead of loading a saved `TelescopeManagerModel`. The list contains `_type`,
+`list_id` and `ui_drivers`; each driver defines its `type`, `short_desc`, `config`
+and positive integer `poll_period` in seconds. Runtime instances and update
+timestamps are not saved in this configuration file. An empty list disables
+these integrations without affecting the WEB interface.
+
+TM RESYNC validates the new list before replacing integrations, closes old
+driver resources, and allows previously failed driver initialisations to retry.
+A missing or invalid list leaves the current integrations intact. Runtime TM
+application state and allocations are preserved. These integration settings
+remain file-managed; the frontend does not expose a UI driver editor. TM command
+routing uses its default endpoint or an explicit WEB override, rather than the
+removed model file. Both `UIDriverList` and `TelescopeConfig` use inherited
+`BaseModel.from_dict` and `BaseModel.load_from_disk` methods.
+
+The frontend header's `LST HH:MM:SS` is local **mean** sidereal time at this
+observatory reference longitude. Existing Status/Schedule snapshots supply
+`config`; the clock itself makes no requests. It recalculates every second from
+the browser's current UTC clock, and immediately after tab visibility changes
+or a restored page. It uses the [USNO approximate GMST algorithm](https://aa.usno.navy.mil/faq/GAST)
+with UTC approximating UT1/TT, rather than a precision Earth-orientation service.
+Timezone, daylight-saving time, browser geolocation, the selected UI profile and
+dish locations do not change this reference clock. Hover for the name, longitude
+and approximation notice. Missing/invalid longitude shows `LST —`. Once a
+location has been received, the clock can continue through a TM disconnection.
 
 Timeouts and disconnects retain the last successful snapshot and mark it stale.
 A cache older than 35 seconds is also marked stale. A valid cached response,
@@ -1214,3 +1339,43 @@ confirmation every second while the command is pending. The buttons display
 snapshots remain on the 30-second interval. Invalid state/deadline requests are
 rejected; commands are never automatically retried, including when the response
 is lost and the outcome is unknown. Historical catalogue rows have no controls.
+
+### SNR Distribution products
+
+Completed OPT jobs with sidereal-track SKY aggregates export `distribution.csv`
+and normally `distribution.png`. Their manifest has a `distribution` object
+containing `csv`, `aggregates`, `snr_column`, `l_step`, `b_step`, `stretch`,
+`snr_max` (null for automatic), `cell_shape`, actual `colour_limits`, and `points`; the PNG is
+referenced by `views.distribution`. When the selected SNR has no valid values,
+the CSV and controls remain available with `view_errors.distribution` explaining
+why that map cannot be shown. No eligible targets means no distribution products; the UI keeps the tab visible
+and explains its sidereal-target requirement. Missing SNRs are blank CSV fields. Missing acquisition metadata in older
+jobs requires reprocessing, rather than exporting guessed gain or sample rates.
+
+`POST /api/opt/distribution` accepts:
+
+```json
+{"job":"completed-job-id","options":{"snr_column":"frequency_snr","l_step":5,"b_step":5,"cell_shape":"diamond","stretch":"asinh","snr_max":25}}
+```
+
+The source job must be ready and contain the exported CSV. SNR selection is
+`velocity_snr` (default) or `frequency_snr`. Cell dimensions must be finite,
+positive and divide their axis extent exactly; width and height default to 15°. `stretch` is `linear`,
+`asinh`, or `log` (default) (zero-safe log1p); `snr_max` is a positive finite number or null.
+`cell_shape` is `rectangle` or `diamond` (default), with averaging within that
+shape. Each `points` entry identifies an original measurement with `aggregate_id`,
+`scan_id`, `longitude`, `latitude`, and normalized PNG coordinates `x`, `y`
+(top-left origin, range 0..1). Repeated positions retain separate entries;
+unavailable selected SNRs have no plotted point. These coordinates are produced
+by the server's actual map projection and saved-image layout. UI dot selection
+uses existing aggregate image references, without another API job.
+The lower colour limit is zero. Automatic upper limits use the maximum of fewer
+than 30 populated cell means, or their 99th percentile otherwise; empty sky does
+not contribute. The endpoint starts an isolated
+worker and returns 202 with the usual job ID; poll `/api/opt/jobs/<id>` and
+retrieve files through its manifest. It adapts the selected export column to a
+temporary three-column longitude/latitude/SNR CSV for the generic map renderer.
+Neither spectra nor QA files are read by this rendering operation. The new job
+retains the full export and other completed observation products, including the
+updated export ZIP. Normal authentication, operator permissions and CSRF checks
+apply.

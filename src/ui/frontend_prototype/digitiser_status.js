@@ -48,16 +48,11 @@
       : `<input class="zk-input" type="text" inputmode="decimal" data-digitiser-field="${key}" aria-label="Desired ${label}" value="${escape(draft.values[key])}"${disabled || running ? ' disabled' : ''}>`;
     const show = (value, bool = false) => value == null ? '—' : bool ? value ? 'ON' : 'OFF' : String(value);
     const rows = FIELDS.map(([key, label, type]) => `<tr><th scope="row">${label}</th><td>${input(key, label, type)}</td><td>${escape(show(actual(item, key), type === 'bool'))}</td><td><button type="button" class="zk-btn is-sm" data-digitiser-action="${key}"${disabled || running ? ' disabled' : ''}>Set</button></td></tr>`).join('');
-    const args = item.app.arguments || {};
-    const diagnostics = [['SDR type', item.model.sdr_type], ['Bandpass filter', unwrap(item.model.bpf_type)],
-      ['Temperature [°C]', item.model.temp_reading?.temperature], ['Temperature limit [°C]', item.model.temp_max],
-      ['Observation', typeof item.model.scanning === 'object' ? item.model.scanning?.obs_id : null], ['Local host', args.local_host]];
     return `<div class="digitiser-live-layout" data-digitiser-control-app="${escape(item.key)}"><section class="digitiser-live-controls"><h4>Property configuration</h4><div class="status-table-scroll"><table class="zk-tbl digitiser-control-table"><thead><tr><th>Setting</th><th>Desired</th><th>Actual</th><th></th></tr></thead><tbody>${rows}`
       + `<tr><th scope="row">Scanning</th><td>${input('scanning', 'Scanning', 'bool')}</td><td>${scanning(item.model.scanning) ? 'ON' : 'OFF'}</td><td><button type="button" class="zk-btn is-sm" data-digitiser-action="scanning"${disabled ? ' disabled' : ''}>Set</button></td></tr></tbody></table></div>`
       + `<div class="digitiser-live-actions"><button type="button" class="zk-btn is-primary" data-digitiser-action="apply"${disabled || running ? ' disabled' : ''}>${draft.busy ? 'Sending…' : 'Apply settings'}</button><button type="button" class="zk-btn" data-digitiser-action="actual"${draft.busy ? ' disabled' : ''}>Use actual values</button></div>`
       + '<p class="zk-muted digitiser-control-note">Changes go through TM. Actual values update from application reports. Channels and scan duration are reported by SDP. Scanning starts with the reported hardware settings; apply tuning changes first.</p>'
-      + `<p class="digitiser-control-result${draft.result?.status === 'error' ? ' is-error' : ''}" role="status" aria-live="polite">${draft.result ? escape(draft.result.time + ' · ' + draft.result.status + ': ' + draft.result.message) : ''}</p></section>`
-      + '<section class="digitiser-live-info"><h4>Driver and status</h4><dl class="status-kv">' + diagnostics.map(([label, value]) => `<div><dt>${label}</dt><dd>${escape(show(value))}</dd></div>`).join('') + '</dl></section></div>';
+      + `<p class="digitiser-control-result${draft.result?.status === 'error' ? ' is-error' : ''}" role="status" aria-live="polite">${draft.result ? escape(draft.result.time + ' · ' + draft.result.status + ': ' + draft.result.message) : ''}</p></section></div>`;
   }
   function init(doc, win, fetcher, changed) {
     const root = doc.getElementById('status-detail-content'), drafts = new Map();

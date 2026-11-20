@@ -11,10 +11,15 @@
             "env": {},
             "program": "python",
             "args": [
-                "-u", "-m", "web.web_server",
-                "--profile", "alston",
-                "--entity_id", "web001",
-                "--tm_host", "192.168.2.1"
+                "-u",
+                "-m",
+                "web.web_server",
+                "--profile",
+                "alston",
+                "--entity_id",
+                "web001",
+                "--tm_host",
+                "192.168.2.1"
             ]
         },
         {
@@ -24,12 +29,18 @@
             "env": {},
             "program": "python",
             "args": [
-                "-m", "dig.dig",
-                "--profile", "alston",
-                "--entity_id", "dig001",
-                "--tm_host", "192.168.0.2",
-                "--sdp_host", "192.168.0.2",
-                "--local_host", "192.168.0.18"
+                "-m",
+                "dig.dig",
+                "--profile",
+                "alston",
+                "--entity_id",
+                "dig001",
+                "--tm_host",
+                "192.168.0.2",
+                "--sdp_host",
+                "192.168.0.2",
+                "--local_host",
+                "192.168.0.18"
             ]
         },
         {
@@ -39,12 +50,18 @@
             "env": {},
             "program": "python",
             "args": [
-                "-m", "dig.dig",
-                "--profile", "alston",
-                "--entity_id", "dig003",
-                "--tm_host", "192.168.2.1",
-                "--sdp_host", "192.168.2.1",
-                "--local_host", "192.168.2.2"
+                "-m",
+                "dig.dig",
+                "--profile",
+                "alston",
+                "--entity_id",
+                "dig003",
+                "--tm_host",
+                "192.168.2.1",
+                "--sdp_host",
+                "192.168.2.1",
+                "--local_host",
+                "192.168.2.2"
             ]
         },
         {
@@ -54,11 +71,16 @@
             "env": {},
             "program": "python",
             "args": [
-                "-m", "dsh.dm",
-                "--profile", "alston",
-                "--entity_id", "dm001",
-                "--tm_host", "192.168.2.1",
-                "--ws_host", "192.168.2.1"
+                "-m",
+                "dsh.dm",
+                "--profile",
+                "alston",
+                "--entity_id",
+                "dm001",
+                "--tm_host",
+                "192.168.2.1",
+                "--ws_host",
+                "192.168.2.1"
             ]
         },
         {
@@ -68,11 +90,16 @@
             "env": {},
             "program": "python",
             "args": [
-                "-m", "sdp.sdp",
-                "--profile", "alston",
-                "--entity_id", "sdp001",
-                "--tm_host", "192.168.2.1",
-                "--dig_host", "192.168.2.1"
+                "-m",
+                "sdp.sdp",
+                "--profile",
+                "alston",
+                "--entity_id",
+                "sdp001",
+                "--tm_host",
+                "192.168.2.1",
+                "--dig_host",
+                "192.168.2.1"
             ]
         },
         {
@@ -82,14 +109,22 @@
             "env": {},
             "program": "python",
             "args": [
-                "-m", "tm.tm",
-                "--profile", "alston",
-                "--entity_id", "tm001",
-                "--web_host", "192.168.2.1",
-                "--dig_host", "192.168.2.1",
-                "--sdp_host", "192.168.2.1",
-                "--dm_host", "192.168.2.1",
-                "--ws_host", "192.168.2.1"
+                "-m",
+                "tm.tm",
+                "--profile",
+                "alston",
+                "--entity_id",
+                "tm001",
+                "--web_host",
+                "192.168.2.1",
+                "--dig_host",
+                "192.168.2.1",
+                "--sdp_host",
+                "192.168.2.1",
+                "--dm_host",
+                "192.168.2.1",
+                "--ws_host",
+                "192.168.2.1"
             ]
         },
         {
@@ -99,7 +134,9 @@
             "env": {},
             "program": "python",
             "args": [
-                "dsh/drivers/md01/md01_simulator.py", "--host", "127.0.0.1"
+                "dsh/drivers/md01/md01_simulator.py",
+                "--host",
+                "127.0.0.1"
             ]
         },
         {
@@ -109,11 +146,18 @@
             "env": {},
             "program": "python",
             "args": [
-                "-m", "ws.ws",
-                "--profile", "alston",
-                "--dm_host", "192.168.2.1",
-                "--tm_host", "192.168.2.1",
-                "--sim", "calm"
+                "-m",
+                "ws.ws",
+                "--profile",
+                "alston",
+                "--dm_host",
+                "192.168.2.1",
+                "--tm_host",
+                "192.168.2.1",
+                "--sim",
+                "calm",
+                "--entity_id",
+                "ws001"
             ]
         },
         {
@@ -123,11 +167,18 @@
             "env": {},
             "program": "python",
             "args": [
-                "-m", "ws.ws",
-                "--profile", "alston",
-                "--dm_host", "192.168.2.1",
-                "--tm_host", "192.168.2.1",
-                "--sim", "calm"
+                "-m",
+                "ws.ws",
+                "--profile",
+                "alston",
+                "--dm_host",
+                "192.168.2.1",
+                "--tm_host",
+                "192.168.2.1",
+                "--sim",
+                "calm",
+                "--entity_id",
+                "ws002"
             ]
         }
     ]

@@ -3,7 +3,7 @@
   const $ = (id) => document.getElementById(id === "profile" ? "dish-profile" : `opt-${id}`);
   if (!$("observation-rows")) return;
   const state = { observation: null, excluded: new Set(), result: null, job: null,
-    completedJob: null, pointingRequest: null, pointingDisplay: "sky", busy: false, starting: false, opening: false, connected: false, dirty: false,
+    completedJob: null, distributionRequest: false, pointingRequest: null, pointingDisplay: "sky", busy: false, starting: false, opening: false, connected: false, dirty: false,
     animationTimingObservation: null, animationIntervalEdited: false, terminalRequest: null, velocitySelections: new Map(),
     savingPipeline: false, configured: false, initialising: false, finding: false, listSequence: 0, observationEntries: [],
     expandedObservations: new Set(), observationDetails: new Map(), list: "inputs", selectedInput: null, selectedAggregate: null, view: "signal", log: "" };
@@ -348,6 +348,82 @@
       error(failure.message);
     } finally { state.starting = false; renderControls(); if (!state.busy) renderView(); }
   }
+  const sharedSpectrumHelp = [
+    ["All SKY aggregates", "Show the observation's SKY spectra together, or clear this option to inspect one aggregate. Individual views include the noise metrics and median baseline."],
+    ["Baseline", "No subtraction shows the pipeline-processed spectrum. Linear subtracts a fitted line; Constant subtracts a fitted level; Flatten removes the fitted slope while retaining the lowest fitted baseline level. Interactive updates start from the processed aggregate each time, so adjustments do not accumulate."],
+    ["Frequency / Velocity minimum and maximum", "Restrict the displayed spectrum in the units shown. Blank limits use the available range. The selected range also restricts the SNR and robust-noise calculation for that view."],
+    ["Update plots", "Apply the analysis settings to cached processed spectra. This does not replay the source scans or change the pipeline configuration. Reprocess observation applies pipeline changes."]
+  ];
+  const plotHelp = {
+    distribution: ["SNR Distribution", [
+      ["Supported observations", "This map uses sidereal-track SKY aggregates with Galactic sky coordinates. RA/Dec targets are converted to Galactic coordinates. Other pointing modes are excluded."],
+      ["SNR", "Choose the existing Velocity or Frequency peak SNR measurements. The applied choice also selects the type of saved spectrum shown in Preview."],
+      ["Cell width and Cell height [°]", "Set the full angular spans of the coloured measurement cells, not the background coordinate grid or telescope beam. Width must divide 360° and height must divide 180°. Unobserved cells remain blank."],
+      ["Cell shape", "Rectangle or Diamond selects the actual grid used to group measurements. Repeated hits inside one cell have their linear SNRs averaged equally. Changing shape can change which points share a cell; it does not interpolate into unobserved sky."],
+      ["Colours", "Linear maps SNR directly to colour. Asinh and Log bring out weaker values; Log uses log(1 + SNR) so zero remains valid. The colour bar still shows linear SNR ratios."],
+      ["Upper SNR", "The scale always starts at zero. Enter a positive upper limit for comparison across maps, or leave Automatic: the maximum for fewer than 30 populated cells, otherwise their 99th percentile. Limits use cell averages; clipped values are marked on the colour bar."],
+      ["Update map", "Apply map settings using the exported measurements. No scans are replayed and no SNR measurements or spectra are recalculated."],
+      ["Dots and Preview", "Black dots mark original measurement positions. Click one to highlight it and show its saved spectrum, or choose Preview / an aggregate in the left list. Repeated clicks cycle measurements at identical positions. Preview uses the same saved individual view as the Frequency or Velocity tab, including selected saved LAB/terminal variants."],
+      ["Open image / Open spectrum", "Open the map or the selected saved spectrum at full size in a new browser tab."],
+      ["Download CSV", "Export one row per eligible aggregate, retaining both SNR measurements, sky coordinates, gain, integration time, centre frequency and sample rate. Map controls do not alter these values."]
+    ]],
+    frequency: ["Frequency", sharedSpectrumHelp],
+    velocity: ["Velocity", [...sharedSpectrumHelp,
+      ["LAB survey and Beam FWHM [°]", "Compare an individual spectrum with the LAB HI survey, using the specified Gaussian beam width. LAB comparison is available for individual SKY aggregates with suitable sky coordinates."],
+      ["Sweep LAB coordinates", "Search offsets in Galactic longitude and latitude around the target. Each minimum, maximum and positive step is in degrees. Find best fit compares the candidates; a fit on the search boundary may need a wider sweep."],
+      ["Terminal velocity", "No method leaves terminal velocity unmeasured. Threshold edge and Connected edge use the pipeline QA noise policy; Erfc wing fit fits the falling wing. Measurements apply to the individual spectrum within its selected velocity limits."]
+    ]],
+    timeline: ["Total Power", [
+      ["Resolution", "Per second shows the total power for each one-second spectrum. Per scan shows one value for each physical scan."],
+      ["Show mean", "Show or hide the horizontal arithmetic-mean reference line for each displayed total-power series."],
+      ["All SKY aggregates", "Show all SKY aggregate timelines together, or clear it to inspect the selected aggregate."],
+      ["Analysis settings", "Updating Frequency or Velocity analysis also updates Total Power using those applied spectral corrections and limits. Choose the appropriate spectrum tab to adjust those settings."]
+    ]],
+    lv: ["L–V Diagram", [
+      ["Longitude–velocity view", "Compare sky spectra across Galactic longitude. The frontend diagram displays velocities from −150 to +150 km/s."],
+      ["Velocity minimum and maximum", "Set the velocity limits used for spectral analysis. The displayed L–V axis remains fixed at −150 to +150 km/s."],
+      ["Contour smoothing [km/s]", "Smooth the contours along velocity by the specified scale."],
+      ["Contour levels", "Leave Automatic or enter comma-separated levels in the plotted power units."],
+      ["Baseline and Update plots", "Apply baseline and contour settings to cached processed spectra. This does not replay the source scans."]
+    ]],
+    pointing: ["Pointing", [
+      ["Sky view", "Show the selected aggregate's recorded scan pointings. Position details identify the target, acquisition, scan start and scan end. Older compatible scans may use a labelled target-at-midpoint estimate."],
+      ["Generate Animation", "Generate an observation-wide animation on demand using included SKY scans and their cached pipeline-processed spectra, with one frame per physical scan."],
+      ["Frame interval [ms]", "Choose 100–500 milliseconds per frame, then Generate or Regenerate Animation to apply the timing."],
+      ["Sky view / Play animation", "Switch between the static chart and the generated animation. Download animation GIF saves the generated animation."]
+    ]],
+    signal: ["Signal", [["Signal display", "Inspect the saved signal display for the selected aggregate, including its calibrated and mean spectra, quality information and timeline. Interactive Frequency/Velocity adjustments do not regenerate this pipeline signal image."], ["Open image", "Open the saved display at full size in a new browser tab."]]],
+    details: ["Details", [["Aggregate or input scan", "The left list selects the record whose metadata appears here. Input scans show individual recorded scans; aggregates summarize the processed target/frequency group."], ["Analysis settings", "Details presents recorded metadata; plot adjustments are made on the appropriate analysis tab."]]]
+  };
+  function showPlotHelp() {
+    const [title, entries] = plotHelp[state.view] || plotHelp.signal;
+    $("view-help-title").textContent = `${title} settings`;
+    $("view-help-content").innerHTML = `<dl>${entries.map(([label, text]) => `<dt>${esc(label)}</dt><dd>${esc(text)}</dd>`).join("")}</dl>`;
+    $("view-help-dialog").showModal();
+  }
+  function renderDistributionControls() {
+    const available = !!state.result?.distribution;
+    $("distribution-tab").hidden = false;
+    $("distribution-controls").hidden = state.view !== "distribution" || !available;
+    const locked = state.busy || !state.connected || window.DmdSession?.can_edit === false;
+    for (const id of ["distribution-snr", "distribution-width", "distribution-height", "distribution-stretch", "distribution-shape", "distribution-max", "distribution-update"]) $(id).disabled = locked;
+    $("distribution-csv").hidden = !available;
+    if (available) $("distribution-csv").href = artifact(state.result.distribution.csv, true);
+  }
+  async function generateDistribution() {
+    if (state.busy || !state.completedJob || !state.result?.distribution) return;
+    state.busy = true; state.starting = true; state.distributionRequest = true;
+    error(); renderControls();
+    try {
+      const data = await api("distribution", {job: state.completedJob, options: {
+        snr_column: $("distribution-snr").value, l_step: Number($("distribution-width").value),
+        b_step: Number($("distribution-height").value), cell_shape: $("distribution-shape").value, stretch: $("distribution-stretch").value,
+        snr_max: $("distribution-max").value.trim() ? Number($("distribution-max").value) : null}});
+      state.job = data.id; $("progress").hidden = false; poll(data.id);
+    } catch (failure) {
+      state.busy = false; state.distributionRequest = false; error(failure.message);
+    } finally { state.starting = false; renderControls(); }
+  }
   function renderControls() {
     const locked = state.busy || state.opening || state.initialising || state.savingPipeline;
     for (const id of ["find", "directory", "observation", "include", "exclude", "baseline", "vmin", "vmax", "fmin", "fmax", "smoothing", "contours"]) $(id).disabled = locked || !state.connected;
@@ -365,6 +441,7 @@
     window.DmdAdmin?.update();
     renderAnalysisControls();
     renderPointingControls();
+    renderDistributionControls();
     $("stale").hidden = !state.dirty;
     $("input-count").textContent = state.observation?.scans.length || 0;
     $("aggregate-count").textContent = state.result?.aggregates.length || 0;
@@ -446,11 +523,62 @@
     }
   }
   function artifact(name, download = false) { return `/api/opt/jobs/${state.completedJob}/files/${encodeURIComponent(name)}${download ? "?download=1" : ""}`; }
+  function individualVelocityImage(aggregate) {
+    const measured = $("terminal").value !== "none" && aggregate?.terminal_velocity?.method === $("terminal").value;
+    return $("lab").checked && aggregate?.views.lab
+      ? measured && aggregate.views.lab_terminal ? aggregate.views.lab_terminal : aggregate.views.lab
+      : measured && aggregate?.views.velocity_terminal ? aggregate.views.velocity_terminal : aggregate?.views.velocity;
+  }
+  function renderDistributionExplorer() {
+    const distribution = state.result.distribution;
+    const points = (distribution.points || []).filter(point => point.aggregate_id);
+    $("distribution-image").src = artifact(state.result.views.distribution);
+    $("distribution-scan").innerHTML = points.map(point => `<option value="${esc(point.aggregate_id)}">${esc(point.scan_id)}</option>`).join("");
+    const aggregate = selectedAggregate();
+    $("distribution-scan").value = aggregate?.id || "";
+    $("distribution-scan").disabled = !points.length;
+    const groups = new Map();
+    points.forEach(point => {
+      const key = `${point.x.toFixed(7)},${point.y.toFixed(7)}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(point);
+    });
+    $("distribution-dots").innerHTML = [...groups.values()].map(group => {
+      const point = group[0];
+      const selected = group.some(item => item.aggregate_id === aggregate?.id);
+      return `<button type="button" class="opt-distribution-dot${selected ? ' is-selected' : ''}" data-distribution-ids="${esc(JSON.stringify(group.map(item => item.aggregate_id)))}" style="left:${point.x * 100}%;top:${point.y * 100}%" aria-label="${esc(group.map(item => item.scan_id).join(', '))}${group.length > 1 ? '; click to cycle measurements' : ''}" aria-pressed="${selected}" title="l=${point.longitude}°, b=${point.latitude}° · ${group.length} measurement${group.length === 1 ? '' : 's; click to cycle'}"></button>`;
+    }).join("");
+    const velocity = distribution.snr_column === "velocity_snr";
+    const name = velocity ? individualVelocityImage(aggregate) : aggregate?.views.frequency;
+    $("distribution-preview-label").textContent = aggregate ? `${aggregate.scan_id} · ${velocity ? 'Velocity' : 'Frequency'}` : "Select a measurement dot or an aggregate from the list.";
+    $("distribution-spectrum").hidden = !name;
+    $("distribution-spectrum-link").hidden = !name;
+    $("distribution-unavailable").hidden = !!name;
+    $("distribution-unavailable").textContent = !points.length
+      ? "Update map to enable measurement selection for this saved result."
+      : aggregate?.view_errors?.[velocity ? "velocity" : "frequency"] || "The saved individual spectrum is unavailable. No plot has been regenerated.";
+    if (name) {
+      $("distribution-spectrum").src = artifact(name);
+      $("distribution-spectrum").alt = `${velocity ? 'Velocity' : 'Frequency'} spectrum for ${aggregate.scan_id}`;
+      $("distribution-spectrum-link").href = artifact(name);
+    }
+  }
   function renderView() {
+    $("distribution-explorer").hidden = true;
+    $("viewer").classList.toggle("is-distribution", state.view === "distribution");
     $("viewer").classList.toggle("is-pointing", state.view === "pointing");
-    $("placeholder").querySelector(".opt-empty-steps").hidden = state.view === "pointing" && !!state.result?.pointing_cache;
+    $("placeholder").querySelector(".opt-empty-steps").hidden = state.view === "distribution" || (state.view === "pointing" && !!state.result?.pointing_cache);
     renderAnalysisControls();
     renderPointingControls();
+    renderDistributionControls();
+    if (state.view === "distribution" && (!selectedAggregate() || selectedAggregate().kind !== "SKY")) {
+      const first = state.result?.distribution?.points?.find(point => point.aggregate_id);
+      if (first) {
+        state.selectedAggregate = first.aggregate_id;
+        restoreVelocitySelection();
+        renderList();
+      }
+    }
     const aggregate = selectedAggregate();
     const source = state.list === "inputs" ? selectedInput() : aggregate;
     const showPointingDetails = state.view === "pointing" && state.pointingDisplay === "sky" && !!aggregate?.views.pointing;
@@ -492,10 +620,7 @@
     }
     else if (state.view === "frequency") name = $("frequency-overlay").checked ? state.result?.views.frequency : aggregate?.views.frequency;
     else if (state.view === "velocity" && !$("overlay").checked) {
-      const measured = $("terminal").value !== "none" && aggregate?.terminal_velocity?.method === $("terminal").value;
-      name = $("lab").checked && aggregate?.views.lab
-        ? measured && aggregate.views.lab_terminal ? aggregate.views.lab_terminal : aggregate.views.lab
-        : measured && aggregate?.views.velocity_terminal ? aggregate.views.velocity_terminal : aggregate?.views.velocity;
+      name = individualVelocityImage(aggregate);
     }
     else name = state.result?.views[state.view];
     if (name && state.completedJob) {
@@ -504,15 +629,26 @@
       $("plot").alt = `${state.view} analysis for ${aggregate?.scan_id || state.observation?.id}`;
       $("plot").hidden = false; $("placeholder").hidden = true;
       $("image-link").href = url; $("image-link").hidden = false;
+      if (state.view === "distribution") {
+        $("plot").hidden = true;
+        $("distribution-explorer").hidden = false;
+        renderDistributionExplorer();
+      }
     } else {
       $("placeholder").hidden = false;
       let title = state.result ? "This view is not available" : "From recorded scans to a clearer view";
-      const globalView = state.view === "lv" || (state.view === "velocity" && $("overlay").checked)
+      const globalView = state.view === "distribution" || state.view === "lv" || (state.view === "velocity" && $("overlay").checked)
         || (state.view === "frequency" && $("frequency-overlay").checked)
         || (state.view === "timeline" && $("timeline-overlay").checked);
       const viewError = (globalView ? state.result?.view_errors : aggregate?.view_errors)?.[state.view];
       if (state.view === "pointing" && state.result?.pointing_cache && !viewError) title = "Generating sky view…";
-      const description = viewError || (state.view === "pointing"
+      const distributionUnavailable = state.view === "distribution" && !state.result?.distribution;
+      if (distributionUnavailable) title = "SNR Distribution needs sidereal targets";
+      const description = viewError || (distributionUnavailable
+        ? state.result?.aggregates.some(row => row.kind === "SKY" && row.pointing === "SIDEREAL_TRACK")
+          ? "Sidereal targets are available, but this saved result has no distribution data. Reprocess the observation to create it."
+          : "SNR Distribution is supported when sidereal-track SKY targets with sky coordinates are available in the observation. Process an observation containing those targets to explore this view."
+        : state.view === "pointing"
         ? state.result?.pointing_cache ? "Generating the selected aggregate's sky view from cached scan references…" : state.result ? "Reprocess this observation once to enable the Pointing view and animation cache." : "Process the observation to enable sky pointings and animation."
         : state.view === "frequency" && aggregate?.kind === "SKY" && !$("frequency-overlay").checked
         ? "This result has no individual Frequency image. Reprocess the observation to generate it. The all-SKY Frequency image is a separate plot."
@@ -668,6 +804,14 @@
         const previousScan = selectedAggregate()?.scan_id;
         if (!state.result) state.view = "signal";
         state.result = data.result; state.completedJob = jobId;
+        if (state.result.distribution) {
+          $("distribution-snr").value = state.result.distribution.snr_column;
+          $("distribution-width").value = state.result.distribution.l_step;
+          $("distribution-height").value = state.result.distribution.b_step;
+          $("distribution-shape").value = state.result.distribution.cell_shape || "rectangle";
+          $("distribution-stretch").value = state.result.distribution.stretch || "linear";
+          $("distribution-max").value = String(state.result.distribution.snr_max ?? "");
+        }
         if (state.terminalRequest && data.result.aggregates.find(row => row.id === state.terminalRequest.aggregate_id)?.terminal_velocity?.method !== state.terminalRequest.method) {
           error("The server did not return the requested terminal-velocity measurement. Check the processing log; if the server was running before this update, restart it and refresh the browser.");
         }
@@ -676,7 +820,7 @@
           error(`The server returned an animation at ${data.result.animation_interval_ms ?? 100} ms/frame instead of ${state.pointingRequest.interval_ms} ms/frame. Restart the web server and refresh the browser, then regenerate the animation.`);
         }
         if (state.pointingRequest?.animation && data.result.views.animation) state.pointingDisplay = "animation";
-        if (!state.pointingRequest) state.dirty = false;
+        if (!state.pointingRequest && !state.distributionRequest) state.dirty = false;
         state.list = "aggregates";
         state.selectedAggregate = state.result.aggregates.find((row) => row.scan_id === previousScan)?.id || state.result.aggregates.find((row) => row.kind === "SKY")?.id || state.result.aggregates[0]?.id;
         if ($("lab").checked && !selectedAggregate()?.views.lab) $("lab").checked = false;
@@ -696,6 +840,7 @@
         if (row) { row.view_errors ||= {}; row.view_errors.pointing = "Pointing generation cancelled. Use Generate sky view to retry."; }
       }
       state.pointingRequest = null;
+      state.distributionRequest = false;
       state.terminalRequest = null;
       renderControls(); renderList(); renderView();
     } catch (failure) {
@@ -706,6 +851,7 @@
         window.setTimeout(() => poll(jobId), 3000);
       } else {
         state.busy = false;
+        state.distributionRequest = false;
         state.terminalRequest = null;
         if (state.pointingRequest) {
           const row = state.result?.aggregates.find(item => item.id === state.pointingRequest.aggregateId);
@@ -754,6 +900,27 @@
     remember(); renderControls(); renderList(); poll(data.id);
   }
   const action = (handler) => async (event) => { try { await handler(event); } catch (failure) { error(failure.message); } };
+  $("view-help").addEventListener("click", showPlotHelp);
+  $("view-help-close").addEventListener("click", () => $("view-help-dialog").close());
+  $("view-help-dialog").addEventListener("click", event => {
+    if (event.target === $("view-help-dialog")) {
+      const bounds = $("view-help-dialog").getBoundingClientRect();
+      if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) $("view-help-dialog").close();
+    }
+  });
+  $("distribution-scan").addEventListener("change", () => {
+    state.list = "aggregates";
+    selectRow($("distribution-scan").value);
+  });
+  $("distribution-dots").addEventListener("click", event => {
+    const button = event.target.closest("[data-distribution-ids]");
+    if (!button) return;
+    const ids = JSON.parse(button.dataset.distributionIds);
+    const next = (ids.indexOf(state.selectedAggregate) + 1) % ids.length;
+    state.list = "aggregates";
+    selectRow(ids[next]);
+  });
+  $("distribution-update").addEventListener("click", generateDistribution);
   $("pointing-show-sky").addEventListener("click", () => { state.pointingDisplay = "sky"; renderView(); });
   $("pointing-show-animation").addEventListener("click", () => { state.pointingDisplay = "animation"; renderView(); });
   $("pointing-render").addEventListener("click", () => generatePointing(false));

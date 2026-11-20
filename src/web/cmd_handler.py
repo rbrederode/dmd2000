@@ -69,7 +69,7 @@ class CommandHandler:
             default_app = model_type().app
             path = self.profile_dir / f'{model_type.__name__}.json'
             model = (model_type.load_from_disk(input_dir=str(self.profile_dir), filename=path.name)
-                     if path.exists() else model_type())
+                     if app_name not in ('tm', 'ws') and path.exists() else model_type())
             app = model.app
         else:
             dig_store = DigitiserList.load_from_disk(

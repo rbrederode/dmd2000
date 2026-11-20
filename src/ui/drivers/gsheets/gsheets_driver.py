@@ -74,6 +74,7 @@ class GoogleSheetsDriver(UIDriver):
         """Uses the Google Sheets API to authenticate with Google """
 
         self.config = config
+        self.service = None
                 
         creds = None
         # The file token.json stores the user's access and refresh tokens, and is
@@ -108,7 +109,13 @@ class GoogleSheetsDriver(UIDriver):
         except HttpError as err:
             logger.error(f"Google Sheets Driver: HTTP Error: {err}")
 
+        self.service = service
         self.sheet = service.spreadsheets()
+
+    def close(self) -> None:
+        service, self.service = self.service, None
+        if service is not None:
+            service.close()
 
     def _map_to_range(self, model_type: str) -> str:
 

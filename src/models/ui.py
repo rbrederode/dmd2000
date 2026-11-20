@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from schema import Schema, And, Or, Use, SchemaError
 
 from models.base import BaseModel
+from util.xbase import XAPIValidationFailed
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,7 @@ class UIDriver(BaseModel):
         "short_desc": Or(None, And(str, lambda v: isinstance(v, str))),     # Optional short description of the UI driver
         "config": Or(None, lambda v: v is None or isinstance(v, dict)),     # Configuration dictionary for the UI driver
         "instance": Or(None, lambda v: v is None or isinstance(v, object)), # Optional instance of the UI driver (e.g. GoogleSheetsDriver object)
-        "poll_period": Or(None, And(int, lambda v: v > 0)),                 # Poll period in seconds to push updates to the UI 
+        "poll_period": And(lambda value: type(value) is int, lambda value: value > 0), # Seconds between model pushes
         "last_update": And(datetime, lambda v: isinstance(v, datetime)),
     })
 
@@ -53,6 +54,26 @@ class UIDriver(BaseModel):
     def to_dict(self):
         """Override to exclude the 'instance' field which holds a non-serializable runtime object."""
         return {k: BaseModel._serialise(v) for k, v in self._data.items() if k != "instance"}
+
+
+class UIDriverList(BaseModel):
+    """Profile UI integration definitions, without application/runtime state."""
+
+    schema = Schema({
+        '_type': And(str, lambda value: value == 'UIDriverList'),
+        'list_id': And(str, lambda value: bool(value.strip())),
+        'ui_drivers': And(list, lambda values: all(isinstance(value, UIDriver) for value in values)),
+    })
+
+    def __init__(self, **kwargs):
+        if set(kwargs) - set(self.schema.schema):
+            raise XAPIValidationFailed('UIDriverList accepts only list_id and ui_drivers')
+        super().__init__(**({'_type': 'UIDriverList', 'list_id': 'active', 'ui_drivers': []} | kwargs))
+
+    def to_dict(self):
+        return {'_type': 'UIDriverList', 'list_id': self.list_id,
+                'ui_drivers': [{key: BaseModel._serialise(value) for key, value in driver._data.items()
+                                if key not in ('instance', 'last_update')} for driver in self.ui_drivers]}
 
 if __name__ == "__main__":
 

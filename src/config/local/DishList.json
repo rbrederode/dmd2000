@@ -48,7 +48,7 @@
                 "stow_az": 10.0,
                 "offset_alt": 0.0,
                 "offset_az": 0.0,
-                "min_alt": 0.0,
+                "min_alt": -90.0,
                 "max_alt": 90.0,
                 "min_az": -180.0,
                 "max_az": 540.0,

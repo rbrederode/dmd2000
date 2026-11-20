@@ -421,9 +421,11 @@ def create_app(data_roots=None, cache_dir=None, web_url=None, web_token=None, pr
                    or (resource == 'observations' and request.method == 'GET')
                    or (re.fullmatch(r'observations/[A-Za-z0-9][A-Za-z0-9_.:+-]{0,254}', resource) and request.method == 'GET')
                    or (resource == 'telescope/model' and request.method == 'GET')
+                   or (resource == 'telescope/config' and request.method in ('GET', 'PUT'))
                    or (resource == 'profile' and request.method in ('GET', 'PUT'))
-                   or (resource in ('dishes', 'digitisers') and request.method in ('GET', 'POST'))
-                   or (re.fullmatch(r'(dishes|digitisers)/[A-Za-z0-9][A-Za-z0-9_-]{0,127}', resource)
+                   or (resource == 'weather-settings' and request.method in ('GET', 'PATCH'))
+                   or (resource in ('dishes', 'digitisers', 'weather-stations') and request.method in ('GET', 'POST'))
+                   or (re.fullmatch(r'(dishes|digitisers|weather-stations)/[A-Za-z0-9][A-Za-z0-9_-]{0,127}', resource)
                        and request.method in ('GET', 'PATCH', 'DELETE')))
         if not allowed:
             abort(404)
@@ -485,7 +487,7 @@ def create_app(data_roots=None, cache_dir=None, web_url=None, web_token=None, pr
         response.headers['Cache-Control'] = 'no-store'
         if upstream.headers.get('ETag'):
             response.headers['ETag'] = upstream.headers['ETag']
-        if upstream.headers.get('Location', '').startswith(('/api/dishes/', '/api/digitisers/')):
+        if upstream.headers.get('Location', '').startswith(('/api/dishes/', '/api/digitisers/', '/api/weather-stations/')):
             response.headers['Location'] = '/api/web/' + upstream.headers['Location'][5:]
         return response
 
@@ -636,6 +638,26 @@ def create_app(data_roots=None, cache_dir=None, web_url=None, web_token=None, pr
             return jsonify(error=str(exc)), 409
         return jsonify(payload), 202
 
+    @app.post("/api/opt/distribution")
+    def distribution_product():
+        from ui.opt_distribution import validate_options
+        data = request.get_json()
+        source = get_job(data.get("job"))
+        if jobs.status(source)["state"] != "ready":
+            raise ValueError("Wait for observation processing to complete")
+        source_path = source["folder"] / "out"
+        if not (source_path / "distribution.csv").is_file():
+            raise ValueError("Reprocess an observation with sidereal SKY targets to export Distribution measurements")
+        options = validate_options(data.get("options", {}))
+        configuration = json.loads((source["folder"] / "request.json").read_text())
+        for key in ("lab_comparison", "terminal_velocity", "aggregate_product", "pointing_product"):
+            configuration.pop(key, None)
+        configuration.update(source_results=str(source_path), distribution_product=options)
+        try:
+            return jsonify(jobs.start(configuration)), 202
+        except RuntimeError as error:
+            return jsonify(error=str(error)), 409
+
     @app.post("/api/opt/pointing")
     def pointing_product():
         data = request.get_json()
@@ -660,6 +682,7 @@ def create_app(data_roots=None, cache_dir=None, web_url=None, web_token=None, pr
         configuration.pop("lab_comparison", None)
         configuration.pop("terminal_velocity", None)
         configuration.pop("aggregate_product", None)
+        configuration.pop("distribution_product", None)
         configuration["source_results"] = str(source_path)
         configuration["pointing_product"] = {"aggregate_id": aggregate_id, "animation": animation, "interval_ms": interval_ms}
         try:
@@ -676,6 +699,7 @@ def create_app(data_roots=None, cache_dir=None, web_url=None, web_token=None, pr
         configuration = json.loads((source["folder"] / "request.json").read_text())
         configuration.pop("pointing_product", None)
         configuration.pop("aggregate_product", None)
+        configuration.pop("distribution_product", None)
         configuration["settings"] = validate_settings(data.get("settings", {}))
         configuration.pop("terminal_velocity", None)
         terminal = data.get("terminal_velocity")

@@ -262,6 +262,7 @@
         if (!response.ok || body.status !== 'success' || !body.payload?.telescope_model) throw new Error(body.message || 'Telescope model unavailable');
         if (state.stopped) return;
         state.data = body.payload;
+        win.DmdSiderealClock?.setConfig(state.data.telescope_model.config);
         for (const [id, pending] of state.pendingControls) {
           const item = state.data.telescope_model?.oda?.obs_store?.obs_list?.find(obs => obs.obs_id === id);
           const status = obsState(item?.obs_state);

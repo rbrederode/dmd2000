@@ -15,7 +15,7 @@ function fixture() {
     weather_history: [sample(0, 6.26), sample(-2, 3), sample(-1, 0), sample(0, 90, 'ws002')],
     weather_summaries: [{ ws_id: 'ws001', sample_secs: 60, sample_count: 61, wind_avg: 4, wind_max: 8, wind_rms: 5,
       last_sample_time: sample(0, 0).obs_time }] };
-  const model = { wtr_stn: { id: 'ws001', app: {}, driver_poll_period: 1000, tm_connected: { value: 'ESTABLISHED' } },
+  const model = { wtr_stn: { id: 'ws001', app: {}, driver_config: {driver_poll_period:1000}, tm_connected: { value: 'ESTABLISHED' } },
     dsh_mgr: { app: {}, weather_store: store } };
   return { item: applications(model).find(item => item.type === 'ws'), store, model, sample };
 }

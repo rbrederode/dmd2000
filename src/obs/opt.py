@@ -1085,6 +1085,10 @@ def main():
             print(f"Aggregated SKY LSRK velocity plot written to {lsr_path}")
             print(f"Aggregated SKY LSRK velocity data written to {vlsr_path}")
 
+        from ui.opt_distribution import export_cli_distribution
+        for path in export_cli_distribution(obs, sky_scans, obs_display, args.dir, args.observation_baseline):
+            print(f"SNR Distribution written to {path}")
+
         print_sky_scans(obs=obs.obs_model, sky_q=sky_q, blacklist=blacklist)
         print_aggregated_scans(obs=obs.obs_model, sky_q=sky_q, int_arrays=collapsed_sky_arrays, blacklist=blacklist)
 

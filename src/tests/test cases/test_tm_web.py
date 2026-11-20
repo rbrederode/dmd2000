@@ -578,3 +578,28 @@ def test_schedule_command_reply_requests_immediate_snapshot(timers, kind, status
         assert action.msgs_to_remote[0].get_api_call()['property'] == 'telescope_model'
     else:
         assert not action.msgs_to_remote
+
+
+def test_tm_resync_loads_observatory_attributes_and_retains_them_after_invalid_edit(tmp_path, monkeypatch):
+    import json
+    from models.telescope import TelescopeConfig
+    tm = tm_stub()
+    tm.get_args = lambda: SimpleNamespace(profile='rotation')
+    from models.ui import UIDriverList
+    monkeypatch.setattr(UIDriverList, 'load_from_disk', staticmethod(lambda **kwargs: UIDriverList()))
+    monkeypatch.setattr(type(tm.telmodel.dig_store), 'load_from_disk', staticmethod(lambda **kwargs: tm.telmodel.dig_store))
+    loader = TelescopeConfig.load_from_disk
+    monkeypatch.setattr(TelescopeConfig, 'load_from_disk', staticmethod(lambda **kwargs: loader(input_dir=tmp_path, filename='telescope.json')))
+    path = tmp_path / 'telescope.json'
+    path.write_text(json.dumps(dict(_type='TelescopeConfig', name='Site', latitude=53., longitude=-2.3, height=77.)))
+    tm.process_resync()
+    assert tm.telmodel.config.name == 'Site'
+    assert tm.telmodel.to_dict()['config']['longitude'] == -2.3
+    previous = tm.telmodel.config
+    for invalid in ['{"longitude": 999}', '{not JSON']:
+        path.write_text(invalid)
+        tm.process_resync()
+        assert tm.telmodel.config is previous
+    path.unlink()
+    tm.process_resync()
+    assert tm.telmodel.config is previous

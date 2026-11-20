@@ -26,7 +26,7 @@ def save_velocity(records, path, observation, baseline, vmin, vmax, *, show_metr
         plot_channel_flags(axis, record["velocity"], record["power"], record.get("channel_flags"))
         if show_metrics:
             low, high = velocity_limits(record["velocity"], vmin, vmax)
-            annotate_spectral_metrics(axis, record["velocity"], record["power"], low, high,
+            record["spectral_metrics"] = annotate_spectral_metrics(axis, record["velocity"], record["power"], low, high,
                                       label=f"Tgt {record['target_id']}, Freq {record['freq_scan']}",
                                   flags=record.get("channel_flags"), qa_settings=record.get("qa_settings"))
     axis.axvline(0, color="black", linestyle="--", linewidth=1, label="Zero LSRK velocity")
@@ -90,6 +90,8 @@ def reanalyse(request, out, progress):
         row.pop("terminal_velocity", None)
         row.pop("lab_comparison", None)
         row.pop("velocity_products", None)
+        row.pop("frequency_metrics", None)
+        row.pop("velocity_metrics", None)
     labels = json.loads((source / "native-spectra.json").read_text())
     targets = {}
     records = []
@@ -122,6 +124,7 @@ def reanalyse(request, out, progress):
                                           result["observation"], settings["baseline"],
                                           fmin=settings.get("frequency_min_mhz"), fmax=settings.get("frequency_max_mhz"))
                     row["views"]["frequency"] = frequency_filename
+                    row["frequency_metrics"] = corrected_frequency["spectral_metrics"]
                     frequency_records.append(corrected_frequency)
                     row.get("view_errors", {}).pop("frequency", None)
                 except ValueError as exc:
@@ -146,6 +149,7 @@ def reanalyse(request, out, progress):
             filename = f"{label['id']}-velocity.png"
             save_velocity([record], out / filename, result["observation"], settings["baseline"],
                           settings["baseline_vmin"], settings["baseline_vmax"])
+            row["velocity_metrics"] = record.get("spectral_metrics")
             row["views"]["velocity"] = filename
             row.get("view_errors", {}).pop("velocity", None)
             selection = request.get("terminal_velocity")
@@ -209,4 +213,6 @@ def reanalyse(request, out, progress):
             render_lab_comparison(records, request["lab_comparison"], settings, out, result, progress=progress)
         except (ValueError, OSError, KeyError) as exc:
             result["warnings"].append(f"LAB comparison unavailable: {exc}")
+    from ui.opt_distribution import export_distribution
+    export_distribution(result, out)
     return result

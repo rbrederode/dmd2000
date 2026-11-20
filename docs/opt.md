@@ -221,3 +221,125 @@ for export behaviour and data formats.
 
 Further detail: [baseline and observed L–V implementation](observation_baseline.md),
 [predicted LAB L–V diagrams](lab_profiler.md), and [HI4PI fitting](hi4pi.md).
+
+## SNR Distribution
+
+OPT produces a SNR Distribution CSV and map when completed SKY aggregates
+have `SIDEREAL_TRACK` targets with valid Galactic coordinates. RA/Dec targets
+are converted to Galactic coordinates. LOAD, drift, offset, five-point and
+non-sidereal targets are excluded.
+
+The frontend always shows the **SNR Distribution** tab. Observations without suitable sidereal-track SKY targets show an explanation instead of a map. It defaults to
+**Velocity SNR**, with 15° × 15° Diamond cells, Log (zero-safe) colours and an automatic Upper SNR limit. Choose Frequency SNR
+or change the cell dimensions and click **Update map** to redraw from the exported
+measurements. This launches a server worker but does not replay scans, fit
+baselines or recalculate SNR. Cell dimensions must divide 360 degrees (longitude)
+and 180 degrees (latitude), respectively. Cell height is a map-cell parameter,
+not beam smoothing. Unobserved cells remain blank; repeated hits in the same cell
+are coloured by their unweighted arithmetic mean SNR in linear units.
+
+### Measurement dots, spectra and cell shape
+
+Black dots mark the original CSV measurement coordinates, before cell averaging.
+Click a dot to highlight it and show its saved individual Frequency or Velocity
+plot beside the map, following the map's **applied** SNR source. The preview uses
+the same saved image selection as that aggregate's individual plot tab (including
+saved LAB/terminal variants when selected). Selecting a dot never launches a
+processing job or regenerates a spectrum. Missing saved images are explained.
+Use **Preview** or the aggregate list to select a scan; repeated clicks at
+identical coordinates cycle the measurements there. On narrower screens the
+spectrum appears below the map. **Open image** beside Download CSV and **Open spectrum** below Preview open the full-size saved images. The map receives more space than the preview. The question-mark button in the upper-right corner opens settings help for the current plot tab.
+Older map products need **Update map** once to add the clickable point metadata.
+
+**Cell shape** selects Rectangle or Diamond (default). Width and height are the
+full longitude/latitude spans, in degrees. Diamonds tile in diagonal coordinates:
+round `u = l/width + b/height` and `v = l/width - b/height` to select a cell,
+whose centre is `(width*(u+v)/2, height*(u-v)/2)`. Thus its half-diagonals
+are width/2 and height/2. Measurements are averaged inside the selected shape;
+switching shape can change which measurements share a cell. This is binning,
+not interpolation or colour blending into unmeasured cells. Shapes are clipped
+at the poles and split at the longitude seam. CSV rows and SNR measurements
+remain unchanged. CLI `obs.dist_map` also accepts `--cell-shape rectangle|diamond`
+and draws the same original measurement dots, without any observation identity
+or UI dependency.
+
+### Distribution colour scale
+
+The colour scale starts at **SNR 0**, not the smallest observed SNR. **Upper SNR**
+can be set to a fixed positive value for comparisons between observations. Leave
+it blank for automatic scaling: use the maximum cell-average SNR for fewer than
+30 populated cells, or the 99th percentile for 30 or more. Limits are calculated
+*after* averaging repeat hits, using each populated cell once. Unobserved sky,
+unavailable values and duplicate polygons at the map seam never affect them.
+If every populated value is zero/nonpositive, the automatic upper limit is 1.
+
+**Colours** selects Linear, Asinh, or Log (default). These affect only the colour
+mapping; SNR values and the CSV stay unchanged. Asinh uses a transition width of
+1 SNR unit. Log uses `log(1 + SNR)`, which includes SNR 0, rather than a logarithm
+that would require a positive lower limit. The colour bar still reports actual
+linear SNR ratios, and marks clipped values with an extension arrow. Colours below
+zero/above the upper limit are clipped; measured zero stays distinct from blank,
+unobserved sky. The actual colour limits and selected stretch are retained in
+the result manifest. Click **Update map** after changing colour controls; this
+redraws cached measurements without reprocessing scans or calculating SNR again.
+
+
+The frontend's **Download CSV** and export ZIP include `distribution.csv`, with
+one row per eligible aggregate and these columns:
+
+```csv
+scan_id,gain_db,integration_time_s,centre_freq_hz,sample_rate_hz,galactic_longitude_deg,galactic_latitude_deg,velocity_snr,frequency_snr
+```
+
+`scan_id` is the aggregate's scientific scan ID. Integration time is accumulated
+physical-scan seconds, rather than the aggregate model's iteration count. SNRs
+are linear peak-to-noise ratios, using the same channel flags, restricted plot
+ranges and configured noise policy as the standard individual Frequency and
+Velocity annotations. Their returned measurements are retained and reused for
+export, rather than remeasured by the map code. An unavailable measurement is
+blank, not zero; an aggregate remains in the CSV even if one SNR is unavailable.
+The PNG is `distribution.png`; both files are included in the ZIP. Updating
+spectral plots refreshes both SNR columns and the map. Existing processed jobs
+need one reprocessing run to cache the additional acquisition metadata.
+
+Command-line OPT also exports `<observation-id>-distribution.csv` and, when
+velocity SNR is available, `<observation-id>-distribution.png`. It uses its prepared
+velocity plot metrics and the same frequency preparation/measurement function as
+the frontend. No separate noise or SNR estimator is introduced. The map describes
+observed SNR; gain, integration time and other acquisition settings affect it.
+
+### Standalone CSV map utility
+
+`obs/dist_map.py` is independent of OPT, observations and QA metadata. It reads
+just Galactic longitude, latitude and a linear SNR value:
+
+```csv
+long,lat,snr
+30,0,12
+31,0,18
+45,5,9
+```
+
+```bash
+python src/obs/dist_map.py \
+  --csv measurements.csv \
+  --l-step 5 \
+  --b-step 5 \
+  --snr-max 25 \
+  --stretch asinh \
+  --output hi-snr-map.png
+```
+
+Omit `--snr-max` for automatic zero-anchored limits. `--stretch` accepts `linear`,
+`asinh` and `log`. Omit `--output` for an interactive display. Longitude wraps at 0/360 and map cells
+crossing ±180 degrees are split at the projection seam. Cells are centred on
+multiples of the longitude step, and latitude centres include the Galactic plane
+for the default 5-degree grid. Longitudes increase towards the left. Coordinates
+use degrees; latitude must lie in −90..90. Blank/nonfinite SNR entries are skipped,
+and malformed numeric values are reported.
+
+SNR source selection belongs to the frontend adapter: it creates a temporary
+`long,lat,snr` CSV from the user's chosen column, passes that to `dist_map.py`, then
+removes the temporary input. The reusable renderer has no Velocity/Frequency
+selection option and never reads QA JSON files. The downloadable export always
+retains both SNRs and the complete acquisition details above.

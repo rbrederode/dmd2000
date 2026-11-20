@@ -3,6 +3,7 @@ from astropy.coordinates import get_body
 from astropy.coordinates import SkyCoord, EarthLocation, AltAz
 from astropy.time import Time
 from datetime import datetime, timezone, timedelta
+from functools import partial
 import logging
 from logging.handlers import TimedRotatingFileHandler
 import os
@@ -36,6 +37,7 @@ from util import log
 from util.format import fmt_pointing_value
 from util.registry import DISH_DRIVER_NAMESPACE, resolve
 from util.xbase import XBase, XStreamUnableToExtract, XSoftwareFailure, XInvalidTransition
+from web.dish_store import DishProfileStore
 
 logger = logging.getLogger("dsh.dm")
 
@@ -276,12 +278,14 @@ class DM(App):
         # Config file defines initial list of dishes to be processed by the DM and their initial parameters such as driver type and location
         filename = "DishList.json"
         self.dm_model.dish_store = self._load_dish_config(input_dir=input_dir, filename=filename)
+        capability_store = DishProfileStore(input_dir)
 
         # Instantiate drivers for each dish and initiate a polling driver timer for each dish
         for dish in self.dm_model.dish_store.dish_list:
             driver = self._instantiate_dish_driver(dish)
 
             if driver is not None:
+                driver.persist_capability = partial(capability_store.set_capability, dish.dsh_id)
                 driver.set_trace(self.trace)
                 driver.set_pointing_log_dir(Path(App.logs_dir) / "pointing")
                 self.dish_drivers[dish.dsh_id] = driver

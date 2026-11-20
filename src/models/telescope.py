@@ -1,8 +1,12 @@
 # -*- coding: utf-8 -*-
 from datetime import datetime
 import os
+import math
+from schema import Schema, And, Or
 
 from models.app import AppModel
+from models.base import BaseModel
+from util.xbase import XAPIValidationFailed
 from models.comms import CommunicationStatus
 from models.dsh import DishManagerModel, DishModel, DishMode, PointingState, Feed, Capability
 from models.dig import DigitiserList, DigitiserModel
@@ -14,6 +18,33 @@ from models.proc import ProcessorModel
 from models.tm import TelescopeManagerModel
 from models.ws import WeatherStationModel
 from models.web import WebServerModel
+
+
+class TelescopeConfig(BaseModel):
+    """Observatory identity/location only; independent of Config Profiles.
+
+    Coordinates use decimal degrees (east-positive longitude), height metres.
+    Unconfigured coordinates are None, never an implicit Greenwich location.
+    """
+
+    schema = Schema({
+        '_type': And(str, lambda value: value == 'TelescopeConfig'),
+        'name': And(str, lambda value: bool(value.strip())),
+        'latitude': Or(None, And(lambda value: type(value) in (int, float),
+                                 lambda value: math.isfinite(value) and -90 <= value <= 90)),
+        'longitude': Or(None, And(lambda value: type(value) in (int, float),
+                                  lambda value: math.isfinite(value) and -180 <= value <= 180)),
+        'height': Or(None, And(lambda value: type(value) in (int, float), math.isfinite)),
+    })
+
+    def __init__(self, **kwargs):
+        unexpected = set(kwargs) - set(self.schema.schema)
+        if unexpected:
+            raise XAPIValidationFailed(f"Unknown TelescopeConfig fields: {', '.join(sorted(unexpected))}")
+        super().__init__(**({'_type': 'TelescopeConfig', 'name': 'dmd2000 Observatory',
+                            'latitude': None, 'longitude': None, 'height': None} | kwargs))
+
+
 
 # The Telescope Model
 class TelescopeModel:
@@ -30,6 +61,7 @@ class TelescopeModel:
     """
     def __init__(self):
 
+        self.config = TelescopeConfig()                            # Observatory-level configuration
         self.oda = ODAModel(id="oda001")                            # Observation Data Archive model
         self.tel_mgr = TelescopeManagerModel(id="telmgr001")        # Telescope Manager (App) model
         self.dsh_mgr = DishManagerModel(id="dshmgr001")             # Dish Manager (App) model
@@ -84,6 +116,7 @@ class TelescopeModel:
 
     def to_dict(self):
         return {
+            "config": self.config.to_dict(),
             "oda": self.oda.to_dict(),
             "tel_mgr": self.tel_mgr.to_dict(),
             "dsh_mgr": self.dsh_mgr.to_dict(),

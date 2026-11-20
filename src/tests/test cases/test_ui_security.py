@@ -76,6 +76,8 @@ def test_viewer_reads_operator_writes_and_admin_manages_users(secured, monkeypat
     identity, headers = login(viewer, 'viewer')
     assert not identity['can_edit'] and not identity['can_manage_users']
     assert viewer.get('/api/web/dishes').status_code == 200
+    assert viewer.get('/api/web/telescope/config').status_code == 200
+    assert viewer.put('/api/web/telescope/config', json={'name':'Site'}, headers=headers).status_code == 403
     assert viewer.patch('/api/web/dishes/dish001', json={'diameter': 2}, headers=headers).status_code == 403
     assert viewer.post('/api/opt/process', json={}, headers=headers).status_code == 403
     assert viewer.get('/api/admin/users').status_code == 403
@@ -84,8 +86,10 @@ def test_viewer_reads_operator_writes_and_admin_manages_users(secured, monkeypat
     assert identity['can_edit'] and not identity['can_manage_users']
     assert operator.patch('/api/web/dishes/dish001', json={'diameter': 2}).status_code == 400
     assert operator.patch('/api/web/dishes/dish001', json={'diameter': 2}, headers=headers).status_code == 200
+    assert operator.put('/api/web/telescope/config', json={'name':'Site'}).status_code == 400
+    assert operator.put('/api/web/telescope/config', json={'name':'Site'}, headers=headers).status_code == 200
     assert operator.get('/api/admin/users').status_code == 403
-    assert len(calls) == 2
+    assert len(calls) == 4
 
 
 def test_admin_accounts_last_admin_guard_and_session_revocation(secured):
@@ -243,3 +247,22 @@ def test_live_digitiser_controls_require_operator_csrf_and_same_origin(secured, 
     assert not calls
     assert operator.post(route, json=body, headers=headers).status_code == 200
     assert calls[0]['event'] == 'alston-rt.ui.dig'
+
+
+@pytest.mark.parametrize('resource', ['weather-stations/ws001', 'weather-settings'])
+def test_weather_writes_require_operator_and_csrf(secured, monkeypatch, resource):
+    app, _ = secured
+    calls = []
+    def forward(*args, **kwargs):
+        calls.append(args)
+        return SimpleNamespace(status_code=200, headers={}, json=lambda: {'status':'success','message':'OK','payload':{}})
+    monkeypatch.setattr('ui.opt_service.requests.request', forward)
+    viewer = app.test_client()
+    _, headers = login(viewer, 'viewer')
+    assert viewer.get('/api/web/'+resource).status_code == 200
+    assert viewer.patch('/api/web/'+resource, json={}, headers=headers).status_code == 403
+    operator = app.test_client()
+    _, headers = login(operator, 'operator')
+    assert operator.patch('/api/web/'+resource, json={}).status_code == 400
+    assert operator.patch('/api/web/'+resource, json={}, headers=headers).status_code == 200
+    assert len(calls) == 2

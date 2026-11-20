@@ -10,7 +10,7 @@ import re
 from dig.filters.sawbird import SAWbirdH1_BareBones
 from models.base import BaseModel
 from models.dig import BandpassFilterType, DigitiserModel
-from models.ws import WeatherStation
+from models.ws import WeatherStation, WeatherStationList, WeatherStationDriverType, get_weather_driver_config
 from util.xbase import XAPIValidationFailed
 from web.profile_store import ProfileFileStore, ProfileStoreError, _finite
 
@@ -184,13 +184,89 @@ class DigitiserProfileStore(ProfileResourceStore):
 class WeatherStationProfileStore(ProfileResourceStore):
     filename, list_type, list_field = 'WeatherStationList.json', 'WeatherStationList', 'weather_stations'
     model, id_field, label = WeatherStation, 'ws_id', 'Weather station'
-    fields = ('ws_id', 'location', 'latitude', 'longitude', 'elevation')
+    fields = ('ws_id', 'location', 'latitude', 'longitude', 'elevation', 'driver_type', 'driver_config', 'sim_mode')
+    settings_fields = ('weather_enabled', 'threshold_timeout', 'retention_period', 'summary_window',
+                       'threshold_wind_avg', 'threshold_wind_gust', 'threshold_wind_count', 'threshold_precipitation')
+
+    def _settings(self, data):
+        defaults = WeatherStationList()
+        values = {key: data.get(key, getattr(defaults, key)) for key in self.settings_fields}
+        for key, value in values.items():
+            if key == 'weather_enabled':
+                if type(value) is not bool:
+                    raise ProfileStoreError('weather_enabled must be true or false')
+            elif key in ('threshold_timeout', 'retention_period', 'summary_window', 'threshold_wind_count'):
+                if type(value) is not int or value < 0:
+                    raise ProfileStoreError(f'{key} must be a non-negative integer')
+            else:
+                if type(value) not in (int, float) or value < 0:
+                    raise ProfileStoreError(f'{key} must be a non-negative number')
+                try:
+                    values[key] = float(value)
+                except OverflowError as error:
+                    raise ProfileStoreError(f'{key} must be finite') from error
+        _finite(values)
+        try:
+            WeatherStationList(**values)
+        except XAPIValidationFailed as error:
+            raise ProfileStoreError(f'Invalid weather settings: {error}') from error
+        return values
+
+    def read_configuration(self):
+        data, revision = self._read()
+        return [self.view(item) for item in data[self.list_field]], self._settings(data), revision
+
+    def read_settings(self):
+        data, revision = self._read()
+        return self._settings(data), revision
+
+    def save_settings(self, changes, if_match=None):
+        if not isinstance(changes, dict) or not changes or set(changes) - set(self.settings_fields):
+            raise ProfileStoreError('Supply only weather monitoring, retention, window and threshold settings')
+        with self._locked():
+            data, revision = self._read()
+            if if_match is None:
+                raise ProfileStoreError('Reload weather configuration before saving', 'version_required', 428)
+            if not if_match.contains(revision):
+                raise ProfileStoreError('Weather configuration changed; reload before saving', 'version_conflict', 412)
+            settings = self._settings(data | changes)
+            data.update(settings)
+            data['last_update'] = BaseModel._serialise(datetime.now(timezone.utc))
+            return settings, self._write(data)
 
     def new(self, identifier):
         return WeatherStation(ws_id=identifier, location='').to_dict()
 
+    @staticmethod
+    def driver_types():
+        return {kind.name: {key: value for key, value in get_weather_driver_config(kind).to_dict().items()
+                            if key not in ('_type', 'last_update')} for kind in WeatherStationDriverType}
+
+    def view(self, raw):
+        model = WeatherStation.from_dict(raw)
+        data = {key: model.to_dict()[key] for key in self.fields}
+        data['driver_type'] = model.driver_type.name
+        data['driver_config'] = {key: value for key, value in model.driver_config.to_dict().items()
+                                 if key not in ('_type', 'last_update')}
+        return data
+
     def prepare(self, raw, changes):
+        old_type = WeatherStation.from_dict(raw).driver_type
+        selected = changes.get('driver_type', old_type.name)
+        if not isinstance(selected, str) or selected not in WeatherStationDriverType.__members__:
+            raise ProfileStoreError('Choose UNKNOWN, MODBUS or ADS1115 for driver_type')
+        selected = WeatherStationDriverType[selected]
+        config = raw.get('driver_config') if selected == old_type else None
+        if 'driver_config' in changes:
+            patch = changes['driver_config']
+            if not isinstance(patch, dict) or set(patch) & {'_type', 'last_update'}:
+                raise ProfileStoreError('driver_config must contain only editable driver settings')
+            config = _merge(config, patch)
+        raw['driver_type'] = BaseModel._serialise(selected)
+        raw['driver_config'] = get_weather_driver_config(selected, config).to_dict()
         for field, value in changes.items():
+            if field in ('driver_type', 'driver_config'):
+                continue
             if field in ('latitude', 'longitude', 'elevation'):
                 if value is not None and type(value) not in (int, float):
                     raise ProfileStoreError(f'{field} must be numeric or null')

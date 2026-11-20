@@ -1,3 +1,4 @@
+from ws.drivers.modbus import ModbusConfig
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest import mock
@@ -23,7 +24,7 @@ def station(tmp_path, monkeypatch):
         id="ws001", sim_mode="off", driver_type=WeatherStationDriverType.MODBUS,
         dm_connected=CommunicationStatus.ESTABLISHED,
         tm_connected=CommunicationStatus.ESTABLISHED,
-        driver_poll_period=1500,
+        driver_config=ModbusConfig(driver_poll_period=1500),
     )
     station.app_model = station.ws_model.app
     station.weather_driver = mock.Mock()
@@ -265,7 +266,7 @@ def test_fractional_millisecond_delay_rounds_up(station, monkeypatch):
 
 
 def test_resync_resets_deadline_to_new_configured_interval(station, monkeypatch):
-    station._load_model_from_profile = mock.Mock()
+    station._load_station_from_profile = mock.Mock()
     station._replace_weather_driver = mock.Mock()
     station.get_args = mock.Mock(return_value=SimpleNamespace(entity_id="<undefined>", sim=None))
     station.weather_driver.get_poll_interval_ms.return_value = 250

@@ -259,6 +259,34 @@ def test_status_thread_does_no_work_when_shutdown_already_requested():
     app.heartbeat.assert_not_called()
 
 
+def test_status_thread_calculates_metrics_at_the_hour_mark():
+    from datetime import datetime, timezone, timedelta
+
+    app = lifecycle_app()
+    app.app_model.app_running = True
+    app.status_update_event = mock.Mock()
+    app.status_update_event.is_update_pending.return_value = False
+    app.heartbeat = mock.Mock()
+    app.report_availability = mock.Mock()
+    initial = datetime(2026, 11, 16, 12, 59, tzinfo=timezone.utc)
+    waits = []
+
+    def wait(timeout):
+        waits.append(timeout)
+        if len(waits) == 3:
+            app.request_stop()
+            return True
+        return False
+
+    app.wait_for_stop = wait
+    with mock.patch('env.app.datetime') as clock:
+        clock.now.side_effect = [initial + timedelta(seconds=59),
+                                 initial + timedelta(seconds=60),
+                                 initial + timedelta(seconds=90)]
+        app.run()
+    app.report_availability.assert_called_once_with()
+
+
 def test_status_thread_preserves_pending_update_diagnostics(caplog):
     app = lifecycle_app()
     app.app_model.app_running = True

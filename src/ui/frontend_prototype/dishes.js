@@ -48,7 +48,7 @@
       etag: null, baseline: '', isNew: false, busy: false, loaded: false };
     const driverInputs = new Map();
     const peers = new Map();
-    let activeResource = 'dishes';
+    let activeResource = doc.querySelector('[data-admin-tab].is-active')?.dataset?.adminTab || 'dishes';
     let dishesReady = false;
     const anyBusy = () => state.busy || [...peers.values()].some((editor) => editor.isBusy());
     const anyDirty = () => dirty() || [...peers.values()].some((editor) => editor.dirty());

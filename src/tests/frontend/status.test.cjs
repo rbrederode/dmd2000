@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { init: statusInit, applications, detail, connections, percent, lastUpdate } = require('../../ui/frontend_prototype/status.js');
+const { init: statusInit, applications, detail, connections, consolidatedConnections, digitisersTable, percent, lastUpdate } = require('../../ui/frontend_prototype/status.js');
 // Existing status scenarios use an empty command catalogue; command scenarios
 // below exercise the real GET/POST interaction explicitly.
 function init(doc, win, fetcher) {
@@ -61,17 +61,21 @@ test('selectable application pane refreshes in place and marks retained data sta
   const get = (id) => { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); };
   const doc = { getElementById: get, querySelector: (key) => get(key) };
   let payload = snapshot(), online = true, calls = 0;
+  payload.telescope_model.config = {name:'Observatory', longitude:-2.305485};
+  let clockConfig;
   payload.profile = 'browser-working-profile';
   payload.telescope_model.dsh_mgr.app = {...payload.telescope_model.dsh_mgr.app, arguments: {profile: 'rotation'}};
   payload.telescope_model.sdp.app = {...payload.telescope_model.sdp.app, arguments: {}};
   const intervals = [];
   const win = { setTimeout, clearTimeout, setInterval(fn, ms) { intervals.push({ fn, ms }); return 1; }, clearInterval() {}, addEventListener() {} };
+  win.DmdSiderealClock = {setConfig(config) { clockConfig = config; }};
   const controller = init(doc, win, async (url) => {
     assert.equal(url, '/api/web/telescope/model'); calls++;
     if (!online) throw new Error('Disconnected');
     return { ok: true, json: async () => ({ status: 'success', payload }) };
   });
   await new Promise(setImmediate);
+  assert.deepEqual(clockConfig, payload.telescope_model.config);
   assert.equal(intervals[0].ms, 5000);
   assert.equal(get('status-connection').hidden, true);
   assert.equal(get('status-freshness').className, 'zk-muted');
@@ -106,6 +110,331 @@ test('selectable application pane refreshes in place and marks retained data sta
   await get('status-apps').emit('keydown', { ...selected, key: 'Enter' });
   await get('status-detail-close').emit('click');
   assert.equal(get('status-detail').hidden, true);
+});
+
+test('percentage trends retain the last change across equal reports and hide unknown values', async (t) => {
+  t.mock.method(Date, 'now', () => Date.parse('2026-11-06T08:21:21Z'));
+  const elements = new Map();
+  const get = id => { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); };
+  const payload = snapshot(), model = payload.telescope_model;
+  // Separate app objects so that each row's trend can be checked independently.
+  model.tel_mgr.app = { ...model.tel_mgr.app, availability: 50, reliability: { reliability: 80 } };
+  let online = true;
+  const controller = init({ getElementById: get, querySelector: get },
+    { setTimeout, clearTimeout, setInterval() {}, clearInterval() {}, addEventListener() {} },
+    async () => {
+      if (!online) throw new Error('Offline');
+      return { ok: true, json: async () => ({ status: 'success', payload }) };
+    });
+  await new Promise(setImmediate);
+  const row = key => get('status-apps').innerHTML.match(new RegExp('<tr data-app-key="' + key + '"[^]*?</tr>'))[0];
+  assert.doesNotMatch(row('tm:tm001'), /status-percentage-trend/); // No previous observation yet.
+  model.tel_mgr.app.availability = 60;
+  model.tel_mgr.app.reliability.reliability = 70;
+  model.tel_mgr.app.last_update = en('2026-11-06T08:20:30Z');
+  await controller.refresh();
+  assert.match(row('tm:tm001'), /60.00%<span class="status-percentage-trend is-up"[^>]*>↑/);
+  assert.match(row('tm:tm001'), /70.00%<span class="status-percentage-trend is-down"[^>]*>↓/);
+  assert.doesNotMatch(row('ws:ws001'), /is-up|is-down/);
+  await controller.refresh(); // Same cached report retains the directions.
+  assert.match(row('tm:tm001'), /is-up/);
+  assert.match(row('tm:tm001'), /is-down/);
+  await get('status-apps').emit('click', { target: { closest: selector => selector === '[data-app-key]' ? { dataset: { appKey: 'tm:tm001' } } : null } });
+  assert.match(row('tm:tm001'), /is-up/); // UI-only renders do not change trends.
+  model.tel_mgr.app.last_update = en('2026-11-06T08:20:40Z');
+  model.wtr_stn.app.last_update = en('2026-11-06T08:20:40Z');
+  await controller.refresh();
+  assert.match(row('tm:tm001'), /60.00%<span class="status-percentage-trend is-up"/);
+  assert.match(row('tm:tm001'), /70.00%<span class="status-percentage-trend is-down"/);
+  assert.match(row('ws:ws001'), /aria-label="Unchanged"[^>]*>↔/);
+  // Compare full precision and reverse the direction even when displayed values match.
+  model.tel_mgr.app.availability = 59.9999;
+  model.tel_mgr.app.reliability.reliability = 70.0001;
+  await controller.refresh();
+  assert.match(row('tm:tm001'), /60.00%<span class="status-percentage-trend is-down"/);
+  assert.match(row('tm:tm001'), /70.00%<span class="status-percentage-trend is-up"/);
+  model.tel_mgr.app.last_update = en('2026-11-06T08:20:45Z');
+  await controller.refresh();
+  assert.match(row('tm:tm001'), /60.00%<span class="status-percentage-trend is-down"/);
+  assert.match(row('tm:tm001'), /70.00%<span class="status-percentage-trend is-up"/);
+  model.tel_mgr.app.availability = null;
+  model.tel_mgr.app.reliability.reliability = NaN;
+  await controller.refresh();
+  assert.doesNotMatch(row('tm:tm001'), /status-percentage-trend/);
+  model.tel_mgr.app.availability = 90;
+  model.tel_mgr.app.reliability = { reliability_availability: 95 };
+  await controller.refresh();
+  assert.match(row('tm:tm001'), /<td>90.00%<\/td><td>95.00%<\/td>/);
+  model.tel_mgr.app.last_update = en('2026-11-06T08:20:50Z');
+  await controller.refresh();
+  assert.match(row('tm:tm001'), /is-unchanged/);
+  online = false;
+  await controller.refresh();
+  assert.doesNotMatch(row('tm:tm001'), /status-percentage-trend|90.00%|95.00%/);
+  online = true;
+  payload.stale = false;
+  model.tel_mgr.ws_connected = en('NOT_ESTABLISHED');
+  await controller.refresh();
+  assert.doesNotMatch(row('ws:ws001'), /status-percentage-trend|0.00%/);
+});
+
+test('percentage trends survive reloads and outages and remain separate for each profile', async (t) => {
+  t.mock.method(Date, 'now', () => Date.parse('2026-11-06T08:21:21Z'));
+  const saved = new Map();
+  const localStorage = { getItem: key => saved.get(key), setItem: (key, value) => saved.set(key, value) };
+  const payload = snapshot();
+  payload.telescope_model.tel_mgr.app = { ...payload.telescope_model.tel_mgr.app, availability: 50 };
+  const start = async () => {
+    const elements = new Map();
+    const get = id => { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); };
+    const controller = init({ getElementById: get, querySelector: get },
+      { setTimeout, clearTimeout, setInterval() {}, clearInterval() {}, addEventListener() {}, localStorage },
+      async () => ({ ok: true, json: async () => ({ status: 'success', payload }) }));
+    await new Promise(setImmediate);
+    return { controller, row: () => get('status-apps').innerHTML.match(/<tr data-app-key="tm:tm001"[^]*?<\/tr>/)[0] };
+  };
+  const first = await start();
+  payload.telescope_model.tel_mgr.app.availability = 50.00001;
+  await first.controller.refresh();
+  assert.match(first.row(), /50.00%<span class="status-percentage-trend is-up"/);
+  const reloaded = await start();
+  assert.match(reloaded.row(), /is-up/);
+  payload.stale = true;
+  await reloaded.controller.refresh();
+  assert.doesNotMatch(reloaded.row(), /status-percentage-trend/);
+  payload.stale = false;
+  payload.telescope_model.tel_mgr.app.last_update = en('2026-11-06T08:21:01Z');
+  await reloaded.controller.refresh();
+  assert.match(reloaded.row(), /is-up/);
+  payload.profile = 'different';
+  await reloaded.controller.refresh();
+  assert.doesNotMatch(reloaded.row(), /status-percentage-trend/);
+  payload.profile = 'local';
+  await reloaded.controller.refresh();
+  assert.match(reloaded.row(), /is-up/);
+});
+
+test('consolidated connections include app and entity links with configured server endpoints', async (t) => {
+  t.mock.method(Date, 'now', () => Date.parse('2026-11-06T08:21:21Z'));
+  const payload = snapshot(), model = payload.telescope_model;
+  model.tel_mgr.app = { ...model.tel_mgr.app, interface_roles: { dm: 'CLIENT', dig: 'SERVER' },
+    arguments: { dm_host: 'dm.example', dm_port: 50002, dig_host: '0.0.0.0', dig_port: 55000 } };
+  model.dig_store.dig_list[1].tm_connected = en('ESTABLISHED');
+  model.dig_store.dig_list[1].app = { ...model.dig_store.dig_list[1].app,
+    arguments: { local_host: '192.168.1.9', tm_port: 9999 }, interface_roles: { tm: 'CLIENT' } };
+  model.dig_store.dig_list[1].sdr_connected = en('ESTABLISHED');
+  model.dig_store.dig_list[1].sdr_config = { host: 'sdr.example', port: 1234 };
+  model.dsh_mgr.dish_store.dish_list = [
+    { dsh_id: '<dish001>', driver_type: 'MD01', driver_config: { host: 'dish.example', port: 8000 } },
+    { dsh_id: 'dish002', driver_type: 'DRIFT' },
+  ];
+  let links = consolidatedConnections(model);
+  assert.deepEqual(links.find(link => link.application === 'tm001' && link.peer === 'dm001'),
+    { application: 'tm001', peer: 'dm001', role: 'Client - Persistent', state: 'ESTABLISHED', endpoint: 'dm.example:50002' });
+  const server = links.find(link => link.application === 'tm001' && link.peer === 'dig003');
+  assert.equal(server.role, 'Server');
+  assert.equal(server.endpoint, '0.0.0.0:55000'); // Listening address rather than the digitiser's address.
+  assert.equal(server.state, 'UNKNOWN');
+  assert.equal(links.filter(link => [link.application, link.peer].sort().join(':') === 'dig001:tm001').length, 1);
+  assert.equal(links.find(link => link.application === 'dig001' && link.peer === 'tm001').state, 'ESTABLISHED');
+  assert.equal(links.find(link => link.peer === 'SDR').endpoint, 'sdr.example:1234');
+  assert.equal(links.find(link => link.peer === '<dish001>').state, 'UNKNOWN');
+  assert.equal(links.find(link => link.peer === '<dish001>').endpoint, 'dish.example:8000');
+  assert.equal(links.find(link => link.peer === 'dish002').state, 'Not Applicable');
+  const elements = new Map();
+  const get = id => { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); };
+  const controller = init({ getElementById: get, querySelector: get },
+    { setTimeout, clearTimeout, setInterval() {}, clearInterval() {}, addEventListener() {} },
+    async () => ({ ok: true, json: async () => ({ status: 'success', payload }) }));
+  await new Promise(setImmediate);
+  assert.equal(get('status-connections-pane').hidden, true);
+  await get('status-connections-open').emit('click');
+  assert.equal(get('status-connections-pane').hidden, false);
+  assert.doesNotMatch(get('status-connections-rows').innerHTML, /dish001|dish002|SDR/);
+  model.tel_mgr.dm_connected = en('NOT_ESTABLISHED');
+  await controller.refresh();
+  assert.equal(get('status-connections-pane').hidden, false);
+  assert.match(get('status-connections-rows').innerHTML, /NOT_ESTABLISHED/);
+  links = consolidatedConnections(model, true);
+  assert.ok(links.every(link => ['UNKNOWN', 'Not Applicable'].includes(link.state)));
+  await get('status-connections-close').emit('click');
+  assert.equal(get('status-connections-pane').hidden, true);
+});
+
+test('connection pairs resolve actual IDs, reconcile reports and retain distinct digitiser and hardware links', (t) => {
+  t.mock.method(Date, 'now', () => Date.parse('2026-11-06T08:21:21Z'));
+  const model = snapshot().telescope_model;
+  model.tel_mgr.id = 'telmgr001';
+  model.dsh_mgr.id = 'dshmgr001';
+  model.tel_mgr.app = { ...model.tel_mgr.app, interface_roles: { dm: 'CLIENT', dig: 'SERVER' },
+    arguments: { dm_host: 'dm.example', dm_port: 50002, dig_host: '0.0.0.0', dig_port: 50000 } };
+  model.dsh_mgr.app = { ...model.dsh_mgr.app, interface_roles: { tm: 'SERVER' },
+    arguments: { tm_host: '0.0.0.0', tm_port: 50002 } };
+  model.dsh_mgr.tm_connected = en('ESTABLISHED');
+  model.dsh_mgr.ws_connected = en('ESTABLISHED');
+  model.wtr_stn.dm_connected = en('ESTABLISHED');
+  model.sdp.dig_store = { dig_list: model.dig_store.dig_list };
+  for (const dig of model.dig_store.dig_list) {
+    dig.app = { ...dig.app, interface_roles: { tm: 'CLIENT', sdp: 'CLIENT' },
+      arguments: { tm_host: 'tm.example', tm_port: 50000, sdp_host: 'sdp.example', sdp_port: 60000 } };
+    dig.tm_connected = en('ESTABLISHED');
+    dig.sdp_connected = en('ESTABLISHED');
+    dig.sdr_connected = en('ESTABLISHED');
+    dig.sdr_config = { host: 'same-sdr.example', port: 1234 };
+  }
+  const pair = (a, b) => consolidatedConnections(model).filter(link =>
+    [link.application, link.peer].sort().join(':') === [a, b].sort().join(':'));
+  assert.equal(pair('telmgr001', 'dshmgr001').length, 1);
+  assert.equal(pair('telmgr001', 'dshmgr001')[0].endpoint, 'dm.example:50002');
+  assert.equal(pair('ws001', 'dshmgr001').length, 1); // Roles need not be available to pair reports.
+  for (const dig of model.dig_store.dig_list) {
+    assert.equal(pair(dig.dig_id, 'telmgr001').length, 1);
+    assert.equal(pair(dig.dig_id, 'sdp001').length, 1);
+    assert.equal(pair(dig.dig_id, 'SDR').length, 1);
+  }
+  assert.equal(consolidatedConnections(model).filter(link => link.peer === 'SDR').length, 2);
+  model.dsh_mgr.tm_connected = en('NOT_ESTABLISHED');
+  assert.equal(pair('telmgr001', 'dshmgr001')[0].state, 'NOT_ESTABLISHED'); // A conflicting failure wins.
+  model.dsh_mgr.tm_connected = en('ESTABLISHED');
+  model.dsh_mgr.app.last_update = en('2026-11-06T08:18:00Z');
+  assert.equal(pair('telmgr001', 'dshmgr001')[0].state, 'ESTABLISHED'); // A live report supersedes stale data.
+  model.tel_mgr.dm_connected = en('NOT_ESTABLISHED');
+  assert.equal(pair('telmgr001', 'dshmgr001')[0].state, 'NOT_ESTABLISHED');
+  model.tel_mgr.app.last_update = en('2026-11-06T08:18:00Z');
+  assert.equal(pair('telmgr001', 'dshmgr001')[0].state, 'UNKNOWN');
+});
+
+test('network dish connections reflect controller failures and successful responses', (t) => {
+  t.mock.method(Date, 'now', () => Date.parse('2026-11-06T08:21:21Z'));
+  const model = snapshot().telescope_model;
+  const dish = { dsh_id: 'dish001', driver_type: en('MD01'), driver_failures: 0,
+    last_comms_success_dt: null, last_update: en('2026-11-06T08:21:00Z') };
+  model.dsh_mgr.dish_store.dish_list = [dish];
+  const state = () => consolidatedConnections(model).find(link => link.peer === 'dish001').state;
+  assert.equal(state(), 'NOT_ESTABLISHED'); // No successful response yet.
+  dish.driver_failures = 3;
+  assert.equal(state(), 'NOT_ESTABLISHED');
+  dish.last_comms_success_dt = en('2026-11-06T08:20:59Z');
+  assert.equal(state(), 'NOT_ESTABLISHED'); // An older success cannot mask later failures.
+  dish.driver_failures = 0;
+  assert.equal(state(), 'ESTABLISHED');
+  dish.driver_type = en('MOTION');
+  assert.equal(state(), 'ESTABLISHED');
+  dish.driver_failures = 1;
+  assert.equal(state(), 'NOT_ESTABLISHED');
+  model.tel_mgr.dm_connected = en('NOT_ESTABLISHED');
+  assert.equal(state(), 'UNKNOWN');
+  model.tel_mgr.dm_connected = en('ESTABLISHED');
+  dish.last_update = en('2026-11-06T08:18:00Z');
+  assert.equal(state(), 'UNKNOWN');
+  dish.driver_type = en('DRIFT');
+  assert.equal(state(), 'Not Applicable');
+  dish.driver_type = en('MD01');
+  delete dish.last_update;
+  delete dish.driver_failures;
+  delete dish.last_comms_success_dt;
+  assert.equal(state(), 'UNKNOWN'); // Older snapshots with no communication evidence.
+});
+
+test('Dish Manager opens separate manager and dishes panes; capability opens only dishes', async (t) => {
+  t.mock.method(Date, 'now', () => Date.parse('2026-11-06T08:21:21Z'));
+  const elements = new Map();
+  const get = id => { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); };
+  const payload = snapshot();
+  payload.telescope_model.dsh_mgr.dish_store.dish_list = [{ dsh_id: 'dish001', mode: 'STOW' }];
+  const opened = [], updates = [];
+  const controller = init({ getElementById: get, querySelector: get },
+    { setTimeout, clearTimeout, setInterval() {}, clearInterval() {}, addEventListener() {},
+      DmdDishStatus: { init: () => ({ open: (...args) => opened.push(args), update: data => updates.push(data) }) } },
+    async () => ({ ok: true, json: async () => ({ status: 'success', payload }) }));
+  await new Promise(setImmediate);
+  assert.equal(get('status-dishes-pane').hidden, true);
+  const select = key => get('status-apps').emit('click', { target: {
+    closest: selector => selector === '[data-app-key]' ? { dataset: { appKey: key } } : null } });
+  await select('dm:dm001');
+  assert.equal(get('status-detail').hidden, false);
+  assert.equal(get('status-detail-title').textContent, 'Dish Manager — dm001');
+  assert.equal(get('status-dishes-pane').hidden, false);
+  assert.doesNotMatch(get('status-detail-content').innerHTML, /status-dish-table/);
+  assert.match(get('status-detail-content').innerHTML, /Weather monitoring/);
+  assert.match(get('status-dishes-content').innerHTML, /data-status-dish="dish001"/);
+  await get('status-dishes-close').emit('click');
+  assert.equal(get('status-dishes-pane').hidden, true);
+  assert.equal(get('status-detail').hidden, false);
+  await get('status-dishes-open').emit('click');
+  assert.equal(get('status-detail').hidden, true);
+  assert.equal(get('status-dishes-pane').hidden, false);
+  const event = { target: { closest: () => ({ dataset: { statusDish: 'dish001' } }) } };
+  await get('status-dishes-content').emit('click', event);
+  await get('status-dishes-content').emit('keydown', { ...event, key: 'Enter' });
+  assert.deepEqual(opened.map(args => args[0]), ['dish001', 'dish001']);
+  payload.telescope_model.dsh_mgr.dish_store.dish_list[0].mode = 'OPERATE';
+  await controller.refresh();
+  assert.match(get('status-dishes-content').innerHTML, /<td>OPERATE<\/td>/);
+  assert.equal(updates.at(-1), payload);
+  assert.equal(get('status-detail').hidden, true);
+  await select('tm:tm001');
+  assert.equal(get('status-dishes-pane').hidden, true);
+  assert.equal(updates.at(-1), null);
+});
+
+test('software defined radios lists every digitiser and opens individual controls', async (t) => {
+  t.mock.method(Date, 'now', () => Date.parse('2026-11-06T08:21:21Z'));
+  const payload = snapshot(), model = payload.telescope_model;
+  const dig = model.dig_store.dig_list[1];
+  Object.assign(dig, { load_active: false, gain: 0, center_freq: 1420000000, sample_rate: 2048000,
+    bandwidth: 2000000, freq_correction: -2, scanning: false, temp_reading: { temperature: 23.5 },
+    temp_max: 40, sdr_eeprom: { serial: '<unsafe>' }, tm_connected: en('ESTABLISHED') });
+  const html = digitisersTable(model);
+  assert.ok(html.indexOf('data-status-digitiser="dig:dig001"') < html.indexOf('data-status-digitiser="dig:dig003"'));
+  assert.match(html, /<td>rtlstream<\/td><td>0 dB<\/td><td>1420 MHz<\/td><td>2.048 MHz<\/td>/);
+  assert.match(html, /<th aria-label="SDR Type">SDR<br>Type<\/th>/);
+  assert.doesNotMatch(html, /<th aria-label="Load">/);
+  assert.match(html, /<td>2 MHz<\/td><td>OFF<\/td><td>23.5 °C<\/td><td>40 °C<\/td>/);
+  assert.doesNotMatch(html, /Frequency correction/);
+  assert.match(html, /<th aria-label="ID">ID<\/th>/);
+  assert.match(html, /<th aria-label="Temp Reading">Temp<br>Reading<\/th>/);
+  assert.match(html, /<th aria-label="Max Temp">Max<br>Temp<\/th>/);
+  assert.match(html, /<th aria-label="Health">Health<\/th><th aria-label="Last error UTC \/ Message">/);
+  assert.match(html, /<td><span class="zk-chip is-live">OK<\/span><\/td><td class="status-dish-error">/);
+  assert.match(html, /&lt;unsafe&gt;/);
+  assert.doesNotMatch(html, /<unsafe>|<script>/);
+  assert.match(digitisersTable({}), /No digitisers reported/);
+  dig.scanning = { obs_id: 'obs001' };
+  assert.match(digitisersTable(model), /<td>2 MHz<\/td><td>SKY<\/td>/);
+  dig.load_active = true;
+  assert.match(digitisersTable(model), /<td>2 MHz<\/td><td>LOAD<\/td>/);
+  dig.scanning = false;
+  assert.match(digitisersTable(model), /<td>2 MHz<\/td><td>OFF<\/td>/);
+  dig.scanning = true;
+  dig.load_active = null;
+  assert.match(digitisersTable(model), /<td>2 MHz<\/td><td>—<\/td>/);
+  dig.load_active = false;
+  const elements = new Map();
+  const get = id => { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); };
+  const controller = init({ getElementById: get, querySelector: get },
+    { setTimeout, clearTimeout, setInterval() {}, clearInterval() {}, addEventListener() {} },
+    async () => ({ ok: true, json: async () => ({ status: 'success', payload }) }));
+  await new Promise(setImmediate);
+  assert.equal(get('status-digitisers-pane').hidden, true);
+  await get('status-digitisers-open').emit('click');
+  assert.equal(get('status-digitisers-pane').hidden, false);
+  assert.equal(get('status-detail').hidden, true);
+  const event = { target: { closest: () => ({ dataset: { statusDigitiser: 'dig:dig001' } }) } };
+  await get('status-digitisers-content').emit('click', event);
+  assert.equal(controller.state.selected, 'dig:dig001');
+  assert.equal(get('status-detail-title').textContent, 'Digitiser — dig001');
+  assert.match(get('status-detail-content').innerHTML, /data-digitiser-control-app="dig:dig001"/);
+  assert.equal(get('status-digitisers-pane').hidden, false);
+  dig.gain = 20;
+  await controller.refresh();
+  assert.match(get('status-digitisers-content').innerHTML, /<td>rtlstream<\/td><td>20 dB<\/td>/);
+  dig.tm_connected = en('NOT_ESTABLISHED');
+  await controller.refresh();
+  const row = get('status-digitisers-content').innerHTML.match(/<tr data-status-digitiser="dig:dig001"[^]*?<\/tr>/)[0];
+  assert.equal((row.match(/status-unknown/g) || []).length, 8);
+  await get('status-digitisers-close').emit('click');
+  assert.equal(get('status-digitisers-pane').hidden, true);
 });
 
 test('timestamps become old after two minutes and ignore missing or future dates', () => {
@@ -146,7 +475,8 @@ test('timestamp highlights age on refresh and clear on a new application report'
   assert.equal(get('status-detail-subtitle').hidden, true);
 });
 
-test('execution widget lists simultaneous active observations and tracks their transitions', async () => {
+test('execution widget counts observations and reports SDP WIP without listing IDs', async (t) => {
+  t.mock.method(Date, 'now', () => Date.parse('2026-11-06T08:21:21Z'));
   const elements = new Map();
   const get = (id) => { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); };
   const doc = { getElementById: get, querySelector: get };
@@ -161,17 +491,35 @@ test('execution widget lists simultaneous active observations and tracks their t
   const controller = init(doc, win, async () => ({ ok: true, json: async () => ({ status: 'success', payload }) }));
   await new Promise(setImmediate);
   assert.equal(get('[data-status-value="executions.count"]').textContent, '3 in progress');
-  const html = get('status-executions').innerHTML;
-  for (const text of ['obs1', 'obs2', '&lt;obs3&gt;', '&lt;dish3&gt;', 'SCANNING', 'CONFIGURING', 'READY']) assert.ok(html.includes(text));
-  assert.doesNotMatch(html, /excluded-|<obs3>|<dish3>/);
+  assert.match(get('status-executions').innerHTML, /WIP UNKNOWN/);
+  payload.telescope_model.sdp.scans_wip = 4;
+  payload.telescope_model.sdp.scans_aborted = 2;
+  payload.telescope_model.sdp.scans_completed = 17;
+  await controller.refresh();
+  assert.match(get('status-executions').innerHTML, /WIP 4 · Aborted 2 · Completed 17/);
+  assert.doesNotMatch(get('status-executions').innerHTML, /obs1|obs2|obs3|dish3/);
   for (const obs of payload.telescope_model.oda.obs_store.obs_list) obs.obs_state = en('IDLE');
   await controller.refresh();
   assert.equal(get('[data-status-value="executions.count"]').textContent, '0 in progress');
-  assert.match(get('status-executions').innerHTML, /No observations in progress/);
+  payload.telescope_model.sdp.scans_wip = 0;
+  await controller.refresh();
+  assert.match(get('status-executions').innerHTML, /WIP 0/);
   delete payload.telescope_model.oda;
   await controller.refresh();
   assert.equal(get('[data-status-value="executions.count"]').textContent, '—');
-  assert.match(get('status-executions').innerHTML, /unavailable/);
+  payload.telescope_model.tel_mgr.sdp_connected = en('NOT_ESTABLISHED');
+  await controller.refresh();
+  assert.equal(get('status-executions').innerHTML, '<li class="zk-muted">Scans</li><li class="zk-muted">SDP not connected.</li>');
+  payload.telescope_model.tel_mgr.sdp_connected = en('ESTABLISHED');
+  await controller.refresh();
+  assert.match(get('status-executions').innerHTML, /WIP 0 · Aborted 2 · Completed 17/);
+  assert.doesNotMatch(get('status-executions').innerHTML, /SDP not connected/);
+  payload.telescope_model.sdp.app.last_update = en('2026-11-06T08:18:00Z');
+  await controller.refresh();
+  assert.match(get('status-executions').innerHTML, /SDP not connected\./);
+  delete payload.telescope_model.sdp;
+  await controller.refresh();
+  assert.match(get('status-executions').innerHTML, /SDP not connected\./);
 });
 
 test('background refresh preserves reading position while restoring keyboard focus', async () => {
@@ -707,4 +1055,382 @@ test('Engineering Refresh waits for a fresh TM snapshot and resets the displayed
   assert.match(get('status-freshness').textContent, /timed out.*last snapshot as stale/);
   assert.equal(controller.state.data.stale, true);
   assert.equal(get('status-refresh').disabled, false);
+});
+
+
+test('weather overview rounds wind and highlights alarms, clearing when recovered', async (t) => {
+  t.mock.method(Date, 'now', () => Date.parse('2026-11-06T08:21:21Z'));
+  const elements = new Map();
+  const get = id => { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); };
+  const payload = snapshot();
+  payload.telescope_model.dsh_mgr.dish_store.dish_list = [
+    { dsh_id: 'dish001', weather_alarm: false }, { dsh_id: 'dish002', weather_alarm: true },
+  ];
+  payload.telescope_model.dsh_mgr.weather_store = {
+    weather_enabled: true, weather_summaries: [{ ws_id: 'ws001', wind_avg: 11.457644959531837 }],
+    weather_metrics: { ws001: { alarm_triggered: true, avg_wind: 11.457644959531837, max_wind: 15.87654, gust_count: 4 }, ws002: { alarm_triggered: true, sample_count: 0 } },
+  };
+  const controller = init({ getElementById: get, querySelector: get },
+    { setTimeout, clearTimeout, setInterval() {}, clearInterval() {}, addEventListener() {} },
+    async () => ({ ok: true, json: async () => ({ status: 'success', payload }) }));
+  await new Promise(setImmediate);
+  const alarm = get('[data-status-value="weather.state"]');
+  assert.equal(get('[data-status-value="weather.detail"]').textContent, 'Wind');
+  assert.equal(get('[data-status-value="weather.wind"]').textContent, 'Avg 11.46 m/s · Gust 15.88 m/s');
+  assert.equal(alarm.textContent, 'ALARM');
+  assert.equal(alarm.classes.has('weather-alarm-active'), true);
+  // An unused station timeout and a dish's retained interlock must not override ws001's current metrics.
+  payload.telescope_model.dsh_mgr.weather_store.weather_metrics.ws001.alarm_triggered = false;
+  await controller.refresh();
+  assert.equal(alarm.textContent, 'SAFE');
+  assert.equal(alarm.classes.has('weather-alarm-active'), false);
+  payload.telescope_model.dsh_mgr.weather_store.weather_metrics.ws001.alarm_triggered = true;
+  await controller.refresh();
+  assert.equal(alarm.classes.has('weather-alarm-active'), true);
+});
+
+
+test('weather overview shows a red UNKNOWN when the station is unavailable and recovers on reconnect', async (t) => {
+  t.mock.method(Date, 'now', () => Date.parse('2026-11-06T08:21:21Z'));
+  const elements = new Map();
+  const get = id => { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); };
+  const payload = snapshot(), model = payload.telescope_model;
+  const station = model.wtr_stn;
+  delete model.wtr_stn;
+  const controller = init({ getElementById: get, querySelector: get },
+    { setTimeout, clearTimeout, setInterval() {}, clearInterval() {}, addEventListener() {} },
+    async () => ({ ok: true, json: async () => ({ status: 'success', payload }) }));
+  await new Promise(setImmediate);
+  const state = get('[data-status-value="weather.state"]');
+  const unknown = () => {
+    assert.equal(state.textContent, 'UNKNOWN');
+    assert.equal(state.classes.has('status-summary-failed'), true);
+    assert.equal(state.classes.has('status-summary-ok'), false);
+    assert.equal(state.classes.has('weather-alarm-active'), false);
+  };
+  unknown();
+  model.wtr_stn = station;
+  await controller.refresh();
+  assert.equal(state.textContent, 'SAFE');
+  assert.equal(state.classes.has('status-summary-ok'), true);
+  assert.equal(state.classes.has('status-summary-failed'), false);
+  // Retained dishes and alarms must not imply live weather after a disconnect.
+  model.dsh_mgr.dish_store.dish_list = [{ dsh_id: 'dish001', weather_alarm: true }];
+  for (const [target, key, value] of [
+    [model.tel_mgr, 'ws_connected', en('NOT_ESTABLISHED')],
+    [model.dsh_mgr, 'ws_connected', en('NOT_ESTABLISHED')],
+    [station, 'dm_connected', en('NOT_ESTABLISHED')],
+    [station, 'tm_connected', en('NOT_ESTABLISHED')],
+    [station.app, 'app_running', false],
+    [station.app, 'last_update', en('2026-11-06T08:18:00Z')],
+  ]) {
+    const previous = target[key];
+    target[key] = value;
+    await controller.refresh();
+    unknown();
+    if (previous === undefined) delete target[key];
+    else target[key] = previous;
+  }
+  await controller.refresh();
+  assert.equal(state.textContent, 'ALARM');
+  assert.equal(state.classes.has('weather-alarm-active'), true);
+  assert.equal(state.classes.has('status-summary-failed'), false);
+});
+
+test('digitiser summary reflects all app running states and health, and clears warning lights on recovery', async (t) => {
+  t.mock.method(Date, 'now', () => Date.parse('2026-11-06T08:21:21Z'));
+  const elements = new Map();
+  const get = id => { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); };
+  const payload = snapshot();
+  const digitisers = payload.telescope_model.dig_store.dig_list;
+  const controller = init({ getElementById: get, querySelector: get },
+    { setTimeout, clearTimeout, setInterval() {}, clearInterval() {}, addEventListener() {} },
+    async () => ({ ok: true, json: async () => ({ status: 'success', payload }) }));
+  await new Promise(setImmediate);
+  const state = get('[data-status-value="digitiser.state"]');
+  const detail = get('[data-status-value="digitiser.detail"]');
+  assert.equal(state.textContent, '1 UNKNOWN');
+  assert.equal(detail.textContent, 'Connected 0 · Scanning 0');
+  assert.equal(detail.classes.has('status-summary-divider'), true);
+  digitisers[1].app.health = en('FAILED');
+  await controller.refresh();
+  assert.equal(state.textContent, '1 FAILED'); // Explicit failure wins over unknown.
+  digitisers[1].app.health = en('DEGRADED');
+  await controller.refresh();
+  assert.equal(state.textContent, '1 UNKNOWN'); // Unknown wins over degraded.
+  digitisers[0].app.app_running = true;
+  await controller.refresh();
+  assert.equal(state.textContent, '1 DEGRADED');
+  assert.equal(state.classes.has('status-summary-warning'), true);
+  for (const item of digitisers) { item.app.app_running = true; item.app.health = en('OK'); }
+  digitisers[1].scanning = { obs_id: 'observation' };
+  digitisers[1].sdr_connected = en('ESTABLISHED');
+  await controller.refresh();
+  assert.equal(state.textContent, '2 OK');
+  assert.equal(detail.textContent, 'Connected 1 · Scanning 1');
+  assert.equal(state.classes.has('status-summary-ok'), true);
+  assert.equal(state.classes.has('status-summary-warning'), false);
+  assert.equal(state.classes.has('status-summary-failed'), false);
+  digitisers[1].tm_connected = en('NOT_ESTABLISHED');
+  await controller.refresh();
+  assert.equal(state.textContent, '1 UNKNOWN');
+  assert.equal(detail.textContent, 'Connected 0 · Scanning 0');
+  payload.telescope_model.dig_store.dig_list = [];
+  await controller.refresh();
+  assert.equal(state.textContent, '—');
+  assert.equal(detail.textContent, 'Connected 0 · Scanning 0');
+});
+
+
+test('dish summary counts individual health and clears indicators after recovery', async (t) => {
+  t.mock.method(Date, 'now', () => Date.parse('2026-11-06T08:21:21Z'));
+  const elements = new Map();
+  const get = id => { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); };
+  const payload = snapshot();
+  const dishes = [{ dsh_id: 'dish001', health: en('OK'), mode: en('STANDBY_FP'), capability: en('OPERATE_FULL') }, { dsh_id: 'dish003', health: en('FAILED'), mode: en('OPERATE'), capability: en('STANDBY') }];
+  payload.telescope_model.dsh_mgr.dish_store.dish_list = dishes;
+  const controller = init({ getElementById: get, querySelector: get },
+    { setTimeout, clearTimeout, setInterval() {}, clearInterval() {}, addEventListener() {} },
+    async () => ({ ok: true, json: async () => ({ status: 'success', payload }) }));
+  await new Promise(setImmediate);
+  const state = get('[data-status-value="dish.state"]');
+  const detail = get('[data-status-value="dish.detail"]');
+  assert.equal(state.textContent, '1 FAILED');
+  assert.equal(detail.textContent, '—');
+  assert.equal(state.hidden, false);
+  assert.equal(state.classes.has('status-summary-failed'), true);
+  assert.equal(get('[data-status-value="dish.modes"]').textContent, 'Standby 1 · Stow 0 · Operate 0');
+  dishes[0].health = en('DEGRADED');
+  await controller.refresh();
+  assert.equal(state.textContent, '1 FAILED'); // Failure wins over degraded.
+  dishes[1].health = en('OK');
+  await controller.refresh();
+  assert.equal(state.textContent, '1 DEGRADED');
+  assert.equal(state.classes.has('status-summary-warning'), true);
+  assert.equal(state.classes.has('status-summary-failed'), false);
+  for (const dish of dishes) dish.health = en('OK');
+  await controller.refresh();
+  assert.equal(state.textContent, '2 OK');
+  assert.equal(get('[data-status-value="dish.modes"]').textContent, 'Standby 1 · Stow 0 · Operate 0');
+  dishes[1].capability = en('OPERATE_DEGRADED');
+  await controller.refresh();
+  assert.equal(get('[data-status-value="dish.modes"]').textContent, 'Standby 1 · Stow 0 · Operate 1');
+  assert.equal(state.classes.has('status-summary-ok'), true);
+  assert.equal(state.classes.has('status-summary-warning'), false);
+  assert.equal(state.classes.has('status-summary-failed'), false);
+  payload.telescope_model.dsh_mgr.dish_store.dish_list = [];
+  await controller.refresh();
+  assert.equal(state.textContent, '—');
+  assert.equal(detail.textContent, '—');
+  assert.equal(get('[data-status-value="dish.modes"]').hidden, true);
+});
+
+
+test('application rows show active processing averages and queue, invalidating stale reported metrics', async (t) => {
+  let now = Date.parse('2026-11-06T08:21:21Z');
+  t.mock.method(Date, 'now', () => now);
+  const elements = new Map();
+  const get = id => { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); };
+  const payload = snapshot();
+  payload.telescope_model.tel_mgr.app.processors = [
+    { current_event: 'Event A', processing_time_ms: 10 },
+    { current_event: 'Event B', processing_time_ms: 30 },
+    { current_event: null, processing_time_ms: 999 },
+    { current_event: 'Invalid time', processing_time_ms: null },
+  ];
+  const controller = init({ getElementById: get, querySelector: get },
+    { setTimeout, clearTimeout, setInterval() {}, clearInterval() {}, addEventListener() {} },
+    async () => ({ ok: true, json: async () => ({ status: 'success', payload }) }));
+  await new Promise(setImmediate);
+  const row = () => get('status-apps').innerHTML.match(/<tr data-app-key="tm:tm001"[^]*?<\/tr>/)[0];
+  assert.match(row(), /<td>0<\/td><td>20.00 ms<\/td><td>0.00%<\/td>/);
+  assert.doesNotMatch(row(), />RUNNING<|>IDLE<|>STOPPED</);
+  now += 61000;
+  await controller.refresh();
+  assert.match(row(), /zk-chip status-unknown">UNKNOWN/);
+  assert.equal((row().match(/class="zk-chip status-unknown">UNKNOWN/g) || []).length, 5);
+  payload.telescope_model.tel_mgr.app.last_update = { value: new Date(now).toISOString() };
+  payload.telescope_model.tel_mgr.app.processors = [];
+  await controller.refresh();
+  assert.doesNotMatch(row(), /status-unknown/);
+  assert.match(row(), /zk-chip is-live">OK/);
+  assert.match(row(), /<td>0<\/td><td>—<\/td>/);
+});
+
+
+test('dish manager failed or aged overrides dish counts and recovers to the dish summary', async (t) => {
+  let now = Date.parse('2026-11-06T08:21:21Z');
+  t.mock.method(Date, 'now', () => now);
+  const elements = new Map();
+  const get = id => { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); };
+  const payload = snapshot();
+  payload.telescope_model.dsh_mgr.dish_store.dish_list = [{ dsh_id: 'dish001', health: en('OK') }];
+  const dm = payload.telescope_model.dsh_mgr.app;
+  const controller = init({ getElementById: get, querySelector: get },
+    { setTimeout, clearTimeout, setInterval() {}, clearInterval() {}, addEventListener() {} },
+    async () => ({ ok: true, json: async () => ({ status: 'success', payload }) }));
+  await new Promise(setImmediate);
+  const state = get('[data-status-value="dish.state"]');
+  const heading = get('[data-status-value="dish.heading"]');
+  const detail = get('[data-status-value="dish.detail"]');
+  assert.equal(heading.textContent, 'Dishes');
+  assert.equal(state.textContent, '1 OK');
+  dm.health = en('FAILED');
+  await controller.refresh();
+  assert.equal(heading.textContent, 'Dish Manager');
+  assert.equal(state.hidden, false);
+  assert.equal(detail.classes.has('status-dish-health-counts'), false);
+  assert.equal(get('[data-status-value="dish.modes"]').hidden, true);
+  assert.equal(state.textContent, 'FAILED');
+  assert.equal(detail.hidden, true);
+  assert.equal(state.classes.has('status-manager-unavailable'), true);
+  assert.equal(state.classes.has('status-summary-failed'), true);
+  now += 61000;
+  await controller.refresh();
+  assert.equal(state.textContent, 'UNKNOWN');
+  assert.equal(detail.hidden, true);
+  assert.equal(get('[data-status-value="dish.modes"]').textContent, 'No contact for 2 minutes');
+  assert.equal(get('[data-status-value="dish.modes"]').hidden, false);
+  assert.equal(get('[data-status-value="dish.operational"]').hidden, false);
+  dm.health = en('OK');
+  await controller.refresh();
+  assert.equal(state.textContent, 'UNKNOWN');
+  dm.last_update = { value: new Date(now).toISOString() };
+  await controller.refresh();
+  assert.equal(heading.textContent, 'Dishes');
+  assert.equal(state.textContent, '1 OK');
+  assert.equal(detail.hidden, true);
+  assert.equal(detail.textContent, '—');
+  assert.equal(state.classes.has('status-manager-unavailable'), false);
+  assert.equal(state.classes.has('status-summary-failed'), false);
+});
+
+
+test('TM disconnection immediately invalidates fresh app metrics and recovers on reconnection', async (t) => {
+  t.mock.method(Date, 'now', () => Date.parse('2026-11-06T08:21:21Z'));
+  const elements = new Map();
+  const get = id => { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); };
+  const payload = snapshot();
+  const model = payload.telescope_model;
+  for (const type of ['dm', 'sdp', 'ws', 'web']) model.tel_mgr[type + '_connected'] = en('NOT_ESTABLISHED');
+  for (const dig of model.dig_store.dig_list) dig.tm_connected = en('NOT_ESTABLISHED');
+  const controller = init({ getElementById: get, querySelector: get },
+    { setTimeout, clearTimeout, setInterval() {}, clearInterval() {}, addEventListener() {} },
+    async () => ({ ok: true, json: async () => ({ status: 'success', payload }) }));
+  await new Promise(setImmediate);
+  const row = key => get('status-apps').innerHTML.split('<tr data-app-key="' + key + '"')[1].split('</tr>')[0];
+  for (const key of ['dm:dm001', 'sdp:sdp001', 'ws:ws001', 'web:web001', 'dig:dig001']) {
+    assert.equal((row(key).match(/status-unknown">UNKNOWN/g) || []).length, 5);
+    assert.doesNotMatch(row(key), /status-update is-old/);
+  }
+  assert.equal(get('[data-status-value="dish.heading"]').textContent, 'Dish Manager');
+  assert.equal(get('[data-status-value="dish.state"]').textContent, 'UNKNOWN');
+  assert.equal(get('[data-status-value="dish.detail"]').hidden, true);
+  assert.equal(get('[data-status-value="dish.modes"]').textContent, 'DM not connected');
+  assert.equal(get('[data-status-value="dish.modes"]').hidden, false);
+  assert.equal(get('[data-status-value="dish.operational"]').hidden, false);
+  assert.doesNotMatch(row('tm:tm001'), /status-unknown/);
+  for (const type of ['dm', 'sdp', 'ws', 'web']) model.tel_mgr[type + '_connected'] = en('ESTABLISHED');
+  for (const dig of model.dig_store.dig_list) dig.tm_connected = en('ESTABLISHED');
+  await controller.refresh();
+  for (const key of ['dm:dm001', 'sdp:sdp001', 'ws:ws001', 'web:web001', 'dig:dig001']) {
+    assert.doesNotMatch(row(key), /status-unknown/);
+  }
+  assert.equal(get('[data-status-value="dish.heading"]').textContent, 'Dishes');
+});
+
+test('loss of TM invalidates every summary, ages the contact message and restores on recovery', async (t) => {
+  let now = Date.parse('2026-11-06T08:21:21Z');
+  t.mock.method(Date, 'now', () => now);
+  const elements = new Map();
+  const get = id => { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); };
+  const payload = snapshot();
+  payload.received_at = new Date(now).toISOString();
+  payload.tm_connected = false;
+  const controller = init({ getElementById: get, querySelector: get },
+    { setTimeout, clearTimeout, setInterval() {}, clearInterval() {}, addEventListener() {} },
+    async () => ({ ok: true, json: async () => ({ status: 'success', payload }) }));
+  await new Promise(setImmediate);
+  const keys = ['tm.state', 'dish.state', 'digitiser.state', 'weather.state', 'executions.count'];
+  assert.equal(get('status-connections-open').hidden, true);
+  await get('status-connections-open').emit('click');
+  assert.equal(controller.state.connectionsOpen, false);
+  for (const key of keys) {
+    const node = get('[data-status-value="' + key + '"]');
+    assert.equal(node.textContent, 'UNKNOWN');
+    assert.equal(node.classes.has('status-summary-unavailable'), true);
+    assert.equal(node.hidden, false);
+  }
+  for (const key of ['tm.detail', 'dish.detail', 'digitiser.detail', 'weather.detail']) {
+    assert.equal(get('[data-status-value="' + key + '"]').textContent, 'Lost contact with TM');
+    assert.equal(get('[data-status-value="' + key + '"]').hidden, false);
+  }
+  assert.equal(get('[data-status-value="dish.operational"]').hidden, true);
+  assert.match(get('status-executions').innerHTML, /Lost contact with TM/);
+  now += 181000;
+  await controller.refresh();
+  for (const key of ['tm.detail', 'dish.detail', 'digitiser.detail', 'weather.detail']) {
+    assert.equal(get('[data-status-value="' + key + '"]').textContent, 'No contact for 3 minutes');
+  }
+  assert.equal(get('[data-status-value="dish.operational"]').hidden, true);
+  assert.match(get('status-executions').innerHTML, /No contact for 3 minutes/);
+  payload.tm_connected = true;
+  payload.stale = false;
+  payload.received_at = new Date(now).toISOString();
+  payload.age_seconds = 0;
+  await controller.refresh();
+  assert.equal(get('status-connections-open').hidden, false);
+  assert.equal(get('[data-status-value="tm.detail"]').hidden, true);
+  for (const key of keys) assert.equal(get('[data-status-value="' + key + '"]').classes.has('status-summary-unavailable'), false);
+  assert.equal(get('[data-status-value="tm.state"]').textContent, '7 UNKNOWN');
+  // Once TM returns, the independently stale DM uses its own contact time and layout.
+  assert.equal(get('[data-status-value="dish.detail"]').hidden, true);
+  assert.equal(get('[data-status-value="dish.operational"]').hidden, false);
+  assert.equal(get('[data-status-value="dish.modes"]').hidden, false);
+  assert.equal(get('[data-status-value="dish.modes"]').textContent, 'No contact for 4 minutes');
+});
+
+
+test('applications summary and connection pane include only persistent app links', async (t) => {
+  t.mock.method(Date, 'now', () => Date.parse('2026-11-06T08:21:21Z'));
+  const elements = new Map();
+  const get = id => { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); };
+  const payload = snapshot(), model = payload.telescope_model;
+  model.tel_mgr.dm_connected = en('ESTABLISHED');
+  model.tel_mgr.sdp_connected = en('NOT_ESTABLISHED');
+  model.wtr_stn.tm_connected = en('ESTABLISHED');
+  model.dig_store.dig_list[0].tm_connected = en('ESTABLISHED');
+  model.dig_store.dig_list[0].sdr_connected = en('ESTABLISHED');
+  model.dig_store.dig_list[1].tm_connected = en('ESTABLISHED');
+  model.dig_store.dig_list[1].sdr_connected = en('NOT_ESTABLISHED');
+  model.dig_store.dig_list[1].temp_connected = en('ESTABLISHED');
+  model.dsh_mgr.dish_store.dish_list = [
+    { dsh_id: 'dish001', driver_type: 'MD01', driver_failures: 3, last_comms_success_dt: null },
+    { dsh_id: 'dish002', driver_type: 'DRIFT' },
+  ];
+  model.tel_mgr.app = { ...model.tel_mgr.app, health: en('FAILED') };
+  const controller = init({ getElementById: get, querySelector: get },
+    { setTimeout, clearTimeout, setInterval() {}, clearInterval() {}, addEventListener() {} },
+    async () => ({ ok: true, json: async () => ({ status: 'success', payload }) }));
+  await new Promise(setImmediate);
+  const state = get('[data-status-value="tm.state"]');
+  assert.equal(state.textContent, '1 FAILED');
+  assert.equal(get('[data-status-value="tm.connections"]').textContent, 'Established 4 · Not Established 1');
+  assert.equal(get('[data-status-value="tm.detail"]').textContent, 'App Connections');
+  await get('status-connections-open').emit('click');
+  const rows = get('status-connections-rows').innerHTML;
+  assert.equal((rows.match(/<tr>/g) || []).length, 5);
+  assert.doesNotMatch(rows, /dish001|dish002|SDR|TEMP|On demand|Not Applicable/);
+  assert.equal((rows.match(/>ESTABLISHED</g) || []).length, 4);
+  assert.equal((rows.match(/>NOT_ESTABLISHED</g) || []).length, 1);
+  model.tel_mgr.app.health = en('DEGRADED');
+  await controller.refresh();
+  assert.equal(state.textContent, '1 UNKNOWN');
+  model.tel_mgr.sdp_connected = en('ESTABLISHED');
+  await controller.refresh();
+  assert.equal(state.textContent, '1 DEGRADED');
+  model.tel_mgr.app.health = en('OK');
+  await controller.refresh();
+  assert.equal(state.textContent, '7 OK');
+  assert.equal(state.classes.has('status-summary-ok'), true);
 });

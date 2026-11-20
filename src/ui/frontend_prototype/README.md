@@ -408,11 +408,11 @@ trying again; the console does not automatically retry saves or deletions.
 Profile edits are file-backed and do not need TM or Dish Manager running. They
 take effect in Dish Manager on startup or a successful RESYNC under its existing
 safe-state rules. Creating a dish definition does not start hardware or issue a
-live pointing command. Weather/defaults/limits frontend tabs remain indicative
-prototype views; their editors have not yet been connected.
+live pointing command. The Weather editor configures station definitions and shared monitoring policy.
+The unconnected Defaults and Limits prototype tabs have been removed.
 
 The browser calls the console's same-origin `/api/web/` bridge. That bridge only
-forwards the profile, dish and digitiser operations used by these editors, supplies WEB's token
+forwards the profile, telescope, dish, digitiser and weather operations used by these editors, supplies WEB's token
 on the server, preserves ETags and errors, and rejects cross-origin writes. The
 WEB address is configured at service startup; browser requests cannot choose an
 arbitrary upstream URL. Credentials are not embedded in HTML/JavaScript, sent to
@@ -829,3 +829,96 @@ MPRs. Both products run in an isolated worker with progress/cancellation and use
 need one processing run to create this cache. Plot updates preserve the cache and
 rendered pointing products; generation does not reread raw/SPR scan files or rerun
 the calibration pipeline. A missing starplot installation is reported by the job.
+
+## SNR Distribution
+
+The permanent **SNR Distribution** tab presents an observation-wide map for
+sidereal-track SKY aggregates after processing. Unsupported observations explain
+the sidereal-target requirement. The default map uses Velocity peak SNR, 15° × 15° Diamond cells, Log (zero-safe)
+colours and an automatic upper SNR limit.
+Choose Frequency SNR or change the cell dimensions, then use **Update map** to
+redraw from cached CSV measurements. Repeated measurements in one cell are
+averaged in linear SNR units; unobserved cells remain blank.
+
+**Download CSV** and the export ZIP retain aggregate scan ID, gain [dB], actual
+integration time [s], centre frequency [Hz], sample rate [Hz], Galactic longitude
+and latitude [degrees], plus both `velocity_snr` and `frequency_snr`. These are the
+standard individual plots' measurements under their current limits and baseline
+settings. Spectral plot updates refresh the export/map; map-only updates do not
+reprocess scans or measure SNR again. Reprocess older results once to populate
+the added fields. See [OPT documentation](../../../docs/opt.md#snr-distribution).
+
+Distribution colours are anchored at SNR 0. Leave **Upper SNR** blank to use the
+maximum of fewer than 30 populated cells or the 99th percentile for larger maps;
+set a fixed upper value to compare observations. **Colours** offers Linear, Asinh
+and zero-safe Log. Use **Update map** to apply these display-only settings.
+Averaged cell measurements and CSV values are unchanged, and unobserved sky stays
+blank and is excluded from colour-limit calculations.
+
+Distribution maps include original-measurement dots. Select a dot (repeated clicks
+cycle coincident measurements), a Preview entry, or an aggregate row to show
+one existing Frequency/Velocity spectrum beside the map. This never requests
+spectrum processing. Rectangle and Diamond cell shapes bin/average measurements
+within their actual footprints; width/height are their full angular spans. The
+server exports normalized dot positions for the saved PNG, so map resizing keeps
+hit targets aligned. Update an older map once to enable interactive selection.
+
+## Observatory configuration and LST
+
+`src/config/telescope.json` defines only the telescope's name and reference
+latitude/longitude (decimal degrees, east-positive longitude) and height (metres).
+It is shared by all Config Profiles. TM initialisation/RESYNC loads it into
+`TelescopeModel.config`; snapshots carry the small validated `TelescopeConfig`
+to WEB without serialising subsystem state to that configuration file. The
+initial reference matches rotation dish003: 53.234123°, −2.305485°, 77 m.
+
+The header LST clock uses the reference longitude and the browser UTC clock,
+updates once per second and needs no clock-specific HTTP polling. It shows
+approximate local mean sidereal time; hover for the observatory name and longitude.
+No longitude means `LST —`, never an assumed zero longitude or browser timezone.
+Change the JSON and RESYNC/restart TM to publish new attributes; the browser
+picks them up through existing snapshots. Dish-specific pointing calculations
+continue to use the dish's own location.
+
+The first Configuration tab is **Telescope**, editing name, latitude, longitude
+and height in this shared file. Its message states that changes apply across all
+Config Profiles. Save uses versioned, atomic WEB persistence with existing
+operator/admin and CSRF controls. Select TM and RESYNC after saving; LST changes
+only when TM publishes the applied location. Refresh and Cancel use the shared
+editor's unsaved-change handling. No dish or per-profile configuration is changed.
+
+## Config → Weather
+
+Define multiple station IDs and locations with optional latitude, longitude and
+elevation. Add, edit, filter, keyboard-select and delete definitions in the
+selected profile's `WeatherStationList.json`. Dish Weather station IDs associate
+dishes with those definitions; IDs must match incoming weather readings.
+
+The shared-settings form exposes monitoring enabled, timeout/alarm window,
+retention period, summary window, wind-average threshold, gust-speed and gust-count
+thresholds, and precipitation threshold. Values apply to every station **within
+that Config Profile**. The existing alarm comparisons are unchanged; the UI
+explains units and that the gust count must exceed its threshold. Driver settings and simulation mode are stored on each station entry; polling
+period is nested in `driver_config`. The editor shows typed Modbus or ADS1115
+fields and retains simulation modes for testing.
+
+Station and policy saves use the same file revision, lock, atomic write and
+profile guard, preserving runtime data and unrelated configuration. Saving one
+form retains pending edits in the other. Existing access, unsaved-change,
+Cancel/Refresh and RESYNC controls apply. Select DM and RESYNC after saving to
+load the changed station list and policy; no live safety state is mutated by a
+file save.
+
+WS selects a station from `WeatherStationList.json` using its required
+`--entity_id`. Run, for example, `PYTHONPATH=src python -m ws.ws --profile rotation
+--entity_id ws002 --sim calm` (on one line). `--sim` overrides the saved station
+mode. The old WeatherStationModel config files are removed; runtime AppModel,
+connection state and failure counts are retained across RESYNC. WS commands use
+the default localhost port 60005 or an explicit WEB endpoint override. Apply
+station driver/simulation changes with **WS RESYNC**, and shared alarm/definition
+changes with **DM RESYNC**. Only one active WS connection to TM is supported.
+
+The shared header displays **Local**, **UTC**, then **LST**, centred between
+navigation and Config Profile. Local uses the browser machine's timezone; UTC
+uses UTC, while LST continues to use the observatory reference longitude. All
+three clocks tick locally once per second, including while TM is disconnected.

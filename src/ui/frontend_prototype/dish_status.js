@@ -113,6 +113,7 @@
       $('freshness').textContent = (data.stale ? 'Stale snapshot · ' : '') + 'TM Config Profile: ' + show(data.profile) + ' · Dish updated ' + time(current.last_update);
       $('freshness').className = data.stale ? 'zk-chip is-warn snapshot-warning' : 'zk-muted';
       $('error').textContent = current.last_err_msg || 'No error reported';
+      $('error').classList.toggle('is-clear', !current.last_err_msg);
       $('error-time').textContent = current.last_err_msg ? time(current.last_err_dt) : '';
       for (const axis of ['alt', 'az']) {
         $(axis + '-desired').textContent = degrees(current.desired_altaz?.[axis]);

@@ -105,7 +105,7 @@ def test_proxy_rejects_cross_origin_writes(console, monkeypatch, method, url):
     assert response.status_code == 403 and response.json['status'] == 'error'
 
 
-@pytest.mark.parametrize('url', ['/api/web/health', '/api/web/webhook', '/api/web/dishes/dish001/extra', '/api/web/weather-stations'])
+@pytest.mark.parametrize('url', ['/api/web/health', '/api/web/webhook', '/api/web/dishes/dish001/extra', '/api/web/weather-stations/ws001/extra'])
 def test_proxy_is_not_an_unrestricted_gateway(console, monkeypatch, url):
     monkeypatch.setattr(opt_service.requests, 'request', lambda *a, **k: pytest.fail('must not forward'))
     assert console[1].get(url).status_code == 404
@@ -385,3 +385,40 @@ def test_signal_generation_post_proxies_to_web_host(console, monkeypatch):
     assert sent[0][1] == 'http://127.0.0.1:8000/api/observations/obs001/scans/0/0/0/signal'
     assert sent[0][2]['headers']['X-Config-Profile'] == 'rotation'
     assert console[1].post('/api/web/observations/obs001/scans/0/0/0/spr', json={}).status_code == 404
+
+
+@pytest.mark.parametrize('method', ['GET', 'PUT'])
+def test_telescope_config_proxy_preserves_revision_and_ignores_profile_scope(console, monkeypatch, method):
+    calls = []
+    def forward(verb, url, **kwargs):
+        calls.append((verb, url, kwargs))
+        return SimpleNamespace(status_code=200, json=lambda: {'status':'success', 'message':'Telescope configuration retrieved', 'payload':{'config':{'name':'Site'}}},
+                               headers={'ETag':'"new-revision"'})
+    monkeypatch.setattr('ui.opt_service.requests.request', forward)
+    response = console[1].open('/api/web/telescope/config', method=method,
+        json={'name':'Site','latitude':None,'longitude':0,'height':None} if method == 'PUT' else None,
+        headers={'If-Match':'"old-revision"'})
+    assert response.status_code == 200
+    assert calls[0][0:2] == (method, 'http://127.0.0.1:8000/api/telescope/config')
+    assert calls[0][2]['headers']['If-Match'] == '"old-revision"'
+    assert response.headers['ETag'] == '"new-revision"'
+
+
+@pytest.mark.parametrize('method,resource', [('GET','weather-stations'), ('POST','weather-stations'),
+    ('PATCH','weather-stations/ws001'), ('DELETE','weather-stations/ws001'),
+    ('GET','weather-settings'), ('PATCH','weather-settings')])
+def test_weather_configuration_proxy_forwards_version_and_profile(console, monkeypatch, method, resource):
+    calls = []
+    def forward(verb, url, **kwargs):
+        calls.append((verb, url, kwargs))
+        return SimpleNamespace(status_code=200, headers={'ETag':'"new"','Location':'/api/weather-stations/ws002'},
+            json=lambda: {'status':'success','message':'Saved','payload':{}})
+    monkeypatch.setattr('ui.opt_service.requests.request', forward)
+    response = console[1].open('/api/web/'+resource, method=method,
+        json={} if method in ('POST','PATCH') else None, headers={'If-Match':'"old"','X-Config-Profile':'rotation'})
+    assert response.status_code == 200
+    assert calls[0][0:2] == (method, 'http://127.0.0.1:8000/api/'+resource)
+    assert calls[0][2]['headers']['If-Match'] == '"old"'
+    assert calls[0][2]['headers']['X-Config-Profile'] == 'rotation'
+    assert response.headers['ETag'] == '"new"'
+    assert response.headers['Location'] == '/api/web/weather-stations/ws002'

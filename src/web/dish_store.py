@@ -12,7 +12,7 @@ from dsh.drivers.drift.drift_config import DriftConfig
 from dsh.drivers.md01.md01_config import MD01Config
 from dsh.drivers.motion.motion_config import MotionDishConfig
 from models.base import BaseModel
-from models.dsh import DishModel, DriverType, Feed
+from models.dsh import Capability, DishModel, DriverType, Feed
 from util.xbase import XAPIValidationFailed
 from web.profile_store import ProfileFileStore, ProfileStoreError, _finite
 
@@ -71,6 +71,20 @@ class DishProfileStore(ProfileFileStore):
 
     def delete(self, dish_id, if_match=None):
         return self.delete_entry(dish_id, 'dish_list', 'dsh_id', if_match)
+
+    def set_capability(self, dish_id, capability):
+        """Persist only capability, preserving concurrent profile edits and runtime defaults."""
+        if not isinstance(capability, Capability):
+            raise ValueError('Expected a Capability value')
+        with self._locked():
+            data, _ = self._read()
+            dish = next((item for item in data['dish_list'] if item['dsh_id'] == dish_id), None)
+            if dish is None:
+                raise DishStoreError(f'Dish {dish_id} was not found', 'not_found', 404)
+            dish['capability'] = BaseModel._serialise(capability)
+            dish['last_update'] = BaseModel._serialise(datetime.now(timezone.utc))
+            data['last_update'] = dish['last_update']
+            self._write(data)
 
     def save(self, changes, dish_id=None, if_match=None):
         if not isinstance(changes, dict) or not changes:

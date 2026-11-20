@@ -11,11 +11,17 @@
             "env": {},
             "program": "python",
             "args": [
-                "-u", "-m", "web.web_server",
-                "--profile", "rotation",
-                "--entity_id", "web001",
-                "--tm_host", "192.168.50.1",
-                "--http_port", "8000"
+                "-u",
+                "-m",
+                "web.web_server",
+                "--profile",
+                "rotation",
+                "--entity_id",
+                "web001",
+                "--tm_host",
+                "192.168.50.1",
+                "--http_port",
+                "8000"
             ]
         },
         {
@@ -25,12 +31,18 @@
             "env": {},
             "program": "python",
             "args": [
-                "-m", "dig.dig",
-                "--profile", "rotation",
-                "--entity_id", "dig001",
-                "--tm_host", "192.168.50.1",
-                "--sdp_host", "192.168.50.1",
-                "--local_host", "192.168.50.1"
+                "-m",
+                "dig.dig",
+                "--profile",
+                "rotation",
+                "--entity_id",
+                "dig001",
+                "--tm_host",
+                "192.168.50.1",
+                "--sdp_host",
+                "192.168.50.1",
+                "--local_host",
+                "192.168.50.1"
             ]
         },
         {
@@ -40,12 +52,18 @@
             "env": {},
             "program": "python",
             "args": [
-                "-m", "dig.dig",
-                "--profile", "rotation",
-                "--entity_id", "dig003",
-                "--tm_host", "192.168.50.1",
-                "--sdp_host", "192.168.50.1",
-                "--local_host", "192.168.50.2"
+                "-m",
+                "dig.dig",
+                "--profile",
+                "rotation",
+                "--entity_id",
+                "dig003",
+                "--tm_host",
+                "192.168.50.1",
+                "--sdp_host",
+                "192.168.50.1",
+                "--local_host",
+                "192.168.50.2"
             ]
         },
         {
@@ -55,11 +73,16 @@
             "env": {},
             "program": "python",
             "args": [
-                "-m", "dsh.dm",
-                "--profile", "rotation",
-                "--entity_id", "dm001",
-                "--tm_host", "192.168.50.1",
-                "--ws_host", "192.168.50.1"
+                "-m",
+                "dsh.dm",
+                "--profile",
+                "rotation",
+                "--entity_id",
+                "dm001",
+                "--tm_host",
+                "192.168.50.1",
+                "--ws_host",
+                "192.168.50.1"
             ]
         },
         {
@@ -69,11 +92,16 @@
             "env": {},
             "program": "python",
             "args": [
-                "-m", "sdp.sdp",
-                "--profile", "rotation",
-                "--entity_id", "sdp001",
-                "--tm_host", "192.168.50.1",
-                "--dig_host", "192.168.50.1"
+                "-m",
+                "sdp.sdp",
+                "--profile",
+                "rotation",
+                "--entity_id",
+                "sdp001",
+                "--tm_host",
+                "192.168.50.1",
+                "--dig_host",
+                "192.168.50.1"
             ]
         },
         {
@@ -83,14 +111,22 @@
             "env": {},
             "program": "python",
             "args": [
-                "-m", "tm.tm",
-                "--profile", "rotation",
-                "--entity_id", "tm001",
-                "--web_host", "192.168.50.1",
-                "--dig_host", "192.168.50.1",
-                "--sdp_host", "192.168.50.1",
-                "--dm_host", "192.168.50.1",
-                "--ws_host", "192.168.50.1"
+                "-m",
+                "tm.tm",
+                "--profile",
+                "rotation",
+                "--entity_id",
+                "tm001",
+                "--web_host",
+                "192.168.50.1",
+                "--dig_host",
+                "192.168.50.1",
+                "--sdp_host",
+                "192.168.50.1",
+                "--dm_host",
+                "192.168.50.1",
+                "--ws_host",
+                "192.168.50.1"
             ]
         },
         {
@@ -100,7 +136,9 @@
             "env": {},
             "program": "python",
             "args": [
-                "dsh/drivers/md01/md01_simulator.py", "--host", "127.0.0.1"
+                "dsh/drivers/md01/md01_simulator.py",
+                "--host",
+                "127.0.0.1"
             ]
         },
         {
@@ -110,11 +148,18 @@
             "env": {},
             "program": "python",
             "args": [
-                "-m", "ws.ws",
-                "--profile", "rotation",
-                "--dm_host", "192.168.50.1",
-                "--tm_host", "192.168.50.1",
-                "--sim", "calm"
+                "-m",
+                "ws.ws",
+                "--profile",
+                "rotation",
+                "--dm_host",
+                "192.168.50.1",
+                "--tm_host",
+                "192.168.50.1",
+                "--sim",
+                "calm",
+                "--entity_id",
+                "ws001"
             ]
         },
         {
@@ -124,11 +169,18 @@
             "env": {},
             "program": "python",
             "args": [
-                "-m", "ws.ws",
-                "--profile", "rotation",
-                "--dm_host", "192.168.50.1",
-                "--tm_host", "192.168.50.1",
-                "--sim", "calm"
+                "-m",
+                "ws.ws",
+                "--profile",
+                "rotation",
+                "--dm_host",
+                "192.168.50.1",
+                "--tm_host",
+                "192.168.50.1",
+                "--sim",
+                "calm",
+                "--entity_id",
+                "ws002"
             ]
         }
     ]

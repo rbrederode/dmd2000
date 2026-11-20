@@ -31,6 +31,7 @@ class DishDriver:
         self._rlock = threading.RLock()  
 
         self.dsh_model = dsh_model      
+        self.persist_capability = None  # Bound to the active profile by Dish Manager.
         # The owning application can inject its trace writer after driver
         # construction. Keeping this out of driver constructors preserves
         # compatibility with dynamically loaded dish drivers.
@@ -750,19 +751,33 @@ class DishDriver:
         self.dsh_model.last_update = datetime.now(timezone.utc)
 
     def set_dish_capability(self, capability: Capability):
-        """ Set the current capability in the DishModel.
+        """Set and persist capability before issuing any hardware stop.
             :param capability: The new capability.
         """
         if not isinstance(capability, Capability):
             message = "DishDriver set_dish_capability requires a valid Capability enumeration value."
             raise ValueError(self.dsh_model.set_last_err(message))
 
-        # If transitioning from an operational capability to a non-operational capability, stop the dish immediately to prevent damage or unsafe operation.
-        if self.dsh_model.capability in [Capability.OPERATE_DEGRADED, Capability.OPERATE_FULL] and capability not in [Capability.OPERATE_DEGRADED, Capability.OPERATE_FULL]:
-            self.stop()
-
+        previous = self.dsh_model.capability
+        operational = (Capability.OPERATE_DEGRADED, Capability.OPERATE_FULL)
+        # Validate and latch the new state before any controller interaction.
         self.dsh_model.capability = capability
         self.dsh_model.last_update = datetime.now(timezone.utc)
+        try:
+            persist = getattr(self, 'persist_capability', None)
+            if persist is not None:
+                persist(capability)
+        except Exception as error:
+            if capability in operational:
+                # Never enable operation when its durable state could not be saved.
+                self.dsh_model.capability = previous
+            elif previous in operational:
+                # Disk failure must not prevent an attempted hardware stop.
+                self.stop()
+            raise XSoftwareFailure(f'Could not persist capability for {self.dsh_model.dsh_id}: {error}') from error
+
+        if previous in operational and capability not in operational:
+            self.stop()
 
     def set_startup_mode(self):
         """
@@ -864,6 +879,10 @@ class DishDriver:
         self.dsh_model.last_update = datetime.now(timezone.utc)
 
     def set_stow_mode(self):
+        """Command stowing when the dish has operational capability."""
+        self._stow()
+
+    def _stow(self, maintenance=False):
         """
             Sets the dish to stow mode. 
             Failures during stow will result in exceptions being raised.
@@ -876,7 +895,7 @@ class DishDriver:
                 return False
             return True
 
-        if not _is_stow_cmd_allowed(self):
+        if not maintenance and not _is_stow_cmd_allowed(self):
             message = f"DishDriver {self.dsh_model.dsh_id} cannot set STOW mode when capability not operational.\n{self._diagnostic_snapshot()}"
             raise XInvalidTransition(self.dsh_model.set_last_err(message))
 
@@ -945,8 +964,12 @@ class DishDriver:
             Sets the dish to maintenance mode. 
             :raises NotImplementedError: If the method is not implemented by a subclass
         """
-        # First instruct the dish to stow
-        self.set_stow_mode()
+        # Persist the movement inhibition before stopping or stowing hardware.
+        self.set_dish_capability(Capability.STANDBY)
+
+        # This explicit maintenance stow is allowed with STANDBY capability;
+        # normal movement commands remain inhibited.
+        self._stow(maintenance=True)
 
         # Delegate to subclass implementation
         try:
@@ -1193,8 +1216,15 @@ class DishDriver:
         from restarting a track or scan. These safety-state updates are retained
         even when the hardware stop cannot be delivered.
         """
+        previous = self.dsh_model.capability
         try:
-            self.set_dish_capability(Capability.STANDBY)
+            try:
+                self.set_dish_capability(Capability.STANDBY)
+            finally:
+                # The setter stops transitions out of operation. Repeated STOP
+                # commands must still reach the controller when already inhibited.
+                if previous not in (Capability.OPERATE_DEGRADED, Capability.OPERATE_FULL):
+                    self.stop()
         finally:
             self.clear_target_tuple()
             self.set_desired_altaz(None)

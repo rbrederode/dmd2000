@@ -5,6 +5,7 @@ from api.tm_sdp import TM_SDP
 from env.events import ConfigEvent
 from models.comms import CommunicationStatus
 from models.dig import DigitiserList, DigitiserModel
+from models.health import HealthState
 from models.telescope import TelescopeModel
 from tm.tm import TelescopeManager
 
@@ -50,3 +51,14 @@ def test_legacy_null_in_sdp_config_response_does_not_poison_tm_model():
         'msg_type': 'adv', 'action_code': 'set', 'property': 'status', 'status': 'success',
         'value': tm.telmodel.sdp.to_dict()}, None)
     assert tm.telmodel.sdp.dig_store.get_dig_by_id('dig001').scanning is False
+
+
+@pytest.mark.parametrize('disconnected_dependency', [None, 'dm_connected', 'sdp_connected'])
+def test_tm_health_does_not_depend_on_digitiser_availability(disconnected_dependency):
+    tm = manager()
+    tm.telmodel.tel_mgr.dm_connected = CommunicationStatus.ESTABLISHED
+    tm.telmodel.dig_store.dig_list[0].tm_connected = CommunicationStatus.NOT_ESTABLISHED
+    if disconnected_dependency:
+        setattr(tm.telmodel.tel_mgr, disconnected_dependency, CommunicationStatus.NOT_ESTABLISHED)
+    assert tm.get_health_state() == (HealthState.DEGRADED if disconnected_dependency else HealthState.OK)
+    assert tm.telmodel.dig_store.dig_list[0].tm_connected == CommunicationStatus.NOT_ESTABLISHED

@@ -47,7 +47,7 @@
       }
       const visible = samples.filter(sample => millis(sample.obs_time) >= start);
       let path = '', previous = null;
-      const gap = Math.max(10000, (item.model.driver_poll_period || 1000) * 3);
+      const gap = Math.max(10000, (item.model.driver_config?.driver_poll_period || 1000) * 3);
       for (const sample of visible) {
         if (!number(sample.wind_speed) || sample.wind_speed < 0) { previous = null; continue; }
         const measured = millis(sample.obs_time);

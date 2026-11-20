@@ -136,7 +136,8 @@ def test_pointing_job_renders_cached_products_and_preserves_existing_results(tmp
     (source/'result.json').write_text(json.dumps(result))
     (source/'signal.png').write_bytes(b'original')
     captured=[]
-    def chart(frames,location,path):
+    def chart(frames,location,path,observation_id):
+        assert observation_id == 'pointing-test'
         captured.append([frame.time for frame in frames]);path.write_bytes(b'PNG')
     def gif(frames,location,path,**kwargs):
         kwargs['progress_callback'](1,len(frames));path.write_bytes(b'GIF89a')

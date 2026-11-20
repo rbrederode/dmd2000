@@ -22,6 +22,7 @@ from web.profiles import ProfileManager, ProfileError
 from web.resource_store import DigitiserProfileStore, WeatherStationProfileStore
 from web.profile_store import ProfileStoreError
 from web.pipeline_store import PipelineProfileStore
+from web.telescope_store import TelescopeConfigStore
 
 # The application logging router owns file handlers under the configured log root.
 logger = logging.getLogger(__name__)
@@ -323,6 +324,33 @@ def profiles():
         return jsonify(ResponseEvent('error', 'Could not access configuration profiles', code='configuration_unavailable').to_dict()), 503
 
 
+@app.route('/api/telescope/config', methods=['GET', 'PUT'])
+def telescope_config():
+    """Observatory attributes shared by every Config Profile; no live TM mutation."""
+    try:
+        validate_request()
+        store = TelescopeConfigStore()
+        if request.method == 'GET':
+            config, revision = store.read()
+        else:
+            config, revision = store.save(request.get_json(), request.if_match if 'If-Match' in request.headers else None)
+        payload = {'config': config, 'scope': 'observatory', 'file': 'config/telescope.json'}
+        if request.method == 'PUT':
+            payload['phase'] = 'stored'
+        response = jsonify(ResponseEvent('success', 'Telescope configuration retrieved' if request.method == 'GET'
+                                         else 'Telescope configuration saved for all Config Profiles; RESYNC TM to apply', payload=payload).to_dict())
+        response.set_etag(revision)
+        response.headers['Cache-Control'] = 'no-store'
+        return response
+    except HTTPException as error:
+        return jsonify(ResponseEvent('error', error.description, code='invalid_request').to_dict()), error.code
+    except ProfileStoreError as error:
+        return jsonify(ResponseEvent('error', str(error), code=error.code).to_dict()), error.status
+    except OSError:
+        logger.exception('Could not access telescope configuration')
+        return jsonify(ResponseEvent('error', 'Telescope configuration is unavailable', code='configuration_unavailable').to_dict()), 503
+
+
 def _resource_directory():
     selection = _profiles().current
     expected = request.headers.get('X-Config-Profile')
@@ -386,8 +414,14 @@ def profile_resources(resource, identifier=None):
                                  'weather_stations': (WeatherStationProfileStore, 'weather_station')}[resource]
         store = store_class(_resource_directory())
         if request.method == 'GET':
-            value, revision = store.read(identifier)
+            if resource == 'weather_stations' and identifier is None:
+                value, settings, revision = store.read_configuration()
+            else:
+                value, revision = store.read(identifier)
             payload = ({resource: value, 'count': len(value)} if identifier is None else {singular: value})
+            if resource == 'weather_stations' and identifier is None:
+                payload['settings'] = settings
+                payload['driver_types'] = store.driver_types()
             message, status = 'Configuration retrieved', 200
         elif request.method == 'DELETE':
             deleted, revision = store.delete(identifier, request.if_match if 'If-Match' in request.headers else None)
@@ -417,6 +451,30 @@ def profile_resources(resource, identifier=None):
     except Exception:
         logger.exception('Could not process profile configuration request')
         return jsonify(ResponseEvent('error', 'Could not process configuration request', code='internal_error').to_dict()), 500
+
+
+@app.route('/api/weather-settings', methods=['GET', 'PATCH'])
+def weather_settings():
+    try:
+        validate_request()
+        store = WeatherStationProfileStore(_resource_directory())
+        settings, revision = store.read_settings() if request.method == 'GET' else store.save_settings(
+            request.get_json(), request.if_match if 'If-Match' in request.headers else None)
+        payload = {'settings': settings, 'profile': store.path.parent.name}
+        if request.method != 'GET':
+            payload['phase'] = 'stored'
+        response = jsonify(ResponseEvent('success', 'Weather settings retrieved' if request.method == 'GET'
+                                         else 'Weather settings saved; RESYNC DM to apply', payload=payload).to_dict())
+        response.set_etag(revision)
+        response.headers['Cache-Control'] = 'no-store'
+        return response
+    except HTTPException as error:
+        return jsonify(ResponseEvent('error', error.description, code='invalid_request').to_dict()), error.code
+    except ProfileStoreError as error:
+        return jsonify(ResponseEvent('error', str(error), code=error.code).to_dict()), error.status
+    except OSError:
+        logger.exception('Could not access weather configuration')
+        return jsonify(ResponseEvent('error', 'Weather configuration is unavailable', code='configuration_unavailable').to_dict()), 503
 
 
 @app.get('/api/pipeline')

@@ -8,15 +8,9 @@ from sdp.spectral_metrics import observation_noise_metrics
 METRICS_GID = "spectrum-noise-metrics"
 
 
-def annotate_spectral_metrics(axis, coordinates, power, low, high, *, label,
-                              unit="km/s", flags=None, velocity=None,
-                              amplitude_unit="a.u.", qa_settings=None):
-    """Measure displayed samples with pipeline QA's median/MAD policy.
-
-    Frequency uses its matching LSRK coordinates where available. Without that
-    metadata, reversed frequency gives the same native channel ordering.
-    Report the actual noise windows outside the smoothed-peak exclusion region.
-    """
+def measure_spectral_metrics(coordinates, power, low, high, *, unit="km/s", flags=None,
+                             velocity=None, amplitude_unit="a.u.", qa_settings=None):
+    """Shared plot/export metric calculation on the selected native channels."""
     x = np.asarray(coordinates, dtype=float)
     values = np.ma.masked_invalid(power)
     if flags is not None:
@@ -42,6 +36,17 @@ def annotate_spectral_metrics(axis, coordinates, power, low, high, *, label,
         a, b = np.interp([left, right], noise_x[order], x[order])
         windows.append([float(min(a, b)), float(max(a, b))])
     metrics.update(noise_ranges=windows, coordinate_unit=unit, amplitude_unit=amplitude_unit)
+    return metrics
+
+
+def annotate_spectral_metrics(axis, coordinates, power, low, high, *, label,
+                              unit="km/s", flags=None, velocity=None,
+                              amplitude_unit="a.u.", qa_settings=None, metrics=None):
+    """Annotate shared metrics; accept already measured results without refitting."""
+    if metrics is None:
+        metrics = measure_spectral_metrics(coordinates, power, low, high, unit=unit, flags=flags,
+                                           velocity=velocity, amplitude_unit=amplitude_unit, qa_settings=qa_settings)
+    windows = metrics["noise_ranges"]
     robust = metrics["noise_estimator"] == "median_mad"
     if metrics["status"] == "measured":
         ratio = f"{metrics['peak_snr']:.2f}" if metrics["peak_snr"] is not None else "out of range"

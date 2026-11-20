@@ -475,3 +475,23 @@ def test_selection_only_update_routes_one_aggregate_and_rejects_shared_changes(w
     response=client.post('/api/opt/reanalyse',json={'job':next_job['id']})
     followup=app.extensions['opt_jobs'].jobs[response.json['id']]
     assert 'aggregate_product' not in json.loads((followup['folder']/'request.json').read_text())
+
+
+def test_distribution_job_uses_exported_csv_and_validates_options(workspace):
+    app, client, root, _ = workspace
+    response = client.post('/api/opt/process', json=configuration(root))
+    job_id = response.json['id']
+    job = ready_job(app, job_id)
+    out = job['folder'] / 'out'
+    assert client.post('/api/opt/distribution', json={'job':job_id}).status_code == 400
+    (out / 'distribution.csv').write_text('long,lat,velocity_snr,frequency_snr\n30,0,12,9\n')
+    for options in ({'b_step':7}, {'snr_column':'qa'}, {'l_step':0}, {'cell_shape':'triangle'}):
+        assert client.post('/api/opt/distribution', json={'job':job_id, 'options':options}).status_code == 400
+    response = client.post('/api/opt/distribution', json={'job':job_id,
+        'options':{'snr_column':'frequency_snr','b_step':5,'l_step':10}})
+    assert response.status_code == 202
+    new_job = app.extensions['opt_jobs'].jobs[response.json['id']]
+    request = json.loads((new_job['folder'] / 'request.json').read_text())
+    assert request['source_results'] == str(out)
+    assert request['distribution_product'] == dict(snr_column='frequency_snr',b_step=5,l_step=10,stretch='log',snr_max=None,cell_shape='diamond')
+    assert 'pointing_product' not in request and 'aggregate_product' not in request
