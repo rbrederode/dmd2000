@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Repaired release-test collection by targeting the current Airspy module, IMU server/API, and command-based trace utility. Updated lifecycle and profile assertions for current behaviour, and replaced accidental hardware-benchmark collection with a mocked auto-gain test while retaining the manual benchmark command.
+
 - Clarified the release procedure's GitHub PR and local-merge routes, when `main` needs pushing, and how to inspect and recover from a rejected push without overwriting remote work.
 
 ## [2.0.0] - 2026-11-21 - First Science Milestone
