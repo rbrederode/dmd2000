@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-11-21 - First Science Milestone
+
 - Moved shared data models into `src/sdk/models`, imported as `sdk.models`. Updated application, SDK, and test imports while preserving serialized model type names, enum values, and configuration formats.
 
 - Moved shared `env`, `ipc`, and `util` packages into `src/sdk`, imported as `sdk.env`, `sdk.ipc`, and `sdk.util`. Updated application/test imports, command launchers, utility paths, and documentation; repository-root, log, and configuration discovery account for the deeper package layout. Utility commands now use `python -m sdk.util.<tool>` with `src` on `PYTHONPATH`, or `python sdk/util/<tool>.py` from `src`.
