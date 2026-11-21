@@ -3,8 +3,8 @@ import logging
 import threading
 from typing import Optional
 
-from models.ws import WeatherData, WeatherStationModel, WeatherStationDriverType
-from util.registry import (
+from sdk.models.ws import WeatherData, WeatherStationModel, WeatherStationDriverType
+from sdk.util.registry import (
     WEATHER_STATION_DRIVER_NAMESPACE,
     get as registry_get,
     load_class_from_path as registry_load_class_from_path,
@@ -44,7 +44,7 @@ class WeatherStationDriver:
         """Implementation-specific resource cleanup hook."""
 
     def get_poll_interval_ms(self) -> int:
-        return self.ws_model.driver_poll_period or 1000
+        return self.ws_model.driver_config.driver_poll_period
 
     def get_weather_data(self) -> WeatherData:
         """Read all supported weather fields and return a WeatherData sample."""
@@ -135,7 +135,7 @@ def create_ws_driver(ws_model: WeatherStationModel) -> Optional[WeatherStationDr
 
     This factory supports:
     - Built-in enum-backed drivers (`WeatherStationDriverType.ADS1115`, `MODBUS`).
-    - Registered drivers via `util.registry.register(WEATHER_STATION_DRIVER_NAMESPACE, "name", ctor)`.
+    - Registered drivers via `sdk.util.registry.register(WEATHER_STATION_DRIVER_NAMESPACE, "name", ctor)`.
     - Dynamic class paths like "package.module:ClassName" or "package.module.ClassName".
 
     The factory prefers the enum when known; otherwise it will consult `ws_model.driver_config`.
@@ -172,7 +172,8 @@ def create_ws_driver(ws_model: WeatherStationModel) -> Optional[WeatherStationDr
             driver_identifier = cfg
         else:
             # Try to read attribute 'driver' or 'name'
-            driver_identifier = getattr(cfg, "driver", None) or getattr(cfg, "name", None)
+            fields = cfg.to_dict() if hasattr(cfg, 'to_dict') else vars(cfg)
+            driver_identifier = fields.get('driver') or fields.get('name')
 
     # Try registry lookup
     if driver_identifier:

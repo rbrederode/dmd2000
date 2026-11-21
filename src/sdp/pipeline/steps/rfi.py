@@ -4,8 +4,8 @@ import warnings
 from typing import Any, List, Dict
 from numpy.lib.stride_tricks import sliding_window_view
 
-from models.pipeline import StepConfig, StepType
-from models.scan import ScanType
+from sdk.models.pipeline import StepConfig, StepType
+from sdk.models.scan import ScanType
 from sdp.channel_mask import ChannelFlag, empty_channel_flags, valid_channels
 from sdp.pipeline.pipeline_factory import ProcessingStep
 
@@ -142,7 +142,7 @@ def main():
     sky_q = Queue()   # Set the sky queue in the pipeline factory to None
     cal_q = Queue()   # Set the calibration queue in the pipeline factory to None
 
-    from models.scan import ScanModel, ScanState
+    from sdk.models.scan import ScanModel, ScanState
     from datetime import datetime, timezone
 
     scan001 = ScanModel(

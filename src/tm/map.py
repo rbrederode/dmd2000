@@ -3,10 +3,10 @@ import enum
 from typing import Any
 
 from api import tm_dig, tm_sdp, tm_dm
-from models import dsh
-from models.base import BaseModel
-from models.dig import BandpassFilterType
-from models.target import TargetConfig
+from sdk.models import dsh
+from sdk.models.base import BaseModel
+from sdk.models.dig import BandpassFilterType
+from sdk.models.target import TargetConfig
 
 logger = logging.getLogger(__name__)
 

@@ -11,11 +11,11 @@ from pathlib import Path
 from typing import Any, Tuple
 import threading
 
-from models.dsh import DishModel, DriverType, PointingState, Capability, DishMode, Feed, PECModel
-from models.target import TargetModel, PointingType
-from models.health import HealthState
-from util.xbase import XInvalidTransition, XSoftwareFailure, XStreamUnableToExtract, XCommsFailure
-from util import log
+from sdk.models.dsh import DishModel, DriverType, PointingState, Capability, DishMode, Feed, PECModel
+from sdk.models.target import TargetModel, PointingType
+from sdk.models.health import HealthState
+from sdk.util.xbase import XInvalidTransition, XSoftwareFailure, XStreamUnableToExtract, XCommsFailure
+from sdk.util import log
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +31,7 @@ class DishDriver:
         self._rlock = threading.RLock()  
 
         self.dsh_model = dsh_model      
+        self.persist_capability = None  # Bound to the active profile by Dish Manager.
         # The owning application can inject its trace writer after driver
         # construction. Keeping this out of driver constructors preserves
         # compatibility with dynamically loaded dish drivers.
@@ -100,7 +101,7 @@ class DishDriver:
     def _parse_pointing_log_line(line: str) -> dict | None:
         """Parse one pointing log row, ignoring incomplete or malformed rows."""
         fields = [field.strip() for field in line.split("|")]
-        if len(fields) != 10:
+        if len(fields) not in (10, 12):
             return None
 
         try:
@@ -126,6 +127,8 @@ class DishDriver:
                     "az": coordinate(fields[8]),
                     "alt": coordinate(fields[9]),
                 },
+                "pointing_offset": coordinate(fields[10]) if len(fields) == 12 else None,
+                "pointing_position_angle": coordinate(fields[11]) if len(fields) == 12 else None,
                 "_recorded_at": recorded_at,
             }
         except (TypeError, ValueError):
@@ -548,6 +551,8 @@ class DishDriver:
         now = Time(pointing_altaz_dt)
         altaz = AltAz(obstime=now, location=self.location, alt=alt*u.deg, az=az*u.deg)
 
+        self._update_pointing_offset(self.dsh_model.target, altaz)
+
         # Timestamp every successful pointing measurement, including readings
         # where the Alt/Az values have not changed since the previous poll.
         self.dsh_model.pointing_altaz_dt = pointing_altaz_dt
@@ -746,19 +751,33 @@ class DishDriver:
         self.dsh_model.last_update = datetime.now(timezone.utc)
 
     def set_dish_capability(self, capability: Capability):
-        """ Set the current capability in the DishModel.
+        """Set and persist capability before issuing any hardware stop.
             :param capability: The new capability.
         """
         if not isinstance(capability, Capability):
             message = "DishDriver set_dish_capability requires a valid Capability enumeration value."
             raise ValueError(self.dsh_model.set_last_err(message))
 
-        # If transitioning from an operational capability to a non-operational capability, stop the dish immediately to prevent damage or unsafe operation.
-        if self.dsh_model.capability in [Capability.OPERATE_DEGRADED, Capability.OPERATE_FULL] and capability not in [Capability.OPERATE_DEGRADED, Capability.OPERATE_FULL]:
-            self.stop()
-
+        previous = self.dsh_model.capability
+        operational = (Capability.OPERATE_DEGRADED, Capability.OPERATE_FULL)
+        # Validate and latch the new state before any controller interaction.
         self.dsh_model.capability = capability
         self.dsh_model.last_update = datetime.now(timezone.utc)
+        try:
+            persist = getattr(self, 'persist_capability', None)
+            if persist is not None:
+                persist(capability)
+        except Exception as error:
+            if capability in operational:
+                # Never enable operation when its durable state could not be saved.
+                self.dsh_model.capability = previous
+            elif previous in operational:
+                # Disk failure must not prevent an attempted hardware stop.
+                self.stop()
+            raise XSoftwareFailure(f'Could not persist capability for {self.dsh_model.dsh_id}: {error}') from error
+
+        if previous in operational and capability not in operational:
+            self.stop()
 
     def set_startup_mode(self):
         """
@@ -860,6 +879,10 @@ class DishDriver:
         self.dsh_model.last_update = datetime.now(timezone.utc)
 
     def set_stow_mode(self):
+        """Command stowing when the dish has operational capability."""
+        self._stow()
+
+    def _stow(self, maintenance=False):
         """
             Sets the dish to stow mode. 
             Failures during stow will result in exceptions being raised.
@@ -872,7 +895,7 @@ class DishDriver:
                 return False
             return True
 
-        if not _is_stow_cmd_allowed(self):
+        if not maintenance and not _is_stow_cmd_allowed(self):
             message = f"DishDriver {self.dsh_model.dsh_id} cannot set STOW mode when capability not operational.\n{self._diagnostic_snapshot()}"
             raise XInvalidTransition(self.dsh_model.set_last_err(message))
 
@@ -941,8 +964,12 @@ class DishDriver:
             Sets the dish to maintenance mode. 
             :raises NotImplementedError: If the method is not implemented by a subclass
         """
-        # First instruct the dish to stow
-        self.set_stow_mode()
+        # Persist the movement inhibition before stopping or stowing hardware.
+        self.set_dish_capability(Capability.STANDBY)
+
+        # This explicit maintenance stow is allowed with STANDBY capability;
+        # normal movement commands remain inhibited.
+        self._stow(maintenance=True)
 
         # Delegate to subclass implementation
         try:
@@ -1006,6 +1033,18 @@ class DishDriver:
         try:
             with self._rlock:
                 self._set_operate_mode()
+
+                # Target conversion and the initial slew are part of entering
+                # OPERATE. A failure in either must invalidate the mode and
+                # pointing state through the same recovery path below.
+                self.dsh_model.mode = DishMode.OPERATE
+                self.dsh_model.pointing_state = PointingState.READY
+                self.dsh_model.last_update = datetime.now(timezone.utc)
+
+                target_id, target = self.get_target_tuple()
+                if target is not None:
+                    altaz = self.get_desired_altaz(target=target)
+                    self.slew(altaz=altaz)
         except Exception as e:
             if isinstance(e, XCommsFailure):
                 message = f"DishDriver {self.dsh_model.dsh_id} failed to communicate with dish controller: {e}" + \
@@ -1021,19 +1060,6 @@ class DishDriver:
             self.dsh_model.pointing_state = PointingState.UNKNOWN
             self.dsh_model.last_update = datetime.now(timezone.utc)
             raise e
-
-        # Set the dish mode to OPERATE, pointing state to READY
-        self.dsh_model.mode = DishMode.OPERATE
-        self.dsh_model.pointing_state = PointingState.READY
-        self.dsh_model.last_update = datetime.now(timezone.utc)
-
-        # Get the current target from the dish model
-        target_id, target = self.get_target_tuple()
-
-        if target is not None:
-            # Calculate the desired AltAz for the new target and slew the dish to it
-            altaz = self.get_desired_altaz(target=target)
-            self.slew(altaz=altaz)
 
     def track(self):
         """
@@ -1190,8 +1216,15 @@ class DishDriver:
         from restarting a track or scan. These safety-state updates are retained
         even when the hardware stop cannot be delivered.
         """
+        previous = self.dsh_model.capability
         try:
-            self.set_dish_capability(Capability.STANDBY)
+            try:
+                self.set_dish_capability(Capability.STANDBY)
+            finally:
+                # The setter stops transitions out of operation. Repeated STOP
+                # commands must still reach the controller when already inhibited.
+                if previous not in (Capability.OPERATE_DEGRADED, Capability.OPERATE_FULL):
+                    self.stop()
         finally:
             self.clear_target_tuple()
             self.set_desired_altaz(None)
@@ -1264,34 +1297,83 @@ class DishDriver:
         self.dsh_model.pointing_state = PointingState.SLEW
         self.dsh_model.last_update = datetime.now(timezone.utc)
 
+    def _get_target_centre_altaz(self, target: TargetModel, frame: AltAz):
+        """Resolve the true target centre, without applying scan offsets."""
+        if target is None:
+            return None
+        if target.pointing == PointingType.DRIFT_SCAN:
+            coordinates = target.altaz
+            if coordinates is None:
+                return None
+            if isinstance(coordinates, dict):
+                alt, az = coordinates.get("alt"), coordinates.get("az")
+                if alt is None or az is None:
+                    return None
+            else:
+                alt, az = coordinates.alt, coordinates.az
+            return AltAz(alt=u.Quantity(alt, u.deg), az=u.Quantity(az, u.deg),
+                         obstime=frame.obstime, location=frame.location)
+        if target.pointing == PointingType.NON_SIDEREAL_TRACK:
+            return get_body(body=target.id, time=frame.obstime, location=self.location).transform_to(frame)
+        if target.sky_coord is not None:
+            return target.sky_coord.transform_to(frame)
+        if target.id is not None:
+            return get_body(body=target.id, time=frame.obstime, location=self.location).transform_to(frame)
+        return None
+
+    def _update_pointing_offset(self, target, pointing):
+        """Record spherical target-to-dish displacement, separately from PEC.
+
+        Distance is 0..180 degrees; position angle is 0..360 in the
+        target's AltAz tangent plane (0 toward increasing altitude, 90
+        toward increasing azimuth), matching directional_offset_by scans.
+        At the target centre the position angle is defined as zero.
+        """
+        self.dsh_model.pointing_offset = None
+        self.dsh_model.pointing_position_angle = None
+        if target is None or pointing is None:
+            return
+        centre = self._get_target_centre_altaz(target, pointing)
+        if centre is None:
+            return
+        centre, measured = SkyCoord(centre), SkyCoord(pointing)
+        offset = float(centre.separation(measured).to_value(u.deg))
+        angle = float(centre.position_angle(measured).to_value(u.deg)) % 360.0 if offset > 1e-12 else 0.0
+        self.dsh_model.pointing_offset = offset
+        self.dsh_model.pointing_position_angle = angle
+
     def get_desired_altaz(self, target: TargetModel) -> AltAz:
         """ Calculates the desired AltAz for the given target at the current time.
-        """  
+        """
+        if target is None:
+            return None
+        try:
+            return self._calculate_desired_altaz(target)
+        except ValueError as e:
+            # Astropy raises ValueError when its IERS predictive data exceed
+            # auto_max_age. Only this known condition is a handled failure;
+            # unrelated calculation errors must retain their original type.
+            if not " ".join(str(e).split()).startswith(
+                "interpolating from IERS_Auto using predictive values that are more"
+            ):
+                raise
+            message = (
+                f"DishDriver {self.dsh_model.dsh_id} cannot calculate desired AltAz: "
+                f"IERS Earth-orientation data are out of date. Refresh the IERS "
+                f"data and restart Dish Manager. Astropy reported: {e}"
+            )
+            raise XSoftwareFailure(self.dsh_model.set_last_err(message)) from e
+
+    def _calculate_desired_altaz(self, target: TargetModel) -> AltAz:
+        """Calculate target pointing, preserving underlying calculation errors."""
         time = Time(datetime.now(timezone.utc))
         frame = AltAz(obstime=time, location=self.location)
           
-        if target.pointing == PointingType.SIDEREAL_TRACK:
-            # Sidereal target
-            sky_coord = SkyCoord(ra=target.sky_coord.ra, dec=target.sky_coord.dec, unit='deg', frame=target.sky_coord.frame)
-            desired_altaz = sky_coord.transform_to(frame)
-            
-        elif target.pointing == PointingType.NON_SIDEREAL_TRACK:
-            # Non-sidereal target (solar system body)
-            body_coord = get_body(body=target.id, time=time, location=self.location)
-            desired_altaz = body_coord.transform_to(frame)
-
-        elif target.pointing == PointingType.DRIFT_SCAN:
-
-            if target.altaz is None or target.altaz.get("alt") is None or target.altaz.get("az") is None:
+        if target.pointing in (PointingType.SIDEREAL_TRACK, PointingType.NON_SIDEREAL_TRACK, PointingType.DRIFT_SCAN):
+            desired_altaz = self._get_target_centre_altaz(target, frame)
+            if target.pointing == PointingType.DRIFT_SCAN and desired_altaz is None:
                 message = f"DishDriver {self.dsh_model.dsh_id} cannot calculate desired AltAz for DRIFT_SCAN target without valid altaz parameters.\n{self._diagnostic_snapshot()}"
                 raise XStreamUnableToExtract(self.dsh_model.set_last_err(message))
-            else:
-                # Drift scan target
-                alt = target.altaz.get("alt")
-                az = target.altaz.get("az")
-                alt_q = alt if hasattr(alt, 'unit') else float(alt) * u.deg
-                az_q = az if hasattr(az, 'unit') else float(az) * u.deg
-                desired_altaz = AltAz(obstime=time, location=self.location, alt=alt_q, az=az_q)
 
         elif target.pointing == PointingType.OFFSET_SCAN:
 
@@ -1300,13 +1382,8 @@ class DishDriver:
                 raise XStreamUnableToExtract(self.dsh_model.set_last_err(message))
 
             # Step 1: Compute true target position in AltAz at current time
-            if target.sky_coord is not None:
-                sky_coord = SkyCoord(ra=target.sky_coord.ra, dec=target.sky_coord.dec, unit='deg', frame=target.sky_coord.frame)
-                true_altaz = sky_coord.transform_to(frame)
-            elif target.id is not None:
-                body_coord = get_body(body=target.id, time=time, location=self.location)
-                true_altaz = body_coord.transform_to(frame)
-            else:
+            true_altaz = self._get_target_centre_altaz(target, frame)
+            if true_altaz is None:
                 message = f"DishDriver {self.dsh_model.dsh_id} cannot calculate desired AltAz for OFFSET_SCAN target without valid sky_coord, altaz or target id.\n{self._diagnostic_snapshot()}"
                 raise XStreamUnableToExtract(self.dsh_model.set_last_err(message))
             
@@ -1331,13 +1408,8 @@ class DishDriver:
                 raise XStreamUnableToExtract(self.dsh_model.set_last_err(message))
 
             # Step 1: Compute true target position in AltAz at current time
-            if target.sky_coord is not None:
-                sky_coord = SkyCoord(ra=target.sky_coord.ra, dec=target.sky_coord.dec, unit='deg', frame=target.sky_coord.frame)
-                true_altaz = sky_coord.transform_to(frame)
-            elif target.id is not None:
-                body_coord = get_body(body=target.id, time=time, location=self.location)
-                true_altaz = body_coord.transform_to(frame)
-            else:
+            true_altaz = self._get_target_centre_altaz(target, frame)
+            if true_altaz is None:
                 message = f"DishDriver {self.dsh_model.dsh_id} cannot calculate desired AltAz for FIVE_POINT_SCAN target without valid sky_coord, altaz or target id.\n{self._diagnostic_snapshot()}"
                 raise XStreamUnableToExtract(self.dsh_model.set_last_err(message))
                 

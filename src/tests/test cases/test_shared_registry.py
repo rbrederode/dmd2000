@@ -5,11 +5,11 @@ logging.basicConfig(level=logging.INFO)
 
 import numpy as np
 
-from models.dsh import DishModel
-from models.pipeline import PipelineConfig, StepConfig
-from models.ws import WeatherStationModel
+from sdk.models.dsh import DishModel
+from sdk.models.pipeline import PipelineConfig, StepConfig
+from sdk.models.ws import WeatherStationModel
 from sdp.pipeline.pipeline_factory import ProcessingPipelineFactory, ProcessingStep
-from util.registry import (
+from sdk.util.registry import (
     DISH_DRIVER_NAMESPACE,
     PIPELINE_STEP_NAMESPACE,
     WEATHER_STATION_DRIVER_NAMESPACE,

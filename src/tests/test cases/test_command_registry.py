@@ -3,7 +3,7 @@ import json
 import pytest
 
 from api.cmd_registry import CommandRegistry
-from util.xbase import XAPIValidationFailed
+from sdk.util.xbase import XAPIValidationFailed
 
 
 def write_registry(tmp_path, applications):

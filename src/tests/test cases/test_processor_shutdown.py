@@ -1,6 +1,6 @@
 import queue
 
-from env.processor import Processor
+from sdk.env.processor import Processor
 
 
 class IdleProcessor(Processor):

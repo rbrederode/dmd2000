@@ -4,7 +4,7 @@ import types
 import pytest
 
 from imu.drivers.bno085 import BNO085Config, BNO085Driver
-from models.imu import IMUDeviceModel, IMUDriverType
+from sdk.models.imu import IMUDeviceModel, IMUDriverType
 
 
 def test_bno085_config_is_i2c_only():

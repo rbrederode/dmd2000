@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from env.device import DeviceWorker
-from models.comms import CommunicationStatus
+from sdk.env.device import DeviceWorker
+from sdk.models.comms import CommunicationStatus
 from sdr.sdr import SDR as LegacySDR
-from util.xbase import XHardwareFailure
+from sdk.util.xbase import XHardwareFailure
 
 import logging
 
@@ -127,7 +127,7 @@ class SDR:
             logger.info("Skipping SDR stream reset because the device worker is not running.")
             return 0
 
-        discarded = self._invoke("stream_reset", raise_on_error=False)
+        discarded = self._invoke("stream_reset")
         return int(discarded) if discarded is not None else 0
 
     def __getattr__(self, name: str):

@@ -1,0 +1,27 @@
+{
+    "_type": "UIDriverList",
+    "list_id": "active",
+    "ui_drivers": [
+        {
+            "_type": "UIDriver",
+            "type": {
+                "_type": "enum.IntEnum",
+                "instance": "UIDriverType",
+                "value": "GSHEETS"
+            },
+            "short_desc": "Engineering Console",
+            "config": {
+                "sheet_id": "1r73N0VZHSQC6RjRv94gzY50pTgRvaQWfctGGOMZVpzc",
+                "tm_range": "TM_UI_API++!A2:B",
+                "dig_range": "TM_UI_API++!D2:E",
+                "dsh_range": "TM_UI_API++!G2:H",
+                "sdp_range": "TM_UI_API++!J2:K",
+                "odt_range": "TM_UI_API++!M2:N",
+                "oda_range": "TM_UI_API++!P2:Q",
+                "ws_range": "TM_UI_API++!S2:T",
+                "web_range": "TM_UI_API++!V2:W"
+            },
+            "poll_period": 30
+        }
+    ]
+}

@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 
 from imu.imu import IMU
-from models.comms import CommunicationStatus
-from models.imu import IMUData, IMUDeviceModel
+from sdk.models.comms import CommunicationStatus
+from sdk.models.imu import IMUData, IMUDeviceModel
 
 
 class FakeDriver:

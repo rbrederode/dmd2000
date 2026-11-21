@@ -1,0 +1,7 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in · dmd2000</title><link rel="stylesheet" href="/styles.css"></head>
+<body><main class="ui-login"><section class="zk-card panel"><h1>dmd2000</h1><p class="zk-muted">Sign in to the engineering console.</p>
+<form action="{{ url_for_security('login') }}" method="post">{{ login_user_form.hidden_tag() }}
+<label class="zk-field">Username{{ login_user_form.username(class_='zk-input', autocomplete='username', autofocus=true) }}</label>
+<label class="zk-field">Password{{ login_user_form.password(class_='zk-input', autocomplete='current-password') }}</label>
+{% if login_user_form.errors %}<p role="alert" class="ui-auth-error">Sign-in failed. Check your username and password, then try again.</p>{% endif %}
+<button class="zk-btn is-primary" type="submit">Sign in</button></form><p class="zk-muted">Accounts are created by a console administrator.</p></section></main></body></html>

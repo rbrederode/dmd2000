@@ -5,8 +5,8 @@ import subprocess
 from schema import And, Schema
 import witmotion
 
-from models.base import BaseModel
-from models.imu import IMUDeviceModel
+from sdk.models.base import BaseModel
+from sdk.models.imu import IMUDeviceModel
 from imu.drivers.driver import IMUDriver
 
 logger = logging.getLogger(__name__)

@@ -4,10 +4,10 @@ from types import SimpleNamespace
 import pytest
 
 from api import protocol as dmd_protocol
-from models.dsh import DishList, DishManagerModel, DishModel, PointingState
-from models.obs import ObsModel
-from models.scan import ScanModel
-from models.target import PointingType, TargetModel, TargetScanSet
+from sdk.models.dsh import DishList, DishManagerModel, DishModel, PointingState
+from sdk.models.obs import ObsModel
+from sdk.models.scan import ScanModel
+from sdk.models.target import PointingType, TargetModel, TargetScanSet
 from tm.tm import TelescopeManager
 
 

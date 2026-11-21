@@ -2,8 +2,8 @@ from threading import Event
 
 import pytest
 
-from env.device import DeviceWorker
-from util.xbase import XHardwareFailure
+from sdk.env.device import DeviceWorker
+from sdk.util.xbase import XHardwareFailure
 
 
 class FailingDevice:

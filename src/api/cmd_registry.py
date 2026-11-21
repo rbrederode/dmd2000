@@ -8,7 +8,7 @@ from pathlib import Path
 import re
 from typing import Callable
 
-from util.xbase import XAPIValidationFailed
+from sdk.util.xbase import XAPIValidationFailed
 
 
 DEFAULT_COMMAND_CONFIG = Path(__file__).resolve().parents[1] / "config" / "CmdRegistry.json"

@@ -2,8 +2,8 @@ import enum
 from datetime import datetime, timezone
 from schema import Schema, And, Or, Use, SchemaError
 
-from models.base import BaseModel
-from util.xbase import XInvalidTransition, XAPIValidationFailed, XSoftwareFailure
+from sdk.models.base import BaseModel
+from sdk.util.xbase import XInvalidTransition, XAPIValidationFailed, XSoftwareFailure
 
 class LF_400Config(BaseModel):
     """A class representing the configuration for an LF-400 dish feed."""

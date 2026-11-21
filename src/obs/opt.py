@@ -11,8 +11,8 @@ from queue import Queue
 import numpy as np
 from astropy.time import Time
 
-from models.obs import ObsModel
-from models.scan import ScanState, ScanType
+from sdk.models.obs import ObsModel
+from sdk.models.scan import ScanState, ScanType
 from sdp.channel_mask import empty_channel_flags, reconstructed_total_power
 try:
     from obs.obs import Observation
@@ -20,7 +20,7 @@ try:
 except ModuleNotFoundError:
     from obs import Observation
     from obs_display import ObsDisplay
-from util.format import fmt_cell, fmt_float, fmt_hyperlink, fmt_target_coords, fmt_title
+from sdk.util.format import fmt_cell, fmt_float, fmt_hyperlink, fmt_target_coords, fmt_title
 
 logger = logging.getLogger(__name__)
 FILTERBANK_STORAGE_DTYPE = np.dtype("float32")
@@ -81,6 +81,24 @@ def redirect_root_logging(log_path: str):
         root_logger.handlers = old_handlers
         root_logger.setLevel(old_level)
 
+def display_lv_after_enter(obs_display, obs, output_path, contour_levels=None, contour_smoothing=2., *, vmin=None, vmax=None):
+    """Advance from the prepared velocity spectra to the longitude–velocity view."""
+    if not obs_display.lsr_spectra:
+        return None
+    input("Press Enter to show the longitude–velocity (L–V) plot...")
+    options = {} if contour_levels is None else {"contour_levels": contour_levels}
+    if contour_smoothing != 2.:
+        options["contour_smoothing"] = contour_smoothing
+    if vmin is not None:
+        options["vmin"] = vmin
+    if vmax is not None:
+        options["vmax"] = vmax
+    figure = obs_display.display_lv(obs, output_path, **options)
+    if figure is not None:
+        print(f"Aggregated SKY longitude–velocity plot written to {output_path}")
+    return figure
+
+
 def init_args():
     """ Define and parse the command-line interface for the observation
         processing tool.
@@ -94,8 +112,35 @@ def init_args():
     parser.add_argument('-p', '--profile', type=str, required=False, help="Configuration profile to use e.g. default, alston etc. See ./config directory for existing profiles", default='default')
     parser.add_argument('--make-fil', action='store_true', help='Stitch SKY filterbank *-fb.dat scan files into SIGPROC .fil files and exit.')
     parser.add_argument('--fil-output-dir', type=str, required=False, help='Directory for generated .fil files. Defaults to --dir.')
+    parser.add_argument('--observation-baseline', choices=('none', 'constant', 'linear'), default='linear',
+                        help='LSRK plot baseline per target/frequency scan, without scaling (default linear).')
+    parser.add_argument('--vmin', '--baseline-vmin', dest='vmin', type=float, default=-100.,
+                        help='Minimum LSRK plot velocity and automatic baseline selection bound (km/s; default -100).')
+    parser.add_argument('--vmax', '--baseline-vmax', dest='vmax', type=float, default=100.,
+                        help='Maximum LSRK plot velocity and automatic baseline selection bound (km/s; default 100).')
+    parser.add_argument('--baseline-auto', action=argparse.BooleanOptionalAction, default=True,
+                        help='Use outer 20%% of valid channels on each side within --vmin/--vmax (default enabled). Explicit windows override; --no-baseline-auto restores lower-envelope fitting.')
+    parser.add_argument('--baseline-window', nargs=2, type=float, action='append', metavar=('VMIN', 'VMAX'),
+                        help='Line-free LSRK baseline window; repeat for multiple windows. Overrides automatic selection, independently of --vmin/--vmax.')
+    parser.add_argument('--lv-contours', nargs='+', type=float, metavar='POWER',
+                        help='Increasing L–V contour levels in calibrated power units; default 5,10,20,40,80 percent of the shared maximum.')
+    parser.add_argument('--lv-no-contours', action='store_true', help='Disable L–V contour overlay.')
+    parser.add_argument('--lv-contour-smoothing', type=float, default=2.,
+                        help='Gaussian FWHM in km/s for contour overlay only (default 2; 0 disables smoothing).')
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    if not np.all(np.isfinite([args.vmin, args.vmax])) or args.vmin >= args.vmax:
+        parser.error('Velocity limits must be finite with minimum < maximum')
+    if args.baseline_auto and not args.baseline_window and args.observation_baseline != 'none' and not args.vmin < 0 < args.vmax:
+        parser.error('--baseline-auto requires --vmin < 0 < --vmax; otherwise provide --baseline-window or --no-baseline-auto')
+    for low, high in args.baseline_window or []:
+        if not np.all(np.isfinite([low, high])) or low >= high:
+            parser.error('Baseline windows must be finite with minimum < maximum')
+    if args.lv_contours is not None and (not np.all(np.isfinite(args.lv_contours)) or min(args.lv_contours) <= 0 or np.any(np.diff(args.lv_contours) <= 0)):
+        parser.error('L–V contour levels must be finite, positive and strictly increasing')
+    if not np.isfinite(args.lv_contour_smoothing) or args.lv_contour_smoothing < 0:
+        parser.error('L–V contour smoothing must be finite and non-negative')
+    return args
 
 def print_sky_scans(obs: ObsModel, sky_q: Queue | None = None, blacklist: list[str] | None = None, scan_filter=None):
     """ Print a table of SKY scans in the observation.
@@ -875,6 +920,10 @@ def process_observation(
     blacklist: list[str] | None = None,
     retain_sky_scans: bool = False,
     signal_displays: dict | None = None,
+    progress_callback=None,
+    pipeline_config=None,
+    cache_power_moments=False,
+    processed_scan_callback=None,
 ):
     """Load and process an observation using the same pipeline as OPT.
 
@@ -885,7 +934,12 @@ def process_observation(
     """
     directory = os.path.expanduser(directory)
     config_dir = Path(__file__).resolve().parents[1] / "config" / profile
-    pipeline_factory = Observation.init_pipeline_factory(input_dir=str(config_dir))
+    if pipeline_config is None:
+        pipeline_factory = Observation.init_pipeline_factory(input_dir=str(config_dir))
+    else:
+        from sdk.models.pipeline import PipelineConfig
+        from sdp.pipeline.pipeline_factory import ProcessingPipelineFactory
+        pipeline_factory = ProcessingPipelineFactory(PipelineConfig.from_dict(pipeline_config))
     observation = Observation.from_disk(
         dir=directory,
         obs_id=obs_id,
@@ -897,33 +951,44 @@ def process_observation(
             f"Observation metadata {obs_id}-obs.json was not found in {directory}"
         )
 
+    observation.cache_power_moments = cache_power_moments
     sky_queue = Queue()
     calibration_queue = Queue()
     retained_scans = [] if retain_sky_scans else None
     displays = signal_displays or {}
 
+    def progress(message, fraction):
+        if progress_callback is not None:
+            progress_callback(message, fraction)
+
+    progress("Loading accepted calibration scans", .1)
     observation.integrate_cal_scans(
         dir=directory,
         sky_q=sky_queue,
         cal_q=calibration_queue,
+        **({"processed_scan_callback": processed_scan_callback} if processed_scan_callback is not None else {}),
     )
     observation.synthesise_integrated_scans(
         sky_q=sky_queue,
         cal_q=calibration_queue,
         signal_displays=displays,
     )
+    progress("Calibration complete; loading accepted SKY scans", .4)
     observation.integrate_sky_scans(
         dir=directory,
         sky_q=sky_queue,
         cal_q=calibration_queue,
         processed_scans=retained_scans,
+        **({"processed_scan_callback": processed_scan_callback} if processed_scan_callback is not None else {}),
     )
+    progress("Preparing completed SKY aggregates", .85)
     observation.synthesise_integrated_scans(
         sky_q=sky_queue,
         cal_q=calibration_queue,
         signal_displays=displays,
     )
 
+    progress("All aggregates processed", 1.)
     return observation, sky_queue, calibration_queue, retained_scans or []
 
 def main():
@@ -1009,10 +1074,30 @@ def main():
         print(f"Aggregated SKY power plot written to {apr_png_path}")
         obs_display.display()
 
+        lsr_path = os.path.splitext(apr_path)[0] + "-lsrk.png"
+        vlsr_path = os.path.join(args.dir, f"{obs.obs_model.obs_id}_vlsr.csv")
+        if obs_display.display_lsr(
+            obs.obs_model, lsr_path, blacklist=blacklist, csv_path=vlsr_path,
+            observation_baseline=args.observation_baseline,
+            vmin=args.vmin, vmax=args.vmax, baseline_auto=args.baseline_auto,
+            baseline_windows=args.baseline_window,
+        ) is not None:
+            print(f"Aggregated SKY LSRK velocity plot written to {lsr_path}")
+            print(f"Aggregated SKY LSRK velocity data written to {vlsr_path}")
+
+        from ui.opt_distribution import export_cli_distribution
+        for path in export_cli_distribution(obs, sky_scans, obs_display, args.dir, args.observation_baseline):
+            print(f"SNR Distribution written to {path}")
+
         print_sky_scans(obs=obs.obs_model, sky_q=sky_q, blacklist=blacklist)
         print_aggregated_scans(obs=obs.obs_model, sky_q=sky_q, int_arrays=collapsed_sky_arrays, blacklist=blacklist)
 
-    input("Press Enter to continue...")
+        lv_path = os.path.splitext(apr_path)[0] + "-lv.png"
+        display_lv_after_enter(obs_display, obs.obs_model, lv_path,
+                              contour_levels=[] if args.lv_no_contours else args.lv_contours,
+                              contour_smoothing=args.lv_contour_smoothing, vmin=args.vmin, vmax=args.vmax)
+
+    input("Press Enter to finish...")
 
 if __name__ == "__main__":
     main()

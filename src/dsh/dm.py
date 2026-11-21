@@ -3,6 +3,7 @@ from astropy.coordinates import get_body
 from astropy.coordinates import SkyCoord, EarthLocation, AltAz
 from astropy.time import Time
 from datetime import datetime, timezone, timedelta
+from functools import partial
 import logging
 from logging.handlers import TimedRotatingFileHandler
 import os
@@ -19,23 +20,24 @@ from dsh.drivers.driver import DishDriver
 from dsh.drivers.drift.drift_driver import DriftDriver
 from dsh.drivers.md01.md01_driver import MD01Driver
 from dsh.drivers.motion.motion_driver import MotionDriver
-from env.app import App
-from ipc.message import APIMessage
-from ipc.action import Action
-from ipc.message import AppMessage
-from ipc.tcp_client import TCPClient
-from ipc.tcp_server import TCPServer
-from models.comms import CommunicationStatus, InterfaceType
-from models.dsh import DishManagerModel, DriverType, PointingState, DishMode, Capability
-from models.health import HealthState
-from models.oda import ObsList, ScanStore
-from models.target import TargetModel, PointingType
-from models.ws import WeatherData, WeatherStationList
-from util.alarm_rsp_efficiency import get_alarm_rsp_efficiency
-from util import log
-from util.format import fmt_pointing_value
-from util.registry import DISH_DRIVER_NAMESPACE, resolve
-from util.xbase import XBase, XStreamUnableToExtract, XSoftwareFailure, XInvalidTransition
+from sdk.env.app import App
+from sdk.ipc.message import APIMessage
+from sdk.ipc.action import Action
+from sdk.ipc.message import AppMessage
+from sdk.ipc.tcp_client import TCPClient
+from sdk.ipc.tcp_server import TCPServer
+from sdk.models.comms import CommunicationStatus, InterfaceType
+from sdk.models.dsh import DishManagerModel, DriverType, PointingState, DishMode, Capability
+from sdk.models.health import HealthState
+from sdk.models.oda import ObsList, ScanStore
+from sdk.models.target import TargetModel, PointingType
+from sdk.models.ws import WeatherData, WeatherStationList
+from sdk.util.alarm_rsp_efficiency import get_alarm_rsp_efficiency
+from sdk.util import log
+from sdk.util.format import fmt_pointing_value
+from sdk.util.registry import DISH_DRIVER_NAMESPACE, resolve
+from sdk.util.xbase import XBase, XStreamUnableToExtract, XSoftwareFailure, XInvalidTransition
+from web.dish_store import DishProfileStore
 
 logger = logging.getLogger("dsh.dm")
 
@@ -276,12 +278,14 @@ class DM(App):
         # Config file defines initial list of dishes to be processed by the DM and their initial parameters such as driver type and location
         filename = "DishList.json"
         self.dm_model.dish_store = self._load_dish_config(input_dir=input_dir, filename=filename)
+        capability_store = DishProfileStore(input_dir)
 
         # Instantiate drivers for each dish and initiate a polling driver timer for each dish
         for dish in self.dm_model.dish_store.dish_list:
             driver = self._instantiate_dish_driver(dish)
 
             if driver is not None:
+                driver.persist_capability = partial(capability_store.set_capability, dish.dsh_id)
                 driver.set_trace(self.trace)
                 driver.set_pointing_log_dir(Path(App.logs_dir) / "pointing")
                 self.dish_drivers[dish.dsh_id] = driver
@@ -515,10 +519,12 @@ class DM(App):
                     message = f"Dish Manager failed to set target id {target_id if target_id is not None else 'None'} in observation " \
                      f"{target.obs_id if target is not None else 'None' } for Dish {dish_id}: {e}"
 
-                    logger.error(dish_driver.set_last_err(message) + f"\n{target.to_dict() if target is not None else 'No Target'}")
+                    # Known failures return a correlated error to TM. Unexpected
+                    # exceptions propagate to the application's error handler.
+                    logger.exception(dish_driver.set_last_err(message))
+                    dish_driver.clear_target_tuple()
                     rsp_msg = self._construct_rsp_to_tm(status=dmd_protocol.STATUS_ERROR, message=message, api_msg=api_msg, api_call=api_call)
                     action.set_msg_to_remote(rsp_msg)
-                    dish_driver.clear_target_tuple()
                     return action
 
             message = f"Dish Manager set target {target_id if target_id is not None else 'None'} for Dish {dish_id}."
@@ -743,6 +749,7 @@ class DM(App):
                 # Pointing state would be SLEW if still slewing or TRACK if already tracking (if necessary).
                 if (
                     target is not None
+                    and dish_driver.dsh_model.mode == DishMode.OPERATE
                     and dish_driver.get_pointing_state() == PointingState.READY
                     and dish_driver.dsh_model.driver_type != DriverType.DRIFT
                     and (
@@ -761,8 +768,8 @@ class DM(App):
                             dish_driver.track()
                         except XBase as e:
                             status = dmd_protocol.STATUS_ERROR
-                            message = f"Dish Manager failed to track for Dish {dish_id} to target {target_id} in observation {target.obs_id}: {e}"
-                            logger.error(dish_driver.set_last_err(message))
+                            msg = f"Dish Manager failed to track for Dish {dish_id} to target {target_id} in observation {target.obs_id}: {e}"
+                            logger.error(dish_driver.set_last_err(msg))
 
                     # Else if we are doing an offset or five point scan, tell the driver to scan it
                     elif target.pointing in [PointingType.OFFSET_SCAN, PointingType.FIVE_POINT_SCAN]:
@@ -771,8 +778,8 @@ class DM(App):
                             dish_driver.scan()
                         except XBase as e:
                             status = dmd_protocol.STATUS_ERROR
-                            message = f"Dish Manager failed to scan for Dish {dish_id} for target {target_id} in observation {target.obs_id}: {e}"
-                            logger.error(dish_driver.set_last_err(message))
+                            msg = f"Dish Manager failed to scan for Dish {dish_id} for target {target_id} in observation {target.obs_id}: {e}"
+                            logger.error(dish_driver.set_last_err(msg))
                     self._send_status_adv_to_tm(action, target_id, target, status, msg, dish_id=dish_id)
 
                 elif target is not None and dish_driver.get_pointing_state() == PointingState.TRACK:                     
@@ -841,10 +848,13 @@ class DM(App):
         tm_adv = APIMessage(api_version=self.tm_api.get_api_version())
         dm_status = self.dm_model.to_dict()
 
-        # Keep retained weather samples local to DM and send only compact rolling summaries to TM.
+        # Keep full-rate samples local; forward bounded display history and summaries.
         weather_store = dm_status.get("weather_store")
         if isinstance(weather_store, dict):
             weather_store["weather_data"] = []
+            source = getattr(self.dm_model, 'weather_store', None)
+            weather_store["weather_history"] = source.get_display_history() if source is not None else []
+            weather_store["weather_metrics"] = source.get_display_metrics() if source is not None else {}
 
         tm_adv.set_json_api_header(
             api_version=self.tm_api.get_api_version(), 
@@ -999,12 +1009,12 @@ class DM(App):
         return pointing_logger
 
     def _log_pointing(self, dish_model) -> None:
-        """Write the latest state and Alt/Az snapshot for one dish."""
+        """Write state, Alt/Az and measured target offset/position angle (degrees)."""
         pointing_altaz = dish_model.pointing_altaz if isinstance(dish_model.pointing_altaz, dict) else {}
         desired_altaz = dish_model.desired_altaz if isinstance(dish_model.desired_altaz, dict) else {}
 
         self.pointing_logger.info(
-            "%s | %s | %s | %s | %s | %s | %s | %s | %s",
+            "%s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s",
             dish_model.dsh_id,
             dish_model.capability.name,
             dish_model.mode.name,
@@ -1014,6 +1024,8 @@ class DM(App):
             fmt_pointing_value(pointing_altaz.get("alt")),
             fmt_pointing_value(desired_altaz.get("az")),
             fmt_pointing_value(desired_altaz.get("alt")),
+            fmt_pointing_value(dish_model.pointing_offset),
+            fmt_pointing_value(dish_model.pointing_position_angle),
         )
 
     def _log_alarm_event(self, event_type: str, active: bool = None, reason: str = None):

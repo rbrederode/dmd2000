@@ -2,11 +2,11 @@ import pytest
 import numpy as np
 import time
 
-from models.dig import DigitiserModel
-from models.comms import CommunicationStatus
+from sdk.models.dig import DigitiserModel
+from sdk.models.comms import CommunicationStatus
 from sdr.facade import SDR as ThreadedSDR
 from sdr.sdr import SDR, _normalise_sdr_type
-from util.xbase import XSoftwareFailure
+from sdk.util.xbase import XSoftwareFailure
 
 
 def test_digitiser_model_defaults_to_rtlsdr_backend():
@@ -186,15 +186,16 @@ def test_gqrxraw_driver_metadata_follows_sample_cursor_not_call_time(tmp_path, m
         ("rtlstream", "RTLSDRDriver", "rtl"),
     ],
 )
-def test_stream_driver_reads_from_ring_buffer_with_contiguous_metadata(
+def test_stream_driver_reads_from_ring_buffer_with_measured_metadata(
     monkeypatch, sdr_type, driver_attribute, expected_backend
 ):
-    from models.comms import CommunicationStatus
+    from sdk.models.comms import CommunicationStatus
 
     class FakeDriver:
         def __init__(self, bias_t_enabled=False, sdr_config=None):
             self.sample_rate = int(sdr_config["sample_rate"])
             self.next_sample = 0
+            self.read_times = []
 
         def get_comms_status(self):
             return CommunicationStatus.ESTABLISHED
@@ -209,10 +210,13 @@ def test_stream_driver_reads_from_ring_buffer_with_contiguous_metadata(
             pass
 
         def _read_complex_samples(self, num_samples):
+            read_start = time.time()
             time.sleep(0.01)
             start = self.next_sample
             self.next_sample += num_samples
-            return np.arange(start, start + num_samples, dtype=np.complex64)
+            samples = np.arange(start, start + num_samples, dtype=np.complex64)
+            self.read_times.append((read_start, time.time()))
+            return samples
 
         def __getattr__(self, name):
             if name.startswith("get_"):
@@ -243,7 +247,10 @@ def test_stream_driver_reads_from_ring_buffer_with_contiguous_metadata(
     assert metadata1["sample_index_start"] == 10
     assert metadata1["sample_index_end"] == 20
     assert metadata0["stream_backend"] == expected_backend
-    assert metadata1["read_start"] == metadata0["read_end"]
+    assert metadata1["read_start"] >= metadata0["read_end"]
+    for metadata, (start, end) in zip((metadata0, metadata1), sdr.driver.driver.read_times):
+        assert metadata["read_start"] <= start < end <= metadata["read_end"]
+        assert metadata["timestamp_source"] == "host_read"
     assert metadata1["producer_read_count"] >= 2
     assert metadata1["producer_last_read_duration"] >= 0.0
     assert metadata1["producer_last_inter_read_gap"] >= 0.0
@@ -254,7 +261,7 @@ def test_stream_driver_reads_from_ring_buffer_with_contiguous_metadata(
 
 
 def test_rtlstream_auto_gain_calls_hold_driver_lock(monkeypatch):
-    from models.comms import CommunicationStatus
+    from sdk.models.comms import CommunicationStatus
 
     class FakeRTLSDR:
         def __init__(self, bias_t_enabled=False, sdr_config=None):
@@ -311,13 +318,13 @@ def test_rtlstream_auto_gain_calls_hold_driver_lock(monkeypatch):
 
     assert sdr.get_auto_gain(sample_rate=100, time_in_secs=1) == 12.5
     assert sdr.set_auto_gain(sample_rate=100, time_in_secs=1) == 14.4
-    assert recording_lock.entries == 2
+    assert recording_lock.entries == 6
 
     sdr.close()
 
 
 def test_airstream_driver_can_configure_ring_after_sample_rate_is_set(monkeypatch):
-    from models.comms import CommunicationStatus
+    from sdk.models.comms import CommunicationStatus
 
     class FakeAirspy:
         def __init__(self, bias_t_enabled=False, sdr_config=None):
@@ -378,7 +385,7 @@ def test_airstream_driver_can_configure_ring_after_sample_rate_is_set(monkeypatc
 
 
 def test_stream_reset_discards_buffered_samples_and_restarts_at_live_edge(monkeypatch):
-    from models.comms import CommunicationStatus
+    from sdk.models.comms import CommunicationStatus
 
     class FakeRTLSDR:
         def __init__(self, bias_t_enabled=False, sdr_config=None):

@@ -9,10 +9,10 @@ from api.cmd_api import ACTION_CODE_COMMAND
 from api.cmd_registry import CommandRegistry
 from dsh.dm import DM
 from dsh.drivers.driver import DishDriver
-from env.app_processor import AppProcessor
-from ipc.message import APIMessage
-from models.app import AppModel
-from models.dsh import Capability, DishMode
+from sdk.env.app_processor import AppProcessor
+from sdk.ipc.message import APIMessage
+from sdk.models.app import AppModel
+from sdk.models.dsh import Capability, DishMode
 
 
 class StopDriver:

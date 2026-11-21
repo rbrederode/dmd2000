@@ -11,16 +11,16 @@ from api.api import API
 from api import protocol as dmd_protocol
 from api.cmd_api import CommandAPI
 from api.cmd_registry import CommandRegistry
-from env.app import App, _should_manage_trace_archives
-from env.app_processor import AppProcessor
-from env.processor import Processor
-from env.events import ConnectEvent, DataEvent, DisconnectEvent
-from ipc.action import Action
-from ipc.message import APIMessage
+from sdk.env.app import App, _should_manage_trace_archives
+from sdk.env.app_processor import AppProcessor
+from sdk.env.processor import Processor
+from sdk.env.events import ConnectEvent, DataEvent, DisconnectEvent
+from sdk.ipc.action import Action
+from sdk.ipc.message import APIMessage
 from dsh.drivers.md01.md01_msg import MD01Msg
-from models.app import AppModel
-from models.comms import InterfaceType
-from util.html_trace import HTMLTrace
+from sdk.models.app import AppModel
+from sdk.models.comms import InterfaceType
+from sdk.util.html_trace import HTMLTrace
 
 
 class PassthroughAPI(API):
@@ -287,7 +287,7 @@ def test_app_registers_command_server_as_cmd_interface():
         def stop(self):
             self.stopped = True
 
-    with mock.patch("env.app.TCPServer", FakeTCPServer):
+    with mock.patch("sdk.env.app.TCPServer", FakeTCPServer):
         app.start_cmd_server()
         api, endpoint, interface_type = app.get_interface(dmd_protocol.CMD)
 
@@ -651,7 +651,7 @@ def test_html_trace_retention_counts_compressed_archives(tmp_path):
 
 
 def test_html_trace_archive_manager_thread_is_optional(tmp_path):
-    with mock.patch("util.html_trace.threading.Thread") as thread_class:
+    with mock.patch("sdk.util.html_trace.threading.Thread") as thread_class:
         HTMLTrace(tmp_path, "dm", "v1", manage_trace_archives=False)
         thread_class.assert_not_called()
 
@@ -666,7 +666,7 @@ def test_html_trace_compression_failure_restores_original_archive(tmp_path):
     archive.write_text("keep me", encoding="utf-8")
     trace = HTMLTrace(tmp_path, "tm", "v1", server_name="host")
 
-    with mock.patch("util.html_trace.shutil.copyfileobj", side_effect=OSError("disk full")):
+    with mock.patch("sdk.util.html_trace.shutil.copyfileobj", side_effect=OSError("disk full")):
         with pytest.raises(OSError, match="disk full"):
             trace._compress_archive(archive)
 
@@ -707,3 +707,38 @@ def test_manage_trace_archives_command_line_argument(command_args, expected):
     args = parser.parse_args(command_args)
 
     assert args.manage_trace_archives is expected
+
+
+@pytest.mark.parametrize('app_name, entity_id, filename', [
+    ('dig', 'dig001', 'dig001.html'),
+    ('dig', 'dig003', 'dig003.html'),
+    ('tm', 'tm001', 'tm001.html'),
+    ('dm', 'dm001', 'dm001.html'),
+    ('sdp', 'sdp001', 'sdp001.html'),
+    ('ws', 'ws002', 'ws002.html'),
+    ('web', 'web001', 'web001.html'),
+    ('dig', '<undefined>', 'dig.html'),
+    ('tm', '', 'tm.html'),
+    ('dm', None, 'dm.html'),
+])
+def test_application_trace_files_use_entity_ids(tmp_path, monkeypatch, app_name, entity_id, filename):
+    class TraceApp(App):
+        def stop(self):
+            if hasattr(self, 'trace'):
+                self.trace.stop()
+
+    monkeypatch.setattr('sys.argv', ['trace-test'] + (['--entity_id', entity_id] if entity_id is not None else []))
+    monkeypatch.setattr('sdk.env.app.log.repo_logs_dir', str(tmp_path))
+    monkeypatch.setattr('sdk.env.app._should_manage_trace_archives', lambda *args: False)
+    monkeypatch.setattr(App, 'start_timer_manager', lambda self: None)
+    monkeypatch.setattr(App, 'report_availability', lambda self: None)
+    monkeypatch.setattr(App, 'get_availability_logger', lambda self: mock.Mock())
+    monkeypatch.setattr(CommandRegistry, 'load', mock.Mock())
+    app = TraceApp(app_name=app_name, app_model=AppModel(
+        app_name=app_name, app_cmd_host='127.0.0.1', app_cmd_port=60000, app_tracing=True))
+    try:
+        assert app.trace.path == tmp_path / 'trace' / filename
+        assert app.trace.path.exists()
+        assert app.app_model.app_name == app_name
+    finally:
+        app.stop()

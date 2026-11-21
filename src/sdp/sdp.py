@@ -13,26 +13,27 @@ from typing import Any
 
 from api import protocol as dmd_protocol
 from api import sdp_dig, tm_sdp
-from env.app import App
-from ipc.message import APIMessage
-from ipc.action import Action
-from ipc.message import AppMessage
-from ipc.tcp_client import TCPClient
-from ipc.tcp_server import TCPServer
-from models.base import BaseModel
-from models.comms import CommunicationStatus, InterfaceType
-from models.dig import DigitiserModel, DigitiserList
-from models.fil import FilterBank
-from models.health import HealthState
-from models.pipeline import StepConfig, StepType, PipelineConfig
-from models.scan import ScanModel, ScanState, ScanType
-from models.sdp import ScienceDataProcessorModel
-from models.target import TargetConfig
+from sdk.env.app import App
+from sdk.ipc.message import APIMessage
+from sdk.ipc.action import Action
+from sdk.ipc.message import AppMessage
+from sdk.ipc.tcp_client import TCPClient
+from sdk.ipc.tcp_server import TCPServer
+from sdk.models.base import BaseModel
+from sdk.models.comms import CommunicationStatus, InterfaceType
+from sdk.models.dig import DigitiserModel, DigitiserList
+from sdk.models.fil import FilterBank
+from sdk.models.health import HealthState
+from sdk.models.launch import load_scan_store_dir
+from sdk.models.pipeline import StepConfig, StepType, PipelineConfig
+from sdk.models.scan import ScanModel, ScanState, ScanType
+from sdk.models.sdp import ScienceDataProcessorModel
+from sdk.models.target import TargetConfig
 from obs.scan import Scan
 from sdp.display_baseline import DisplayBaseline
 from sdp.pipeline.pipeline_factory import ProcessingPipelineFactory
-from util import log, util
-from util.xbase import XBase, XStreamUnableToExtract, XSoftwareFailure, XInvalidTransition
+from sdk.util import log, util
+from sdk.util.xbase import XBase, XStreamUnableToExtract, XSoftwareFailure, XInvalidTransition
 
 #SAMPLES_DIR = '/Volumes/DATA SDD/Alston Radio Telescope/Samples/Home'  # Directory to store samples
 SAMPLES_DIR = '/Users/r.brederode/samples'  # Directory to store samples
@@ -95,6 +96,10 @@ class SDP(App):
         arg_parser.add_argument("--dig_port", type=int, required=False, help="TCP server port for upstream Digitiser transport", default=60000)
 
         arg_parser.add_argument("--scan_store_dir", type=str, required=False, help="Directory to store captured scan samples", default=SAMPLES_DIR)
+        args, _ = arg_parser.parse_known_args()
+        store = load_scan_store_dir(profile=args.profile)
+        if store is not None:
+            arg_parser.set_defaults(scan_store_dir=store)
 
     def _load_digitiser_store(self, input_dir:str, filename:str) -> DigitiserList:
         
@@ -183,9 +188,7 @@ class SDP(App):
 
     def _get_dig_lock(self, dig_id: str) -> threading.RLock:
         """Get or create a threading lock for a specific digitiser ID."""
-        if dig_id not in self._dig_locks:
-            self._dig_locks[dig_id] = threading.RLock()
-        return self._dig_locks[dig_id]
+        return self._dig_locks.setdefault(dig_id, threading.RLock())
 
     def get_dig_entity(self, event) -> (str, BaseModel):
         """ Determines the digitiser entity ID based on the remote address of a ConnectEvent, DisconnectEvent, or DataEvent.
@@ -291,13 +294,18 @@ class SDP(App):
                        
                 match = None
 
+                # Only approved samples may retire an old target's unfinished scans.
+                # In particular, a late packet rejected above must not disturb the
+                # current target. Manual scans use the active SDP identity too.
+                self._retire_other_scan_identities(dig_id, digitiser.scanning)
+
                 # Find pending scans for this digitiser
                 pending_scans = [s for s in list(self.sky_q.queue) if s.get_status() in [ScanState.EMPTY, ScanState.WIP] and s.get_dig_id() == dig_id]
                 abort_scans = []
 
-                self.sdp_model.scans_wip = len(pending_scans)
-
                 for scan in pending_scans:
+                    if not self._matches_scan_identity(scan, digitiser.scanning):
+                        continue
                     start_idx, end_idx = scan.get_start_end_idx()
                     if read_counter >= start_idx and read_counter <= end_idx:
 
@@ -348,6 +356,8 @@ class SDP(App):
                         files_directory=os.path.expanduser(self.get_args().scan_store_dir))
 
                     scan = Scan(scan_model=scan_model)
+
+                    scan_model.sdp_config_profile = getattr(self.get_args(), "profile", None)
 
                     # Create a signal processing pipeline using the pipeline factory and associate it with the scan
                     pipeline = SDP.pipeline_factory.create_pipeline(scan, self.sky_q, self.cal_q) if SDP.pipeline_factory else None
@@ -588,6 +598,13 @@ class SDP(App):
             logger.error(self.set_last_err(message))
             return False
 
+        with self._get_dig_lock(dig_id):
+            return self._set_scan_config_locked(dig, obs_id, value)
+
+    def _set_scan_config_locked(self, dig, obs_id, value):
+        """Apply configuration while sample handling for this digitiser is paused."""
+        dig_id = dig.dig_id
+
         # Finding a digitiser in the configured store does not mean that the
         # corresponding entity is connected. Reject the scan before updating
         # SDP state when the live connection was resolved to a different
@@ -620,6 +637,8 @@ class SDP(App):
         for key, val in value.items():
             if key in ['dig_id', 'obs_id']:
                 continue  # skip these keys as they are identifiers and not attributes
+            if key == sdp_dig.PROPERTY_SCANNING and val is None:
+                continue  # A partial tuning update must not replace scanning with None.
 
             if key == 'filter_bank':
                 if val is None:
@@ -665,6 +684,8 @@ class SDP(App):
             else:
                 message = f"Science Data Processor received unknown scan config key {key} for digitiser {dig_id} in value: {value}"
                 logger.warning(self.set_last_err(message))
+
+        self._retire_other_scan_identities(dig_id, dig.scanning)
 
         scanning = value.get(sdp_dig.PROPERTY_SCANNING) if value is not None and isinstance(value, dict) else None
         if scanning is None and isinstance(dig.scanning, dict):
@@ -957,6 +978,32 @@ class SDP(App):
             return max(load_scans, key=lambda s: s.scan_model.created)
         return None
 
+    @staticmethod
+    def _matches_scan_identity(scan, scanning):
+        """Radio settings and read counters alone do not identify a target."""
+        return isinstance(scanning, dict) and (
+            scan.scan_model.obs_id, scan.scan_model.tgt_idx, scan.scan_model.freq_scan
+        ) == (scanning.get('obs_id'), scanning.get('tgt_idx'), scanning.get('freq_scan'))
+
+    def _retire_other_scan_identities(self, dig_id, scanning):
+        """Retire only unfinished scans belonging to this digitiser's old context.
+
+        Call with the digitiser lock held. Completed scans and calibration data
+        remain available; retirement does not produce a SCAN_COMPLETE message.
+        """
+        with self.sky_q.mutex:
+            queued = list(self.sky_q.queue)
+        # Status reads acquire scan locks; release the queue mutex first to
+        # avoid reversing the lock order used during signal processing.
+        pending = [scan for scan in queued
+                   if scan.get_status() in (ScanState.EMPTY, ScanState.WIP)]
+        self.sdp_model.scans_wip = len(pending)
+        for scan in pending:
+            if scan.get_dig_id() == dig_id and not self._matches_scan_identity(scan, scanning):
+                logger.info("Science Data Processor retiring unfinished scan %s after scan identity changed to %s",
+                            scan.scan_model.scan_id, scanning)
+                self._abort_scan(scan)
+
     def _abort_scan(self, scan: Scan):
         """ Aborts a scan and performs necessary cleanup.
         """
@@ -964,6 +1011,7 @@ class SDP(App):
         scan.del_iq()
 
         self.sdp_model.scans_aborted += 1
+        self.sdp_model.scans_wip = max(0, self.sdp_model.scans_wip - 1)
         self._remove_from_queue(scan=scan, queue=self.sky_q)  # Remove the aborted scan from the sky processing queue
 
     def _complete_scan(self, scan: Scan):

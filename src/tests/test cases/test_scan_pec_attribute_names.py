@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from models.scan import ScanModel
+from sdk.models.scan import ScanModel
 
 
 def test_scan_model_serialises_short_target_pec_attribute_names():

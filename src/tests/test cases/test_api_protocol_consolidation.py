@@ -69,6 +69,7 @@ def test_api_modules_preserve_interface_specific_extensions():
             sdp_dig.PROPERTY_READ_START,
             sdp_dig.PROPERTY_READ_END,
             sdp_dig.PROPERTY_SCANNING,
+            *sdp_dig.STREAM_METADATA_PROPERTIES,
         ),
     }
 

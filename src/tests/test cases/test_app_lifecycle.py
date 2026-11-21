@@ -7,12 +7,13 @@ import subprocess
 import sys
 import threading
 import time
+from types import SimpleNamespace
 from unittest import mock
 
 import pytest
 
-from env.app import App
-from models.app import AppModel
+from sdk.env.app import App
+from sdk.models.app import AppModel
 
 
 def lifecycle_app():
@@ -54,7 +55,7 @@ def test_lifecycle_always_cleans_up_and_restores_signal_handlers(failure):
             app.request_stop()
             assert app.wait_for_stop(0)
 
-    with mock.patch("env.app.logging.shutdown", side_effect=lambda: calls.append("logs")):
+    with mock.patch("sdk.env.app.logging.shutdown", side_effect=lambda: calls.append("logs")):
         if failure:
             with pytest.raises(RuntimeError, match=f"{failure} failure"):
                 run()
@@ -67,7 +68,7 @@ def test_lifecycle_always_cleans_up_and_restores_signal_handlers(failure):
 
 def test_keyboard_interrupt_uses_same_cleanup_path():
     app = lifecycle_app()
-    with mock.patch("env.app.logging.shutdown") as shutdown:
+    with mock.patch("sdk.env.app.logging.shutdown") as shutdown:
         with app.running():
             raise KeyboardInterrupt
     assert app.stop_requested
@@ -135,7 +136,7 @@ from pathlib import Path
 import sys
 import threading
 sys.path.insert(0, sys.argv[3])
-from env.app import App
+from sdk.env.app import App
 
 target = logging.FileHandler(sys.argv[2])
 buffer = MemoryHandler(capacity=100, target=target)
@@ -190,21 +191,114 @@ def test_headless_entry_points_use_shared_lifecycle(relative_path, constructor):
     app = lifecycle_app()
     app.is_headless = mock.Mock(return_value=True)
     app.get_queue = mock.Mock(return_value=Queue())
+    app.get_args = mock.Mock(return_value=SimpleNamespace(web_api_threads=10))
+    app.telmodel = SimpleNamespace(sdp=SimpleNamespace(app=SimpleNamespace(arguments=None)))
     app.start.side_effect = app.request_stop
     thread = mock.Mock()
     webhook = mock.Mock()
+    api_options = {}
+
+    def make_api(**kwargs):
+        api_options.update(kwargs)
+        return webhook
+
     namespace = {
         constructor: lambda: app,
         "logger": mock.Mock(), "threading": thread,
-        "WebhookHandler": lambda **kwargs: webhook, "ExitStack": ExitStack,
+        "WebAPIHandler": make_api, "ExitStack": ExitStack,
     }
     exec(compile(ast.Module(body=[main], type_ignores=[]), str(path), "exec"), namespace)
-    with mock.patch("env.app.logging.shutdown") as shutdown:
+    with mock.patch("sdk.env.app.logging.shutdown") as shutdown:
         namespace["main"]()
     app.start.assert_called_once_with()
     app.stop.assert_called_once_with()
     shutdown.assert_called_once_with()
     thread.Thread.assert_not_called()
     if constructor == "TelescopeManager":
+        assert api_options['threads'] == 10
         webhook.start.assert_called_once_with()
         webhook.stop.assert_called_once_with()
+        assert api_options['telmodel'] is app.telmodel
+        assert api_options['event_queue'] is app.get_queue.return_value
+
+
+def test_status_thread_exits_on_shutdown_before_cleanup_clears_running(caplog):
+    app = lifecycle_app()
+    app.app_model.app_running = True
+    app.status_update_event = mock.Mock()
+    app.status_update_event.is_update_pending.return_value = False
+    app.heartbeat = mock.Mock()
+    app.report_availability = mock.Mock()
+    waits = []
+
+    def wait(timeout):
+        waits.append(timeout)
+        app.status_update_event.is_update_pending.return_value = True
+        app.request_stop()
+        # A second iteration would reproduce the old busy loop. Bound this test.
+        if len(waits) > 1:
+            app.app_model.app_running = False
+        return True
+
+    app.wait_for_stop = wait
+    with caplog.at_level('INFO', logger='sdk.env.app'):
+        app.run()
+    assert app.app_model.app_running  # Main-thread cleanup has not started yet.
+    assert waits == [30]
+    app.status_update_event.enqueue.assert_called_once_with(app.queue)
+    app.heartbeat.assert_called_once_with()
+    assert 'Debug Info' not in caplog.text
+
+
+def test_status_thread_does_no_work_when_shutdown_already_requested():
+    app = lifecycle_app()
+    app.app_model.app_running = True
+    app.heartbeat = mock.Mock()
+    app.request_stop()
+    app.run()
+    app.heartbeat.assert_not_called()
+
+
+def test_status_thread_calculates_metrics_at_the_hour_mark():
+    from datetime import datetime, timezone, timedelta
+
+    app = lifecycle_app()
+    app.app_model.app_running = True
+    app.status_update_event = mock.Mock()
+    app.status_update_event.is_update_pending.return_value = False
+    app.heartbeat = mock.Mock()
+    app.report_availability = mock.Mock()
+    initial = datetime(2026, 11, 16, 12, 59, tzinfo=timezone.utc)
+    waits = []
+
+    def wait(timeout):
+        waits.append(timeout)
+        if len(waits) == 3:
+            app.request_stop()
+            return True
+        return False
+
+    app.wait_for_stop = wait
+    with mock.patch('sdk.env.app.datetime') as clock:
+        clock.now.side_effect = [initial + timedelta(seconds=59),
+                                 initial + timedelta(seconds=60),
+                                 initial + timedelta(seconds=90)]
+        app.run()
+    app.report_availability.assert_called_once_with()
+
+
+def test_status_thread_preserves_pending_update_diagnostics(caplog):
+    app = lifecycle_app()
+    app.app_model.app_running = True
+    app.status_update_event = mock.Mock()
+    app.status_update_event.is_update_pending.return_value = True
+    app.status_update_event.get_dequeued_count.return_value = 1
+    app.status_update_event.get_millis_since_update_enqueued.return_value = 30000
+    app.processors = []
+    app.heartbeat = mock.Mock()
+    app.report_availability = mock.Mock()
+    app.wait_for_stop = lambda timeout: (app.request_stop() or True)
+    with caplog.at_level('INFO', logger='sdk.env.app'):
+        app.run()
+    assert 'Debug Info' in caplog.text
+    assert 'pending for 30000 ms' in caplog.text

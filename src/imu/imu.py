@@ -7,11 +7,11 @@ from pathlib import Path
 import threading
 import time
 
-from models.comms import CommunicationStatus
-from models.imu import IMUData, IMUDeviceList, IMUDeviceModel, IMUDriverType
+from sdk.models.comms import CommunicationStatus
+from sdk.models.imu import IMUData, IMUDeviceList, IMUDeviceModel, IMUDriverType
 from imu.drivers.driver import create_imu_driver
-from util.convert import angle_to_altitude, yaw_to_azimuth
-from util.xbase import XSoftwareFailure
+from sdk.util.convert import angle_to_altitude, yaw_to_azimuth
+from sdk.util.xbase import XSoftwareFailure
 
 # IMU = Inertial Measurement Unit
 logger = logging.getLogger(__name__)

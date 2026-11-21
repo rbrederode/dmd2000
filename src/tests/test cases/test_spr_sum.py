@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from util.spr_sum import aggregate_observation, discover_spr_files, parse_scan_id
+from sdk.util.spr_sum import aggregate_observation, discover_spr_files, parse_scan_id
 
 
 def _write_spr(path: Path, rows: list[list[float]]) -> None:
@@ -81,7 +81,7 @@ def test_parse_scan_id_rejects_wrong_shape():
 
 def test_command_line_interface(tmp_path):
     _write_spr(tmp_path / "obs001-0-0-0-dig001-sky-spr.csv", [[1, 2, 3]])
-    script = Path(__file__).parents[2] / "util" / "spr_sum.py"
+    script = Path(__file__).parents[2] / "sdk" / "util" / "spr_sum.py"
 
     result = subprocess.run(
         [

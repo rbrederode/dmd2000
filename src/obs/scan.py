@@ -6,13 +6,13 @@ import json
 import os
 from datetime import datetime, timezone
 
-from models.pipeline import StepConfig, StepType
-from models.qa import ScanQA, QA
-from models.scan import ScanDataSource, ScanModel, ScanState, ScanType
+from sdk.models.pipeline import StepConfig, StepType
+from sdk.models.qa import ScanQA, QA
+from sdk.models.scan import ScanDataSource, ScanModel, ScanState, ScanType
 from sdp.channel_mask import ChannelFlag, empty_channel_flags, masked_mean
 from sdp.pipeline.steps.dc_spike import DCSpike
-from util import gen_file_prefix
-from util.xbase import XSoftwareFailure 
+from sdk.util import gen_file_prefix
+from sdk.util.xbase import XSoftwareFailure
 
 logger = logging.getLogger(__name__)
 
@@ -194,7 +194,8 @@ class Scan:
         if self._fb_file is not None:
             return
 
-        output_dir = self.scan_model.files_directory or "./"
+        output_dir = os.path.abspath(os.path.expanduser(self.scan_model.files_directory or "./"))
+        self.scan_model.files_directory = output_dir
         os.makedirs(output_dir, exist_ok=True)
 
         if not self.scan_model.files_prefix:
@@ -762,6 +763,7 @@ class Scan:
 
         if output_dir is None or output_dir == '':
             output_dir = "./"
+        output_dir = os.path.abspath(os.path.expanduser(output_dir))
 
         # Ensure output directory exists
         os.makedirs(output_dir, exist_ok=True)
@@ -1012,7 +1014,7 @@ if __name__ == "__main__":
         print("=" * 150)
 
     def build_test_pipeline_factory():
-        from models.pipeline import PipelineConfig, StepConfig, StepType
+        from sdk.models.pipeline import PipelineConfig, StepConfig, StepType
         from sdp.pipeline.pipeline_factory import ProcessingPipelineFactory
 
         step1 = StepConfig(step=StepType.DC_SPIKE, params={"pipeline": "spr"})

@@ -4,8 +4,8 @@ from typing import Optional
 
 from schema import Schema, And, Or
 
-from models.base import BaseModel
-from models.ws import WeatherStationModel
+from sdk.models.base import BaseModel
+from sdk.models.ws import WeatherStationModel
 
 try:
     from ws.drivers.driver import WeatherStationDriver
@@ -28,6 +28,7 @@ class ModbusConfig(BaseModel):
 
     schema = Schema({
         "_type": And(str, lambda v: v == "ModbusConfig"),
+        "driver_poll_period": And(lambda value: type(value) is int, lambda value: value > 0),
         "port": And(str, lambda v: isinstance(v, str)),
         "slave_address": And(int, lambda v: 1 <= v <= 247),
         "baudrate": And(int, lambda v: v > 0),
@@ -68,6 +69,7 @@ class ModbusConfig(BaseModel):
     def __init__(self, **kwargs):
         defaults = {
             "_type": "ModbusConfig",
+            "driver_poll_period": 1000,
             "port": "/dev/ttyUSB0",
             "slave_address": 2,
             "baudrate": 9600,

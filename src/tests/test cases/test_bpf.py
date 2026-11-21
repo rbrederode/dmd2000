@@ -3,8 +3,8 @@ from datetime import datetime, timezone
 import numpy as np
 import pytest
 
-from models.pipeline import PipelineConfig, StepConfig, StepType
-from models.scan import ScanModel, ScanState, ScanType
+from sdk.models.pipeline import PipelineConfig, StepConfig, StepType
+from sdk.models.scan import ScanModel, ScanState, ScanType
 from obs.scan import Scan
 from sdp.channel_mask import ChannelFlag, empty_channel_flags
 from sdp.pipeline.pipeline_factory import ProcessingPipeline, ProcessingPipelineFactory

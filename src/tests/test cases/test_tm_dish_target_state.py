@@ -5,11 +5,12 @@ import pytest
 
 from api import protocol as dmd_protocol
 from api import tm_dm
-from models.dsh import Capability, DishModel, DishMode, PointingState
-from models.obs import ObsState, ObsTransition
-from models.target import PointingType, TargetModel
+from sdk.models.dsh import Capability, DishModel, DishMode, PointingState
+from sdk.models.obs import ObsState, ObsTransition
+from sdk.models.target import PointingType, TargetModel
 from tm.tm import TelescopeManager
 from tm import tm as tm_module
+from sdk.ipc.action import Action
 
 
 def make_telescope_manager(dish, observation=None):
@@ -122,6 +123,38 @@ def target_response(target, obs_data=None):
     if obs_data is not None:
         api_call["obs_data"] = obs_data
     return api_call
+
+
+def test_failed_target_response_aborts_observation_and_cancels_request_timers():
+    dish = DishModel(dsh_id="dish001", mode=DishMode.CONFIG)
+    observation = SimpleNamespace(obs_id="obs001", obs_state=ObsState.CONFIGURING)
+    manager = make_telescope_manager(dish, observation)
+    timestamp = datetime.now(timezone.utc).isoformat()
+    error_message = "Failed to set target: coordinate conversion failed"
+
+    action = manager.process_dm_msg(
+        event=None,
+        api_msg={"entity": dish.dsh_id, "timestamp": timestamp},
+        api_call={
+            "msg_type": dmd_protocol.MSG_TYPE_RSP,
+            "action_code": dmd_protocol.ACTION_CODE_SET,
+            "property": tm_dm.PROPERTY_TARGET,
+            "status": dmd_protocol.STATUS_ERROR,
+            "message": error_message,
+            "obs_data": {"obs_id": observation.obs_id, "target_id": "obs001-1"},
+        },
+        payload=bytearray(),
+    )
+
+    assert [item.get_transition() for item in action.obs_transitions] == [ObsTransition.ABORT]
+    assert action.obs_transitions[0].get_obs() is observation
+    assert dish.last_err_msg == error_message
+    assert dish.mode == DishMode.UNKNOWN
+    assert {timer.get_name() for timer in action.timer_actions} == {
+        f"{dish.dsh_id}_req_timer_retry:{timestamp}",
+        f"{dish.dsh_id}_req_timer_final:{timestamp}",
+    }
+    assert all(timer.get_timer_action() == Action.Timer.TIMER_STOP for timer in action.timer_actions)
 
 
 @pytest.mark.parametrize(
@@ -283,3 +316,17 @@ def test_target_response_without_obs_data_wakes_configuring_observation():
     transitions = [item.get_transition() for item in action.obs_transitions]
     assert transitions == [ObsTransition.CONFIGURE_RESOURCES]
     assert dish.pointing_state == PointingState.UNKNOWN
+
+
+@pytest.mark.parametrize('state,aborts', [(ObsState.ABORTED,False),(ObsState.IDLE,False),
+    (ObsState.FAULT,False),(ObsState.EMPTY,False),(ObsState.CONFIGURING,True),
+    (ObsState.READY,True),(ObsState.SCANNING,True)])
+def test_dish_error_only_aborts_active_observation(state, aborts):
+    dish = DishModel(dsh_id='dish001')
+    observation = SimpleNamespace(obs_id='obs001',obs_state=state)
+    manager = make_telescope_manager(dish,observation)
+    for _ in range(3):
+        action = manager.process_dm_msg(None, {'entity':dish.dsh_id}, {
+            'msg_type':'adv','action_code':'set','property':'status','status':'error',
+            'message':'scan command rejected','obs_data':{'obs_id':observation.obs_id}}, bytearray())
+        assert len(action.obs_transitions) == int(aborts)

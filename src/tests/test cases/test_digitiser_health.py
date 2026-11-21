@@ -4,10 +4,10 @@ import threading
 import dig.dig as dig_module
 from dig.dig import Digitiser
 from dig.filters.sawbird import SAWbirdH1_BareBones
-from models.comms import CommunicationStatus
-from models.dig import DigitiserModel
-from models.health import HealthState
-from models.temp import TempReading
+from sdk.models.comms import CommunicationStatus
+from sdk.models.dig import DigitiserModel
+from sdk.models.health import HealthState
+from sdk.models.temp import TempReading
 
 
 class FakeTempSensor:

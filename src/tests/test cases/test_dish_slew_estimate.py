@@ -1,4 +1,4 @@
-from models.dsh import DishModel
+from sdk.models.dsh import DishModel
 from dsh.drivers.driver import DishDriver
 from dsh.drivers.md01.md01_config import MD01Config
 from dsh.drivers.md01.md01_driver import MD01Driver

@@ -8,10 +8,10 @@ from api import imu_app
 from dsh.drivers.driver import DishDriver
 from dsh.drivers.motion.motion_config import MotionDishConfig
 from imu.imu import IMU, load_imu_device_list
-from ipc.message import APIMessage
-from models.dsh import DishModel, PointingState, Capability, DishMode, Feed, DriverType
-from models.imu import IMUDeviceList, IMUData
-from util.xbase import XBase, XTimeoutWaitingForResponse, XCommsFailure, XStreamUnableToExtract
+from sdk.ipc.message import APIMessage
+from sdk.models.dsh import DishModel, PointingState, Capability, DishMode, Feed, DriverType
+from sdk.models.imu import IMUDeviceList, IMUData
+from sdk.util.xbase import XBase, XTimeoutWaitingForResponse, XCommsFailure, XStreamUnableToExtract
 
 logger = logging.getLogger(__name__)
 
@@ -187,6 +187,7 @@ class MotionDriver(DishDriver):
         except XStreamUnableToExtract as e:
             logger.error(f"IMUDriver for controller {self.motion_config.imu_host} {self.motion_config.imu_port} failed to decode response data: {e}")
             raise XStreamUnableToExtract(f"IMUDriver for controller {self.motion_config.imu_host} {self.motion_config.imu_port} failed to decode response data: {e}", data=rsp_data)
+        self.dsh_model.last_comms_success_dt = datetime.now(timezone.utc)
         logger.debug(f"IMUDriver for controller {self.motion_config.imu_host} {self.motion_config.imu_port} received response from IMU server:\n{imu_rsp}")
         return imu_rsp
 

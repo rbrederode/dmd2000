@@ -4,8 +4,8 @@ from typing import Optional
 
 from schema import Schema, And, Or
 
-from models.base import BaseModel
-from models.ws import WeatherStationModel
+from sdk.models.base import BaseModel
+from sdk.models.ws import WeatherStationModel
 from ws.drivers.driver import WeatherStationDriver
 from ws.wind import ADS1115VoltageReader
 
@@ -17,6 +17,7 @@ class ADS1115Config(BaseModel):
 
     schema = Schema({
         "_type": And(str, lambda v: v == "ADS1115Config"),
+        "driver_poll_period": And(lambda value: type(value) is int, lambda value: value > 0),
         "adc_backend": And(str, lambda v: v in ["ads1115", "mock"]),
         "adc_channel": And(int, lambda v: 0 <= v <= 3),
         "adc_address": And(int, lambda v: 0 <= v <= 0x7F),
@@ -40,6 +41,7 @@ class ADS1115Config(BaseModel):
     def __init__(self, **kwargs):
         defaults = {
             "_type": "ADS1115Config",
+            "driver_poll_period": 1000,
             "adc_backend": "ads1115",
             "adc_channel": 0,
             "adc_address": 0x48,

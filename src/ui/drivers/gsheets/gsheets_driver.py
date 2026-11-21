@@ -14,15 +14,15 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import HttpRequest
 
-from models.app import AppModel
-from models.dig import DigitiserModel
-from models.health import HealthState
-from models.comms import CommunicationStatus
-from models.ui import UIDriverType
+from sdk.models.app import AppModel
+from sdk.models.dig import DigitiserModel
+from sdk.models.health import HealthState
+from sdk.models.comms import CommunicationStatus
+from sdk.models.ui import UIDriverType
 from ui.drivers.driver import UIDriver
 from ui.drivers.gsheets.gsheets_model import GSheetConfig
-from util.xbase import XSoftwareFailure
-from util.util import dict_flatten, dict_unflatten
+from sdk.util.xbase import XSoftwareFailure
+from sdk.util.util import dict_flatten, dict_unflatten
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +74,7 @@ class GoogleSheetsDriver(UIDriver):
         """Uses the Google Sheets API to authenticate with Google """
 
         self.config = config
+        self.service = None
                 
         creds = None
         # The file token.json stores the user's access and refresh tokens, and is
@@ -108,7 +109,13 @@ class GoogleSheetsDriver(UIDriver):
         except HttpError as err:
             logger.error(f"Google Sheets Driver: HTTP Error: {err}")
 
+        self.service = service
         self.sheet = service.spreadsheets()
+
+    def close(self) -> None:
+        service, self.service = self.service, None
+        if service is not None:
+            service.close()
 
     def _map_to_range(self, model_type: str) -> str:
 
@@ -126,6 +133,8 @@ class GoogleSheetsDriver(UIDriver):
             return self.config.odt_range
         elif model_type == "WeatherStationModel":
             return self.config.ws_range
+        elif model_type == "WebServerModel":
+            return self.config.web_range
         else:
             logger.warning(f"Google Sheets Driver: Unknown model type: {model_type}")
             return None
@@ -215,6 +224,7 @@ if __name__ == "__main__":
         odt_range="TM_UI_API++!M2:N",
         oda_range="TM_UI_API++!P2:Q",
         ws_range="TM_UI_API++!S2:T",
+        web_range="TM_UI_API++!V2:W",
         last_update=datetime.now(timezone.utc)
     )
     print("GSheetConfig created successfully:", config.to_dict())

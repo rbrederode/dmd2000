@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import math
+from collections import deque
 import threading
 import time
 
 import numpy as np
 
-from models.comms import CommunicationStatus
-from util.xbase import XHardwareFailure, XSoftwareFailure
+from sdk.models.comms import CommunicationStatus
+from sdk.util.xbase import XHardwareFailure, XSoftwareFailure
 
 import logging
 
@@ -29,6 +30,9 @@ class SDR:
         self.read_counter = 0
 
         self.ring_seconds = float(self.sdr_config.get("ring_seconds", 10.0))
+        self.settle_seconds = float(self.sdr_config.get("settle_seconds", 0.1))
+        if not math.isfinite(self.settle_seconds) or self.settle_seconds < 0:
+            raise XSoftwareFailure("settle_seconds must be finite and non-negative.")
         self.read_timeout_sec = float(self.sdr_config.get("read_timeout_sec", 10.0))
         self.gap_warn_sec = self.sdr_config.get("gap_warn_sec")
         self.ring_fill_warn_fraction = float(self.sdr_config.get("ring_fill_warn_fraction", 0.8))
@@ -42,10 +46,15 @@ class SDR:
         self.read_pos = 0
         self.write_pos = 0
         self.available = 0
+        self._read_intervals = deque()  # Producer read times indexed by absolute sample ranges.
 
         self.total_samples_acquired = 0          # Total samples read from the underlying SDR into the ring buffer.
         self.total_samples_consumed = 0          # Total samples handed from the ring buffer to read_samples callers.
         self.total_samples_dropped = 0           # Total unread samples overwritten because the ring buffer filled.
+        self.stream_phase = 0
+        self._acquisition_epoch = None
+        self._acquisition_monotonic = None
+        self._phase_sample_index = 0
         self._last_metadata_end = None           # Logical end time of the previous consumer-facing sample block.
         self.producer_read_count = 0             # Number of low-level SDR reads completed by the producer thread.
         self.producer_last_samples = 0           # Number of samples returned by the most recent low-level SDR read.
@@ -68,6 +77,7 @@ class SDR:
         self._producer_error = None
         if self.sample_rate > 0:
             self._configure_ring()
+        self._backend_acquisition("stop_acquisition")
 
     def open(self) -> bool:
         self.connected = self.driver.get_comms_status()
@@ -102,6 +112,11 @@ class SDR:
         if self.read_sample_count <= 0:
             raise XSoftwareFailure("Stream SDR requires a positive read_samples value.")
 
+        self.max_sample_age_sec = float(self.sdr_config.get(
+            "max_sample_age_sec", max(2.0, 2 * self.read_sample_count / self.sample_rate)))
+        if not math.isfinite(self.max_sample_age_sec) or self.max_sample_age_sec <= 0:
+            raise XSoftwareFailure("max_sample_age_sec must be finite and positive.")
+
         self.producer_chunk_samples = int(float(self.sdr_config.get("producer_chunk_samples", self.read_sample_count)))
         if self.producer_chunk_samples <= 0:
             raise XSoftwareFailure("Stream SDR requires a positive producer_chunk_samples value.")
@@ -111,6 +126,7 @@ class SDR:
         self.read_pos = 0
         self.write_pos = 0
         self.available = 0
+        self._read_intervals.clear()
         self.total_samples_acquired = 0
         self.total_samples_consumed = 0
         self.total_samples_dropped = 0
@@ -132,12 +148,41 @@ class SDR:
         self._last_fill_warning_monotonic = 0.0
         self._last_logged_dropped_samples = 0
 
+    def _backend_acquisition(self, method):
+        hook = getattr(self.driver, method, None)
+        if callable(hook):
+            try:
+                hook()
+            except Exception as exc:
+                raise XHardwareFailure(f"Stream SDR {method} failed: {exc}") from exc
+
     def _start_stream(self):
         if self._producer_thread is not None and self._producer_thread.is_alive():
             return
         if self.sample_rate <= 0 or self.ring_capacity <= 0:
             raise XSoftwareFailure("Stream SDR sample_rate must be set before streaming.")
 
+        # Restart the backend, including its USB/plugin FIFO, before recording.
+        with self._driver_lock:
+            start = getattr(self.driver, "start_acquisition", None)
+            if callable(start):
+                self._backend_acquisition("stop_acquisition")
+                self._backend_acquisition("start_acquisition")
+                remaining = int(math.ceil(self.settle_seconds * self.sample_rate))
+                discarded = remaining
+                while remaining:
+                    count = min(remaining, self.producer_chunk_samples)
+                    samples = self.driver._read_complex_samples(count)
+                    if len(samples) != count:
+                        raise XHardwareFailure("Stream SDR returned an incomplete settling read.")
+                    remaining -= count
+                logger.info("Stream SDR restarted backend=%s; discarded %d settling samples.",
+                            self.stream_backend, discarded)
+        self.stream_phase += 1
+        self._phase_sample_index = self.total_samples_acquired
+        self._acquisition_epoch = None
+        self._acquisition_monotonic = None
+        self._reset_producer_metrics()
         self._producer_error = None
         self._producer_running = True
         self._producer_thread = threading.Thread(target=self._producer_loop, name="sdr-stream-producer", daemon=True)
@@ -172,14 +217,19 @@ class SDR:
         :return: Number of buffered samples discarded.
         """
         self._stop_stream()
+        with self._driver_lock:
+            self._backend_acquisition("stop_acquisition")
 
         with self._condition:
             discarded = self.available
             self.read_pos = self.write_pos
             self.available = 0
+            self._read_intervals.clear()
             self.total_samples_dropped += discarded
             self._last_logged_dropped_samples = self.total_samples_dropped
             self._last_metadata_end = None
+            self._acquisition_epoch = None
+            self._acquisition_monotonic = None
             self._condition.notify_all()
 
         logger.info(
@@ -198,6 +248,11 @@ class SDR:
                     samples = self.driver._read_complex_samples(self.producer_chunk_samples)
                 read_end_monotonic = time.monotonic()
                 read_end_epoch = time.time()
+                if not self._producer_running:
+                    return  # The read belongs to the phase that has just stopped.
+                if self._acquisition_epoch is None:
+                    self._acquisition_epoch = read_start_epoch
+                    self._acquisition_monotonic = read_start_monotonic
                 self._record_producer_read_metrics(
                     sample_count=len(samples),
                     read_start_epoch=read_start_epoch,
@@ -205,7 +260,9 @@ class SDR:
                     read_start_monotonic=read_start_monotonic,
                     read_end_monotonic=read_end_monotonic,
                 )
-                self._write_ring(np.asarray(samples, dtype=np.complex64))
+                self._write_ring(np.asarray(samples, dtype=np.complex64),
+                                 read_start=read_start_epoch, read_end=read_end_epoch,
+                                 completed_monotonic=read_end_monotonic)
             except Exception as exc:
                 self._producer_error = exc
                 self.connected = CommunicationStatus.NOT_ESTABLISHED
@@ -239,13 +296,17 @@ class SDR:
             self._producer_last_read_end_monotonic = read_end_monotonic
         self._log_gap_warning_if_needed(inter_read_gap, read_start_monotonic)
 
-    def _write_ring(self, samples: np.ndarray):
+    def _write_ring(self, samples: np.ndarray, *, read_start: float, read_end: float,
+                    completed_monotonic: float):
+        """Store IQ and its producer read interval together under the ring lock."""
         if samples.size == 0:
             return
 
+        acquired = samples.size
         overflow = 0
         ring_fill_fraction = 0.0
         with self._condition:
+            sample_index_start = self.total_samples_acquired
             if samples.size >= self.ring_capacity:
                 overflow = self.available + max(0, samples.size - self.ring_capacity)
                 samples = samples[-self.ring_capacity:]
@@ -269,7 +330,10 @@ class SDR:
 
             self.write_pos = (self.write_pos + samples.size) % self.ring_capacity
             self.available += samples.size
-            self.total_samples_acquired += samples.size
+            self.total_samples_acquired += acquired
+            self._read_intervals.append((sample_index_start, self.total_samples_acquired,
+                                         read_start, read_end, completed_monotonic))
+            self._discard_read_intervals_before(self.total_samples_acquired - self.available)
             ring_fill_fraction = self.available / self.ring_capacity if self.ring_capacity > 0 else 0.0
             self._condition.notify_all()
         self._log_ring_warning_if_needed(overflow, ring_fill_fraction)
@@ -334,7 +398,40 @@ class SDR:
             self.total_samples_dropped,
         )
 
-    def _read_ring(self, num_samples: int) -> np.ndarray:
+    def _discard_read_intervals_before(self, sample_index):
+        """Drop intervals whose IQ has been consumed or overwritten (ring lock held)."""
+        while self._read_intervals and self._read_intervals[0][1] <= sample_index:
+            self._read_intervals.popleft()
+
+    def _get_read_interval(self, start, end):
+        """Map consumed IQ to measured producer times (ring lock held).
+
+        Split producer chunks proportionally over their measured wall-clock
+        intervals. Merged chunks retain the first start and last end, including
+        any intervening gaps. Freshness uses the oldest contributing read's
+        completion, so fresh tail samples cannot hide an old buffered prefix.
+        """
+        first_start = last_end = oldest_completion = None
+        covered = start
+        for left, right, read_start, read_end, completed in self._read_intervals:
+            if left >= end:
+                break
+            if right <= start:
+                continue
+            low, high = max(start, left), min(end, right)
+            if low != covered:
+                raise XHardwareFailure("Stream SDR buffered samples have missing read timestamps.")
+            duration = read_end - read_start
+            if first_start is None:
+                first_start = read_start + duration * (low - left) / (right - left)
+            last_end = read_start + duration * (high - left) / (right - left)
+            oldest_completion = completed if oldest_completion is None else min(oldest_completion, completed)
+            covered = high
+        if covered != end:
+            raise XHardwareFailure("Stream SDR buffered samples have missing read timestamps.")
+        return first_start, last_end, oldest_completion
+
+    def _read_ring(self, num_samples: int):
         deadline = time.monotonic() + self.read_timeout_sec
         with self._condition:
             while self.available < num_samples and self._producer_error is None and self._producer_running:
@@ -359,15 +456,18 @@ class SDR:
             if remaining:
                 result[first:] = self.ring[:remaining]
 
+            sample_index_start = self.total_samples_acquired - self.available
+            read_start, read_end, oldest_completion = self._get_read_interval(
+                sample_index_start, sample_index_start + num_samples)
             self.read_pos = (self.read_pos + num_samples) % self.ring_capacity
             self.available -= num_samples
-            sample_index_start = self.total_samples_consumed + self.total_samples_dropped
             self.total_samples_consumed += num_samples
             dropped = self.total_samples_dropped
+            self._discard_read_intervals_before(sample_index_start + num_samples)
 
-        return result, sample_index_start, dropped
+        return result, sample_index_start, dropped, read_start, read_end, oldest_completion
 
-    def _producer_metrics_snapshot(self) -> dict:
+    def _producer_metrics_snapshot(self, *, include_debug=False) -> dict:
         with self._condition:
             mean_gap = (
                 self.producer_sum_inter_read_gap / self.producer_inter_read_gap_count
@@ -375,7 +475,7 @@ class SDR:
                 else 0.0
             )
             ring_available_samples = self.available
-            return {
+            metrics = {
                 "producer_read_count": self.producer_read_count,
                 "producer_last_samples": self.producer_last_samples,
                 "producer_last_read_start": self.producer_last_read_start,
@@ -392,6 +492,18 @@ class SDR:
                     ring_available_samples / self.ring_capacity if self.ring_capacity > 0 else 0.0
                 ),
             }
+            if include_debug:
+                metrics.update(
+                    producer_running=self._producer_running,
+                    total_samples_acquired=self.total_samples_acquired,
+                    total_samples_consumed=self.total_samples_consumed,
+                    total_samples_dropped=self.total_samples_dropped,
+                    phase_sample_index=self._phase_sample_index,
+                    ring_capacity_samples=self.ring_capacity,
+                    ring_available_seconds=ring_available_samples / self.sample_rate,
+                    producer_last_read_end_monotonic=self._producer_last_read_end_monotonic,
+                )
+            return metrics
 
     def read_samples(self) -> (dict, np.ndarray):
         if self.get_comms_status() != CommunicationStatus.ESTABLISHED:
@@ -399,15 +511,43 @@ class SDR:
             return None, None
 
         self._start_stream()
-        samples, sample_index_start, dropped = self._read_ring(self.read_sample_count)
-
-        block_duration = samples.size / self.sample_rate
+        debug_timing = logger.isEnabledFor(logging.DEBUG)
+        requested_at = time.monotonic() if debug_timing else None
+        samples, sample_index_start, dropped, read_start, read_end, oldest_completion = self._read_ring(self.read_sample_count)
+        completed_at = time.monotonic()
+        sample_age = max(0.0, completed_at - oldest_completion)
+        max_age = self.max_sample_age_sec
+        if debug_timing:
+            metrics = self._producer_metrics_snapshot(include_debug=True)
+            snapshot_at = time.monotonic()
+            elapsed = snapshot_at - self._acquisition_monotonic
+            acquired = metrics["total_samples_acquired"] - metrics["phase_sample_index"]
+            last_read_end = metrics["producer_last_read_end_monotonic"]
+            metrics.update(
+                read_wait_and_copy_sec=completed_at - requested_at,
+                phase_elapsed_sec=elapsed,
+                phase_acquired_samples=acquired,
+                phase_acquired_seconds=acquired / self.sample_rate,
+                phase_effective_sample_rate=acquired / elapsed if elapsed > 0 else None,
+                producer_timeline_lag_sec=elapsed - acquired / self.sample_rate,
+                seconds_since_producer_read=snapshot_at - last_read_end if last_read_end is not None else None,
+            )
+            logger.debug(
+                "Stream SDR timing backend=%s phase=%d freshness=%s sample_age_sec=%.6f "
+                "max_sample_age_sec=%.6f sample_rate=%s sample_index_start=%d "
+                "num_samples=%d read_start=%.6f read_end=%.6f dropped_at_read=%d metrics=%s",
+                self.stream_backend, self.stream_phase, "stale" if sample_age > max_age else "ok",
+                sample_age, max_age, self.sample_rate, sample_index_start, samples.size,
+                read_start, read_end, dropped, metrics,
+            )
+        if sample_age > max_age:
+            logger.warning(
+                "Stream SDR stale samples: age %.3f s exceeds %.3f s "
+                "(phase=%d, sample_index=%d, dropped=%d); continuing with recorded read timestamps.",
+                sample_age, max_age, self.stream_phase, sample_index_start, dropped)
         if self._last_metadata_end is None:
-            read_end = time.time()
-            read_start = read_end - block_duration
-        else:
-            read_start = self._last_metadata_end
-            read_end = read_start + block_duration
+            logger.info("Stream SDR first samples phase=%d start=%.6f age=%.3f s (host estimated).",
+                        self.stream_phase, read_start, sample_age)
         self._last_metadata_end = read_end
 
         self.read_counter += 1
@@ -417,6 +557,9 @@ class SDR:
             "read_start": read_start,
             "read_end": read_end,
             "stream_backend": self.stream_backend,
+            "stream_phase": self.stream_phase,
+            "timestamp_source": "host_read",
+            "sample_age_sec": sample_age,
             "sample_index_start": sample_index_start,
             "sample_index_end": sample_index_start + samples.size,
             "dropped_samples": dropped,
@@ -437,17 +580,26 @@ class SDR:
         return self.driver.get_gain_gaussianity(sample_rate=sample_rate, time_in_secs=time_in_secs)
 
     def get_auto_gain(self, sample_rate=None, time_in_secs=1, p_threshold=0.05):
-        with self._driver_lock:
-            return self.driver.get_auto_gain(sample_rate=sample_rate, time_in_secs=time_in_secs, p_threshold=p_threshold)
+        return self._auto_gain("get_auto_gain", sample_rate, time_in_secs, p_threshold)
 
     def set_auto_gain(self, sample_rate=None, time_in_secs=1, p_threshold=0.05):
-        with self._driver_lock:
-            return self.driver.set_auto_gain(sample_rate=sample_rate, time_in_secs=time_in_secs, p_threshold=p_threshold)
+        return self._auto_gain("set_auto_gain", sample_rate, time_in_secs, p_threshold)
+
+    def _auto_gain(self, method, sample_rate, time_in_secs, p_threshold):
+        self.stream_reset()
+        try:
+            with self._driver_lock:
+                return getattr(self.driver, method)(
+                    sample_rate=sample_rate, time_in_secs=time_in_secs, p_threshold=p_threshold)
+        finally:
+            # Calibration samples must never seed an observation's ring/FIFO.
+            self.stream_reset()
 
     def get_center_freq(self):
         return self.driver.get_center_freq()
 
     def set_center_freq(self, value):
+        self.stream_reset()
         with self._driver_lock:
             return self.driver.set_center_freq(value)
 
@@ -455,18 +607,20 @@ class SDR:
         return self.driver.get_sample_rate()
 
     def set_sample_rate(self, value):
-        if self._producer_thread is not None and self._producer_thread.is_alive():
-            raise XSoftwareFailure("Stream SDR sample_rate cannot be changed while streaming.")
+        self.stream_reset()
         with self._driver_lock:
             result = self.driver.set_sample_rate(value)
         self.sample_rate = self._driver_sample_rate()
         self._configure_ring()
+        # Soapy may prime the device while applying a sample-rate change.
+        self._backend_acquisition("stop_acquisition")
         return result
 
     def get_bandwidth(self):
         return self.driver.get_bandwidth()
 
     def set_bandwidth(self, value):
+        self.stream_reset()
         with self._driver_lock:
             return self.driver.set_bandwidth(value)
 
@@ -474,6 +628,7 @@ class SDR:
         return self.driver.get_gain()
 
     def set_gain(self, value):
+        self.stream_reset()
         with self._driver_lock:
             return self.driver.set_gain(value)
 
@@ -481,6 +636,7 @@ class SDR:
         return self.driver.get_freq_correction()
 
     def set_freq_correction(self, value):
+        self.stream_reset()
         with self._driver_lock:
             return self.driver.set_freq_correction(value)
 

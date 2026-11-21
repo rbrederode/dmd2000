@@ -2,7 +2,7 @@ import pytest
 from datetime import datetime, timezone
 from dsh.drivers.md01.md01_driver import MD01Driver
 from dsh.drivers.md01.md01_config import MD01Config
-from models.dsh import DishModel, DishMode, PointingState, Feed, DriverType, Capability
+from sdk.models.dsh import DishModel, DishMode, PointingState, Feed, DriverType, Capability
 
 """ Fixtures defined: md01_driver, dm, target, dsh_model.
 
@@ -20,7 +20,7 @@ Some fixtures may be used implicitly (tests may not import conftest directly; th
 def md01_driver():
     from dsh.drivers.md01.md01_driver import MD01Driver
     from dsh.drivers.md01.md01_config import MD01Config
-    from models.dsh import DishModel, DishMode, PointingState, Feed, DriverType, Capability
+    from sdk.models.dsh import DishModel, DishMode, PointingState, Feed, DriverType, Capability
 
     md01_cfg = MD01Config(
         host="192.168.0.2",
@@ -64,7 +64,7 @@ def dm():
 
 @pytest.fixture
 def target():
-    from models.target import TargetModel, PointingType
+    from sdk.models.target import TargetModel, PointingType
     from astropy.coordinates import SkyCoord
     return TargetModel(
         id="Vega",

@@ -2,6 +2,12 @@
 *.pyc
 __pycache__/
 
+# Profile configuration write locks
+.DishList.json.lock
+.DigitiserList.json.lock
+.WeatherStationList.json.lock
+.PipelineConfig.json.lock
+
 # macOS metadata
 *.DS_Store*
 
@@ -26,3 +32,19 @@ __pycache__/
 *.parquet
 de421.bsp
 duckdb-extensions
+
+# Lab Profiler generatored files
+lab_target*.csv
+lab_target*.json
+lab_predicted*.csv
+lab_predicted*.json
+
+# Numpy cache files
+*.npy
+
+# Local UI authentication databases and keys
+users.sqlite*
+session.key
+password.salt
+
+.users.lock

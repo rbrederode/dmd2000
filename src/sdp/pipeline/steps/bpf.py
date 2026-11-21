@@ -6,7 +6,7 @@ from typing import Any
 
 import numpy as np
 
-from models.pipeline import StepConfig
+from sdk.models.pipeline import StepConfig
 from sdp.channel_mask import ChannelFlag
 from sdp.pipeline.pipeline_factory import ProcessingStep
 

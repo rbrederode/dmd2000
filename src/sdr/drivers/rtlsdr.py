@@ -13,8 +13,8 @@ import sys
 import termios
 import tty
 
-from models.comms import CommunicationStatus
-from util.xbase import XSoftwareFailure, XHardwareFailure
+from sdk.models.comms import CommunicationStatus
+from sdk.util.xbase import XSoftwareFailure, XHardwareFailure
 
 import logging
 logger = logging.getLogger(__name__)
@@ -241,6 +241,13 @@ class SDR:
                 self.rtlsdr = None
                 self.connected = CommunicationStatus.NOT_ESTABLISHED
         raise XHardwareFailure(f"SDR device disconnected or unavailable {operation}: {err}")
+
+    def stop_acquisition(self):
+        # RTL uses synchronous USB reads: stopping the producer stops reads.
+        pass
+
+    def start_acquisition(self):
+        self._reset_buffer()
 
     def _reset_buffer(self):
         """Flush the SDR's internal USB buffer if the device is available."""

@@ -25,8 +25,8 @@ with warnings.catch_warnings():
     )
     import matplotlib.pyplot as plt
 
-from models.ws import WeatherStationList
-from util.matplotlib_window import get_figure_visibility
+from sdk.models.ws import WeatherStationList
+from sdk.util.matplotlib_window import get_figure_visibility
 
 mpl.rcParams["figure.raise_window"] = False
 

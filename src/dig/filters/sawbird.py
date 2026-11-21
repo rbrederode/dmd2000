@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 from schema import Schema, And, Or, Use, SchemaError
 
-from models.base import BaseModel
-from util.format import fmt_title
+from sdk.models.base import BaseModel
+from sdk.util.format import fmt_title
 
 class SAWbirdH1_BareBones(BaseModel):
     """A class representing the configuration for a Nooelec Sawbird HI Barebones Bandpass Filter installed in the signal chain."""

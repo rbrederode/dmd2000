@@ -2,8 +2,8 @@ import enum
 from datetime import datetime, timezone
 from schema import Schema, And, Or, Use, SchemaError
 
-from models.base import BaseModel
-from util.xbase import XInvalidTransition, XAPIValidationFailed, XSoftwareFailure
+from sdk.models.base import BaseModel
+from sdk.util.xbase import XInvalidTransition, XAPIValidationFailed, XSoftwareFailure
 
 class GSheetConfig(BaseModel):
     """A class representing the configuration for a Google Sheets driver."""
@@ -18,6 +18,7 @@ class GSheetConfig(BaseModel):
         "odt_range": And(str, lambda v: isinstance(v, str)),                # Range for Observation Design Tool model updates e.g. "TM_UI_API!M2"
         "oda_range": And(str, lambda v: isinstance(v, str)),                # Range for Observation Design Assistant model updates e.g. "TM_UI_API!P2"
         "ws_range":  And(str, lambda v: isinstance(v, str)),                # Range for Weather Station model updates e.g. "TM_UI_API!S2"
+        "web_range": And(str, lambda v: isinstance(v, str)),                # Range for Web Server model updates e.g. "TM_UI_API!V2"
         "last_update": And(datetime, lambda v: isinstance(v, datetime)),
     })
 
@@ -36,6 +37,7 @@ class GSheetConfig(BaseModel):
             "odt_range": "TM_UI_API++!M2:N",
             "oda_range": "TM_UI_API++!P2:Q",
             "ws_range":  "TM_UI_API++!S2:T",
+            "web_range": "TM_UI_API++!V2:W",
             "last_update": datetime.now(timezone.utc),
         }
 
@@ -64,6 +66,7 @@ if __name__ == "__main__":
         odt_range="TM_UI_API++!M2:N",
         oda_range="TM_UI_API++!P2:Q",
         ws_range="TM_UI_API++!S2:T",
+        web_range="TM_UI_API++!V2:W",
         last_update=datetime.now(timezone.utc)
     )
     print("GSheetConfig created successfully:", gs_cfg.to_dict())

@@ -1,6 +1,6 @@
-from models.obs import ObsModel
-from models.scan import ScanModel
-from models.target import TargetScanSet
+from sdk.models.obs import ObsModel
+from sdk.models.scan import ScanModel
+from sdk.models.target import TargetScanSet
 
 
 def test_retry_scan_iteration_matches_current_planned_scan():

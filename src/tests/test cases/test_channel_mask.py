@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 import numpy as np
 import pytest
 
-from models.scan import ScanModel, ScanState, ScanType
+from sdk.models.scan import ScanModel, ScanState, ScanType
 from obs.scan import Scan
 from sdp.channel_mask import (
     CHANNEL_FLAG_DTYPE,

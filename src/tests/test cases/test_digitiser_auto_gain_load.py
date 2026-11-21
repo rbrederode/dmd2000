@@ -3,9 +3,9 @@ from types import MethodType
 from api import protocol as dmd_protocol
 from api import tm_dig
 from dig.dig import Digitiser
-from models.comms import CommunicationStatus
-from models.dig import DigitiserModel
-from util.xbase import XHardwareFailure
+from sdk.models.comms import CommunicationStatus
+from sdk.models.dig import DigitiserModel
+from sdk.util.xbase import XHardwareFailure
 
 
 class AutoGainSdr:
@@ -95,7 +95,7 @@ def test_stopping_scan_resets_stream_buffer():
     assert digitiser.sdr.reset_calls == 1
 
 
-def test_starting_scan_does_not_reset_stream_buffer():
+def test_starting_scan_resets_stream_but_repeating_same_phase_does_not():
     digitiser = Digitiser.__new__(Digitiser)
     digitiser.stop = MethodType(lambda self: None, digitiser)
     digitiser.dig_model = DigitiserModel(dig_id="dig001", scanning=False)
@@ -105,4 +105,6 @@ def test_starting_scan_does_not_reset_stream_buffer():
     digitiser.set_scanning(scanning)
 
     assert digitiser.dig_model.scanning == scanning
-    assert digitiser.sdr.reset_calls == 0
+    assert digitiser.sdr.reset_calls == 1
+    digitiser.set_scanning(scanning)
+    assert digitiser.sdr.reset_calls == 1

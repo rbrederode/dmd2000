@@ -5,7 +5,7 @@ from typing import Any, Dict
 from api import protocol as dmd_protocol
 from api.api import API
 from api.cmd_registry import CommandRegistry
-from util.xbase import XAPIUnsupportedVersion, XAPIValidationFailed
+from sdk.util.xbase import XAPIUnsupportedVersion, XAPIValidationFailed
 
 
 API_VERSION = "1.0"

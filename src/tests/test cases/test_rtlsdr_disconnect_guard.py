@@ -2,9 +2,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from models.comms import CommunicationStatus
+from sdk.models.comms import CommunicationStatus
 from sdr.drivers.rtlsdr import SDR
-from util.xbase import XHardwareFailure
+from sdk.util.xbase import XHardwareFailure
 
 
 def _connected_driver():
