@@ -7,8 +7,15 @@ from sdk.util.xbase import XAPIValidationFailed
 def test_md01_config_defaults_include_controller_azimuth_range():
     config = MD01Config()
 
-    assert config.min_az == -180.0
-    assert config.max_az == 540.0
+    assert config.min_az == 0.0
+    assert config.max_az == 360.0
+
+
+def test_md01_config_allows_explicit_extended_controller_range():
+    config = MD01Config(min_az=-180.0, max_az=540.0)
+    restored = MD01Config.from_dict(config.to_dict())
+    assert restored.min_az == -180.0
+    assert restored.max_az == 540.0
 
 
 def test_md01_config_azimuth_limits_round_trip():

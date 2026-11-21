@@ -6,7 +6,7 @@ from sdk.env.app_processor import AppProcessor
 from sdk.env.events import ConnectEvent, DataEvent, DisconnectEvent
 from sdk.ipc.message import APIMessage
 from sdk.models.comms import InterfaceType
-from sdk.util.set_trace import TraceUtilityDriver, build_arg_parser
+from sdk.util.cmd_app import CommandUtilityDriver, build_arg_parser, construct_request
 
 
 class Endpoint:
@@ -15,16 +15,19 @@ class Endpoint:
 
 def test_trace_utility_cli_normalises_trace_state():
     args = build_arg_parser().parse_args(
-        ["--system", "dm", "--trace", "on", "--port", "50002"]
+        ["--system", "dm", "--port", "50002", "set", "trace", "on"]
     )
 
     assert args.system == dmd_protocol.DM
-    assert args.trace == "ON"
+    request = construct_request(args, CommandAPI())
+    assert request.get_api_call() == {
+        "msg_type": "req", "action_code": "set", "property": "trace", "value": "ON",
+    }
     assert args.port == 50002
 
 
 def test_trace_utility_driver_matches_current_app_processor_interface():
-    driver = TraceUtilityDriver(dmd_protocol.DM)
+    driver = CommandUtilityDriver(dmd_protocol.DM, "set", "trace")
     endpoint = Endpoint()
     driver.endpoint = endpoint
     processor = AppProcessor(name="set-trace-test", driver=driver)

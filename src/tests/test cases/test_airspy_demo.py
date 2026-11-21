@@ -1,14 +1,10 @@
-import importlib.util
 import subprocess
 from pathlib import Path
 
 import numpy as np
 
 
-MODULE_PATH = Path(__file__).resolve().parents[3] / "scripts" / "dig" / "airspy.py"
-SPEC = importlib.util.spec_from_file_location("airspy_demo", MODULE_PATH)
-airspy = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(airspy)
+from sdr import airspy
 
 
 def test_airspy_capture_returns_complex64_iq(monkeypatch):

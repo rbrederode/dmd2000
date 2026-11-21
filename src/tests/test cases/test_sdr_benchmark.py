@@ -432,7 +432,7 @@ def benchmark_chunk_sizes_repeated(sdr: SDR, repeats: int = 3, sample_rate: floa
     return repeated_results
 
 
-def test_auto_gain_loop(sdr: SDR, repeats: int = 10, sample_rate: float = 2.4e6,
+def run_auto_gain_loop(sdr: SDR, repeats: int = 10, sample_rate: float = 2.4e6,
     time_in_secs: float = 0.1, p_threshold: float = 0.05) -> dict:
     """Run auto-gain repeatedly and capture per-run timing and failures."""
 
@@ -558,7 +558,7 @@ def main():
             repeats = int(sys.argv[2]) if len(sys.argv) > 2 else 10
             sample_rate = float(sys.argv[3]) if len(sys.argv) > 3 else 2.4e6
             time_in_secs = float(sys.argv[4]) if len(sys.argv) > 4 else 0.1
-            results = test_auto_gain_loop(
+            results = run_auto_gain_loop(
                 sdr=sdr,
                 repeats=repeats,
                 sample_rate=sample_rate,
@@ -571,6 +571,25 @@ def main():
 
     finally:
         sdr.close()
+
+
+def test_auto_gain_loop_records_successes_and_failures_without_hardware():
+    from types import SimpleNamespace
+    from unittest.mock import Mock, call
+
+    device = SimpleNamespace(
+        rtlsdr=object(), connected=CommunicationStatus.ESTABLISHED,
+        get_auto_gain=Mock(side_effect=[12.0, RuntimeError('read failed'), 20.0]),
+    )
+    result = run_auto_gain_loop(device, repeats=3, sample_rate=1024000.0, time_in_secs=0.01)
+    assert result['summary']['completed_runs'] == 3
+    assert result['summary']['successful_runs'] == 2
+    assert result['summary']['failed_runs'] == 1
+    assert result['summary']['gains'] == [12.0, 20.0]
+    assert result['runs'][1]['error'] == 'read failed'
+    assert device.get_auto_gain.call_args_list == [
+        call(sample_rate=1024000.0, time_in_secs=0.01, p_threshold=0.05),
+    ] * 3
 
 
 if __name__ == "__main__":

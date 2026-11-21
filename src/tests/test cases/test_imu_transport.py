@@ -1,16 +1,12 @@
 from datetime import datetime, timezone
-from api.imu_transport import (
-    IMUTCPClient,
-    build_imu_data_request,
-    decode_api_message,
-    imu_data_from_response,
-)
-from api.imu_api import IMU_API
-from sdk.env.events import DataEvent
+from api.imu_app import IMU_APP, PROPERTY_IMU_DATA
+from imu.imu import IMUProvider
+from imu.server import IMUServer
+from sdk.ipc.message import APIMessage
 from sdk.models.imu import IMUData
 
 
-class FakeIMU:
+class FakeIMU(IMUProvider):
     def __init__(self, imu_data):
         self.imu_data = imu_data
 
@@ -18,12 +14,21 @@ class FakeIMU:
         return self.imu_data.copy()
 
 
-class CaptureEndpoint:
-    def __init__(self):
+class CaptureSocket:
+    def __init__(self, request):
+        self.request = request
         self.sent = []
+        self.closed = False
+
+    def recv(self, size):
+        return self.request
 
     def send(self, msg):
         self.sent.append(msg)
+        return len(msg)
+
+    def close(self):
+        self.closed = True
 
 
 def test_imu_request_response_roundtrip_preserves_imu_data():
@@ -38,33 +43,30 @@ def test_imu_request_response_roundtrip_preserves_imu_data():
         last_update=datetime.now(timezone.utc),
     )
 
-    request = build_imu_data_request(entity="dsh001", request_id="req-001")
-    request_bytes = request.to_data()
-
-    client = IMUTCPClient.__new__(IMUTCPClient)
-    client.api = IMU_API()
-    client.imu = FakeIMU(sample)
-    capture = CaptureEndpoint()
-    client.endpoint = capture
-
-    event = DataEvent(
-        local_sap=None,
-        remote_conn=None,
-        remote_addr=("127.0.0.1", 50010),
-        data=request_bytes,
-        timestamp=datetime.now(timezone.utc),
+    api = IMU_APP()
+    request = APIMessage()
+    request.set_json_api_header(
+        api_version=api.get_api_version(),
+        dt=datetime.now(timezone.utc),
+        from_system="app", to_system="imu", entity="dsh001",
+        api_call={"msg_type": "req", "action_code": "get", "property": PROPERTY_IMU_DATA},
+        echo={"request_id": "req-001"},
     )
-    client.handle_message_event(event)
+    api.validate(request.get_json_api_header())
+    server = IMUServer(FakeIMU(sample))
+    capture = CaptureSocket(request.to_data())
+    server._handle_client(capture, ("127.0.0.1", 50010))
 
-    response = capture.sent[0]
-    response_bytes = response.to_data()
-    decoded_response = decode_api_message(response_bytes)
-    decoded_imu_data = imu_data_from_response(decoded_response)
+    assert capture.closed
+    assert len(capture.sent) == 1
+    decoded_response = APIMessage()
+    decoded_response.from_data(capture.sent[0])
+    api.validate(decoded_response.get_json_api_header())
+    assert decoded_response.get_api_call()["status"] == "success"
+    decoded_imu_data = IMUData.from_dict(decoded_response.get_api_call()["value"])
 
-    assert decoded_response.get_from_system() == "client"
-    assert decoded_response.get_to_system() == "server"
+    assert decoded_response.get_from_system() == "imu"
+    assert decoded_response.get_to_system() == "app"
     assert decoded_response.get_entity() == "dsh001"
     assert decoded_response.get_echo_data() == {"request_id": "req-001"}
-    assert decoded_imu_data.imu_id == sample.imu_id
-    assert decoded_imu_data.angle == sample.angle
-    assert decoded_imu_data.temp_celsius == sample.temp_celsius
+    assert decoded_imu_data.to_dict() == sample.to_dict()

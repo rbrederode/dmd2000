@@ -193,6 +193,7 @@ def test_headless_entry_points_use_shared_lifecycle(relative_path, constructor):
     app.get_queue = mock.Mock(return_value=Queue())
     app.get_args = mock.Mock(return_value=SimpleNamespace(web_api_threads=10))
     app.telmodel = SimpleNamespace(sdp=SimpleNamespace(app=SimpleNamespace(arguments=None)))
+    app.close_ui_drivers = mock.Mock()
     app.start.side_effect = app.request_stop
     thread = mock.Mock()
     webhook = mock.Mock()
@@ -215,6 +216,7 @@ def test_headless_entry_points_use_shared_lifecycle(relative_path, constructor):
     shutdown.assert_called_once_with()
     thread.Thread.assert_not_called()
     if constructor == "TelescopeManager":
+        app.close_ui_drivers.assert_called_once_with()
         assert api_options['threads'] == 10
         webhook.start.assert_called_once_with()
         webhook.stop.assert_called_once_with()
