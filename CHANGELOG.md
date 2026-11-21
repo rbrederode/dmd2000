@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Clarified the release procedure's GitHub PR and local-merge routes, when `main` needs pushing, and how to inspect and recover from a rejected push without overwriting remote work.
+
 ## [2.0.0] - 2026-11-21 - First Science Milestone
 
 - Moved shared data models into `src/sdk/models`, imported as `sdk.models`. Updated application, SDK, and test imports while preserving serialized model type names, enum values, and configuration formats.

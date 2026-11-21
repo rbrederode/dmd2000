@@ -9,6 +9,12 @@ patch, and the existing remote name **origin**. Substitute the version you
 actually intend to release throughout. Run commands from the repository root
 in the project's Python environment, and stop if any command fails.
 
+If your terminal is currently inside `src`, first return to the repository root:
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+```
+
 ## Branches, tags and version numbers
 
 | Name | Purpose |
@@ -92,39 +98,61 @@ continue the procedure.
 
 ## 2. Validate the work branch and merge it into main
 
-Run the validation commands in step 3 on the work branch first. Resolve failures
-before merging, then commit and push any fixes.
+Run the automated suites and manual checks described in step 3 on the work
+branch first; do not run its main-branch update or push commands at this stage.
+Resolve failures before merging, then commit and push any fixes.
+
+Choose **one** of the following routes. The GitHub pull-request route is the
+recommended default; the local-merge route is an alternative.
+
+### 2A. GitHub pull request (recommended)
 
 On GitHub, open a pull request **from the work branch into main**. Review its
 diff and merge it. Using **Create a merge commit** gives an explicit integration
 point. This step does not merge `main` into the work branch.
 
-If performing a local merge instead of a pull request, the equivalent commands
-below use `art-sdk` as the example work branch. Replace that branch name if
-your changes are on another branch:
+An earlier merged PR from the same work branch does not include commits added
+to that branch afterwards. Open a new PR for any additional changes intended
+for this release.
+
+**Continue directly to step 3. Skip route 2B and do not run `git push origin main`:**
+GitHub has already updated remote `main` when it merged the PR.
+
+### 2B. Local merge (alternative)
+
+Use this route only when creating the merge locally instead of using a GitHub
+PR, and when branch protection permits direct pushes to `main`. The commands
+below use `art-sdk` as the example work branch; replace it if necessary.
+Start with the clean worktree required by step 1, and fetch the pushed work
+branch before merging:
 
 ```bash
+git fetch origin
 git switch main
 git pull --ff-only origin main
 git merge --no-ff origin/art-sdk -m "Merge reviewed changes for release"
 ```
 
-Run step 3 before pushing this locally created merge:
-
-```bash
-git push origin main
-```
-
-Use the pull-request route if branch protection requires it. If there are merge
-conflicts, resolve and review them, then repeat validation of the merged result.
+If there are merge conflicts, resolve and review them. Continue to step 3 to
+validate the locally merged result before pushing it.
 
 ## 3. Test the integrated main branch
 
-After a GitHub merge, update your local `main`:
+**After route 2A (GitHub PR):** update your local `main`:
 
 ```bash
 git switch main
 git pull --ff-only origin main
+```
+
+**After route 2B (local merge):** stay on the locally merged `main` and proceed
+to validation without pulling again.
+
+For either route, confirm the current branch is `main`, check the worktree,
+and record the commit to be tested:
+
+```bash
+git branch --show-current
 git status --short
 git rev-parse HEAD
 ```
@@ -168,6 +196,44 @@ simulator or a controlled hardware test as appropriate.
 
 If fixes are required, make them on a work branch, merge them into `main`, and
 repeat this step. Only proceed to the version bump after this gate passes.
+
+**Only after route 2B**, push the validated local merge:
+
+```bash
+git push origin main
+```
+
+There is no main-branch push after route 2A. Also, `git push origin main`
+always pushes the local branch named `main`, even if your current branch is
+`art-sdk` or another work branch; it does not publish that work branch's changes.
+
+### If a pull or push is rejected
+
+A push rejected with `fetch first` or `non-fast-forward` means the remote branch
+contains commits your local branch does not include. Stop; do not force-push
+`main`. With your changes preserved as in step 1, inspect the current state:
+
+```bash
+git branch --show-current
+git status --short
+git fetch origin
+git log --oneline --left-right main...origin/main
+git rev-list --left-right --count main...origin/main
+```
+
+The counts are local-only commits followed by remote-only commits. If local
+`main` is only behind (the first count is zero), use `git switch main` and
+`git pull --ff-only origin main` to catch up. Work-branch changes still need
+the PR or local merge in step 2 before they are included in the release.
+
+If both counts are nonzero, the branches have diverged: do not repeat the push
+or force a pull. Review the local-only commits first. If they are the intended
+local merge from route 2B and direct pushes are permitted, merge `origin/main`
+into local `main`, resolve and review any conflicts, and repeat all validation
+in this step before retrying the push. Otherwise, preserve the local commits
+on a work branch and use a reviewed PR. If `git pull --ff-only` fails, stop and
+resolve the divergence before continuing; it deliberately leaves your commits
+intact rather than choosing a merge or rebase automatically.
 
 ## 4. Prepare the version and released changelog section
 
