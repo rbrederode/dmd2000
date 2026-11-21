@@ -14,7 +14,7 @@ matplotlib.use("Agg")
 from matplotlib import pyplot as plt
 import numpy as np
 
-from models.scan import ScanModel, ScanState, ScanType
+from sdk.models.scan import ScanModel, ScanState, ScanType
 from obs.obs_display import ObsDisplay, save_frequency_record, save_frequency_overlay
 from obs.opt import process_observation, save_aggregated_power_csv
 from sdp.channel_mask import valid_channels, masked_values

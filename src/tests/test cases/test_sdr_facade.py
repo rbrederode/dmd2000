@@ -3,9 +3,9 @@ from concurrent.futures import Future
 import pytest
 from rtlsdr.rtlsdr import LibUSBError
 
-from models.comms import CommunicationStatus
+from sdk.models.comms import CommunicationStatus
 from sdr.facade import SDR
-from util.xbase import XHardwareFailure
+from sdk.util.xbase import XHardwareFailure
 
 
 class FailingWorker:

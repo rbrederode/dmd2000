@@ -8,10 +8,10 @@ import numpy as np
 from matplotlib.gridspec import GridSpec
 from matplotlib.ticker import AutoMinorLocator, MaxNLocator
 from obs.lsr import HI_REST_FREQUENCY
-from util.convert import select_baseline_windows
+from sdk.util.convert import select_baseline_windows
 from sdp.spectral_baseline import subtract_baseline as subtract_spectrum_baseline
 from obs.spectral_annotations import annotate_spectral_metrics, place_spectral_metrics, measure_spectral_metrics
-from util.lv_plot import reference_lv_colormap, interpolate_lv_contour_column
+from sdk.util.lv_plot import reference_lv_colormap, interpolate_lv_contour_column
 from sdp.channel_mask import (
     ChannelFlag,
     channels_with_flag,

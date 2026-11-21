@@ -3,7 +3,7 @@ Shared registry integration
 
 Overview
 --------
-The shared registry lives in `util.registry` and can be used by weather-station drivers, dish drivers, and custom SDP pipeline steps.
+The shared registry lives in `sdk.util.registry` and can be used by weather-station drivers, dish drivers, and custom SDP pipeline steps.
 The registry is namespace-based, so each subsystem can keep its own names while sharing the same implementation.
 
 Namespaces
@@ -30,7 +30,7 @@ The Dish Manager looks for `driver` or `name` on that config and resolves it thr
 
 Example:
 
-    from util.registry import register, DISH_DRIVER_NAMESPACE
+    from sdk.util.registry import register, DISH_DRIVER_NAMESPACE
     from yourpkg.dsh import MyDishDriver
 
     register(DISH_DRIVER_NAMESPACE, "my_dish", MyDishDriver)
@@ -42,7 +42,7 @@ This means a custom step can be registered and then referred to in a pipeline co
 
 Example:
 
-    from util.registry import register, PIPELINE_STEP_NAMESPACE
+    from sdk.util.registry import register, PIPELINE_STEP_NAMESPACE
     from yourpkg.sdp.steps.custom import CustomStep
 
     register(PIPELINE_STEP_NAMESPACE, "custom_step", CustomStep)

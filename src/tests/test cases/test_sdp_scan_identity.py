@@ -8,11 +8,11 @@ import numpy as np
 import pytest
 
 from api import sdp_dig, tm_sdp
-from ipc.message import APIMessage
-from models.comms import CommunicationStatus
-from models.dig import DigitiserList, DigitiserModel
-from models.scan import ScanModel, ScanState, ScanType
-from models.sdp import ScienceDataProcessorModel
+from sdk.ipc.message import APIMessage
+from sdk.models.comms import CommunicationStatus
+from sdk.models.dig import DigitiserList, DigitiserModel
+from sdk.models.scan import ScanModel, ScanState, ScanType
+from sdk.models.sdp import ScienceDataProcessorModel
 from obs.scan import Scan
 from sdp.sdp import SDP
 
@@ -170,7 +170,7 @@ def test_scan_configuration_and_sample_loading_share_digitiser_lock(setup_sdp):
 
 
 def test_new_scan_records_only_sdp_launch_profile(setup_sdp, monkeypatch, tmp_path):
-    from models.pipeline import PipelineConfig
+    from sdk.models.pipeline import PipelineConfig
     from sdp.pipeline.pipeline_factory import ProcessingPipelineFactory
     sdp, dig = setup_sdp
     config = PipelineConfig(steps_map={'default': []})

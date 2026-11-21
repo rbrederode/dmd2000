@@ -11,7 +11,7 @@ from astropy.coordinates import SkyCoord
 from astropy import units as u
 
 from obs.obs_display import ObsDisplay, SCAN_COLOURS, save_velocity_figure, save_frequency_record, save_frequency_overlay, velocity_limits, plot_channel_flags
-from util.convert import select_baseline_windows
+from sdk.util.convert import select_baseline_windows
 from sdp.spectral_baseline import subtract_baseline as subtract_spectrum_baseline
 from obs.spectral_annotations import annotate_spectral_metrics
 from ui.opt_pipeline import qa_metric_settings

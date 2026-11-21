@@ -6,12 +6,12 @@ from unittest.mock import Mock
 
 import pytest
 
-from models.comms import CommunicationStatus
-from models.ws import WeatherStation as StationConfig, WeatherStationList, WeatherStationModel, WeatherStationDriverType, WeatherDriverConfig
+from sdk.models.comms import CommunicationStatus
+from sdk.models.ws import WeatherStation as StationConfig, WeatherStationList, WeatherStationModel, WeatherStationDriverType, WeatherDriverConfig
 from ws.drivers.modbus import ModbusConfig
 from ws.drivers.ads1115 import ADS1115Config
 from ws.ws import WeatherStation
-from util.xbase import XAPIValidationFailed
+from sdk.util.xbase import XAPIValidationFailed
 
 
 @pytest.fixture

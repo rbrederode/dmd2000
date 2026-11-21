@@ -4,8 +4,8 @@ from typing import Optional
 
 from schema import Schema, And, Or
 
-from models.base import BaseModel
-from models.ws import WeatherStationModel
+from sdk.models.base import BaseModel
+from sdk.models.ws import WeatherStationModel
 from ws.drivers.driver import WeatherStationDriver
 from ws.wind import ADS1115VoltageReader
 

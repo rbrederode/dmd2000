@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from models.pipeline import PipelineConfig, StepConfig, StepType
+from sdk.models.pipeline import PipelineConfig, StepConfig, StepType
 from web.pipeline_store import PipelineProfileStore
 
 

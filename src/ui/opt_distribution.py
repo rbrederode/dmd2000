@@ -145,8 +145,8 @@ def export_cli_distribution(observation, sky_scans, display, output_dir, baselin
     """CLI OPT companion export, using prepared velocity metrics and shared frequency preparation."""
     import tempfile
     import numpy as np
-    from models.target import PointingType
-    from models.scan import ScanState
+    from sdk.models.target import PointingType
+    from sdk.models.scan import ScanState
     from obs.obs_display import save_frequency_record
     from sdp.channel_mask import masked_values
     rows = []

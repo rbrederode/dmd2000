@@ -5,9 +5,9 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from models.obs import ObsModel
-from models.scan import ScanModel, ScanState, ScanType
-from models.target import TargetModel, PointingType, OffsetScan, FivePointScan
+from sdk.models.obs import ObsModel
+from sdk.models.scan import ScanModel, ScanState, ScanType
+from sdk.models.target import TargetModel, PointingType, OffsetScan, FivePointScan
 from ui.opt_pointing import PointingCache, load_frames, render_pointing_product, pointing_details
 from ui.opt_pointing import suggested_animation_interval
 

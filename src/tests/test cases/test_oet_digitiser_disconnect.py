@@ -3,13 +3,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from env.events import ObsEvent
-from ipc.action import Action
-from models.comms import CommunicationStatus
-from models.dsh import Capability, DishMode, DriverType, Feed, PointingState
-from models.health import HealthState
-from models.obs import ObsModel, ObsState, ObsTransition
-from models.target import PointingType
+from sdk.env.events import ObsEvent
+from sdk.ipc.action import Action
+from sdk.models.comms import CommunicationStatus
+from sdk.models.dsh import Capability, DishMode, DriverType, Feed, PointingState
+from sdk.models.health import HealthState
+from sdk.models.obs import ObsModel, ObsState, ObsTransition
+from sdk.models.target import PointingType
 from obs import oet as oet_module
 from obs.oet import ObservationExecutionTool
 

@@ -24,10 +24,10 @@ SRC_ROOT = Path(__file__).resolve().parents[1]
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from models.fil import FilterBank
-from models.obs import ObsModel, ObsState
-from models.scan import ScanModel, ScanState, ScanType
-from models.target import TargetModel, TargetScanSet
+from sdk.models.fil import FilterBank
+from sdk.models.obs import ObsModel, ObsState
+from sdk.models.scan import ScanModel, ScanState, ScanType
+from sdk.models.target import TargetModel, TargetScanSet
 from obs.scan import Scan
 
 logger = logging.getLogger(__name__)

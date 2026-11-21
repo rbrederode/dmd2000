@@ -16,8 +16,8 @@ from astropy.coordinates import AltAz, EarthLocation, SkyCoord
 from astropy.time import Time
 from astropy.utils import iers
 
-from models.obs import ObsModel
-from util.convert import datetime_to_utc, parse_utc_datetime
+from sdk.models.obs import ObsModel
+from sdk.util.convert import datetime_to_utc, parse_utc_datetime
 
 
 def get_obs_pointing(directory: str | Path, obs_id: str, scan_id: str) -> tuple[SkyCoord, datetime]:

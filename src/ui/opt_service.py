@@ -23,8 +23,8 @@ import requests
 from flask import Flask, abort, jsonify, request, send_from_directory, send_file, Response, stream_with_context
 from werkzeug.exceptions import HTTPException
 
-from models.obs import ObsModel
-from util.convert import datetime_to_utc
+from sdk.models.obs import ObsModel
+from sdk.util.convert import datetime_to_utc
 from ui.opt_pipeline import pipeline_snapshot, editable_pipeline, available_pipeline_steps
 from ui.pipeline_help import PIPELINE_OVERVIEW
 from ui.opt_targets import target_display_metadata
@@ -317,7 +317,7 @@ def create_app(data_roots=None, cache_dir=None, web_url=None, web_token=None, pr
     @app.post('/api/dish-control/<dish_id>')
     def dish_control(dish_id):
         """Live dish settings, distinct from file-backed configuration editing."""
-        from models.dsh import DishMode, Capability
+        from sdk.models.dsh import DishMode, Capability
         data = request.get_json()
         if (not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', dish_id) or not isinstance(data, dict)
                 or len(data) != 1 or not set(data) <= {'mode', 'capability'}):

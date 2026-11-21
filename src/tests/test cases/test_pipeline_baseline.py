@@ -3,8 +3,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from models.pipeline import StepConfig, StepType
-from models.scan import ScanType
+from sdk.models.pipeline import StepConfig, StepType
+from sdk.models.scan import ScanType
 from sdp.channel_mask import empty_channel_flags, ChannelFlag
 from sdp.pipeline.pipeline_factory import ProcessingPipeline
 from sdp.pipeline.steps.baseline import Baseline

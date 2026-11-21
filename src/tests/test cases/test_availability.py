@@ -4,7 +4,7 @@ import os
 import tempfile
 from datetime import datetime, timedelta
 
-from util.availability import (
+from sdk.util.availability import (
     get_app_availability,
     get_app_reliability
 )

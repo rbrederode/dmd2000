@@ -3,8 +3,8 @@ from datetime import datetime, timedelta, timezone
 import numpy as np
 import os
 
-from models.fil import FilterBank
-from models.scan import ScanDataSource, ScanModel, ScanState, ScanType
+from sdk.models.fil import FilterBank
+from sdk.models.scan import ScanDataSource, ScanModel, ScanState, ScanType
 from obs.scan import Scan
 
 

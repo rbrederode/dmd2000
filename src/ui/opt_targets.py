@@ -1,7 +1,7 @@
 """Shared target definitions for OPT input scans and processed aggregates."""
 import astropy.units as u
 
-from models.target import PointingType
+from sdk.models.target import PointingType
 
 
 def target_display_metadata(target):

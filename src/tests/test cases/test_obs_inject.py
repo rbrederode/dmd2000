@@ -175,7 +175,7 @@ def test_main_reports_connection_failure(monkeypatch, capsys, observation_file):
 
 
 def test_injection_reaches_new_web_application(monkeypatch, tmp_path, observation_file):
-    from env.events import ResponseEvent
+    from sdk.env.events import ResponseEvent
     monkeypatch.chdir(tmp_path)
     path = Path(__file__).resolve().parents[2] / 'web' / 'web_server.py'
     spec = importlib.util.spec_from_file_location('inject_web_server_under_test', path)

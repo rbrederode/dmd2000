@@ -4,8 +4,8 @@ from typing import Optional
 
 from schema import Schema, And, Or
 
-from models.base import BaseModel
-from models.ws import WeatherStationModel
+from sdk.models.base import BaseModel
+from sdk.models.ws import WeatherStationModel
 
 try:
     from ws.drivers.driver import WeatherStationDriver

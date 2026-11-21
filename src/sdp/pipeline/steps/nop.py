@@ -2,7 +2,7 @@ import numpy as np
 import logging
 from typing import Any, List, Dict
 
-from models.pipeline import StepConfig, StepType
+from sdk.models.pipeline import StepConfig, StepType
 from sdp.pipeline.pipeline_factory import ProcessingStep
 
 logger = logging.getLogger(__name__)

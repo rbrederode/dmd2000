@@ -12,16 +12,16 @@ import time
 from uuid import uuid4
 
 from api import protocol, tm_web
-from env.app import App
-from env.events import CallbackEvent, ResponseEvent, TimerEvent
-from ipc.action import Action
-from ipc.message import APIMessage
-from ipc.tcp_server import TCPServer
-from models.comms import CommunicationStatus, InterfaceType
-from models.health import HealthState
-from models.launch import load_scan_store_dir
-from models.web import WebServerModel
-from util.timer import Timer
+from sdk.env.app import App
+from sdk.env.events import CallbackEvent, ResponseEvent, TimerEvent
+from sdk.ipc.action import Action
+from sdk.ipc.message import APIMessage
+from sdk.ipc.tcp_server import TCPServer
+from sdk.models.comms import CommunicationStatus, InterfaceType
+from sdk.models.health import HealthState
+from sdk.models.launch import load_scan_store_dir
+from sdk.models.web import WebServerModel
+from sdk.util.timer import Timer
 from web.cmd_handler import CommandHandler
 from web.profiles import ProfileManager
 from web.model_cache import TelescopeModelCache, POLL_TIMER, REQUEST_PREFIX, POLL_SECONDS

@@ -5,8 +5,8 @@ import pytest
 from api import protocol as dmd_protocol
 from api.cmd_api import ACTION_CODE_COMMAND, CommandAPI
 from api.cmd_registry import CommandRegistry
-from ipc.message import APIMessage
-from util.xbase import XAPIValidationFailed
+from sdk.ipc.message import APIMessage
+from sdk.util.xbase import XAPIValidationFailed
 
 
 def make_command(

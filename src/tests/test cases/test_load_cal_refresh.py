@@ -3,8 +3,8 @@ from queue import Queue
 
 import numpy as np
 
-from models.pipeline import StepConfig, StepType
-from models.scan import ScanModel, ScanState, ScanType
+from sdk.models.pipeline import StepConfig, StepType
+from sdk.models.scan import ScanModel, ScanState, ScanType
 from obs.scan import Scan
 from sdp.channel_mask import empty_channel_flags
 from sdp.pipeline.steps.load import LoadCal

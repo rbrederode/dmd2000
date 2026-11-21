@@ -10,12 +10,12 @@ import time
 from typing import Tuple
 
 from dsh.drivers.driver import DishDriver
-from ipc.tcp_server import TCPServer
+from sdk.ipc.tcp_server import TCPServer
 from dsh.drivers.drift.drift_config import DriftConfig
-from models.dsh import DishModel, PointingState, Capability, DishMode, Feed, DriverType
-from models.health import HealthState
-from util.xbase import XBase, XTimeoutWaitingForResponse, XCommsFailure, XInvalidTransition
-import util.util as util
+from sdk.models.dsh import DishModel, PointingState, Capability, DishMode, Feed, DriverType
+from sdk.models.health import HealthState
+from sdk.util.xbase import XBase, XTimeoutWaitingForResponse, XCommsFailure, XInvalidTransition
+import sdk.util.util as util
 
 logger = logging.getLogger(__name__)
 

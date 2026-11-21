@@ -1,9 +1,9 @@
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
-from env.events import TimerEvent
-from models.app import AppModel
-from models.obs import ObsModel, ObsState, ObsTransition
+from sdk.env.events import TimerEvent
+from sdk.models.app import AppModel
+from sdk.models.obs import ObsModel, ObsState, ObsTransition
 from tm.tm import TelescopeManager
 
 

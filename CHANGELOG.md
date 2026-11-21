@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Moved shared data models into `src/sdk/models`, imported as `sdk.models`. Updated application, SDK, and test imports while preserving serialized model type names, enum values, and configuration formats.
+
+- Moved shared `env`, `ipc`, and `util` packages into `src/sdk`, imported as `sdk.env`, `sdk.ipc`, and `sdk.util`. Updated application/test imports, command launchers, utility paths, and documentation; repository-root, log, and configuration discovery account for the deeper package layout. Utility commands now use `python -m sdk.util.<tool>` with `src` on `PYTHONPATH`, or `python sdk/util/<tool>.py` from `src`.
+
+- HI4PI catalogue lookup now falls back from the configured VizieR server to Harvard and IDIA mirrors on request failures or empty/invalid tables, with bounded request timeouts and per-server diagnostics. Cube downloads remain separate from catalogue lookup.
+
 - Dish capability changes now persist atomically to the active profile's `DishList.json` before hardware calls, preserving other configuration edits and surviving DM restart/RESYNC. Maintenance saves `STANDBY` before stowing, blocking ordinary movement until capability is explicitly restored. Emergency STOP retains the saved inhibition even if the controller call fails; repeated STOP commands still reach the controller. Persistence failures report an error while still attempting to stop movement, and prevent enabling operational capability.
 
 - TM application health no longer becomes DEGRADED solely because a digitiser is disconnected; digitiser status and observation availability checks remain independent.

@@ -6,7 +6,7 @@ import sys
 import warnings
 from datetime import datetime, timezone
 
-from models.temp import TempReading
+from sdk.models.temp import TempReading
 
 BME280_ADDRESSES = (0x76, 0x77)
 

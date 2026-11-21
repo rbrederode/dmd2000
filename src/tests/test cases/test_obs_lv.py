@@ -204,7 +204,7 @@ def test_lv_blue_asinh_and_calibrated_power_contours(tmp_path):
 
 
 def test_lv_contour_resampling_preserves_masks_and_velocity_gaps():
-    from util.lv_plot import interpolate_lv_contour_column
+    from sdk.util.lv_plot import interpolate_lv_contour_column
     velocity = np.array([0., 1., 2., 3., 4., 8., 9.])
     power = np.ma.array(velocity * 2, mask=[False, False, True, False, False, False, False])
     grid = np.arange(-1., 10., .5)
@@ -230,7 +230,7 @@ def test_lv_contours_do_not_span_a_missing_longitude_in_a_frequency_panel(tmp_pa
 
 
 def test_lv_contour_smoothing_is_display_only_and_does_not_bridge_masks():
-    from util.lv_plot import interpolate_lv_contour_column
+    from sdk.util.lv_plot import interpolate_lv_contour_column
     velocity = np.arange(100.)
     power = np.ma.array(np.tile([0., .01], 50), mask=False)
     power.mask[50] = True

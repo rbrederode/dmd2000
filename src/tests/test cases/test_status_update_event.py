@@ -1,6 +1,6 @@
 from queue import Queue
 
-from env.events import StatusUpdateEvent
+from sdk.env.events import StatusUpdateEvent
 
 
 def test_status_update_processing_time_excludes_queue_wait(monkeypatch):
@@ -8,7 +8,7 @@ def test_status_update_processing_time_excludes_queue_wait(monkeypatch):
     queue = Queue()
 
     times = iter([100.0, 104.0, 104.25])
-    monkeypatch.setattr("env.events.time.time", lambda: next(times))
+    monkeypatch.setattr("sdk.env.events.time.time", lambda: next(times))
 
     event.enqueue(queue)
     event.notify_dequeued()

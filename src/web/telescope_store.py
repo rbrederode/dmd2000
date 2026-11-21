@@ -4,8 +4,8 @@ import hashlib
 import json
 from pathlib import Path
 
-from models.telescope import TelescopeConfig
-from util.xbase import XAPIValidationFailed
+from sdk.models.telescope import TelescopeConfig
+from sdk.util.xbase import XAPIValidationFailed
 from web.profile_store import ProfileFileStore, ProfileStoreError
 
 FIELDS = ('name', 'latitude', 'longitude', 'height')

@@ -134,10 +134,10 @@ def test_full_opt_worker_exports_matching_metrics_and_refreshes_them_from_cache(
     from astropy.coordinates import SkyCoord
     from astropy import units as u
     from astropy.utils import iers
-    from models.obs import ObsModel
-    from models.target import TargetModel, TargetConfig, TargetScanSet, PointingType
-    from models.scan import ScanModel, ScanState, ScanType
-    from models.pipeline import PipelineConfig, StepConfig, StepType
+    from sdk.models.obs import ObsModel
+    from sdk.models.target import TargetModel, TargetConfig, TargetScanSet, PointingType
+    from sdk.models.scan import ScanModel, ScanState, ScanType
+    from sdk.models.pipeline import PipelineConfig, StepConfig, StepType
     from obs.scan import Scan
     from ui import opt_worker
     from ui.opt_service import validate_settings

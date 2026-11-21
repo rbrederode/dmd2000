@@ -10,7 +10,7 @@ import sys
 import tempfile
 import threading
 
-from env.events import ResponseEvent
+from sdk.env.events import ResponseEvent
 from obs.catalogue import scan_spectrum_file
 
 logger = logging.getLogger(__name__)
@@ -59,7 +59,7 @@ def signal_product(store, observation, target, frequency, iteration, folder, sdp
         if not isinstance(profile, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", profile):
             return ResponseEvent("error", "Cannot identify SDP's config profile. Refresh the TM snapshot while SDP is connected, then retry.",
                                  code="sdp_profile_unavailable")
-        from models.pipeline import PipelineConfig
+        from sdk.models.pipeline import PipelineConfig
         profile_dir = Path(__file__).resolve().parents[1] / "config" / profile
         if not (profile_dir / "PipelineConfig.json").is_file():
             return ResponseEvent("error", f"SDP config profile '{profile}' has no PipelineConfig.json on this server.",
@@ -102,8 +102,8 @@ def render(request):
     matplotlib.use("Agg")
     from matplotlib import pyplot as plt
     from queue import Queue
-    from models.pipeline import PipelineConfig
-    from models.scan import ScanModel, ScanState, ScanType
+    from sdk.models.pipeline import PipelineConfig
+    from sdk.models.scan import ScanModel, ScanState, ScanType
     from obs.scan import Scan
     from sdp.pipeline.pipeline_factory import ProcessingPipelineFactory
     from sdp.signal_display import SignalDisplay

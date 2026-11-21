@@ -1,4 +1,4 @@
-from util.xbase import EXC_ID_HARDWARE_FAILURE, XBase, XHardwareFailure
+from sdk.util.xbase import EXC_ID_HARDWARE_FAILURE, XBase, XHardwareFailure
 
 
 def test_xbase_string_uses_human_readable_message():

@@ -7,7 +7,7 @@ import pytest
 from obs.spectral_annotations import annotate_spectral_metrics
 from sdp.channel_mask import ChannelFlag, empty_channel_flags, masked_values
 from sdp import spectral_metrics
-from util import lab_profiler
+from sdk.util import lab_profiler
 
 
 def test_profiler_and_plots_share_profile_diagnostic_and_estimators(monkeypatch):

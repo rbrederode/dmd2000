@@ -3,7 +3,7 @@ from astropy.coordinates import AltAz
 import astropy.units as u
 
 from dsh.drivers.driver import DishDriver
-from models.dsh import Capability, DishMode, DishModel, PointingState
+from sdk.models.dsh import Capability, DishMode, DishModel, PointingState
 
 
 def make_ready_driver(pointing_altaz, mode=DishMode.STANDBY_FP):
@@ -106,7 +106,7 @@ def test_slew_records_acquisition_when_dish_is_already_on_target():
 @pytest.mark.parametrize('angle', [0., 90., 180., 270., 359.])
 def test_current_pointing_offset_recovers_spherical_scan_displacement(angle):
     from astropy.coordinates import SkyCoord
-    from models.target import TargetModel
+    from sdk.models.target import TargetModel
     centre = SkyCoord(alt=80*u.deg, az=359*u.deg, frame='altaz')
     measured = centre.directional_offset_by(angle*u.deg, 3*u.deg)
     driver = make_ready_driver(None)
@@ -132,7 +132,7 @@ def test_current_pointing_offset_recovers_spherical_scan_displacement(angle):
                                                 ('FIVE_POINT_SCAN', {'offset':4., 'direction':'W'})])
 def test_scan_offsets_refresh_only_after_measuring_current_pointing(pointing, scan_params):
     from astropy.coordinates import SkyCoord
-    from models.target import TargetModel, PointingType, OffsetScan, FivePointScan
+    from sdk.models.target import TargetModel, PointingType, OffsetScan, FivePointScan
     driver = make_ready_driver({'alt':40., 'az':0.})
     centre = SkyCoord(alt=40*u.deg, az=0*u.deg, frame='altaz')
     scan = (OffsetScan if pointing == 'OFFSET_SCAN' else FivePointScan)(**scan_params)
@@ -170,7 +170,7 @@ def test_scan_offsets_refresh_only_after_measuring_current_pointing(pointing, sc
 ])
 def test_desired_drift_position_reuses_target_centre_helper(coordinates):
     from unittest.mock import Mock
-    from models.target import TargetModel
+    from sdk.models.target import TargetModel
     driver = make_ready_driver(None)
     driver._get_target_centre_altaz = Mock(wraps=driver._get_target_centre_altaz)
     target = TargetModel(altaz=coordinates)

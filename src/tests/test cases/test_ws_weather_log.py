@@ -7,11 +7,11 @@ import zipfile
 
 import pytest
 
-from env.app import App
-from env.events import TimerEvent
-from models.comms import CommunicationStatus
-from models.health import HealthState
-from models.ws import WeatherData, WeatherStationDriverType, WeatherStationModel
+from sdk.env.app import App
+from sdk.env.events import TimerEvent
+from sdk.models.comms import CommunicationStatus
+from sdk.models.health import HealthState
+from sdk.models.ws import WeatherData, WeatherStationDriverType, WeatherStationModel
 from ws.ws import WeatherStation
 
 

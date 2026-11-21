@@ -11,7 +11,7 @@ from astropy.constants import c
 matplotlib.use("Agg")
 from matplotlib import pyplot as plt
 
-from models.scan import ScanState, ScanType
+from sdk.models.scan import ScanState, ScanType
 from obs.lsr import HI_REST_FREQUENCY, lsr_velocity, scan_observing_context
 from obs.obs_display import ObsDisplay
 from sdp.channel_mask import ChannelFlag, empty_channel_flags
@@ -259,7 +259,7 @@ def test_lsr_auto_bounds_and_explicit_window_override(tmp_path, monkeypatch):
 
 def test_lsr_legacy_baseline_opt_out(tmp_path, monkeypatch):
     from obs import lsr
-    from util.convert import subtract_spectrum_baseline
+    from sdk.util.convert import subtract_spectrum_baseline
     obs, scan = make_observation()
     velocity = np.arange(-150., 151.)
     monkeypatch.setattr(lsr, "lsr_velocity", lambda *a: velocity)

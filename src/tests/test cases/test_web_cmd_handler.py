@@ -7,8 +7,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from models.dig import DigitiserList, DigitiserModel
-from models.sdp import ScienceDataProcessorModel
+from sdk.models.dig import DigitiserList, DigitiserModel
+from sdk.models.sdp import ScienceDataProcessorModel
 from web import cmd_handler as module
 from web.cmd_handler import CommandHandler
 

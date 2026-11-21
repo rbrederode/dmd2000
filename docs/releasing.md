@@ -33,7 +33,7 @@ Use [Semantic Versioning](https://semver.org/):
 - `v1.2.0` → `v2.0.0`: incompatible changes requiring users to adapt.
 
 The root [VERSION](../VERSION) file contains the base version, including `v`,
-for example `v1.2.0`. [src/util/version.py](../src/util/version.py) appends a
+for example `v1.2.0`. [src/sdk/util/version.py](../src/sdk/util/version.py) appends a
 build number from `BUILD_NUMBER`, or otherwise the Git commit count. Thus an
 application might report `v1.2.0-550`. Do not put the build suffix in `VERSION`,
 the release branch name, or the release tag. Record the commit SHA as well as
@@ -236,7 +236,7 @@ tested commit:
 
 ```bash
 cat VERSION
-PYTHONPATH=src python -c "from util.version import get_version_info; print(get_version_info())"
+PYTHONPATH=src python -c "from sdk.util.version import get_version_info; print(get_version_info())"
 git status --short
 git rev-parse HEAD
 ```
@@ -390,7 +390,7 @@ node --test src/tests/frontend/*.test.cjs
 git diff --check
 git status --short
 cat VERSION
-PYTHONPATH=src python -c "from util.version import get_version_info; print(get_version_info())"
+PYTHONPATH=src python -c "from sdk.util.version import get_version_info; print(get_version_info())"
 git rev-parse HEAD
 ```
 

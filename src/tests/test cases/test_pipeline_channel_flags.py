@@ -4,8 +4,8 @@ from queue import Queue
 import numpy as np
 import pytest
 
-from models.pipeline import StepConfig, StepType
-from models.scan import ScanModel, ScanState, ScanType
+from sdk.models.pipeline import StepConfig, StepType
+from sdk.models.scan import ScanModel, ScanState, ScanType
 from obs.scan import Scan
 from sdp.channel_mask import ChannelFlag, empty_channel_flags
 from sdp.pipeline.steps.qa import QA
@@ -193,7 +193,7 @@ def test_load_calibration_propagates_load_flags_and_marks_invalid_results():
 
 
 def test_qa_and_profiler_agree_with_identical_noise_samples_estimators_and_peak():
-    from util.lab_profiler import observation_noise_metrics
+    from sdk.util.lab_profiler import observation_noise_metrics
     for estimator in ('mean_rms', 'median_mad'):
         scan = _scan(21)
         signal = np.tile([1., 3.], 11)[:21]
@@ -222,7 +222,7 @@ def test_qa_and_profiler_agree_with_identical_noise_samples_estimators_and_peak(
 
 
 def test_cal_baseline_flows_into_mpr_without_altering_spr():
-    from models.scan import ScanDataSource
+    from sdk.models.scan import ScanDataSource
     from sdp.pipeline.steps.baseline import Baseline
     from sdp.pipeline.pipeline_factory import ProcessingPipeline
     scan = _scan(201)

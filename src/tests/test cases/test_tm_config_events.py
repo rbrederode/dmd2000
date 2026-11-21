@@ -4,10 +4,10 @@ from unittest.mock import Mock
 
 import pytest
 
-from env.events import ConfigEvent
+from sdk.env.events import ConfigEvent
 from tm import tm as tm_module
 from tm.tm import TelescopeManager
-from util import cmd_app
+from sdk.util import cmd_app
 
 
 @pytest.mark.parametrize('config', [

@@ -8,11 +8,11 @@ from unittest.mock import Mock
 
 import pytest
 
-from models.base import BaseModel
-from models.telescope import TelescopeModel
-from models.ui import UIDriver, UIDriverList, UIDriverType
+from sdk.models.base import BaseModel
+from sdk.models.telescope import TelescopeModel
+from sdk.models.ui import UIDriver, UIDriverList, UIDriverType
 from tm.tm import TelescopeManager
-from util.xbase import XAPIValidationFailed, XSoftwareFailure
+from sdk.util.xbase import XAPIValidationFailed, XSoftwareFailure
 
 
 def driver(description='Console', **changes):

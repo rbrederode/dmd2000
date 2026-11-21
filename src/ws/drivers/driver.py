@@ -3,8 +3,8 @@ import logging
 import threading
 from typing import Optional
 
-from models.ws import WeatherData, WeatherStationModel, WeatherStationDriverType
-from util.registry import (
+from sdk.models.ws import WeatherData, WeatherStationModel, WeatherStationDriverType
+from sdk.util.registry import (
     WEATHER_STATION_DRIVER_NAMESPACE,
     get as registry_get,
     load_class_from_path as registry_load_class_from_path,
@@ -135,7 +135,7 @@ def create_ws_driver(ws_model: WeatherStationModel) -> Optional[WeatherStationDr
 
     This factory supports:
     - Built-in enum-backed drivers (`WeatherStationDriverType.ADS1115`, `MODBUS`).
-    - Registered drivers via `util.registry.register(WEATHER_STATION_DRIVER_NAMESPACE, "name", ctor)`.
+    - Registered drivers via `sdk.util.registry.register(WEATHER_STATION_DRIVER_NAMESPACE, "name", ctor)`.
     - Dynamic class paths like "package.module:ClassName" or "package.module.ClassName".
 
     The factory prefers the enum when known; otherwise it will consult `ws_model.driver_config`.

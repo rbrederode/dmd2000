@@ -7,9 +7,9 @@ import json
 from pathlib import Path
 import re
 
-from models.base import BaseModel
-from models.pipeline import PipelineConfig, StepConfig, StepType
-from util.xbase import XAPIValidationFailed
+from sdk.models.base import BaseModel
+from sdk.models.pipeline import PipelineConfig, StepConfig, StepType
+from sdk.util.xbase import XAPIValidationFailed
 from web.profile_store import ProfileFileStore, ProfileStoreError, _finite
 
 

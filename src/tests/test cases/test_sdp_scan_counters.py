@@ -4,8 +4,8 @@ from datetime import datetime, timedelta, timezone
 
 import numpy as np
 
-from models.scan import ScanModel, ScanState, ScanType
-from models.sdp import ScienceDataProcessorModel
+from sdk.models.scan import ScanModel, ScanState, ScanType
+from sdk.models.sdp import ScienceDataProcessorModel
 from obs.scan import Scan
 from sdp.sdp import SDP
 

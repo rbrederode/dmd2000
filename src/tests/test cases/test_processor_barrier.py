@@ -1,7 +1,7 @@
 import queue
 import threading
 
-from env.processor import Processor
+from sdk.env.processor import Processor
 
 
 class BarrierProcessor(Processor):

@@ -10,7 +10,7 @@ from scipy.special import erfc
 
 from obs.terminal_velocity import measure_terminal_velocity, annotate_terminal_velocity
 from sdp.channel_mask import ChannelFlag, empty_channel_flags, masked_values
-from util import lab_profiler as lab
+from sdk.util import lab_profiler as lab
 
 
 def record():

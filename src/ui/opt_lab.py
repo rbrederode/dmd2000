@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 from matplotlib import pyplot as plt
 
-from util.lab_profiler import LABGaussianExtractor, compare_spectra, match_channels, range_values
+from sdk.util.lab_profiler import LABGaussianExtractor, compare_spectra, match_channels, range_values
 from obs.obs_display import velocity_limits, save_velocity_figure
 from obs.spectral_annotations import annotate_spectral_metrics
 

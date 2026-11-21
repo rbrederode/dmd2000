@@ -9,8 +9,8 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from models.scan import ScanModel, ScanState
-from models.target import TargetModel, PointingType
+from sdk.models.scan import ScanModel, ScanState
+from sdk.models.target import TargetModel, PointingType
 from sdp.channel_mask import empty_channel_flags
 
 logger = logging.getLogger(__name__)

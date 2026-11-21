@@ -6,10 +6,10 @@ import subprocess
 import sys
 
 import pytest
-from util.xbase import XAPIValidationFailed
-from models.launch import LaunchConfigModel, LaunchModel
-from util.log_config import load_log_dir, resolve_log_dir, runtime_log_dir
-from util.launch import build_launch_command
+from sdk.util.xbase import XAPIValidationFailed
+from sdk.models.launch import LaunchConfigModel, LaunchModel
+from sdk.util.log_config import load_log_dir, resolve_log_dir, runtime_log_dir
+from sdk.util.launch import build_launch_command
 
 
 def test_log_root_model_round_trip_and_legacy_defaults():
@@ -33,7 +33,7 @@ def test_log_paths_resolve_from_repo_and_expand_home(tmp_path, monkeypatch):
 
 
 def test_early_logging_root_cli_and_environment_overrides(tmp_path, monkeypatch):
-    monkeypatch.setattr('util.log_config.REPO_ROOT', tmp_path)
+    monkeypatch.setattr('sdk.util.log_config.REPO_ROOT', tmp_path)
     profile = tmp_path / 'profile'
     profile.mkdir()
     (profile / 'LaunchConfig.json').write_text('{"log_dir":"profile-logs"}')
@@ -62,10 +62,10 @@ def test_fresh_process_writes_logs_traces_and_availability_under_profile_root(tm
     script = '''
 import logging
 from pathlib import Path
-from util import log
-from env.app import App
-from models.app import AppModel
-from util.html_trace import HTMLTrace
+from sdk.util import log
+from sdk.env.app import App
+from sdk.models.app import AppModel
+from sdk.util.html_trace import HTMLTrace
 log.set_current_app('tm')
 logging.getLogger('test').info('configured application log')
 app = App.__new__(App)
@@ -89,7 +89,7 @@ logging.shutdown()
 
 
 def test_web_profile_log_root_switch_does_not_redirect_running_app_logs(tmp_path):
-    from util import log
+    from sdk.util import log
     from web.profiles import ProfileManager
     root_before = log.repo_logs_dir
     for name in ('first', 'second'):

@@ -6,8 +6,8 @@ from api.imu_transport import (
     imu_data_from_response,
 )
 from api.imu_api import IMU_API
-from env.events import DataEvent
-from models.imu import IMUData
+from sdk.env.events import DataEvent
+from sdk.models.imu import IMUData
 
 
 class FakeIMU:

@@ -1,5 +1,5 @@
-from models.dsh import Feed
-from models.target import TargetConfig, TargetScanSet
+from sdk.models.dsh import Feed
+from sdk.models.target import TargetConfig, TargetScanSet
 
 
 def test_single_frequency_scan_remains_centered_on_target_config():

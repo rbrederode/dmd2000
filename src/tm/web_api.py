@@ -12,7 +12,7 @@ from flask import Flask, request, jsonify
 from werkzeug.exceptions import HTTPException
 from datetime import datetime, timezone
 from queue import Queue
-from env.events import ResponseEvent
+from sdk.env.events import ResponseEvent
 from obs.catalogue import list_observations
 
 logger = logging.getLogger(__name__)
@@ -159,7 +159,7 @@ class WebAPIHandler:
                         logger.info(f"Webhook with parsed config: {message_data}")
                         
                         # Create ConfigEvent from the parsed message
-                        from env.events import ConfigEvent
+                        from sdk.env.events import ConfigEvent
                         config_event = ConfigEvent(
                             category=category,
                             old_config=None,

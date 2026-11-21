@@ -2,11 +2,11 @@ import pytest
 
 from api.tm_dig import TM_DIG
 from api.tm_sdp import TM_SDP
-from env.events import ConfigEvent
-from models.comms import CommunicationStatus
-from models.dig import DigitiserList, DigitiserModel
-from models.health import HealthState
-from models.telescope import TelescopeModel
+from sdk.env.events import ConfigEvent
+from sdk.models.comms import CommunicationStatus
+from sdk.models.dig import DigitiserList, DigitiserModel
+from sdk.models.health import HealthState
+from sdk.models.telescope import TelescopeModel
 from tm.tm import TelescopeManager
 
 

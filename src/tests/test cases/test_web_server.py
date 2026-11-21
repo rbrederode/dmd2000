@@ -60,7 +60,7 @@ def test_credentials_and_payload_are_not_logged(server, caplog):
 
 
 def test_valid_hmac_submits_configuration_without_logging_signature(server, caplog):
-    from env.events import ResponseEvent
+    from sdk.env.events import ResponseEvent
     module, client, post = server
     runtime = SimpleNamespace(submit_configuration=Mock(return_value=(
         ResponseEvent('success', 'Actions scheduled'), 'request-1')))
@@ -79,7 +79,7 @@ def test_valid_hmac_submits_configuration_without_logging_signature(server, capl
 @pytest.mark.parametrize('status, code', [(200, None), (400, 'invalid_request'),
                                         (500, 'internal_error'), (200, 'command_failed'), (200, 'timeout')])
 def test_command_result_is_returned_without_contacting_tm_http(server, monkeypatch, status, code):
-    from env.events import ResponseEvent
+    from sdk.env.events import ResponseEvent
 
     module, client, post = server
     result = ResponseEvent('success' if code is None else 'error', 'Target reply',
@@ -119,7 +119,7 @@ def test_commands_require_authentication_before_execution(server, monkeypatch):
 
 @pytest.mark.parametrize('category', ['dig', 'dsh', 'odt', 'oet'])
 def test_configuration_submits_to_web_application_without_tm_http(server, monkeypatch, category):
-    from env.events import ResponseEvent
+    from sdk.env.events import ResponseEvent
     module, client, post = server
     runtime = SimpleNamespace(submit_configuration=Mock(return_value=(
         ResponseEvent('success', 'Actions scheduled'), 'request-1')))
@@ -153,11 +153,11 @@ def test_flattened_observation_rows_are_rejected_before_tcp_submission(server, e
 def test_resync_uses_real_command_tcp_endpoint_without_tm_http(server, monkeypatch, tmp_path):
     from queue import Queue
     from api.cmd_api import CommandAPI
-    from env.app_processor import AppProcessor
-    from ipc.action import Action
-    from ipc.tcp_server import TCPServer
-    from models.app import AppModel
-    from models.comms import InterfaceType
+    from sdk.env.app_processor import AppProcessor
+    from sdk.ipc.action import Action
+    from sdk.ipc.tcp_server import TCPServer
+    from sdk.models.app import AppModel
+    from sdk.models.comms import InterfaceType
     from web.cmd_handler import CommandHandler
 
     module, client, post = server
@@ -244,7 +244,7 @@ def test_catalogue_requires_authentication_before_reading_storage(server, monkey
 
 
 def test_catalogue_reads_profile_storage_without_tm(server, monkeypatch, tmp_path):
-    from models.launch import LaunchConfigModel
+    from sdk.models.launch import LaunchConfigModel
     module, client, _ = server
     store = tmp_path / 'recordings'
     store.mkdir()
@@ -418,7 +418,7 @@ def test_scan_download_rejects_incomplete_missing_and_outside_archive_files(serv
 def test_http_catalogue_trace_records_request_response_and_redacts_credentials(server, tmp_path):
     import html
     import re
-    from util.html_trace import HTMLTrace
+    from sdk.util.html_trace import HTMLTrace
     module, client, _ = server
     trace = HTMLTrace(tmp_path / 'trace', 'web', 'test')
     trace.start()
@@ -443,7 +443,7 @@ def test_http_catalogue_trace_records_request_response_and_redacts_credentials(s
 
 @pytest.mark.parametrize('enabled', [True, False])
 def test_http_trace_authentication_errors_and_disabled_tracing(server, tmp_path, enabled):
-    from util.html_trace import HTMLTrace
+    from sdk.util.html_trace import HTMLTrace
     module, client, _ = server
     trace = HTMLTrace(tmp_path / 'trace', 'web', 'test')
     trace.start()
@@ -499,7 +499,7 @@ def test_completed_scan_signal_png_download_and_archive_guards(server, tmp_path)
 
 def test_signal_generation_requires_auth_and_dispatches_on_web_host(server, tmp_path, monkeypatch):
     from obs import scan_signal
-    from env.events import ResponseEvent
+    from sdk.env.events import ResponseEvent
     module, client, _ = server
     profile = SimpleNamespace(directory=Path(__file__).resolve().parents[2] / 'config/local', scan_store_dir=str(tmp_path))
     module.app.extensions['web_application'] = SimpleNamespace(scan_store_dir=str(tmp_path),

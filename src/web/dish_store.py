@@ -11,9 +11,9 @@ import re
 from dsh.drivers.drift.drift_config import DriftConfig
 from dsh.drivers.md01.md01_config import MD01Config
 from dsh.drivers.motion.motion_config import MotionDishConfig
-from models.base import BaseModel
-from models.dsh import Capability, DishModel, DriverType, Feed
-from util.xbase import XAPIValidationFailed
+from sdk.models.base import BaseModel
+from sdk.models.dsh import Capability, DishModel, DriverType, Feed
+from sdk.util.xbase import XAPIValidationFailed
 from web.profile_store import ProfileFileStore, ProfileStoreError, _finite
 
 

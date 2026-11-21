@@ -7,10 +7,10 @@ from astropy.utils import iers
 import pytest
 
 from dsh.drivers.driver import DishDriver
-from models.obs import ObsModel
-from models.dsh import DishModel
-from models.target import FivePointScan, OffsetScan, PointingType, TargetModel
-from util.format import fmt_target_coords
+from sdk.models.obs import ObsModel
+from sdk.models.dsh import DishModel
+from sdk.models.target import FivePointScan, OffsetScan, PointingType, TargetModel
+from sdk.util.format import fmt_target_coords
 
 
 def galactic_target(longitude=0.0, latitude=0.0):

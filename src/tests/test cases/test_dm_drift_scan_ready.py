@@ -4,14 +4,14 @@ from unittest.mock import Mock
 
 import pytest
 
-from util.xbase import XSoftwareFailure
+from sdk.util.xbase import XSoftwareFailure
 
 from dsh.dm import DM
-from env.events import TimerEvent
-from models.comms import CommunicationStatus
-from models.dsh import DishMode, DriverType, PointingState
-from models.health import HealthState
-from models.target import PointingType
+from sdk.env.events import TimerEvent
+from sdk.models.comms import CommunicationStatus
+from sdk.models.dsh import DishMode, DriverType, PointingState
+from sdk.models.health import HealthState
+from sdk.models.target import PointingType
 
 
 class SlewingMD01Driver:

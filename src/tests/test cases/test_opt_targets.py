@@ -2,7 +2,7 @@ import astropy.units as u
 from astropy.coordinates import SkyCoord, AltAz
 import pytest
 
-from models.target import TargetModel, PointingType
+from sdk.models.target import TargetModel, PointingType
 from ui.opt_targets import target_display_metadata
 
 

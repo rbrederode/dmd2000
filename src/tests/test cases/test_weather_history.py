@@ -2,10 +2,10 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from dsh.dm import DM
-from models.dsh import DishManagerModel
-from models.ws import WeatherData, WeatherStationList
-from models.telescope import TelescopeModel
-from ipc.message import APIMessage
+from sdk.models.dsh import DishManagerModel
+from sdk.models.ws import WeatherData, WeatherStationList
+from sdk.models.telescope import TelescopeModel
+from sdk.ipc.message import APIMessage
 from web.model_snapshot import telescope_snapshot
 
 

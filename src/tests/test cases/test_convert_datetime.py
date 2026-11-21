@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from util.convert import datetime_to_utc, parse_utc_datetime
+from sdk.util.convert import datetime_to_utc, parse_utc_datetime
 
 
 @pytest.mark.parametrize("value", [

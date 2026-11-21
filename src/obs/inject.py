@@ -16,7 +16,7 @@ from urllib.request import Request, urlopen
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from models.oda import ObsList
+from sdk.models.oda import ObsList
 
 DEFAULT_URL = "http://127.0.0.1:8000/webhook"
 DEFAULT_TIMEOUT = 20.0

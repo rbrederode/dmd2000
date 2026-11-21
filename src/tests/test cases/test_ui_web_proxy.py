@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 import requests
 
-from models.dsh import DishList, DishModel
+from sdk.models.dsh import DishList, DishModel
 from ui import opt_service
 
 
@@ -250,7 +250,7 @@ def test_delete_proxy_needs_no_json_body_but_checks_origin(console, monkeypatch)
 
 
 def test_ui_to_web_digitiser_crud_keeps_credentials_and_profile_on_server(console, monkeypatch, tmp_path):
-    from models.dig import DigitiserList, DigitiserModel
+    from sdk.models.dig import DigitiserList, DigitiserModel
     profile = tmp_path / 'profiles' / 'test'
     profile.mkdir(parents=True)
     path = profile / 'DigitiserList.json'

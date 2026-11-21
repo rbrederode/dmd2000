@@ -3,8 +3,8 @@ import pytest
 
 from datetime import datetime, timezone
 
-from models.dsh import DishModel
-from models.scan import ScanModel
+from sdk.models.dsh import DishModel
+from sdk.models.scan import ScanModel
 
 
 def test_scan_model_pointing_refs_round_trip():

@@ -3,8 +3,8 @@ from typing import Any, List, Dict
 from queue import Queue
 import time
 
-from models.pipeline import PipelineConfig, StepConfig, StepType
-from util.registry import PIPELINE_STEP_NAMESPACE, get as registry_get, register as registry_register, resolve as registry_resolve
+from sdk.models.pipeline import PipelineConfig, StepConfig, StepType
+from sdk.util.registry import PIPELINE_STEP_NAMESPACE, get as registry_get, register as registry_register, resolve as registry_resolve
 
 logger = logging.getLogger(__name__)
 

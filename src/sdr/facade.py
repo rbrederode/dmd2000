@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from env.device import DeviceWorker
-from models.comms import CommunicationStatus
+from sdk.env.device import DeviceWorker
+from sdk.models.comms import CommunicationStatus
 from sdr.sdr import SDR as LegacySDR
-from util.xbase import XHardwareFailure
+from sdk.util.xbase import XHardwareFailure
 
 import logging
 

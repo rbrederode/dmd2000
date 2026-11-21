@@ -2,11 +2,11 @@ from datetime import datetime, timezone
 
 from api import protocol as dmd_protocol
 from api.cmd_api import CommandAPI
-from env.app_processor import AppProcessor
-from env.events import ConnectEvent, DataEvent, DisconnectEvent
-from ipc.message import APIMessage
-from models.comms import InterfaceType
-from util.set_trace import TraceUtilityDriver, build_arg_parser
+from sdk.env.app_processor import AppProcessor
+from sdk.env.events import ConnectEvent, DataEvent, DisconnectEvent
+from sdk.ipc.message import APIMessage
+from sdk.models.comms import InterfaceType
+from sdk.util.set_trace import TraceUtilityDriver, build_arg_parser
 
 
 class Endpoint:

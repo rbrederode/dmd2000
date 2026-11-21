@@ -3,11 +3,11 @@ import sys
 import types
 from unittest import mock
 
-sys.modules.setdefault("util.log", types.ModuleType("util.log"))
+sys.modules.setdefault("sdk.util.log", types.ModuleType("sdk.util.log"))
 
 with mock.patch("socket.gethostname", return_value="localhost"), mock.patch("socket.gethostbyname", return_value="127.0.0.1"):
-    from ipc.tcp_client import _iter_framed_blocks as client_iter_framed_blocks
-    from ipc.tcp_server import _iter_framed_blocks as server_iter_framed_blocks
+    from sdk.ipc.tcp_client import _iter_framed_blocks as client_iter_framed_blocks
+    from sdk.ipc.tcp_server import _iter_framed_blocks as server_iter_framed_blocks
 
 
 def collect_frames(iter_blocks, payload_size, max_block_size):

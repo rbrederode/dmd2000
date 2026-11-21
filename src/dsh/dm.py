@@ -20,23 +20,23 @@ from dsh.drivers.driver import DishDriver
 from dsh.drivers.drift.drift_driver import DriftDriver
 from dsh.drivers.md01.md01_driver import MD01Driver
 from dsh.drivers.motion.motion_driver import MotionDriver
-from env.app import App
-from ipc.message import APIMessage
-from ipc.action import Action
-from ipc.message import AppMessage
-from ipc.tcp_client import TCPClient
-from ipc.tcp_server import TCPServer
-from models.comms import CommunicationStatus, InterfaceType
-from models.dsh import DishManagerModel, DriverType, PointingState, DishMode, Capability
-from models.health import HealthState
-from models.oda import ObsList, ScanStore
-from models.target import TargetModel, PointingType
-from models.ws import WeatherData, WeatherStationList
-from util.alarm_rsp_efficiency import get_alarm_rsp_efficiency
-from util import log
-from util.format import fmt_pointing_value
-from util.registry import DISH_DRIVER_NAMESPACE, resolve
-from util.xbase import XBase, XStreamUnableToExtract, XSoftwareFailure, XInvalidTransition
+from sdk.env.app import App
+from sdk.ipc.message import APIMessage
+from sdk.ipc.action import Action
+from sdk.ipc.message import AppMessage
+from sdk.ipc.tcp_client import TCPClient
+from sdk.ipc.tcp_server import TCPServer
+from sdk.models.comms import CommunicationStatus, InterfaceType
+from sdk.models.dsh import DishManagerModel, DriverType, PointingState, DishMode, Capability
+from sdk.models.health import HealthState
+from sdk.models.oda import ObsList, ScanStore
+from sdk.models.target import TargetModel, PointingType
+from sdk.models.ws import WeatherData, WeatherStationList
+from sdk.util.alarm_rsp_efficiency import get_alarm_rsp_efficiency
+from sdk.util import log
+from sdk.util.format import fmt_pointing_value
+from sdk.util.registry import DISH_DRIVER_NAMESPACE, resolve
+from sdk.util.xbase import XBase, XStreamUnableToExtract, XSoftwareFailure, XInvalidTransition
 from web.dish_store import DishProfileStore
 
 logger = logging.getLogger("dsh.dm")

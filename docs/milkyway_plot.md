@@ -3,13 +3,13 @@
 Direct Galactic coordinates, with Jodrell Bank/current UTC defaults:
 
 ```bash
-python -m util.milkyway_plot --galactic 82.2361 -5.6143
+python -m sdk.util.milkyway_plot --galactic 82.2361 -5.6143
 ```
 
 Or specify site and datetime explicitly, using exactly the same flags as LAB:
 
 ```bash
-python -m util.milkyway_plot \
+python -m sdk.util.milkyway_plot \
   --galactic 82.2361 -5.6143 \
   --location 53.234123 -2.305485 77 \
   --dt 2026-10-24T11:25:50Z --no-show
@@ -29,13 +29,13 @@ with metadata IDs. `--location` and `--dt` are available only in direct mode.
 From `src`:
 
 ```bash
-python -m util.milkyway_plot \
+python -m sdk.util.milkyway_plot \
   --dir ~/samples/first_light \
   --obs ODT-2026-10-24T112512Z-dish003-Test \
   --scan ODT-2026-10-24T112512Z-dish003-Test-1-0-0
 ```
 
-The utility shares metadata lookup with `util.lab_profiler`: it uses the
+The utility shares metadata lookup with `sdk.util.lab_profiler`: it uses the
 observation's site, the physical scan's recording midpoint, and RA/Dec (or other
 stored sky coordinates). For fixed pointings, recorded acquisition Alt/Az takes
 precedence over requested Alt/Az. Missing scan errors list the available IDs.
@@ -48,7 +48,7 @@ coordinates, site, datetime, and any observation/scan IDs.
 
 Outputs are saved in `--dir` (current directory by default). Use `--output-dir PATH`
 to save elsewhere and `--no-show` to skip the interactive window. Direct execution
-with `python util/milkyway_plot.py` is also supported.
+with `python sdk/util/milkyway_plot.py` is also supported.
 
 The arrow starts at the Sun and follows Galactic longitude projected onto the
 Galactic plane: 0° points towards the centre, 90° left, 180° down, 270° right.

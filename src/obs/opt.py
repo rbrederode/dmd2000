@@ -11,8 +11,8 @@ from queue import Queue
 import numpy as np
 from astropy.time import Time
 
-from models.obs import ObsModel
-from models.scan import ScanState, ScanType
+from sdk.models.obs import ObsModel
+from sdk.models.scan import ScanState, ScanType
 from sdp.channel_mask import empty_channel_flags, reconstructed_total_power
 try:
     from obs.obs import Observation
@@ -20,7 +20,7 @@ try:
 except ModuleNotFoundError:
     from obs import Observation
     from obs_display import ObsDisplay
-from util.format import fmt_cell, fmt_float, fmt_hyperlink, fmt_target_coords, fmt_title
+from sdk.util.format import fmt_cell, fmt_float, fmt_hyperlink, fmt_target_coords, fmt_title
 
 logger = logging.getLogger(__name__)
 FILTERBANK_STORAGE_DTYPE = np.dtype("float32")
@@ -937,7 +937,7 @@ def process_observation(
     if pipeline_config is None:
         pipeline_factory = Observation.init_pipeline_factory(input_dir=str(config_dir))
     else:
-        from models.pipeline import PipelineConfig
+        from sdk.models.pipeline import PipelineConfig
         from sdp.pipeline.pipeline_factory import ProcessingPipelineFactory
         pipeline_factory = ProcessingPipelineFactory(PipelineConfig.from_dict(pipeline_config))
     observation = Observation.from_disk(

@@ -1,7 +1,7 @@
 import pytest
 
 from dsh.drivers.md01.md01_config import MD01Config
-from util.xbase import XAPIValidationFailed
+from sdk.util.xbase import XAPIValidationFailed
 
 
 def test_md01_config_defaults_include_controller_azimuth_range():

@@ -6,9 +6,9 @@ import pytest
 from api import protocol as dmd_protocol
 from api import tm_dig
 from dig.dig import Digitiser
-from models.comms import CommunicationStatus
-from models.dig import DigitiserModel
-from models.obs import ObsModel, ObsState, ObsTransition
+from sdk.models.comms import CommunicationStatus
+from sdk.models.dig import DigitiserModel
+from sdk.models.obs import ObsModel, ObsState, ObsTransition
 from tm.tm import TelescopeManager
 
 

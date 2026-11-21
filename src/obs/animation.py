@@ -19,7 +19,7 @@ from astropy.coordinates import AltAz, EarthLocation, SkyCoord, get_body
 from astropy.time import Time
 from astropy.utils import iers
 
-from models.target import PointingType
+from sdk.models.target import PointingType
 from obs.opt import process_observation
 from sdp.channel_mask import (
     DEFAULT_EXCLUDED_FLAGS,

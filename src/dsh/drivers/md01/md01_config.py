@@ -2,8 +2,8 @@ import enum
 from datetime import datetime, timezone
 from schema import Schema, And, Or, Use, SchemaError
 
-from models.base import BaseModel
-from util.xbase import XInvalidTransition, XAPIValidationFailed, XSoftwareFailure
+from sdk.models.base import BaseModel
+from sdk.util.xbase import XInvalidTransition, XAPIValidationFailed, XSoftwareFailure
 
 class MD01Config(BaseModel):
     """A class representing the configuration for an MD-01 dish driver."""

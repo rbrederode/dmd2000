@@ -12,7 +12,7 @@ matplotlib.use("Agg")
 from matplotlib import pyplot as plt
 from matplotlib.text import Annotation
 
-from util import milkyway_plot as plotter
+from sdk.util import milkyway_plot as plotter
 from obs import obs_pointing
 
 
@@ -59,7 +59,7 @@ def test_galactic_pole_has_no_misleading_plane_direction(tmp_path, monkeypatch):
 
 
 def test_direct_options_match_lab_profiler_defaults_and_utc_handling():
-    from util import lab_profiler
+    from sdk.util import lab_profiler
 
     now = datetime(2026, 10, 25, 12, tzinfo=timezone.utc)
     for options in (["--galactic", "442.2361", "-5.6143"],

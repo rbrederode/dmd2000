@@ -4,7 +4,7 @@ from unittest import mock
 import pytest
 
 from dsh.drivers.driver import DishDriver
-from models.dsh import DishMode, DishModel, PointingState
+from sdk.models.dsh import DishMode, DishModel, PointingState
 
 
 def make_driver(mode):

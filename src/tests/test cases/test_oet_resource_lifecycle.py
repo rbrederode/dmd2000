@@ -3,14 +3,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from env.events import ObsEvent, TimerEvent
-from ipc.action import Action
-from models.app import AppModel
-from models.comms import CommunicationStatus
-from models.dsh import Capability, DishMode
-from models.health import HealthState
-from models.obs import ObsModel, ObsState, ObsTransition
-from models.tm import Allocation, AllocationState, ResourceAllocations, ResourceType
+from sdk.env.events import ObsEvent, TimerEvent
+from sdk.ipc.action import Action
+from sdk.models.app import AppModel
+from sdk.models.comms import CommunicationStatus
+from sdk.models.dsh import Capability, DishMode
+from sdk.models.health import HealthState
+from sdk.models.obs import ObsModel, ObsState, ObsTransition
+from sdk.models.tm import Allocation, AllocationState, ResourceAllocations, ResourceType
 from obs.oet import ObservationExecutionTool
 from tm.tm import TelescopeManager
 
@@ -235,7 +235,7 @@ def test_start_timer_queues_each_due_observation_once_and_schedules_the_next():
 
 def test_abort_cleanup_sends_standby_and_clear_despite_stale_cached_state():
     from unittest.mock import Mock
-    from models.dsh import DishModel
+    from sdk.models.dsh import DishModel
 
     observation = SimpleNamespace(obs_id='obs-abort-race',dsh_id='dish001')
     # The target command is still in flight: TM has not seen its response.

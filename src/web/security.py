@@ -19,7 +19,7 @@ from flask_wtf.csrf import generate_csrf, CSRFError
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from sqlalchemy.exc import IntegrityError
-from util.version import get_version_info
+from sdk.util.version import get_version_info
 
 DEFAULT_STATE_DIR = Path.home() / '.local' / 'share' / 'dmd2000' / 'web'
 ROLES = ('viewer', 'operator', 'admin')

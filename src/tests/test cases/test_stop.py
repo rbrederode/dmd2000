@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from util import stop
+from sdk.util import stop
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -17,7 +17,7 @@ def test_build_stop_command_uses_profile_dm_endpoint():
     assert command == [
         sys.executable,
         "-m",
-        "util.cmd_app",
+        "sdk.util.cmd_app",
         "--host",
         "127.0.0.1",
         "--port",
@@ -63,5 +63,5 @@ def test_print_command_does_not_send_stop(monkeypatch, capsys):
     ]) == 0
 
     output = capsys.readouterr().out
-    assert "-m util.cmd_app" in output
+    assert "-m sdk.util.cmd_app" in output
     assert output.rstrip().endswith("stop dish001")

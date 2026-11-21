@@ -11,16 +11,16 @@ from api.api import API
 from api import protocol as dmd_protocol
 from api.cmd_api import CommandAPI
 from api.cmd_registry import CommandRegistry
-from env.app import App, _should_manage_trace_archives
-from env.app_processor import AppProcessor
-from env.processor import Processor
-from env.events import ConnectEvent, DataEvent, DisconnectEvent
-from ipc.action import Action
-from ipc.message import APIMessage
+from sdk.env.app import App, _should_manage_trace_archives
+from sdk.env.app_processor import AppProcessor
+from sdk.env.processor import Processor
+from sdk.env.events import ConnectEvent, DataEvent, DisconnectEvent
+from sdk.ipc.action import Action
+from sdk.ipc.message import APIMessage
 from dsh.drivers.md01.md01_msg import MD01Msg
-from models.app import AppModel
-from models.comms import InterfaceType
-from util.html_trace import HTMLTrace
+from sdk.models.app import AppModel
+from sdk.models.comms import InterfaceType
+from sdk.util.html_trace import HTMLTrace
 
 
 class PassthroughAPI(API):
@@ -287,7 +287,7 @@ def test_app_registers_command_server_as_cmd_interface():
         def stop(self):
             self.stopped = True
 
-    with mock.patch("env.app.TCPServer", FakeTCPServer):
+    with mock.patch("sdk.env.app.TCPServer", FakeTCPServer):
         app.start_cmd_server()
         api, endpoint, interface_type = app.get_interface(dmd_protocol.CMD)
 
@@ -651,7 +651,7 @@ def test_html_trace_retention_counts_compressed_archives(tmp_path):
 
 
 def test_html_trace_archive_manager_thread_is_optional(tmp_path):
-    with mock.patch("util.html_trace.threading.Thread") as thread_class:
+    with mock.patch("sdk.util.html_trace.threading.Thread") as thread_class:
         HTMLTrace(tmp_path, "dm", "v1", manage_trace_archives=False)
         thread_class.assert_not_called()
 
@@ -666,7 +666,7 @@ def test_html_trace_compression_failure_restores_original_archive(tmp_path):
     archive.write_text("keep me", encoding="utf-8")
     trace = HTMLTrace(tmp_path, "tm", "v1", server_name="host")
 
-    with mock.patch("util.html_trace.shutil.copyfileobj", side_effect=OSError("disk full")):
+    with mock.patch("sdk.util.html_trace.shutil.copyfileobj", side_effect=OSError("disk full")):
         with pytest.raises(OSError, match="disk full"):
             trace._compress_archive(archive)
 
@@ -728,8 +728,8 @@ def test_application_trace_files_use_entity_ids(tmp_path, monkeypatch, app_name,
                 self.trace.stop()
 
     monkeypatch.setattr('sys.argv', ['trace-test'] + (['--entity_id', entity_id] if entity_id is not None else []))
-    monkeypatch.setattr('env.app.log.repo_logs_dir', str(tmp_path))
-    monkeypatch.setattr('env.app._should_manage_trace_archives', lambda *args: False)
+    monkeypatch.setattr('sdk.env.app.log.repo_logs_dir', str(tmp_path))
+    monkeypatch.setattr('sdk.env.app._should_manage_trace_archives', lambda *args: False)
     monkeypatch.setattr(App, 'start_timer_manager', lambda self: None)
     monkeypatch.setattr(App, 'report_availability', lambda self: None)
     monkeypatch.setattr(App, 'get_availability_logger', lambda self: mock.Mock())

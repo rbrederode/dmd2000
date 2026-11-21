@@ -5,8 +5,8 @@ from pathlib import Path
 import re
 import threading
 
-from models.launch import load_scan_store_dir
-from util.log_config import load_log_dir, resolve_log_dir
+from sdk.models.launch import load_scan_store_dir
+from sdk.util.log_config import load_log_dir, resolve_log_dir
 
 
 class ProfileError(Exception):

@@ -2,7 +2,7 @@ import logging
 import threading
 from unittest.mock import Mock
 
-from util.log import AppRoutingHandler, get_current_app, set_current_app
+from sdk.util.log import AppRoutingHandler, get_current_app, set_current_app
 
 
 def _record() -> logging.LogRecord:

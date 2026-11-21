@@ -4,9 +4,9 @@ import socket
 from datetime import timezone
 from unittest import mock
 
-from ipc.tcp_client import TCPClient
-from ipc.tcp_server import TCPServer
-from util.timer import Timer
+from sdk.ipc.tcp_client import TCPClient
+from sdk.ipc.tcp_server import TCPServer
+from sdk.util.timer import Timer
 
 
 class FakeSocket:
@@ -53,7 +53,7 @@ def test_nonblocking_connect_uses_so_error_instead_of_connecting_twice():
     client = make_client(fake_socket)
 
     with mock.patch(
-        "ipc.tcp_client.select.select",
+        "sdk.ipc.tcp_client.select.select",
         return_value=([], [fake_socket], []),
     ):
         result = client.connect()
@@ -70,7 +70,7 @@ def test_failed_connect_destroys_socket_and_schedules_one_retry():
     client = make_client(fake_socket)
 
     with mock.patch(
-        "ipc.tcp_client.select.select",
+        "sdk.ipc.tcp_client.select.select",
         return_value=([], [fake_socket], []),
     ):
         result = client.connect()
@@ -98,7 +98,7 @@ def test_stale_disconnect_does_not_close_newer_socket():
 
 def test_reply_for_old_socket_is_not_sent_on_reconnected_client():
     from types import SimpleNamespace
-    from ipc.message import Message
+    from sdk.ipc.message import Message
 
     current_socket = mock.Mock()
     current_socket.fileno.return_value = 42

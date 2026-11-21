@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from models.comms import CommunicationStatus
-from util.xbase import XSoftwareFailure
+from sdk.models.comms import CommunicationStatus
+from sdk.util.xbase import XSoftwareFailure
 
 import logging
 

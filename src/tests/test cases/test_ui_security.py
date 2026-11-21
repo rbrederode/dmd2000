@@ -52,7 +52,7 @@ def test_private_pages_and_apis_require_login_and_native_form_csrf(secured):
     assert client.get('/api/auth/me').status_code == 401
     identity, _ = login(client)
     assert identity['username'] == 'admin' and identity['can_manage_users']
-    from util.version import get_version_info
+    from sdk.util.version import get_version_info
     assert identity['version'] == get_version_info()
     assert 'password' not in identity and 'fs_uniquifier' not in identity
     assert client.get('/').status_code == 200

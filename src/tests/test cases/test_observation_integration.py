@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from models.pipeline import PipelineConfig, StepConfig, StepType
+from sdk.models.pipeline import PipelineConfig, StepConfig, StepType
 from obs.obs import Observation
 from sdp.channel_mask import ChannelFlag, empty_channel_flags
 from sdp.pipeline.pipeline_factory import ProcessingPipelineFactory

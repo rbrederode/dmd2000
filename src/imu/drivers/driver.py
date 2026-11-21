@@ -3,9 +3,9 @@ import logging
 import threading
 from typing import Callable, Optional
 
-from models.comms import CommunicationStatus
-from models.imu import IMUData, IMUDeviceModel, IMUDriverType
-from util.registry import (
+from sdk.models.comms import CommunicationStatus
+from sdk.models.imu import IMUData, IMUDeviceModel, IMUDriverType
+from sdk.util.registry import (
     IMU_DRIVER_NAMESPACE,
     get as registry_get,
     load_class_from_path as registry_load_class_from_path,

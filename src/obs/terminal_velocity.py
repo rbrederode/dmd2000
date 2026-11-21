@@ -9,7 +9,7 @@ TERMINAL_METHODS = {"threshold": "Threshold edge", "connected": "Connected edge"
 
 def measure_terminal_velocity(record, method, vmin=None, vmax=None):
     """Apply an existing positive-edge estimator with the aggregate's QA policy."""
-    from util.lab_profiler import (estimate_terminal_velocity, estimate_connected_terminal_velocity,
+    from sdk.util.lab_profiler import (estimate_terminal_velocity, estimate_connected_terminal_velocity,
                                    fit_terminal_erfc)
     if method not in TERMINAL_METHODS:
         raise ValueError("Unsupported terminal velocity method")
@@ -38,7 +38,7 @@ def annotate_terminal_velocity(axis, measurement, *, amplitude_scale=1.):
     if value is not None and status in ('detected', 'fitted'):
         text = f"Terminal velocity ({method}): {value:+.2f} km/s LSRK"
         if status == 'fitted':
-            from util.lab_profiler import erfc_edge
+            from sdk.util.lab_profiler import erfc_edge
             text += f" ± {measurement['velocity_formal_error_kms']:.2f} (formal)"
             sample = np.linspace(*measurement['sampled_range_kms'], 300)
             axis.plot(sample, amplitude_scale * erfc_edge(sample, measurement['baseline'],

@@ -5,7 +5,7 @@ import astropy.units as u
 import numpy as np
 from astropy.coordinates import EarthLocation, SkyCoord
 
-from models.target import PointingType
+from sdk.models.target import PointingType
 from obs.animation import (
     AnimationFrame,
     _bandpass_regions,

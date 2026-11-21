@@ -10,14 +10,14 @@ import math
 from pathlib import Path
 
 from api.cmd_registry import CommandRegistry, DEFAULT_COMMAND_CONFIG
-from env.events import ResponseEvent
-from models.dig import DigitiserList, DigitiserModel
-from models.dsh import DishManagerModel
-from models.sdp import ScienceDataProcessorModel
-from models.tm import TelescopeManagerModel
-from models.ws import WeatherStationModel
-from models.web import WebServerModel
-from util import cmd_app
+from sdk.env.events import ResponseEvent
+from sdk.models.dig import DigitiserList, DigitiserModel
+from sdk.models.dsh import DishManagerModel
+from sdk.models.sdp import ScienceDataProcessorModel
+from sdk.models.tm import TelescopeManagerModel
+from sdk.models.ws import WeatherStationModel
+from sdk.models.web import WebServerModel
+from sdk.util import cmd_app
 
 
 logger = logging.getLogger(__name__)

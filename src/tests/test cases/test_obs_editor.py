@@ -7,11 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from models.obs import ObsModel, ObsState
-from models.scan import ScanModel, ScanState, ScanType
-from models.target import TargetModel, TargetConfig, TargetScanSet
+from sdk.models.obs import ObsModel, ObsState
+from sdk.models.scan import ScanModel, ScanState, ScanType
+from sdk.models.target import TargetModel, TargetConfig, TargetScanSet
 from obs.editor import Editor, EditError, main
-from util import gen_file_prefix
+from sdk.util import gen_file_prefix
 
 
 def write_json(path, data):

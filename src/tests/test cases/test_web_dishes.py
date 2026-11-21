@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from models.dsh import DishList, DishModel
+from sdk.models.dsh import DishList, DishModel
 from web.dish_store import DishProfileStore
 
 
@@ -162,7 +162,7 @@ def test_concurrent_creates_do_not_overwrite_each_other(dish_api):
 
 
 def add_profile(path, name, store):
-    from models.launch import LaunchConfigModel
+    from sdk.models.launch import LaunchConfigModel
     directory = path.parent.parent / name
     directory.mkdir()
     (directory / 'LaunchConfig.json').write_text(json.dumps(
@@ -185,7 +185,7 @@ def test_profile_list_switch_updates_dishes_and_observation_default(dish_api, tm
     assert {item['profile'] for item in listing.json['payload']['profiles']} == {'test', 'second'}
     assert client.put('/api/profile', headers=headers, json={'profile': 'second'}).status_code == 200
     active = client.get('/api/profile', headers=headers).json['payload']
-    from util.log_config import resolve_log_dir
+    from sdk.util.log_config import resolve_log_dir
     assert active == {'profile': 'second', 'scan_store_dir': str(archive), 'log_dir': str(resolve_log_dir())}
     dishes = client.get('/api/dishes', headers=headers).json['payload']
     assert dishes['profile'] == 'second'

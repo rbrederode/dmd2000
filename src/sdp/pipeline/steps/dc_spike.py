@@ -2,7 +2,7 @@ import numpy as np
 import logging
 from typing import Any, List, Dict
 
-from models.pipeline import StepConfig, StepType
+from sdk.models.pipeline import StepConfig, StepType
 from sdp.pipeline.pipeline_factory import ProcessingStep, ProcessingPipeline
 
 logger = logging.getLogger(__name__)
@@ -79,7 +79,7 @@ def main():
     sky_q = Queue()   # Set the sky queue in the pipeline factory to None
     cal_q = Queue()   # Set the calibration queue in the pipeline factory to None
 
-    from models.scan import ScanModel, ScanState
+    from sdk.models.scan import ScanModel, ScanState
     from datetime import datetime, timezone
 
     scan001 = ScanModel(

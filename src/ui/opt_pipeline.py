@@ -1,5 +1,5 @@
 """Validate and snapshot per-run pipeline settings without changing profiles."""
-from models.pipeline import PipelineConfig, StepConfig, StepType
+from sdk.models.pipeline import PipelineConfig, StepConfig, StepType
 from ui.pipeline_help import step_help
 
 

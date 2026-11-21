@@ -11,9 +11,9 @@ SRC_DIR = Path(__file__).resolve().parents[2]
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from models.comms import CommunicationStatus
+from sdk.models.comms import CommunicationStatus
 from sdr.sdr import SDR, DEFAULT_READ_SIZE
-from util.xbase import XHardwareFailure
+from sdk.util.xbase import XHardwareFailure
 
 import logging
 

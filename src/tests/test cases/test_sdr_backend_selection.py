@@ -2,11 +2,11 @@ import pytest
 import numpy as np
 import time
 
-from models.dig import DigitiserModel
-from models.comms import CommunicationStatus
+from sdk.models.dig import DigitiserModel
+from sdk.models.comms import CommunicationStatus
 from sdr.facade import SDR as ThreadedSDR
 from sdr.sdr import SDR, _normalise_sdr_type
-from util.xbase import XSoftwareFailure
+from sdk.util.xbase import XSoftwareFailure
 
 
 def test_digitiser_model_defaults_to_rtlsdr_backend():
@@ -189,7 +189,7 @@ def test_gqrxraw_driver_metadata_follows_sample_cursor_not_call_time(tmp_path, m
 def test_stream_driver_reads_from_ring_buffer_with_measured_metadata(
     monkeypatch, sdr_type, driver_attribute, expected_backend
 ):
-    from models.comms import CommunicationStatus
+    from sdk.models.comms import CommunicationStatus
 
     class FakeDriver:
         def __init__(self, bias_t_enabled=False, sdr_config=None):
@@ -261,7 +261,7 @@ def test_stream_driver_reads_from_ring_buffer_with_measured_metadata(
 
 
 def test_rtlstream_auto_gain_calls_hold_driver_lock(monkeypatch):
-    from models.comms import CommunicationStatus
+    from sdk.models.comms import CommunicationStatus
 
     class FakeRTLSDR:
         def __init__(self, bias_t_enabled=False, sdr_config=None):
@@ -324,7 +324,7 @@ def test_rtlstream_auto_gain_calls_hold_driver_lock(monkeypatch):
 
 
 def test_airstream_driver_can_configure_ring_after_sample_rate_is_set(monkeypatch):
-    from models.comms import CommunicationStatus
+    from sdk.models.comms import CommunicationStatus
 
     class FakeAirspy:
         def __init__(self, bias_t_enabled=False, sdr_config=None):
@@ -385,7 +385,7 @@ def test_airstream_driver_can_configure_ring_after_sample_rate_is_set(monkeypatc
 
 
 def test_stream_reset_discards_buffered_samples_and_restarts_at_live_edge(monkeypatch):
-    from models.comms import CommunicationStatus
+    from sdk.models.comms import CommunicationStatus
 
     class FakeRTLSDR:
         def __init__(self, bias_t_enabled=False, sdr_config=None):

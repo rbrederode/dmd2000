@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from models.pipeline import PipelineConfig
+from sdk.models.pipeline import PipelineConfig
 from sdp.sdp import SDP
 
 

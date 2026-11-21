@@ -13,8 +13,8 @@ import sys
 import termios
 import tty
 
-from models.comms import CommunicationStatus
-from util.xbase import XSoftwareFailure, XHardwareFailure
+from sdk.models.comms import CommunicationStatus
+from sdk.util.xbase import XSoftwareFailure, XHardwareFailure
 
 import logging
 logger = logging.getLogger(__name__)

@@ -6,9 +6,9 @@ from pathlib import Path
 
 import numpy as np
 
-from models.comms import CommunicationStatus
-from util.format import fmt_bool
-from util.xbase import XHardwareFailure, XSoftwareFailure
+from sdk.models.comms import CommunicationStatus
+from sdk.util.format import fmt_bool
+from sdk.util.xbase import XHardwareFailure, XSoftwareFailure
 
 import logging
 

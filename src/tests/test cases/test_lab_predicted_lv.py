@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from astropy.io import fits
 
-from util import lab_profiler as lab
+from sdk.util import lab_profiler as lab
 
 
 @pytest.fixture

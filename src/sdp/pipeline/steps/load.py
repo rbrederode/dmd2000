@@ -4,8 +4,8 @@ import time
 from queue import Queue
 from typing import Any, List, Dict
 
-from models.pipeline import StepConfig, StepType
-from models.scan import ScanType, ScanState
+from sdk.models.pipeline import StepConfig, StepType
+from sdk.models.scan import ScanType, ScanState
 from sdp.channel_mask import ChannelFlag, empty_channel_flags
 from sdp.pipeline.pipeline_factory import ProcessingStep, ProcessingPipeline
 
@@ -179,7 +179,7 @@ def main():
     sky_q = Queue()   # Set the sky queue in the pipeline factory to None
     cal_q = Queue()   # Set the calibration queue in the pipeline factory to None
 
-    from models.scan import ScanModel, ScanState
+    from sdk.models.scan import ScanModel, ScanState
     from datetime import datetime, timezone
 
     scan001 = ScanModel(

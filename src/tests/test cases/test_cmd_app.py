@@ -3,7 +3,7 @@ import pytest
 from api import protocol as dmd_protocol
 from api.cmd_api import ACTION_CODE_COMMAND, CommandAPI
 from api.cmd_registry import CommandRegistry
-from util.cmd_app import build_arg_parser, construct_request, normalise_command_config
+from sdk.util.cmd_app import build_arg_parser, construct_request, normalise_command_config
 
 
 @pytest.mark.parametrize('mode, expected_status', [
@@ -11,7 +11,7 @@ from util.cmd_app import build_arg_parser, construct_request, normalise_command_
 ])
 def test_main_delivers_response_to_in_process_caller_and_cleans_up(monkeypatch, mode, expected_status):
     from unittest.mock import Mock
-    from util import cmd_app
+    from sdk.util import cmd_app
 
     real_driver = cmd_app.CommandUtilityDriver
     drivers = []

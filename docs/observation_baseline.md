@@ -3,7 +3,7 @@
 The LSRK plot produced by `obs/opt.py` and `ObsDisplay.display_lsr()`
 subtracts an independent baseline for every aggregated target/frequency scan.
 OPT and the LAB profiler use the same automatic selection and fitting helpers:
-`util.convert.select_baseline_windows()` and `sdp.spectral_baseline.subtract_baseline()`.
+`sdk.util.convert.select_baseline_windows()` and `sdp.spectral_baseline.subtract_baseline()`.
 
 | Setting | OPT and LAB profiler |
 |---|---|
@@ -38,8 +38,8 @@ frequency-domain plots and integrated-power products are unchanged.
 
 From the repository root, the processing tool can be run as
 `PYTHONPATH=src python -m obs.opt --obs OBS_ID --dir DIRECTORY --profile PROFILE`.
-Use the repository root as the working directory; launching the module from
-`src/util` can make `util.py` shadow the `util` package.
+Use the repository root as the working directory and keep `src` on the Python
+path so both SDK and application packages can be imported.
 Automatic baseline windows require no additional options. To expand the
 LSRK plot and automatic baseline selection to +/-250 km/s, use:
 
@@ -189,7 +189,7 @@ instead pass `fit_line_free=True` to enable the clipped line-free fit described
 above. Calling the subtraction helper alone does not select windows:
 
 ```python
-from util.convert import select_baseline_windows
+from sdk.util.convert import select_baseline_windows
 from sdp.spectral_baseline import subtract_baseline
 
 windows = select_baseline_windows(velocity, power, -250, 250)
@@ -266,7 +266,7 @@ Enter prompt. Loading a new scan set clears the prepared LSRK data.
 
 The L–V view uses the same white/blue palette and thin magenta contour style
 as `lab_profiler --lv --lv-style reference`. The shared palette is defined in
-`util.lv_plot`. The asinh transition width is 10% of the common positive
+`sdk.util.lv_plot`. The asinh transition width is 10% of the common positive
 maximum, analogous to a 10 K transition for a 100 K LAB display. The mapping
 changes colours only; no column is normalized and no measured power is scaled.
 OPT uses longitude increasing towards the left, signed longitude labels and

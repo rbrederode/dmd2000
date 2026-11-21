@@ -11,17 +11,17 @@ from unittest.mock import Mock
 import pytest
 
 from api.tm_web import TM_WEB, configuration_request, configuration_response
-from env.app import App
-from env.app_processor import AppProcessor
-from env.events import CallbackEvent, ConfigEvent, ResponseEvent, TimerEvent
-from ipc.action import Action
-from models.app import AppModel
-from models.comms import CommunicationStatus
-from models.telescope import TelescopeModel
-from models.web import WebServerModel
+from sdk.env.app import App
+from sdk.env.app_processor import AppProcessor
+from sdk.env.events import CallbackEvent, ConfigEvent, ResponseEvent, TimerEvent
+from sdk.ipc.action import Action
+from sdk.models.app import AppModel
+from sdk.models.comms import CommunicationStatus
+from sdk.models.telescope import TelescopeModel
+from sdk.models.web import WebServerModel
 from tm.tm import TelescopeManager
-from util.timer import Timer, TimerManager
-from util.xbase import XAPIValidationFailed
+from sdk.util.timer import Timer, TimerManager
+from sdk.util.xbase import XAPIValidationFailed
 from web.web import WebServer, HTTPConfigRequest, TIMER_PREFIX
 
 
@@ -407,9 +407,9 @@ def test_real_web_application_http_tcp_config_completion_timeout_and_shutdown(tm
     import subprocess
     import sys
     import requests
-    from env.events import DataEvent
-    from ipc.tcp_client import TCPClient
-    from models.comms import InterfaceType
+    from sdk.env.events import DataEvent
+    from sdk.ipc.tcp_client import TCPClient
+    from sdk.models.comms import InterfaceType
 
     pytest.importorskip('waitress')
     tm = tm_stub()
@@ -546,7 +546,7 @@ def test_real_web_application_http_tcp_config_completion_timeout_and_shutdown(tm
 
 @pytest.mark.parametrize('kind,operation', [('ObservationDelete','delete'), ('ObservationAbort','abort'), ('ObservationRestart','restart')])
 def test_schedule_control_webhook_routes_to_live_oet(kind, operation):
-    from models.obs import ObsModel
+    from sdk.models.obs import ObsModel
     tm = tm_stub()
     tm.telmodel.oda.obs_store.obs_list.append(ObsModel(obs_id='scheduled'))
     expected = Action()
@@ -582,10 +582,10 @@ def test_schedule_command_reply_requests_immediate_snapshot(timers, kind, status
 
 def test_tm_resync_loads_observatory_attributes_and_retains_them_after_invalid_edit(tmp_path, monkeypatch):
     import json
-    from models.telescope import TelescopeConfig
+    from sdk.models.telescope import TelescopeConfig
     tm = tm_stub()
     tm.get_args = lambda: SimpleNamespace(profile='rotation')
-    from models.ui import UIDriverList
+    from sdk.models.ui import UIDriverList
     monkeypatch.setattr(UIDriverList, 'load_from_disk', staticmethod(lambda **kwargs: UIDriverList()))
     monkeypatch.setattr(type(tm.telmodel.dig_store), 'load_from_disk', staticmethod(lambda **kwargs: tm.telmodel.dig_store))
     loader = TelescopeConfig.load_from_disk

@@ -8,11 +8,11 @@ import pytest
 
 from api import protocol, sdp_dig
 from dig.dig import Digitiser
-from models.comms import CommunicationStatus
-from models.dig import DigitiserModel
+from sdk.models.comms import CommunicationStatus
+from sdk.models.dig import DigitiserModel
 from sdr.drivers import stream
 from sdr.drivers.soapy import SDR as SoapySDR
-from util.xbase import XHardwareFailure
+from sdk.util.xbase import XHardwareFailure
 
 
 class BufferedBackend:
@@ -380,7 +380,7 @@ def test_reset_discards_read_intervals_with_samples(receiver, monkeypatch):
 
 def test_measured_stream_times_reach_sdp_advice_and_saved_scan_metadata(receiver, monkeypatch, tmp_path):
     from datetime import datetime
-    from models.scan import ScanModel
+    from sdk.models.scan import ScanModel
     from obs.scan import Scan
     prepare_ring(receiver, monkeypatch)
     receiver.sample_rate = 8

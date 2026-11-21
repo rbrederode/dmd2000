@@ -8,4 +8,4 @@ cd "$REPO_ROOT"
 
 echo "Using BUILD_NUMBER=$BUILD_NUMBER"
 
-exec python -m util.launch "$@"
+exec python -m sdk.util.launch "$@"

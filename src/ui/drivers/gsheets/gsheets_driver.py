@@ -14,15 +14,15 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import HttpRequest
 
-from models.app import AppModel
-from models.dig import DigitiserModel
-from models.health import HealthState
-from models.comms import CommunicationStatus
-from models.ui import UIDriverType
+from sdk.models.app import AppModel
+from sdk.models.dig import DigitiserModel
+from sdk.models.health import HealthState
+from sdk.models.comms import CommunicationStatus
+from sdk.models.ui import UIDriverType
 from ui.drivers.driver import UIDriver
 from ui.drivers.gsheets.gsheets_model import GSheetConfig
-from util.xbase import XSoftwareFailure
-from util.util import dict_flatten, dict_unflatten
+from sdk.util.xbase import XSoftwareFailure
+from sdk.util.util import dict_flatten, dict_unflatten
 
 logger = logging.getLogger(__name__)
 

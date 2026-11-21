@@ -2,7 +2,7 @@
 
 The external web server (`web.web_server`, port 8000) validates the existing
 `WEBHOOK_SECRET` token or HMAC signature. CMD webhooks now use the target
-application's existing command TCP API through `util.cmd_app`, independently of
+application's existing command TCP API through `sdk.util.cmd_app`, independently of
 TM's embedded HTTP API. DIG, DSH, ODT and OET configuration webhooks use the
 `tm_web` TCP API on TM's `web` interface. Observation listing reads local/shared storage directly in WEB without TM. Keep the tunnel
 pointed at port 8000.
@@ -267,7 +267,7 @@ coordinate their reads with TM's updates.
 
 CMD webhooks wait for the target application's command response. The external
 server dispatches them through `web.cmd_handler.CommandHandler` and
-`util.cmd_app`, using the existing command API and framed TCP transport:
+`sdk.util.cmd_app`, using the existing command API and framed TCP transport:
 
 ```text
 HTTP caller -> web_server -> cmd_handler -> cmd_app -> target command port

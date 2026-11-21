@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from util.matplotlib_window import get_figure_visibility
+from sdk.util.matplotlib_window import get_figure_visibility
 
 
 class FakeQtWindow:

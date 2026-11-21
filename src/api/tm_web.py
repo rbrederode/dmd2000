@@ -4,8 +4,8 @@ from datetime import datetime, timezone
 
 from api.api import API
 from api import protocol
-from ipc.message import APIMessage
-from util.xbase import XAPIValidationFailed, XAPIUnsupportedVersion
+from sdk.ipc.message import APIMessage
+from sdk.util.xbase import XAPIValidationFailed, XAPIUnsupportedVersion
 
 API_VERSION = '1.0'
 PROPERTY_CONFIG = 'config'

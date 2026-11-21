@@ -6,8 +6,8 @@ from typing import Any, Dict
 
 from api.api import API
 import api.protocol as dmd_protocol
-from ipc.message import Message, AppMessage, APIMessage
-from util.xbase import XBase, XStreamUnableToExtract, XStreamUnableToEncode, XAPIValidationFailed, XAPIUnsupportedVersion
+from sdk.ipc.message import Message, AppMessage, APIMessage
+from sdk.util.xbase import XBase, XStreamUnableToExtract, XStreamUnableToEncode, XAPIValidationFailed, XAPIUnsupportedVersion
 
 import logging
 logger = logging.getLogger(__name__)

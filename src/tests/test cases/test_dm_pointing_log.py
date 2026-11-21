@@ -7,11 +7,11 @@ from api import protocol as dmd_protocol
 from api import tm_dm
 from dsh.dm import DM
 from dsh.drivers.driver import DishDriver
-from env.app import App
-from models.dsh import Capability, DishMode, DishModel, PointingState
-from models.health import HealthState
-from util import log
-from util.format import fmt_pointing_value
+from sdk.env.app import App
+from sdk.models.dsh import Capability, DishMode, DishModel, PointingState
+from sdk.models.health import HealthState
+from sdk.util import log
+from sdk.util.format import fmt_pointing_value
 
 
 def test_dedicated_logs_use_repository_log_directory():

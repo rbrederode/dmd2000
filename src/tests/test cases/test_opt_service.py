@@ -6,9 +6,9 @@ import pytest
 from astropy.coordinates import SkyCoord
 from astropy import units as u
 
-from models.obs import ObsModel
-from models.scan import ScanModel, ScanState, ScanType
-from models.target import TargetModel, TargetScanSet
+from sdk.models.obs import ObsModel
+from sdk.models.scan import ScanModel, ScanState, ScanType
+from sdk.models.target import TargetModel, TargetScanSet
 from ui import opt_service as service
 
 
@@ -389,7 +389,7 @@ def test_save_pipeline_validates_and_persists_only_selected_profile(workspace, t
     saved = config_root/'config/rotation/PipelineConfig.json'
     content = saved.read_text()
     assert '[0,10]' in content and '[90,100]' in content
-    from models.pipeline import PipelineConfig
+    from sdk.models.pipeline import PipelineConfig
     from ui.opt_pipeline import editable_pipeline
     assert editable_pipeline(PipelineConfig.load_from_disk(str(saved.parent), saved.name).to_dict()) == pipeline
     assert (config_root/'config/default/PipelineConfig.json').read_bytes() == untouched

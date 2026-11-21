@@ -5,12 +5,12 @@ import pytest
 
 from api import protocol as dmd_protocol
 from api import tm_dm
-from models.dsh import Capability, DishModel, DishMode, PointingState
-from models.obs import ObsState, ObsTransition
-from models.target import PointingType, TargetModel
+from sdk.models.dsh import Capability, DishModel, DishMode, PointingState
+from sdk.models.obs import ObsState, ObsTransition
+from sdk.models.target import PointingType, TargetModel
 from tm.tm import TelescopeManager
 from tm import tm as tm_module
-from ipc.action import Action
+from sdk.ipc.action import Action
 
 
 def make_telescope_manager(dish, observation=None):

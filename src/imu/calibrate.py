@@ -13,8 +13,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from imu.imu import IMU, load_imu_device_list
-from models.imu import IMUDeviceList
-from util.format import fmt_angle
+from sdk.models.imu import IMUDeviceList
+from sdk.util.format import fmt_angle
 
 logger = logging.getLogger(__name__)
 

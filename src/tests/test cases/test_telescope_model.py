@@ -1,10 +1,10 @@
 import pytest
 
-from models.app import AppModel
-from models.dig import DigitiserModel
-from models.telescope import TelescopeModel
-from models.telescope import TelescopeConfig
-from util.xbase import XAPIValidationFailed
+from sdk.models.app import AppModel
+from sdk.models.dig import DigitiserModel
+from sdk.models.telescope import TelescopeModel
+from sdk.models.telescope import TelescopeConfig
+from sdk.util.xbase import XAPIValidationFailed
 
 
 def test_get_app_model_by_name_returns_fixed_application():
@@ -18,7 +18,7 @@ def test_get_app_model_by_name_returns_fixed_application():
 
 def test_observatory_config_loads_attributes_and_reaches_web_snapshot(tmp_path):
     import json
-    from models.base import BaseModel
+    from sdk.models.base import BaseModel
     from web.model_snapshot import telescope_snapshot
     data = dict(_type='TelescopeConfig', name='Test Observatory', latitude=53.234123, longitude=-2.305485, height=77.)
     (tmp_path / 'telescope.json').write_text(json.dumps(data))

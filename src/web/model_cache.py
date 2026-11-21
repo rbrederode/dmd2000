@@ -7,8 +7,8 @@ import time
 from uuid import uuid4
 
 from api import tm_web
-from env.events import ResponseEvent
-from ipc.action import Action
+from sdk.env.events import ResponseEvent
+from sdk.ipc.action import Action
 
 POLL_TIMER = 'web_telescope_model_poll'
 REQUEST_PREFIX = 'web_telescope_model_request:'

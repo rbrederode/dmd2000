@@ -5,7 +5,7 @@ import minimalmodbus
 import pytest
 import serial
 
-from models.ws import WeatherStationDriverType, WeatherStationModel
+from sdk.models.ws import WeatherStationDriverType, WeatherStationModel
 from ws.drivers.modbus import ModbusConfig, ModbusWeatherStationDriver
 
 

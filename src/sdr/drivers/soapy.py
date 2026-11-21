@@ -6,8 +6,8 @@ import math
 import time
 import numpy as np
 
-from models.comms import CommunicationStatus
-from util.xbase import XHardwareFailure, XSoftwareFailure
+from sdk.models.comms import CommunicationStatus
+from sdk.util.xbase import XHardwareFailure, XSoftwareFailure
 
 import logging
 

@@ -1,6 +1,6 @@
 # HI4PI spectrum extraction and fitting
 
-`src/util/hi4pi.py` extracts a Galactic H I spectrum from HI4PI CAR FITS
+`src/sdk/util/hi4pi.py` extracts a Galactic H I spectrum from HI4PI CAR FITS
 cubes. It can either:
 
 1. extract and plot a spectrum at one Galactic position, optionally convolved
@@ -27,7 +27,7 @@ matplotlib
 From the repository root, run it with:
 
 ```bash
-python src/util/hi4pi.py ...
+python src/sdk/util/hi4pi.py ...
 ```
 
 ## Beam convolution
@@ -39,7 +39,7 @@ requested beam must be wider than the native HI4PI beam.
 For example, to produce an approximately 8-degree beam profile:
 
 ```bash
-python src/util/hi4pi.py \
+python src/sdk/util/hi4pi.py \
   --lon 70 \
   --lat 0 \
   --beam 8.0 \
@@ -57,7 +57,7 @@ Single-position extraction is the default when `--sweep` is not supplied.
 `--lon` and `--lat` are Galactic longitude and latitude in degrees.
 
 ```bash
-python src/util/hi4pi.py \
+python src/sdk/util/hi4pi.py \
   --lon 70 \
   --lat 0 \
   --beam 8.0 \
@@ -88,7 +88,7 @@ Use `--cube` once for each local FITS cube. Supplying local cubes prevents the
 utility from downloading them:
 
 ```bash
-python src/util/hi4pi.py \
+python src/sdk/util/hi4pi.py \
   --lon 70 \
   --lat 0 \
   --beam 8.0 \
@@ -99,6 +99,14 @@ python src/util/hi4pi.py \
 If `--cube` is omitted, the utility queries the HI4PI cube catalogue, selects
 nearby CAR tiles, and downloads missing files into `--cache-dir`. The default
 cache directory is `hi4pi_cache` relative to the current working directory.
+
+Catalogue lookup tries the configured Astroquery VizieR server first, then the
+Harvard and IDIA mirrors, with a 30-second request timeout per server. Network
+errors, empty responses and invalid catalogue tables trigger fallback. The
+utility reports each attempted server and includes individual errors if all
+fail. Catalogue mirrors supply the tile index; FITS cube downloads still use
+the CDS archive addresses and can fail independently. Supplying `--cube`
+bypasses both catalogue lookup and downloads.
 
 ## Galactic-coordinate sweep
 
@@ -117,7 +125,7 @@ populated samples are required for the selected target and frequency scan.
 Example for target 5 at nominal Galactic coordinates `(70, 0)`:
 
 ```bash
-python src/util/hi4pi.py \
+python src/sdk/util/hi4pi.py \
   --sweep \
   --file /Users/r.brederode/samples/rotation/ODT-2026-10-27T165909Z-dish003-Rotation_vlsr.csv \
   --target-id 5 \
@@ -228,7 +236,7 @@ dish axis or feed position.
 Show all options with:
 
 ```bash
-python src/util/hi4pi.py --help
+python src/sdk/util/hi4pi.py --help
 ```
 
 ## Interpretation and limitations

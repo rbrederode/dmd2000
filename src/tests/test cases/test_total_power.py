@@ -8,7 +8,7 @@ from matplotlib import pyplot as plt
 import numpy as np
 import pytest
 
-from models.scan import ScanType
+from sdk.models.scan import ScanType
 from obs.total_power import physical_power_records, power_series, timeline_origin, save_total_power, save_power_csv
 
 

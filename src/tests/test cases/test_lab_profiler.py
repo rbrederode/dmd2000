@@ -9,10 +9,10 @@ from astropy.coordinates import SkyCoord
 from astropy import units as u
 from astropy.io import fits
 
-from models.obs import ObsModel
-from models.scan import ScanModel, ScanState, ScanType
-from models.target import TargetModel, TargetScanSet
-from util import lab_profiler as lab
+from sdk.models.obs import ObsModel
+from sdk.models.scan import ScanModel, ScanState, ScanType
+from sdk.models.target import TargetModel, TargetScanSet
+from sdk.util import lab_profiler as lab
 from obs.obs_pointing import get_obs_pointing
 
 
@@ -230,7 +230,7 @@ def test_dt_is_normalised_to_utc(value):
 
 @pytest.mark.parametrize("method", ["none", "constant", "linear"])
 def test_baseline_and_scores_match_hi4pi(method):
-    from util import hi4pi
+    from sdk.util import hi4pi
     velocity = np.linspace(-180., 180., 721)
     temperature = 20 * np.exp(-((velocity - 10) / 20)**2) + 6 * np.exp(-((velocity + 50) / 12)**2)
     power = temperature + 12 - .03 * velocity + .04 * np.sin(velocity)

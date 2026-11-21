@@ -3,8 +3,8 @@ from types import SimpleNamespace
 
 from api import protocol as dmd_protocol
 from api import tm_dm, tm_sdp
-from models.dsh import DishModel
-from models.scan import ScanModel, ScanState
+from sdk.models.dsh import DishModel
+from sdk.models.scan import ScanModel, ScanState
 from tm.tm import TelescopeManager
 
 

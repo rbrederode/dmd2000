@@ -8,8 +8,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from models.dig import DigitiserList, DigitiserModel
-from models.ws import WeatherStation, WeatherStationList
+from sdk.models.dig import DigitiserList, DigitiserModel
+from sdk.models.ws import WeatherStation, WeatherStationList
 from web.resource_store import DigitiserProfileStore, WeatherStationProfileStore
 
 

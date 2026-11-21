@@ -6,7 +6,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 
-from env.events import ResponseEvent
+from sdk.env.events import ResponseEvent
 
 logger = logging.getLogger(__name__)
 

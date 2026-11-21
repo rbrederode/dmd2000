@@ -11,9 +11,9 @@ import sys
 import threading
 import time
 
-from ipc.message import APIMessage
+from sdk.ipc.message import APIMessage
 from imu.imu import IMU, IMUProvider, load_imu_device_list
-from util.format import fmt_angle
+from sdk.util.format import fmt_angle
 
 logging.basicConfig(
     level=logging.INFO,

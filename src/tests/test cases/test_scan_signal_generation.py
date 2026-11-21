@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from models.scan import ScanModel, ScanState, ScanType
+from sdk.models.scan import ScanModel, ScanState, ScanType
 from obs.scan import Scan
 from obs import scan_signal
 

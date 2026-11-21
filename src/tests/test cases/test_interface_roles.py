@@ -1,9 +1,9 @@
 from unittest.mock import Mock
 
-from env.app import App
-from ipc.tcp_client import TCPClient
-from ipc.tcp_server import TCPServer
-from models.app import AppModel
+from sdk.env.app import App
+from sdk.ipc.tcp_client import TCPClient
+from sdk.ipc.tcp_server import TCPServer
+from sdk.models.app import AppModel
 
 
 def test_interface_roles_follow_registered_endpoints_and_roundtrip():

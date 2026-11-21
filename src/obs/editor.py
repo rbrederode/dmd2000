@@ -468,8 +468,8 @@ class Editor:
         data['estimated_observation_duration'] = f'{seconds // 3600:02d}:{seconds // 60 % 60:02d}:{seconds % 60:02d}'
 
     def prepare_files(self):
-        from models.scan import ScanModel
-        from util import gen_file_prefix
+        from sdk.models.scan import ScanModel
+        from sdk.util import gen_file_prefix
 
         owners = {}
         for archive in self.archives.values():
@@ -535,7 +535,7 @@ class Editor:
 
     @staticmethod
     def validate(archive):
-        from models.obs import ObsModel
+        from sdk.models.obs import ObsModel
         keys = [scan_key(scan) for group in archive.data['target_scans'] for scan in group['scans']]
         if len(keys) != len(set(keys)):
             raise EditError('Edit would produce duplicate scan identities')

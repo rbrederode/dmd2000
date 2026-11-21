@@ -5,13 +5,13 @@ import pytest
 
 from api import protocol as protocol
 from api import tm_dig, tm_sdp
-from ipc.action import Action
-from models.app import AppModel
-from models.comms import CommunicationStatus
-from models.dig import DigitiserModel
-from models.obs import ObsModel, ObsState, ObsTransition
-from models.scan import ScanModel
-from models.target import TargetScanSet
+from sdk.ipc.action import Action
+from sdk.models.app import AppModel
+from sdk.models.comms import CommunicationStatus
+from sdk.models.dig import DigitiserModel
+from sdk.models.obs import ObsModel, ObsState, ObsTransition
+from sdk.models.scan import ScanModel
+from sdk.models.target import TargetScanSet
 from tm.tm import TelescopeManager
 
 

@@ -8,9 +8,9 @@ import pytest
 
 from dsh.drivers.driver import DishDriver
 from dsh.dm import DM
-from models.dsh import Capability, DishList, DishManagerModel, DishMode, DishModel, DriverType, PointingState
-from models.ws import WeatherStationList
-from util.xbase import XInvalidTransition, XSoftwareFailure
+from sdk.models.dsh import Capability, DishList, DishManagerModel, DishMode, DishModel, DriverType, PointingState
+from sdk.models.ws import WeatherStationList
+from sdk.util.xbase import XInvalidTransition, XSoftwareFailure
 from web.dish_store import DishProfileStore
 
 

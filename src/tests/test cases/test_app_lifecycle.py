@@ -12,8 +12,8 @@ from unittest import mock
 
 import pytest
 
-from env.app import App
-from models.app import AppModel
+from sdk.env.app import App
+from sdk.models.app import AppModel
 
 
 def lifecycle_app():
@@ -55,7 +55,7 @@ def test_lifecycle_always_cleans_up_and_restores_signal_handlers(failure):
             app.request_stop()
             assert app.wait_for_stop(0)
 
-    with mock.patch("env.app.logging.shutdown", side_effect=lambda: calls.append("logs")):
+    with mock.patch("sdk.env.app.logging.shutdown", side_effect=lambda: calls.append("logs")):
         if failure:
             with pytest.raises(RuntimeError, match=f"{failure} failure"):
                 run()
@@ -68,7 +68,7 @@ def test_lifecycle_always_cleans_up_and_restores_signal_handlers(failure):
 
 def test_keyboard_interrupt_uses_same_cleanup_path():
     app = lifecycle_app()
-    with mock.patch("env.app.logging.shutdown") as shutdown:
+    with mock.patch("sdk.env.app.logging.shutdown") as shutdown:
         with app.running():
             raise KeyboardInterrupt
     assert app.stop_requested
@@ -136,7 +136,7 @@ from pathlib import Path
 import sys
 import threading
 sys.path.insert(0, sys.argv[3])
-from env.app import App
+from sdk.env.app import App
 
 target = logging.FileHandler(sys.argv[2])
 buffer = MemoryHandler(capacity=100, target=target)
@@ -208,7 +208,7 @@ def test_headless_entry_points_use_shared_lifecycle(relative_path, constructor):
         "WebAPIHandler": make_api, "ExitStack": ExitStack,
     }
     exec(compile(ast.Module(body=[main], type_ignores=[]), str(path), "exec"), namespace)
-    with mock.patch("env.app.logging.shutdown") as shutdown:
+    with mock.patch("sdk.env.app.logging.shutdown") as shutdown:
         namespace["main"]()
     app.start.assert_called_once_with()
     app.stop.assert_called_once_with()
@@ -241,7 +241,7 @@ def test_status_thread_exits_on_shutdown_before_cleanup_clears_running(caplog):
         return True
 
     app.wait_for_stop = wait
-    with caplog.at_level('INFO', logger='env.app'):
+    with caplog.at_level('INFO', logger='sdk.env.app'):
         app.run()
     assert app.app_model.app_running  # Main-thread cleanup has not started yet.
     assert waits == [30]
@@ -279,7 +279,7 @@ def test_status_thread_calculates_metrics_at_the_hour_mark():
         return False
 
     app.wait_for_stop = wait
-    with mock.patch('env.app.datetime') as clock:
+    with mock.patch('sdk.env.app.datetime') as clock:
         clock.now.side_effect = [initial + timedelta(seconds=59),
                                  initial + timedelta(seconds=60),
                                  initial + timedelta(seconds=90)]
@@ -298,7 +298,7 @@ def test_status_thread_preserves_pending_update_diagnostics(caplog):
     app.heartbeat = mock.Mock()
     app.report_availability = mock.Mock()
     app.wait_for_stop = lambda timeout: (app.request_stop() or True)
-    with caplog.at_level('INFO', logger='env.app'):
+    with caplog.at_level('INFO', logger='sdk.env.app'):
         app.run()
     assert 'Debug Info' in caplog.text
     assert 'pending for 30000 ms' in caplog.text

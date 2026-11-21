@@ -11,11 +11,11 @@ from pathlib import Path
 from typing import Any, Tuple
 import threading
 
-from models.dsh import DishModel, DriverType, PointingState, Capability, DishMode, Feed, PECModel
-from models.target import TargetModel, PointingType
-from models.health import HealthState
-from util.xbase import XInvalidTransition, XSoftwareFailure, XStreamUnableToExtract, XCommsFailure
-from util import log
+from sdk.models.dsh import DishModel, DriverType, PointingState, Capability, DishMode, Feed, PECModel
+from sdk.models.target import TargetModel, PointingType
+from sdk.models.health import HealthState
+from sdk.util.xbase import XInvalidTransition, XSoftwareFailure, XStreamUnableToExtract, XCommsFailure
+from sdk.util import log
 
 logger = logging.getLogger(__name__)
 

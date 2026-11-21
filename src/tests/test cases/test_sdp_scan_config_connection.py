@@ -2,9 +2,9 @@ from queue import Queue
 import pytest
 from types import SimpleNamespace
 
-from models.comms import CommunicationStatus
-from models.dig import DigitiserList, DigitiserModel
-from models.sdp import ScienceDataProcessorModel
+from sdk.models.comms import CommunicationStatus
+from sdk.models.dig import DigitiserList, DigitiserModel
+from sdk.models.sdp import ScienceDataProcessorModel
 from sdp.sdp import SDP
 
 

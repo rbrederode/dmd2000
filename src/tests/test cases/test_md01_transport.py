@@ -6,8 +6,8 @@ import pytest
 
 from dsh.drivers.md01.md01_driver import MD01Driver
 from dsh.drivers.md01.md01_msg import MD01Msg
-from util.xbase import XTimeoutWaitingForResponse
-from models.dsh import DishModel
+from sdk.util.xbase import XTimeoutWaitingForResponse
+from sdk.models.dsh import DishModel
 
 
 MD01_RESPONSE = bytes.fromhex("57030600000a030600000a20")
@@ -98,7 +98,7 @@ def test_last_successful_communication_records_only_valid_responses(monkeypatch)
 
 def test_motion_network_response_records_last_communication(monkeypatch):
     from dsh.drivers.motion.motion_driver import MotionDriver
-    from ipc.message import APIMessage
+    from sdk.ipc.message import APIMessage
 
     reply = APIMessage(api_version='1.0')
     reply.set_json_api_header(api_version='1.0', dt=datetime.now(timezone.utc),

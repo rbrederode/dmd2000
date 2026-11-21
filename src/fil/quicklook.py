@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 import numpy as np
 
-from models.scan import ScanModel
+from sdk.models.scan import ScanModel
 
 logger = logging.getLogger(__name__)
 

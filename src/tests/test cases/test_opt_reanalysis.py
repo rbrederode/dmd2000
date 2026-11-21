@@ -222,7 +222,7 @@ def test_reanalysis_matches_initial_velocity_csv_and_controls(tmp_path, monkeypa
 def test_reanalysis_refreshes_total_power_from_active_spectral_correction(tmp_path, basis):
     from obs.total_power import save_power_cache, load_power_cache, corrected_power_records
     from sdp.spectral_baseline import subtract_baseline
-    from util.convert import select_baseline_windows
+    from sdk.util.convert import select_baseline_windows
     source, out = tmp_path/'source', tmp_path/'out'
     source.mkdir(); out.mkdir()
     n, rate, centre = 401, 2.4e6, 1420.4e6

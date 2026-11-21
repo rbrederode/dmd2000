@@ -2,7 +2,7 @@
 import os
 
 from api.cmd_registry import CommandRegistry, DEFAULT_COMMAND_CONFIG
-from util.cmd_app import normalise_command_config
+from sdk.util.cmd_app import normalise_command_config
 
 APPLICATIONS = frozenset(('tm', 'dm', 'sdp', 'ws', 'web', 'dig'))
 

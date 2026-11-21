@@ -1,7 +1,7 @@
 """Optional baseline subtraction on calibrated spectra."""
 import numpy as np
 
-from models.scan import ScanType
+from sdk.models.scan import ScanType
 from sdp.channel_mask import valid_channels
 from sdp.pipeline.pipeline_factory import ProcessingStep
 from sdp.spectral_baseline import subtract_baseline

@@ -9,9 +9,9 @@ from unittest.mock import Mock
 import pytest
 
 from api import tm_web
-from env.events import ResponseEvent
-from ipc.message import APIMessage
-from models.telescope import TelescopeModel
+from sdk.env.events import ResponseEvent
+from sdk.ipc.message import APIMessage
+from sdk.models.telescope import TelescopeModel
 from web.model_cache import TelescopeModelCache, POLL_TIMER, REQUEST_PREFIX, POLL_SECONDS
 from web.model_snapshot import telescope_snapshot
 from test_tm_web import tm_stub, web_stub

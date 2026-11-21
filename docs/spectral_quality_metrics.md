@@ -62,7 +62,7 @@ for compatibility; `noise_estimator="median_mad"` identifies their robust scatte
 ## Profiler options and compatibility
 
 `estimate_profile_noise()` and `observation_noise_metrics()` remain importable
-from `util.lab_profiler` and default to the same QA peak-exclusion and median/MAD
+from `sdk.util.lab_profiler` and default to the same QA peak-exclusion and median/MAD
 policy. Their Python arguments include `window_frac`, `smooth_window` and
 `noise_estimator`. The CLI equivalents are `--noise-window-frac`,
 `--noise-smooth-window` and `--noise-estimator`.

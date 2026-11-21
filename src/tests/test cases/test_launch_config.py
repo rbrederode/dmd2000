@@ -1,7 +1,7 @@
 import pytest
 
-from models.launch import LaunchConfigModel, LaunchModel
-from util.launch import resolve_entity_ids
+from sdk.models.launch import LaunchConfigModel, LaunchModel
+from sdk.util.launch import resolve_entity_ids
 
 
 def test_launch_config_loads_jodrell_profile():
@@ -70,7 +70,7 @@ def test_launch_storage_round_trip_and_older_profiles():
 
 @pytest.mark.parametrize('profile', ['local', 'alston', 'gqrx', 'jodrell', 'patio', 'rtlstream', 'solar', 'rotation'])
 def test_profiles_share_storage_instead_of_sdp_launch_argument(profile):
-    from models.launch import load_scan_store_dir
+    from sdk.models.launch import load_scan_store_dir
     config = LaunchConfigModel.load_from_disk(input_dir=f'src/config/{profile}', filename='LaunchConfig.json')
     assert load_scan_store_dir(profile) == config.scan_store_dir
     assert config.scan_store_dir.startswith('~/samples')
@@ -101,7 +101,7 @@ def test_web_reads_profile_default_with_cli_override(monkeypatch, override):
     import sys
     from pathlib import Path
     from web.web import WebServer
-    from models.web import WebServerModel
+    from sdk.models.web import WebServerModel
     argv = ['web', '--profile', 'local']
     if override is not None:
         argv += ['--scan_store_dir', override]

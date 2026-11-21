@@ -6,13 +6,13 @@ import json
 import os
 from datetime import datetime, timezone
 
-from models.pipeline import StepConfig, StepType
-from models.qa import ScanQA, QA
-from models.scan import ScanDataSource, ScanModel, ScanState, ScanType
+from sdk.models.pipeline import StepConfig, StepType
+from sdk.models.qa import ScanQA, QA
+from sdk.models.scan import ScanDataSource, ScanModel, ScanState, ScanType
 from sdp.channel_mask import ChannelFlag, empty_channel_flags, masked_mean
 from sdp.pipeline.steps.dc_spike import DCSpike
-from util import gen_file_prefix
-from util.xbase import XSoftwareFailure 
+from sdk.util import gen_file_prefix
+from sdk.util.xbase import XSoftwareFailure
 
 logger = logging.getLogger(__name__)
 
@@ -1014,7 +1014,7 @@ if __name__ == "__main__":
         print("=" * 150)
 
     def build_test_pipeline_factory():
-        from models.pipeline import PipelineConfig, StepConfig, StepType
+        from sdk.models.pipeline import PipelineConfig, StepConfig, StepType
         from sdp.pipeline.pipeline_factory import ProcessingPipelineFactory
 
         step1 = StepConfig(step=StepType.DC_SPIKE, params={"pipeline": "spr"})

@@ -1,6 +1,6 @@
 # LAB profiles and observation fitting
 
-`src/util/lab_profiler.py` contains the LAB Gaussian extractor, single-profile
+`src/sdk/util/lab_profiler.py` contains the LAB Gaussian extractor, single-profile
 plotting, observation comparison and Galactic offset sweeps. It reads the local Galactic CAR cube (`lab.fit`).
 
 Run from the repository root with Python, NumPy, Astropy and Matplotlib installed.
@@ -44,7 +44,7 @@ names as aliases; those aliases are not LAB profiler options. See
 ## One profile
 
 ```bash
-python src/util/lab_profiler.py \
+python src/sdk/util/lab_profiler.py \
   --lab-fits ~/github/lab-fit/lab.fit \
   --lon 70 --lat 0 --beam 5
 ```
@@ -74,7 +74,7 @@ Longitude wraps to 0–360° and latitude must be within ±90°. Optional site a
 UTC time provide context without changing the survey spectrum:
 
 ```bash
-python src/util/lab_profiler.py \
+python src/sdk/util/lab_profiler.py \
   --galactic 82.2361 -5.6143 \
   --location 53.234123 -2.305485 77 \
   --dt 2026-10-24T11:25:50Z \
@@ -90,7 +90,7 @@ No additional site/time Doppler correction is applied to the LAB LSR channels.
 To obtain the pointing from a recorded physical scan:
 
 ```bash
-python src/util/lab_profiler.py \
+python src/sdk/util/lab_profiler.py \
   --dir ~/samples/rotation \
   --obs OBSERVATION_ID --scan FULL_PHYSICAL_SCAN_ID \
   --beam 5 --no-show
@@ -115,9 +115,9 @@ The LAB survey is described by Kalberla et al. (2005), A&A 440, 775; see the
 ## Compare one observation
 
 ```bash
-python src/util/lab_profiler.py \
+python src/sdk/util/lab_profiler.py \
   --lon 70 --lat 0 --beam 5 \
-  --file src/util/ODT-2026-10-27T165909Z-dish003-Rotation_vlsr.csv \
+  --file src/sdk/util/ODT-2026-10-27T165909Z-dish003-Rotation_vlsr.csv \
   --target-id 5 --freq-scan 0 \
   --output lab_target5.csv
 ```
@@ -129,7 +129,7 @@ and channels are sorted by velocity. At least ten valid samples are required;
 duplicate velocities are rejected.
 
 The numerical helpers are shared with observation velocity plots through
-`util.convert.select_baseline_windows()` and `sdp.spectral_baseline.subtract_baseline()`.
+`sdk.util.convert.select_baseline_windows()` and `sdp.spectral_baseline.subtract_baseline()`.
 Both tools default to clipped outer-window fitting with the same velocity
 bounds; identical inputs and settings therefore use the same baseline. See
 [observation baseline controls](observation_baseline.md) for `obs/opt.py` usage.
@@ -154,7 +154,7 @@ The profiler reads original `calibrated_power`, not OPT's already-corrected
 For a metadata-based sweep using automatic baselines and a connected edge:
 
 ```bash
-python src/util/lab_profiler.py \
+python src/sdk/util/lab_profiler.py \
   --dir ~/samples/rotation \
   --obs ODT-2026-11-08T175906Z-dish003-Rotation \
   --scan ODT-2026-11-08T175906Z-dish003-Rotation-15-0-2 \
@@ -263,9 +263,9 @@ subtract a baseline.
 ## Sweep Galactic offsets
 
 ```bash
-python src/util/lab_profiler.py \
+python src/sdk/util/lab_profiler.py \
   --lab-fits ~/github/lab-fit/lab.fit \
-  --file src/util/ODT-2026-10-27T165909Z-dish003-Rotation_vlsr.csv \
+  --file src/sdk/util/ODT-2026-10-27T165909Z-dish003-Rotation_vlsr.csv \
   --target-id 5 --freq-scan 0 \
   --lon 70 --lat 0 --beam 5 \
   --sweep \
@@ -313,7 +313,7 @@ inferred for the header from the standard `<observation_id>_vlsr.csv` filename.
 ## Python API
 
 ```python
-from util.lab_profiler import LABGaussianExtractor
+from sdk.util.lab_profiler import LABGaussianExtractor
 
 with LABGaussianExtractor("~/github/lab-fit/lab.fit") as extractor:
     velocity_kms, brightness_k = extractor.extract(l=70, b=0, fwhm=5)
@@ -469,7 +469,7 @@ For a 3 m dish with a requested 5-degree Gaussian beam, predict the Galactic
 plane from longitude 30 to 70 degrees in 1-degree steps:
 
 ```bash
-python src/util/lab_profiler.py \
+python src/sdk/util/lab_profiler.py \
   --lv --lv-style reference \
   --lab-fits ~/github/lab-fit/lab.fit \
   --lon 50 --lat 0 \
@@ -577,7 +577,7 @@ a one-longitude map does not have enough columns for contours.
 For a full-longitude prediction comparable in layout to the reference:
 
 ```bash
-python src/util/lab_profiler.py \
+python src/sdk/util/lab_profiler.py \
   --lv --lv-style reference \
   --lon 0 --lat 0 --lon-range "[-180,180,1]" \
   --beam 5 --vmin -160 --vmax 160 \
@@ -677,7 +677,7 @@ terminal-velocity validation. Baseline subtraction remains a separate step.
 For example (replace the CSV path, pointing and fit window for your observation):
 
 ```bash
-python src/util/lab_profiler.py \
+python src/sdk/util/lab_profiler.py \
   --lab-fits ~/github/lab-fit/lab.fit \
   --file observation_vlsr.csv --target-id 3 --freq-scan 0 \
   --lon 50 --lat 0 --beam 5 --sweep \

@@ -9,11 +9,11 @@ from api import protocol as dmd_protocol
 from api import tm_dm
 from dsh.dm import DM
 from dsh.drivers.driver import DishDriver
-from ipc.message import APIMessage
-from models.comms import CommunicationStatus
-from models.dsh import Capability, DishMode, DishModel, PointingState
-from models.target import PointingType, TargetModel
-from util.xbase import XSoftwareFailure
+from sdk.ipc.message import APIMessage
+from sdk.models.comms import CommunicationStatus
+from sdk.models.dsh import Capability, DishMode, DishModel, PointingState
+from sdk.models.target import PointingType, TargetModel
+from sdk.util.xbase import XSoftwareFailure
 
 
 def make_dish_manager():

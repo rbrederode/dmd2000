@@ -3,9 +3,9 @@ from types import MethodType
 from api import protocol as dmd_protocol
 from api import tm_dig
 from dig.dig import Digitiser
-from models.comms import CommunicationStatus
-from models.dig import DigitiserModel
-from util.xbase import XHardwareFailure
+from sdk.models.comms import CommunicationStatus
+from sdk.models.dig import DigitiserModel
+from sdk.util.xbase import XHardwareFailure
 
 
 class AutoGainSdr:

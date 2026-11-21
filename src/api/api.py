@@ -1,4 +1,4 @@
-from util.xbase import XAPIValidationFailed
+from sdk.util.xbase import XAPIValidationFailed
 from typing import Any, Dict
 
 import logging

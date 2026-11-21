@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 from unittest import mock
 
-from models.ws import WeatherStationDriverType, WeatherStationModel
+from sdk.models.ws import WeatherStationDriverType, WeatherStationModel
 from ws.drivers.ads1115 import ADS1115Config, ADS1115WeatherStationDriver
 from ws.drivers.modbus import ModbusConfig, ModbusWeatherStationDriver
 from ws.wind import ADS1115VoltageReader

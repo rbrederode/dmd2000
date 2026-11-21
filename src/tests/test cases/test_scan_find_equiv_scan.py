@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from models.scan import ScanModel, ScanState, ScanType
+from sdk.models.scan import ScanModel, ScanState, ScanType
 from obs.scan import Scan
 
 

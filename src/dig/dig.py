@@ -11,22 +11,22 @@ from gpiozero import LED
 from api import protocol as dmd_protocol
 from api import tm_dig, sdp_dig
 from dig.temp import Temperature
-from env.app import App
-from ipc.message import APIMessage
-from ipc.message import AppMessage
-from ipc.action import Action
-from ipc.tcp_client import TCPClient
-from ipc.tcp_server import TCPServer
-from models.app import AppModel
-from models.base import BaseModel
-from models.comms import CommunicationStatus, InterfaceType
-from models.dig import BandpassFilterType, DigitiserList, DigitiserModel
-from models.health import HealthState
+from sdk.env.app import App
+from sdk.ipc.message import APIMessage
+from sdk.ipc.message import AppMessage
+from sdk.ipc.action import Action
+from sdk.ipc.tcp_client import TCPClient
+from sdk.ipc.tcp_server import TCPServer
+from sdk.models.app import AppModel
+from sdk.models.base import BaseModel
+from sdk.models.comms import CommunicationStatus, InterfaceType
+from sdk.models.dig import BandpassFilterType, DigitiserList, DigitiserModel
+from sdk.models.health import HealthState
 from sdr.facade import SDR
-from util import log, util
-from util.format import fmt_bool
-from util.timer import Timer, TimerManager
-from util.xbase import XStreamUnableToExtract, XSoftwareFailure, XHardwareFailure, XAPIValidationFailed, XInvalidTransition
+from sdk.util import log, util
+from sdk.util.format import fmt_bool
+from sdk.util.timer import Timer, TimerManager
+from sdk.util.xbase import XStreamUnableToExtract, XSoftwareFailure, XHardwareFailure, XAPIValidationFailed, XInvalidTransition
 
 logger = logging.getLogger("dig.dig")
 

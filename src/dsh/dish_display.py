@@ -26,12 +26,12 @@ with warnings.catch_warnings():
     )
     import matplotlib.pyplot as plt
 
-from models.dsh import Capability, DishMode, PointingState
-from util.matplotlib_window import get_figure_visibility
+from sdk.models.dsh import Capability, DishMode, PointingState
+from sdk.util.matplotlib_window import get_figure_visibility
 
 if TYPE_CHECKING:
     from dsh.drivers.driver import DishDriver
-    from models.dsh import DishModel
+    from sdk.models.dsh import DishModel
 
 # Disable automatic window raising (backend-specific)
 mpl.rcParams["figure.raise_window"] = False

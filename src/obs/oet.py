@@ -6,21 +6,21 @@ import logging
 import threading
 import weakref
 
-from env.events import ObsEvent
-from ipc.action import Action
-from models.comms import CommunicationStatus
-from models.dsh import DishManagerModel, DriverType, Feed, Capability, DishMode, PointingState
-from models.health import HealthState
-from models.obs import ObsModel, ObsTransition, ObsState, validate_observation_control
-from models.oda import ODAModel, ObsList, ScanStore
-from models.scan import ScanModel, ScanState
-from models.target import TargetModel, TargetConfig, PointingType
-from models.telescope import TelescopeModel
-from models.tm import ResourceType, AllocationState
-from util import log, util
-from util.format import fmt_duration
-from util.timer import Timer, TimerManager
-from util.xbase import XBase, XStreamUnableToExtract, XSoftwareFailure
+from sdk.env.events import ObsEvent
+from sdk.ipc.action import Action
+from sdk.models.comms import CommunicationStatus
+from sdk.models.dsh import DishManagerModel, DriverType, Feed, Capability, DishMode, PointingState
+from sdk.models.health import HealthState
+from sdk.models.obs import ObsModel, ObsTransition, ObsState, validate_observation_control
+from sdk.models.oda import ODAModel, ObsList, ScanStore
+from sdk.models.scan import ScanModel, ScanState
+from sdk.models.target import TargetModel, TargetConfig, PointingType
+from sdk.models.telescope import TelescopeModel
+from sdk.models.tm import ResourceType, AllocationState
+from sdk.util import log, util
+from sdk.util.format import fmt_duration
+from sdk.util.timer import Timer, TimerManager
+from sdk.util.xbase import XBase, XStreamUnableToExtract, XSoftwareFailure
 
 if TYPE_CHECKING:
     from tm.tm import TelescopeManager

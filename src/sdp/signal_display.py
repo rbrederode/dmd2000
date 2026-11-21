@@ -27,9 +27,9 @@ with warnings.catch_warnings():
     )
     import matplotlib.pyplot as plt
 
-from util import gen_file_prefix
+from sdk.util import gen_file_prefix
 from sdp.display_baseline import DisplayBaseline
-from util.matplotlib_window import get_figure_visibility
+from sdk.util.matplotlib_window import get_figure_visibility
 from sdp.channel_mask import (
     DEFAULT_EXCLUDED_FLAGS,
     ChannelFlag,

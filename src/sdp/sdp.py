@@ -13,27 +13,27 @@ from typing import Any
 
 from api import protocol as dmd_protocol
 from api import sdp_dig, tm_sdp
-from env.app import App
-from ipc.message import APIMessage
-from ipc.action import Action
-from ipc.message import AppMessage
-from ipc.tcp_client import TCPClient
-from ipc.tcp_server import TCPServer
-from models.base import BaseModel
-from models.comms import CommunicationStatus, InterfaceType
-from models.dig import DigitiserModel, DigitiserList
-from models.fil import FilterBank
-from models.health import HealthState
-from models.launch import load_scan_store_dir
-from models.pipeline import StepConfig, StepType, PipelineConfig
-from models.scan import ScanModel, ScanState, ScanType
-from models.sdp import ScienceDataProcessorModel
-from models.target import TargetConfig
+from sdk.env.app import App
+from sdk.ipc.message import APIMessage
+from sdk.ipc.action import Action
+from sdk.ipc.message import AppMessage
+from sdk.ipc.tcp_client import TCPClient
+from sdk.ipc.tcp_server import TCPServer
+from sdk.models.base import BaseModel
+from sdk.models.comms import CommunicationStatus, InterfaceType
+from sdk.models.dig import DigitiserModel, DigitiserList
+from sdk.models.fil import FilterBank
+from sdk.models.health import HealthState
+from sdk.models.launch import load_scan_store_dir
+from sdk.models.pipeline import StepConfig, StepType, PipelineConfig
+from sdk.models.scan import ScanModel, ScanState, ScanType
+from sdk.models.sdp import ScienceDataProcessorModel
+from sdk.models.target import TargetConfig
 from obs.scan import Scan
 from sdp.display_baseline import DisplayBaseline
 from sdp.pipeline.pipeline_factory import ProcessingPipelineFactory
-from util import log, util
-from util.xbase import XBase, XStreamUnableToExtract, XSoftwareFailure, XInvalidTransition
+from sdk.util import log, util
+from sdk.util.xbase import XBase, XStreamUnableToExtract, XSoftwareFailure, XInvalidTransition
 
 #SAMPLES_DIR = '/Volumes/DATA SDD/Alston Radio Telescope/Samples/Home'  # Directory to store samples
 SAMPLES_DIR = '/Users/r.brederode/samples'  # Directory to store samples

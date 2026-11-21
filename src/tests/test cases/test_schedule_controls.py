@@ -5,11 +5,11 @@ from unittest.mock import Mock
 
 import pytest
 
-from env.events import ObsEvent
-from ipc.action import Action
-from models.obs import ObsModel, ObsState, ObsTransition, validate_observation_control
-from models.scan import ScanModel, ScanState
-from models.target import TargetModel, PointingType, OffsetScan
+from sdk.env.events import ObsEvent
+from sdk.ipc.action import Action
+from sdk.models.obs import ObsModel, ObsState, ObsTransition, validate_observation_control
+from sdk.models.scan import ScanModel, ScanState
+from sdk.models.target import TargetModel, PointingType, OffsetScan
 from obs.oet import ObservationExecutionTool
 from ui import opt_service
 

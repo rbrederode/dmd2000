@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from util.convert import subtract_spectrum_baseline
+from sdk.util.convert import subtract_spectrum_baseline
 
 
 @pytest.mark.parametrize("method", ["linear", "constant", "none"])

@@ -7,7 +7,7 @@ matplotlib.use("Agg")
 
 from matplotlib import pyplot as plt
 from sdp.signal_display import SignalDisplay
-from models.scan import ScanType
+from sdk.models.scan import ScanType
 from sdp.channel_mask import ChannelFlag, empty_channel_flags
 
 

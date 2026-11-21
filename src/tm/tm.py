@@ -22,32 +22,32 @@ from googleapiclient.http import HttpRequest
 # Import application modules
 from api import protocol as dmd_protocol
 from api import tm_dig, tm_sdp, tm_dm, tm_ws, tm_web
-from env.app import App
-from env.events import ConnectEvent, DisconnectEvent, DataEvent, ConfigEvent, ObsEvent, ResponseEvent, CallbackEvent
-from ipc.message import AppMessage, APIMessage
-from ipc.action import Action
-from ipc.tcp_client import TCPClient
-from ipc.tcp_server import TCPServer
-from models.base import BaseModel
-from models.comms import CommunicationStatus, InterfaceType
-from models.dig import DigitiserModel
-from models.dsh import DishManagerModel, Feed, Capability, DishMode, PointingState
-from models.fil import FilterBank
-from models.obs import ACTIVE_OBSERVATION_STATES, ObsModel, ObsTransition, ObsState
-from models.oda import ODAModel, ObsList, ScanStore
-from models.health import HealthState
-from models.scan import ScanModel, ScanState
-from models.sdp import ScienceDataProcessorModel
-from models.target import TargetModel, TargetConfig
-from models.telescope import TelescopeModel, TelescopeConfig
-from models.tm import ResourceType, AllocationState, ResourceAllocations, Allocation
-from models.ui import UIDriver, UIDriverType, UIDriverList
-from models.ws import WeatherStationModel, WeatherSummary
-from models.web import WebServerModel
+from sdk.env.app import App
+from sdk.env.events import ConnectEvent, DisconnectEvent, DataEvent, ConfigEvent, ObsEvent, ResponseEvent, CallbackEvent
+from sdk.ipc.message import AppMessage, APIMessage
+from sdk.ipc.action import Action
+from sdk.ipc.tcp_client import TCPClient
+from sdk.ipc.tcp_server import TCPServer
+from sdk.models.base import BaseModel
+from sdk.models.comms import CommunicationStatus, InterfaceType
+from sdk.models.dig import DigitiserModel
+from sdk.models.dsh import DishManagerModel, Feed, Capability, DishMode, PointingState
+from sdk.models.fil import FilterBank
+from sdk.models.obs import ACTIVE_OBSERVATION_STATES, ObsModel, ObsTransition, ObsState
+from sdk.models.oda import ODAModel, ObsList, ScanStore
+from sdk.models.health import HealthState
+from sdk.models.scan import ScanModel, ScanState
+from sdk.models.sdp import ScienceDataProcessorModel
+from sdk.models.target import TargetModel, TargetConfig
+from sdk.models.telescope import TelescopeModel, TelescopeConfig
+from sdk.models.tm import ResourceType, AllocationState, ResourceAllocations, Allocation
+from sdk.models.ui import UIDriver, UIDriverType, UIDriverList
+from sdk.models.ws import WeatherStationModel, WeatherSummary
+from sdk.models.web import WebServerModel
 from obs.oet import ObservationExecutionTool
-from util import log, util
-from util.timer import Timer, TimerManager
-from util.xbase import XBase, XStreamUnableToExtract, XUnknownEntity, XAPIValidationFailed, XSoftwareFailure
+from sdk.util import log, util
+from sdk.util.timer import Timer, TimerManager
+from sdk.util.xbase import XBase, XStreamUnableToExtract, XUnknownEntity, XAPIValidationFailed, XSoftwareFailure
 from .web_api import WebAPIHandler
 
 logger = logging.getLogger("tm.tm")
