@@ -823,7 +823,7 @@ button:disabled { cursor:not-allowed; opacity:.45; }
 .status-detail td { vertical-align:top; overflow-wrap:anywhere; }
 .status-allocations { min-width:800px; }
 .status-last-error { border-left:3px solid var(--danger); padding:10px 12px; background:var(--danger-bg); white-space:pre-wrap; overflow-wrap:anywhere; }
-.status-last-error.is-clear { border-color:var(--success); background:var(--success-bg); }
+.status-last-error.is-clear { border-color:var(--border); background:var(--bg-2); }
 [data-view="status"] .metric-grid { grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); }
 .status-executions { min-width:0; }
 .status-executions ul { list-style:none; padding:0; margin: auto 0 0; max-height:200px; overflow:auto; }

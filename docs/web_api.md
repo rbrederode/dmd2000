@@ -890,7 +890,7 @@ the history view uses scan completion and saved target progress.
 Expanded live and historical observations show their last-error message and UTC
 timestamp above scan progress, using the same presentation as app errors. Older
 records without a saved reason display "No error reported".
-Last-error panels use a green background and border for "No error reported",
+Last-error panels use a neutral grey background and border for "No error reported",
 and red for a reported error, consistently across Status and observation details.
 
 `GET /api/observations/<observation-id>/scans/<target>/<frequency>/<iteration>/spr`

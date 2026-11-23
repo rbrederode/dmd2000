@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Last-error panels in Status and observation Results use a green background and border when no error is reported, retaining red styling for reported errors.
+- Last-error panels in Status and observation Results use a neutral grey background and border when no error is reported, retaining red styling for reported errors.
 
 - Added observation last-error messages and UTC timestamps above scan progress in expanded live and historical observations, using the app last-error styling. Older observations without diagnostics show "No error reported".
 
