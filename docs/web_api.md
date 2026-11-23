@@ -887,6 +887,11 @@ selected storage root and relative `folder` values; it does not accept arbitrary
 collapses duplicate disk IDs to the newest modified copy and loads scans only on
 expansion. Saved execution states do not establish whether recording completed;
 the history view uses scan completion and saved target progress.
+Expanded live and historical observations show their last-error message and UTC
+timestamp above scan progress, using the same presentation as app errors. Older
+records without a saved reason display "No error reported".
+Last-error panels use a green background and border for "No error reported",
+and red for a reported error, consistently across Status and observation details.
 
 `GET /api/observations/<observation-id>/scans/<target>/<frequency>/<iteration>/spr`
 downloads a completed scan's SPR CSV as `text/csv` with an attachment filename.

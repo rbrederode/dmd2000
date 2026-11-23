@@ -1079,6 +1079,8 @@ button:disabled { cursor:not-allowed; opacity:.45; }
 .schedule-toggle:focus-visible { outline:2px solid var(--magenta); outline-offset:4px; border-radius:2px; }
 .schedule-expanded > td { padding:16px 20px; background:var(--bg-1); }
 .schedule-expanded:hover > td { background:var(--bg-1); }
+.schedule-last-error { margin-bottom:16px; }
+.schedule-last-error > h3 { font-size:var(--section-heading-size); margin:0 0 10px; }
 .schedule-scan-heading { display:flex; align-items:center; flex-wrap:wrap; gap:16px; margin-bottom:12px; }
 .schedule-scan-progress { width:220px; max-width:100%; height:8px; accent-color:var(--magenta); }
 .schedule-scan-scroll { max-height:360px; overflow:auto; }

@@ -18,6 +18,43 @@ const model = list => ({ oda: { obs_store: { obs_list: list } } });
 const archive = (item, folder = '.') => ({ ...item, id: item.obs_id, filename: item.obs_id + '-obs.json',
   folder, dish: item.dsh_id, state: item.obs_state, started_at: item.scheduling_block_start, revision: '1' });
 
+test('observation last error uses app styling and UTC timestamp above scan progress', () => {
+  for (const errorTime of ['2026-11-13T14:57:22+01:00', dt('2026-11-13T13:57:22Z')]) {
+    const item = { ...obs('failed', 'ABORTED'), last_error_msg: 'Digitiser dig003: stale samples', last_error_dt: errorTime };
+    const html = rows([item], new Set([item.obs_id]));
+    assert.match(html, /<h3>Last error<span class="status-last-error-time">2026-11-13 13:57:22 UTC<\/span><\/h3>/);
+    assert.match(html, /<div class="status-last-error">Digitiser dig003: stale samples<\/div>/);
+    assert.ok(html.indexOf('schedule-last-error') < html.indexOf('schedule-scan-heading'));
+  }
+});
+
+test('historical scan details display saved errors with safe multiline content', () => {
+  const item = { ...obs('historic'), _history: true, file_key: './historic-obs.json', filename: 'historic-obs.json' };
+  const saved = { ...item, last_error_msg: 'Read failed\n<img src=x onerror=alert(1)> & disconnected', last_error_dt: dt('2026-11-13T13:57:22Z') };
+  const details = new Map([[item.file_key, { observation: saved }]]);
+  const html = rows([item], new Set([item.file_key]), 'history', details);
+  assert.match(html, /Read failed\n&lt;img src=x onerror=alert\(1\)&gt; &amp; disconnected/);
+  assert.doesNotMatch(html, /<img src=x/);
+  assert.ok(html.indexOf('status-last-error-time') < html.indexOf('schedule-scan-heading'));
+  saved.last_error_msg = null;
+  const cleared = rows([item], new Set([item.file_key]), 'history', details);
+  assert.match(cleared, /<div class="status-last-error is-clear">No error reported<\/div>/);
+  assert.doesNotMatch(cleared, /status-last-error-time/);
+});
+
+test('empty and missing scan records still show the observation error panel', () => {
+  const item = obs('empty');
+  item.target_scans = [];
+  assert.match(scanDetails(item), /<div class="status-last-error is-clear">No error reported<\/div>/);
+  assert.doesNotMatch(scanDetails(item), /status-last-error-time/);
+  item.last_error_msg = 'Configuration failed before scanning';
+  const html = scanDetails(item);
+  assert.match(html, /Configuration failed before scanning/);
+  assert.doesNotMatch(html, /status-last-error is-clear/);
+  assert.ok(html.indexOf('schedule-last-error') < html.indexOf('schedule-no-scans'));
+  assert.match(html, /status-last-error-time">—<\/span>/);
+});
+
 test('disk history excludes live IDs, deduplicates copies and sorts newest first', () => {
   const queued = obs('queued'), running = obs('running', 'SCANNING'), finished = obs('finished', 'IDLE');
   finished.tgt_idx = 1;

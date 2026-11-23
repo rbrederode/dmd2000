@@ -93,10 +93,15 @@
     return ['ABORTED', 'FAULT'].includes(saved) ? saved : 'INCOMPLETE';
   }
   function scanDetails(obs, source = {}) {
+    const error = unwrap(obs.last_error_msg);
+    const errorTime = timestamp(obs.last_error_dt);
+    const lastError = '<section class="schedule-last-error"><h3>Last error'
+      + (error ? '<span class="status-last-error-time">' + escape(errorTime) + (errorTime === '—' ? '' : ' UTC') + '</span>' : '')
+      + '</h3><div class="status-last-error' + (error ? '' : ' is-clear') + '">' + escape(error || 'No error reported') + '</div></section>';
     const scans = scansFor(obs);
-    if (!scans.length) return '<p class="zk-muted schedule-no-scans">' + (obs._history ? 'The saved observation contains no scan records.' : 'TM has not prepared the scan list for this observation yet.') + '</p>';
+    if (!scans.length) return lastError + '<p class="zk-muted schedule-no-scans">' + (obs._history ? 'The saved observation contains no scan records.' : 'TM has not prepared the scan list for this observation yet.') + '</p>';
     const finished = scans.filter(({ scan }) => scanState(scan.status) === 'COMPLETE').length;
-    return `<div class="schedule-scan-heading"><strong>Scans</strong><span class="zk-muted">${finished} of ${scans.length} complete</span><progress class="schedule-scan-progress" value="${finished}" max="${scans.length}" aria-label="Scan completion" aria-valuetext="${finished} of ${scans.length} scans complete"></progress></div>`
+    return lastError + `<div class="schedule-scan-heading"><strong>Scans</strong><span class="zk-muted">${finished} of ${scans.length} complete</span><progress class="schedule-scan-progress" value="${finished}" max="${scans.length}" aria-label="Scan completion" aria-valuetext="${finished} of ${scans.length} scans complete"></progress></div>`
       + `<div class="schedule-scan-scroll" tabindex="0" role="region" aria-label="Scans for ${escape(obs.obs_id)}" data-schedule-scan-scroll="${escape(obs.obs_id)}">`
       + '<table class="zk-tbl schedule-scans"><thead><tr><th>Scan<br><small>Target / frequency / iteration</small></th><th>Target</th><th>Type</th><th>Status</th><th>Digitiser</th><th>Frequency [MHz]</th><th>Gain [dB]</th><th>Duration [s]</th><th>First sample (UTC)</th><th>Last sample (UTC)</th><th title="View final-sample signal display">Signal</th><th title="Download completed scan spectrum">SPR</th></tr></thead><tbody>'
       + scans.map(({ scan, targetIndex, current }) => {

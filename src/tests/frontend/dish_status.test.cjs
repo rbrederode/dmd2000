@@ -17,6 +17,21 @@ function fixture(fetcher) {
   control.open('dish002', data);
   return { control, data, dish, win, get: id => get('dish-status-' + id) };
 }
+
+test('dish entity error panel switches between clear and reported-error styles', () => {
+  const { control, data, dish, get } = fixture();
+  const toggles = [];
+  get('error').classList.toggle = (name, enabled) => toggles.push([name, enabled]);
+  dish.last_err_msg = null;
+  control.update(data);
+  assert.equal(get('error').textContent, 'No error reported');
+  assert.equal(get('error-time').textContent, '');
+  assert.deepEqual(toggles.at(-1), ['is-clear', true]);
+  dish.last_err_msg = 'Controller unavailable';
+  control.update(data);
+  assert.equal(get('error').textContent, 'Controller unavailable');
+  assert.deepEqual(toggles.at(-1), ['is-clear', false]);
+});
 test('dish table is alphabetical, has compact diagnostics and escaped engineering fields', () => {
   const { data, dish } = fixture();
   Object.assign(dish, { latitude: 53.187052, longitude: -2.256079, height: 88,

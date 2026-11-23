@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Last-error panels in Status and observation Results use a green background and border when no error is reported, retaining red styling for reported errors.
+
+- Added observation last-error messages and UTC timestamps above scan progress in expanded live and historical observations, using the app last-error styling. Older observations without diagnostics show "No error reported".
+
 - Added `ObsModel.last_error_msg` and `last_error_dt`, carrying originating subsystem, timeout, resource, weather, connection, and operator abort reasons through observation events. Abort diagnostics are saved immediately, retained through repeated aborts/resource release, cleared on accepted reset/restart, and exposed in the historical catalogue. Disk or cleanup failures preserve the original cause and do not discard already-prepared stop actions.
 
 - Clarified that `OffsetScan.rate` is the signed angular scan rate relative to the moving target centre, in degrees per second.

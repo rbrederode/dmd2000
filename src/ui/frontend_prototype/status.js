@@ -269,7 +269,7 @@
     const error = app.last_err_msg || item.model.last_err_msg;
     const errorTime = app.last_err_msg ? app.last_err_dt : item.model.last_err_dt;
     return '<h3>Last error' + (error ? '<span class="status-last-error-time">' + escape(timestamp(errorTime)) + '</span>' : '')
-      + '</h3><div class="status-last-error">' + escape(error || 'No error reported') + '</div>'
+      + '</h3><div class="status-last-error' + (error ? '' : ' is-clear') + '">' + escape(error || 'No error reported') + '</div>'
       + '<div class="status-connection-summary">' + kv([
         ['Interfaces', app.interfaces], ['Command endpoint', endpoint(app.app_cmd_host, app.app_cmd_port)],
       ]) + commandPanel + '</div><div class="status-diagnostics-grid"><section class="status-app-connections"><h3>App Connections</h3><div class="status-table-scroll"><table class="zk-tbl"><thead><tr><th>Peer</th><th title="TCP role of the selected app: a client initiates a connection; a server accepts it. Unknown means the app has not reported its role.">Local role</th><th>Connection</th><th>Endpoint</th></tr></thead><tbody>'

@@ -33,6 +33,24 @@ class Element {
   querySelectorAll() { return []; }
 }
 
+test('app and entity error panels are green only when neither reports an error', () => {
+  for (const type of ['tm', 'dig']) {
+    const item = applications(snapshot().telescope_model).find(item => item.type === type);
+    for (const empty of [null, undefined, '']) {
+      item.app.last_err_msg = empty;
+      item.model.last_err_msg = empty;
+      const html = detail(item);
+      assert.match(html, /<div class="status-last-error is-clear">No error reported<\/div>/);
+      assert.doesNotMatch(html, /status-last-error-time/);
+    }
+    item.model.last_err_msg = 'Entity failure';
+    assert.match(detail(item), /<div class="status-last-error">Entity failure<\/div>/);
+    item.app.last_err_msg = 'Application failure';
+    assert.match(detail(item), /<div class="status-last-error">Application failure<\/div>/);
+    assert.doesNotMatch(detail(item), /status-last-error is-clear/);
+  }
+});
+
 test('model adapter includes every digitiser and WEB and retains zero/false data', () => {
   const items = applications(snapshot().telescope_model);
   assert.deepEqual(items.filter((item) => item.type === 'dig').map((item) => item.id), ['dig001', 'dig003']);
