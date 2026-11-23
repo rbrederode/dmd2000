@@ -146,6 +146,8 @@ class ObsModel(BaseModel):
 
         "start_dt": And(datetime, lambda v: isinstance(v, datetime)),           # Start datetime (UTC) of the observation 
         "end_dt": And(datetime, lambda v: isinstance(v, datetime)),             # End datetime (UTC) of the observation
+        "last_error_msg": Or(None, str),                                      # Reason for the latest accepted abort
+        "last_error_dt": Or(None, datetime),                                  # UTC time when that abort was accepted
 
         # Calibration files to be used by this observation
         "tsys_calibrators": And(list, lambda v: isinstance(v, list)),           # List of *tsys.csv (system temperature calibration) filenames
@@ -203,6 +205,8 @@ class ObsModel(BaseModel):
 
             "start_dt": datetime.now(timezone.utc),
             "end_dt": datetime.now(timezone.utc),
+            "last_error_msg": None,
+            "last_error_dt": None,
             "tsys_calibrators": [],
             "gain_calibrators": [],
             "load_calibrators": [],

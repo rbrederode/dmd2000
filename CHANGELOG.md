@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Added `ObsModel.last_error_msg` and `last_error_dt`, carrying originating subsystem, timeout, resource, weather, connection, and operator abort reasons through observation events. Abort diagnostics are saved immediately, retained through repeated aborts/resource release, cleared on accepted reset/restart, and exposed in the historical catalogue. Disk or cleanup failures preserve the original cause and do not discard already-prepared stop actions.
+
+- Clarified that `OffsetScan.rate` is the signed angular scan rate relative to the moving target centre, in degrees per second.
+
 - Repaired release-test collection by targeting the current Airspy module, IMU server/API, and command-based trace utility. Updated lifecycle and profile assertions for current behaviour, and replaced accidental hardware-benchmark collection with a mocked auto-gain test while retaining the manual benchmark command.
 
 - Clarified the release procedure's GitHub PR and local-merge routes, when `main` needs pushing, and how to inspect and recover from a rejected push without overwriting remote work.

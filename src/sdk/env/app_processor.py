@@ -551,7 +551,7 @@ class AppProcessor(Processor):
                 logger.error(self.driver.set_last_err(f"AppProcessor {self.name} failed to perform observation transition action {obs_transition} because it is not an Action.Transition instance"))
                 continue
 
-            obs_event = ObsEvent(transition=obs_transition.get_transition(), obs=obs_transition.get_obs(), user_ref=obs_transition.get_echo_data(), timestamp=datetime.now(timezone.utc))
+            obs_event = ObsEvent(transition=obs_transition.get_transition(), obs=obs_transition.get_obs(), user_ref=obs_transition.get_echo_data(), timestamp=datetime.now(timezone.utc), error_message=obs_transition.get_error_message())
             self.get_queue().put(obs_event)  # Enqueue the observation event for processing
 
             action.obs_transitions.remove(obs_transition)  # Remove the observation transition action from the list

@@ -38,6 +38,11 @@ class PointingType(enum.IntEnum):
 
 class OffsetScan(BaseModel):
     """ A class representing the parameters for an offset scan over a target.
+        Rate is the signed angular scan rate relative to the target centre,
+        in degrees per second: offset(t) = offset + rate * elapsed_seconds.
+        The target centre is recalculated as it moves; the required dish-axis
+        motion combines tracking the target with traversing this offset.
+
         Angle is the position angle of the scan in the tangent plane 
             0°  - North-South scan
             90° - West-East scan
@@ -54,7 +59,7 @@ class OffsetScan(BaseModel):
     schema = Schema({
         "_type": And(str, lambda v: v == "OffsetScan"),
         "offset": And(float, lambda v: isinstance(v, float)),                               # Offset in degrees for offset scans or five-point scans (e.g. 0.1 degree)
-        "rate": And(float, lambda v: isinstance(v, float)),                                 # Slew rate in degrees per second for offset scans or five-point scans (e.g. 0.5 degree/sec)
+        "rate": And(float, lambda v: isinstance(v, float)),                                 # Signed scan rate relative to target centre in degrees per second
         "angle": And(float, lambda v: isinstance(v, float)),                                # Angle in degrees for offset scans or five-point scans (e.g. 0.0 degree)
         "start": Or(None, And(datetime, lambda v: v is None or isinstance(v, datetime))),   # Scan start date and time
     })
@@ -65,7 +70,7 @@ class OffsetScan(BaseModel):
         defaults = {
             "_type": "OffsetScan",
             "offset": 1.0,                          # Offset in degrees for offset scans or five-point scans (e.g. 0.1 degree)
-            "rate": 1.0,                            # Slew rate in degrees per second for offset scans or five-point scans (e.g. 0.5 degree/sec)
+            "rate": 1.0,                            # Signed scan rate relative to target centre in degrees per second
             "angle": 0.0,                           # Angle in degrees for offset scans or five-point scans (e.g. 0.0 degree)
             "start": None                           # Scan start date and time
         }

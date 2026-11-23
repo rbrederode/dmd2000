@@ -843,7 +843,19 @@ Each observation has:
 - `folder`: the containing folder relative to the search root, using `/`
   separators; `.` means the search root itself (for example, `2026/November`).
 - `title`, `dish`, `state`, `started_at`: summary fields from readable metadata.
+- `last_error_msg`, `last_error_dt`: the originating reason and UTC timestamp of
+  the latest accepted observation abort, or `null` when no error is recorded.
+  The catalogue exposes the timestamp as an ISO 8601 string.
 - `error`: present when metadata could not be read or parsed.
+
+Live `ObsModel` snapshots and saved `*-obs.json` files also include these abort
+fields, using the usual serialised datetime representation. The reason is saved
+immediately when an abort is accepted, before cleanup. Repeated aborts retain
+the original cause and timestamp, and releasing resources retains them even
+when the state returns to `IDLE`. An accepted reset/restart clears both fields
+and saves the reset state; a rejected reset leaves the diagnostics intact.
+Operator aborts record an explicit operator-abort reason. Persistence or cleanup
+errors are logged separately and do not replace the originating cause.
 
 The root and all subdirectories are searched for `*-obs.json` files. Symbolic
 links to files or directories are skipped. Spectra are not loaded or transferred,

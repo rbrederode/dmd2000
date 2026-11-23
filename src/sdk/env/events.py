@@ -317,7 +317,7 @@ class ConfigEvent:
 
 class ObsEvent:
 
-    def __init__(self, obs: ObsModel=None, transition=None, user_ref=None, timestamp=None):
+    def __init__(self, obs: ObsModel=None, transition=None, user_ref=None, timestamp=None, error_message=None):
         """Initialize the obs event with the given parameters.
 
         Parameters
@@ -327,6 +327,7 @@ class ObsEvent:
         """
         self.obs = obs
         self.transition = transition
+        self.error_message = error_message
         self.user_ref = user_ref
         self.timestamp = timestamp
 
@@ -337,4 +338,5 @@ class ObsEvent:
         return f"ObsEvent@{self.timestamp}\n" + \
             f" - Obs: {self.obs}\n" + \
             f" - Transition Type: {self.transition.name if self.transition else None}\n" + \
+            f" - Error Message: {self.error_message}\n" + \
             f" - User Ref: {self.user_ref}\n"

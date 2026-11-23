@@ -231,7 +231,7 @@ class ObservationExecutionTool:
                     message = f"Observation Execution Tool aborting observation {event.obs.obs_id} " + \
                               f"because the Digitiser start scanning request could not be sent."
                     logger.warning(self.tm.set_last_err(message))
-                    action.set_obs_transition(obs=event.obs, transition=ObsTransition.ABORT)
+                    action.set_obs_transition(obs=event.obs, transition=ObsTransition.ABORT, error_message=message)
 
             elif event.transition == ObsTransition.SCAN_STARTED:
                 
@@ -310,23 +310,35 @@ class ObservationExecutionTool:
                     logger.debug("Ignoring repeated abort for observation %s.", event.obs.obs_id)
                     return action
 
+                previous_state = event.obs.obs_state
+                now = datetime.now(timezone.utc)
+                event.obs.last_error_msg = getattr(event, 'error_message', None) or 'Observation aborted without a supplied reason.'
+                event.obs.last_error_dt = now
+                event.obs.last_update = now
+                event.obs.obs_state = ObsState.ABORTED
+                # Capture the originating cause before cleanup can produce other errors.
+                self._save_error_state(event.obs)
+
                 action.set_timer_action(Action.Timer(
                     name=f"obs_configuring_timer:{event.obs.obs_id}",
                     timer_action=Action.Timer.TIMER_STOP))
 
                 # If resources were assigned and are either configuring, ready or scanning
-                if event.obs.obs_state in [ObsState.CONFIGURING, ObsState.READY, ObsState.SCANNING]:
+                if previous_state in [ObsState.CONFIGURING, ObsState.READY, ObsState.SCANNING]:
                     # Stop scanning for this observation
-                    self.stop_obs_scanning(event.obs, action)
-
-                # Transition to ABORTED state where resources will be released after a timeout
-                event.obs.obs_state = ObsState.ABORTED
+                    try:
+                        self.stop_obs_scanning(event.obs, action)
+                    except Exception:
+                        # Return any stop actions already prepared for reachable
+                        # resources, retaining the originating abort cause.
+                        logger.exception('Could not prepare all abort cleanup actions for observation %s.', event.obs.obs_id)
 
                 # Start timer till end of the scheduling block before releasing resources
                 # Allows operators to investigate and potentially reset the observation before the end of the scheduling block
                 timer_name = f"obs_abort_timer:{event.obs.obs_id}"
 
-                time_ms_until_end = int((event.obs.scheduling_block_end - datetime.now(timezone.utc)).total_seconds() * 1000)
+                end = event.obs.scheduling_block_end
+                time_ms_until_end = max(0, int((end - datetime.now(timezone.utc)).total_seconds() * 1000)) if end is not None else 0
                 action.set_timer_action(Action.Timer(
                     name=timer_name, 
                     timer_action=time_ms_until_end,
@@ -358,6 +370,10 @@ class ObservationExecutionTool:
 
                     # Reset observation state to IDLE
                     event.obs.obs_state = ObsState.IDLE
+                    event.obs.last_error_msg = None
+                    event.obs.last_error_dt = None
+                    event.obs.last_update = datetime.now(timezone.utc)
+                    self._save_error_state(event.obs)
 
                     now = datetime.now(timezone.utc)
                     if event.obs.scheduling_block_end is not None and event.obs.scheduling_block_end <= now:
@@ -403,8 +419,16 @@ class ObservationExecutionTool:
                 # Apply the local transition before acknowledging the command, so
                 # an immediate model request sees the resulting execution state.
                 return self.process_obs_event(ObsEvent(obs=obs,
-                    transition=ObsTransition.ABORT if operation == 'abort' else ObsTransition.RESET))
+                    transition=ObsTransition.ABORT if operation == 'abort' else ObsTransition.RESET,
+                    error_message='Observation aborted by operator.' if operation == 'abort' else None))
         return action
+
+    def _save_error_state(self, obs):
+        """Persist diagnostics without preventing stop/reset actions on disk failure."""
+        try:
+            obs.save_to_disk(self.telmodel.get_scan_store_dir())
+        except Exception:
+            logger.exception('Could not persist observation %s error state.', obs.obs_id)
 
     def start_next_obs_timer(self, action) -> bool:
         """ Sets a timer to start the next scheduled observation with ObsState = EMPTY.
@@ -471,7 +495,7 @@ class ObservationExecutionTool:
                        f"Cannot assign dish for observation {obs.obs_id}. Aborting observation.")
 
             logger.warning(self.tm.set_last_err(message))
-            action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
+            action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT, error_message=message)
             return False
 
         elif dsh_model.capability not in [Capability.OPERATE_FULL, Capability.OPERATE_DEGRADED]:
@@ -480,7 +504,7 @@ class ObservationExecutionTool:
                        f"Capability {dsh_model.capability.name}. Cannot assign dish for observation {obs.obs_id}. Aborting observation.")
 
             logger.warning(self.tm.set_last_err(message))
-            action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
+            action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT, error_message=message)
             return False
 
         elif dsh_model.mode not in [DishMode.STANDBY_LP, DishMode.STANDBY_FP, DishMode.OPERATE, DishMode.CONFIG]:
@@ -489,7 +513,7 @@ class ObservationExecutionTool:
                        f"Current mode {dsh_model.mode.name}. Cannot assign dish for observation {obs.obs_id}. Aborting observation.")
             
             logger.warning(self.tm.set_last_err(message))
-            action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
+            action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT, error_message=message)
             return False
 
         if self.telmodel.dsh_mgr.tm_connected != CommunicationStatus.ESTABLISHED:
@@ -498,7 +522,7 @@ class ObservationExecutionTool:
                        f"Cannot assign dish for observation {obs.obs_id}. Aborting observation.")
 
             logger.warning(self.tm.set_last_err(message))
-            action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
+            action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT, error_message=message)
             return False
 
         elif self.telmodel.dsh_mgr.app.health not in [HealthState.OK, HealthState.DEGRADED]:
@@ -507,7 +531,7 @@ class ObservationExecutionTool:
                        f"Health state {self.telmodel.dsh_mgr.app.health.name}. Cannot assign dish for observation {obs.obs_id}. Aborting observation.")
             
             logger.warning(self.tm.set_last_err(message))
-            action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
+            action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT, error_message=message)
             return False
 
         # Lookup the digitiser using the dig_id associated with the dish
@@ -519,7 +543,7 @@ class ObservationExecutionTool:
                        f"Cannot assign digitiser for observation {obs.obs_id}. Aborting observation.")
 
             logger.warning(self.tm.set_last_err(message))
-            action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
+            action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT, error_message=message)
             return False
 
         elif dig_model.app.health not in [HealthState.OK, HealthState.DEGRADED]:
@@ -528,7 +552,7 @@ class ObservationExecutionTool:
                        f"Cannot assign digitiser to observation {obs.obs_id}. Aborting observation.")
             
             logger.warning(self.tm.set_last_err(message))
-            action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
+            action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT, error_message=message)
             return False
 
         sdp = self.telmodel.sdp
@@ -538,7 +562,7 @@ class ObservationExecutionTool:
                        f"Cannot assign resources to observation {obs.obs_id}. Aborting observation.")
 
             logger.warning(self.tm.set_last_err(message))
-            action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
+            action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT, error_message=message)
             return False
 
         elif sdp.app.health not in [HealthState.OK, HealthState.DEGRADED]:
@@ -547,7 +571,7 @@ class ObservationExecutionTool:
                        f"Cannot assign resources to observation {obs.obs_id}. Aborting observation.")
             
             logger.warning(self.tm.set_last_err(message))
-            action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
+            action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT, error_message=message)
             return False
 
         # Snapshot the resolved dish location in the observation metadata. This
@@ -1095,7 +1119,7 @@ class ObservationExecutionTool:
         else:
             message = f"Observation Execution Tool could not find current target scan set for observation {obs.obs_id} with index {obs.tgt_idx}-{obs.tgt_scan}. Aborting observation."
             logger.error(self.tm.set_last_err(message))
-            action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
+            action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT, error_message=message)
 
         return False
 

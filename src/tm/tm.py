@@ -653,7 +653,7 @@ class TelescopeManager(App):
                 
             # If the related observation was identified, trigger the workflow to move to ABORT
             if obs is not None and obs.obs_state in ACTIVE_OBSERVATION_STATES:
-                action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
+                action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT, error_message=message)
             elif obs is not None:
                 logger.debug("Ignoring Dish Manager error for inactive observation %s (state %s).",
                              obs.obs_id, obs.obs_state.name)
@@ -748,7 +748,7 @@ class TelescopeManager(App):
                         for obs in affected_observations:
                             message = f"Telescope Manager detected active weather alarm on dish {dsh.dsh_id} for observation {obs.obs_id}. Aborting affected observation for safe recovery."
                             logger.error(self.set_last_err(message))
-                            action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
+                            action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT, error_message=message)
             # If the api call is a response to a pointing request, update the scan model with the pointing reference points
             elif api_call.get('property','') == tm_dm.PROPERTY_POINTING:
                 echo_data = api_msg.get("echo_data")
@@ -989,6 +989,7 @@ class TelescopeManager(App):
                     DigitiserModel.from_dict(api_call['value'])
                 )
             
+            message = f"Digitiser {digitiser.dig_id}: {api_call.get('message') or 'Unspecified digitiser error.'}"
             logger.error(f"Telescope Manager received error response from Digitiser {digitiser.dig_id}.\n{api_call}")
 
             # If the message contains additional observation data, trigger the observation workflow
@@ -998,7 +999,7 @@ class TelescopeManager(App):
                 
             # If the related observation was identified, trigger the workflow to move to ABORT
             if obs is not None and obs.obs_state in ACTIVE_OBSERVATION_STATES:
-                action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
+                action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT, error_message=message)
             elif obs is not None:
                 logger.info(
                     "Telescope Manager ignoring Digitiser error for observation %s "
@@ -1206,7 +1207,7 @@ class TelescopeManager(App):
 
         # If the api call indicates that an error occured
         if api_call.get('status','') == dmd_protocol.STATUS_ERROR:
-            message = f"Telescope Manager received error response from Science Data Processor.\n{api_call}"
+            message = f"Science Data Processor: {api_call.get('message') or 'Unspecified processing error.'}"
             logger.error(self.set_last_err(message))
 
             # If the status update message contains additional observation data, retrieve the related observation 
@@ -1215,8 +1216,11 @@ class TelescopeManager(App):
             obs = self.telmodel.oda.obs_store.get_obs_by_id(obs_id) if obs_id is not None else None
 
             # If the related observation was identified, trigger the workflow to move to ABORT
-            if obs is not None:
-                action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
+            if obs is not None and obs.obs_state in ACTIVE_OBSERVATION_STATES:
+                action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT, error_message=message)
+            elif obs is not None:
+                logger.info('Ignoring Science Data Processor error for inactive observation %s (state %s).',
+                            obs.obs_id, obs.obs_state.name)
 
         elif api_call.get('status','') != dmd_protocol.STATUS_ERROR:
 
@@ -1441,7 +1445,7 @@ class TelescopeManager(App):
                 if obs is not None and obs.obs_state == ObsState.CONFIGURING:
                     message = f"Telescope Manager aborting observation {obs_id} after request timeout for {event.name}."
                     logger.warning(self.set_last_err(message))
-                    action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
+                    action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT, error_message=message)
 
         # Handle observation start timer event
         elif event.name.startswith("obs_start_timer"):
@@ -1497,7 +1501,7 @@ class TelescopeManager(App):
                 else:
                     message = f"Telescope Manager observation {obs.obs_id} configuration timeout occurred, aborting observation"
                     logger.warning(self.set_last_err(message))
-                    action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
+                    action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT, error_message=message)
 
         # Handle observation scanning timeout timer event
         elif event.name.startswith("obs_scanning_timer"):
@@ -2059,11 +2063,12 @@ class TelescopeManager(App):
                     dish = self.telmodel.dsh_mgr.get_dish_by_id(obs.dsh_id)
                     dig = dish.dig_id if dish is not None else None
 
-                    logger.info(f"Telescope Manager aborting observation {obs.obs_id}.\nConnection status:\n" + \
+                    message = (f"Telescope Manager aborting observation {obs.obs_id}.\nConnection status:\n" + \
                         f"- Dish Manager {obs.dsh_id}: {self.telmodel.dsh_mgr.tm_connected.name}\n" + \
                         f"- Digitiser {dig}: {self.telmodel.dig_store.get_dig_by_id(dig).tm_connected.name if dig is not None else 'N/A'}\n" + \
                         f"- Science Data Processor: {self.telmodel.sdp.tm_connected.name}")
-                    action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT)
+                    logger.info(message)
+                    action.set_obs_transition(obs=obs, transition=ObsTransition.ABORT, error_message=message)
 
         return action
 

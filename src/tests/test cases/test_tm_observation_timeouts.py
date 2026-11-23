@@ -25,6 +25,7 @@ def test_configuring_timeout_returns_abort_action_and_records_error():
 
     transitions = [item.get_transition() for item in action.obs_transitions]
     assert transitions == [ObsTransition.ABORT]
+    assert action.obs_transitions[0].get_error_message() == telescope_manager.get_last_err_msg()
     assert telescope_manager.get_last_err_msg() == (
         "Telescope Manager observation obs-config-timeout configuration timeout "
         "occurred, aborting observation"

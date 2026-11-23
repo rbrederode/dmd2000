@@ -68,7 +68,7 @@ class Action:
 
     class Transition:
 
-        def __init__(self, obs: ObsModel=None, transition=None, echo_data=None):
+        def __init__(self, obs: ObsModel=None, transition=None, echo_data=None, error_message=None):
 
             if transition is None:
                 raise XSoftwareFailure("Action.Transition transition cannot be None")
@@ -79,12 +79,16 @@ class Action:
             self.obs = obs
             self.transition = transition
             self.echo_data = echo_data
+            self.error_message = error_message
 
         def get_transition(self):
             return self.transition
 
         def get_obs(self):
             return self.obs
+
+        def get_error_message(self):
+            return self.error_message
 
         def get_echo_data(self):
             return self.echo_data
@@ -93,6 +97,7 @@ class Action:
             return f"Action.Transition\n" + \
                 f" - Obs: {self.obs}\n" + \
                 f" - Transition Type: {self.transition.name if self.transition else None}\n" + \
+                f" - Error Message: {self.error_message}\n" + \
                 f" - Echo Data: {self.echo_data}\n"
 
     #--------------------------
@@ -124,8 +129,8 @@ class Action:
             self.timer_actions.append(timer_action)
         return self
 
-    def set_obs_transition(self, transition=None, obs: ObsModel=None, echo_data=None):
-        transition = Action.Transition(transition=transition, obs=obs, echo_data=echo_data)
+    def set_obs_transition(self, transition=None, obs: ObsModel=None, echo_data=None, error_message=None):
+        transition = Action.Transition(transition=transition, obs=obs, echo_data=echo_data, error_message=error_message)
         self.obs_transitions.append(transition)
         return self
 

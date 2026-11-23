@@ -59,7 +59,8 @@ def list_observations(store, service="WEB"):
                 bool(configs) and isinstance(data.get('tgt_idx'), int) and data['tgt_idx'] >= len(configs))
             entry.update({key: value(key) for key in (
                 'scheduling_block_start', 'scheduling_block_end', 'estimated_observation_duration',
-                'total_integration_time', 'created', 'user_email', 'end_dt', 'last_update')})
+                'total_integration_time', 'created', 'user_email', 'end_dt', 'last_update',
+                'last_error_msg', 'last_error_dt')})
             entry.update(scan_count=len(scans), completed_scans=complete, completed=finished,
                          revision=str(path.stat().st_mtime_ns))
         except (OSError, ValueError, UnicodeError):

@@ -213,6 +213,8 @@ def test_tm_applies_error_status_model_and_aborts_active_observation(obs_state):
     assert len(action.obs_transitions) == 1
     assert action.obs_transitions[0].get_obs() is obs
     assert action.obs_transitions[0].get_transition() == ObsTransition.ABORT
+    assert action.obs_transitions[0].get_error_message() == (
+        'Digitiser dig001: SDR device disconnected while reading samples')
 
 
 @pytest.mark.parametrize(

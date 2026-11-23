@@ -330,3 +330,5 @@ def test_dish_error_only_aborts_active_observation(state, aborts):
             'msg_type':'adv','action_code':'set','property':'status','status':'error',
             'message':'scan command rejected','obs_data':{'obs_id':observation.obs_id}}, bytearray())
         assert len(action.obs_transitions) == int(aborts)
+        if aborts:
+            assert 'scan command rejected' in action.obs_transitions[0].get_error_message()
